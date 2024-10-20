@@ -17,13 +17,15 @@ find_library(GLFW_LIB libglfw3.a ${LIBRARY_PATH}/lib/libglfw3.a)
 
 file(GLOB_RECURSE SRC_FILES src/*cpp)
 add_executable(${PROJECT_NAME}
-    sources/main.cpp
-    ${SRC_FILES}
-    headers/VkInstanceManager/VkInstanceManager.h sources/VkInstanceManager/VkInstanceManager.cpp sources/main.cpp
+    src/main.cpp
+    src/VkException/VkException.h
+    src/VkException/VkException.cpp
+    src/VkInstanceManager/VkInstanceManager.h
+    src/VkInstanceManager/VkInstanceManager.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${LIBRARY_PATH}/include
     ${VULKAN_SDK}/include
 )
