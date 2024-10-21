@@ -24,7 +24,7 @@ int main(int argc, char **argv)
 
     std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>("Aura3D", "Aura3DEngine");
 
-    glfwWindow->process([]{
+    glfwWindow->process([&](){
 
     });
 
