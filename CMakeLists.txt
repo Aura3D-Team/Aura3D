@@ -22,6 +22,9 @@ add_executable(${PROJECT_NAME}
     src/VkException/VkException.cpp
     src/VkInstanceManager/VkInstanceManager.h
     src/VkInstanceManager/VkInstanceManager.cpp
+    src/GlfwWindow/GlfwWindow.h
+    src/GlfwWindow/GlfwWindow.cpp
+    src/utils/LastWish.h
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
