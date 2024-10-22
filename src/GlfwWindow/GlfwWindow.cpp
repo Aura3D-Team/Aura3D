@@ -45,6 +45,8 @@ void GlfwWindow::initializeGLFW()
 
     // Set required GLFW window hints for Vulkan, as this project does not use OpenGL
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // Disabled for now
 }
 
 void GlfwWindow::process(const std::function<void ()>& actions)
@@ -55,9 +57,6 @@ void GlfwWindow::process(const std::function<void ()>& actions)
 
         // Execute user-defined actions for each frame
         actions();
-
-
-        glfwSwapBuffers(_window);
 
         // Poll for window events (e.g., input, window close, resize)
         glfwPollEvents();

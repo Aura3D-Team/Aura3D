@@ -32,15 +32,13 @@ VkInstanceManager::VkInstanceManager(const char* appName, const char* engineName
     _instanceInfo.enabledLayerCount = static_cast<uint32_t>(_vkValidationLayers.size());
     _instanceInfo.ppEnabledLayerNames = _vkValidationLayers.data();
 
-    VkResult result = vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VkResult vkResult = vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance);
+    if (vkResult != VK_SUCCESS) throw VkException(vkResult);
 }
 
-VkInstance* VkInstanceManager::getVkInstance()
+VkInstance VkInstanceManager::getVkInstance()
 {
-    return &_vkInstance;
+    return _vkInstance;
 }
 
 VkInstanceManager::~VkInstanceManager()

@@ -39,14 +39,14 @@ public:
     ~VkInstanceManager();
 
     /**
-     * Returns a pointer to the Vulkan instance.
+     * Returns the Vulkan instance by value.
      *
      * This function provides access to the Vulkan instance handle, which can be
      * used in other parts of the application to perform Vulkan operations.
      *
-     * @return VkInstance* - A pointer to the Vulkan instance.
+     * @return VkInstance* - Vulkan instance by value.
      */
-    VkInstance* getVkInstance();
+    VkInstance getVkInstance();
 
 private:
     /**

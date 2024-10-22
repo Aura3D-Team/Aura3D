@@ -15,17 +15,11 @@ find_package(Vulkan REQUIRED)
 
 find_library(GLFW_LIB libglfw3.a ${LIBRARY_PATH}/lib/libglfw3.a)
 
-file(GLOB_RECURSE SRC_FILES src/*cpp)
-add_executable(${PROJECT_NAME}
-    src/main.cpp
-    src/VkException/VkException.h
-    src/VkException/VkException.cpp
-    src/VkInstanceManager/VkInstanceManager.h
-    src/VkInstanceManager/VkInstanceManager.cpp
-    src/GlfwWindow/GlfwWindow.h
-    src/GlfwWindow/GlfwWindow.cpp
-    src/utils/LastWish.h
+file(GLOB_RECURSE SOURCES
+    ${CMAKE_SOURCE_DIR}/src/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/*.h
 )
+add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
