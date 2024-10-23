@@ -33,13 +33,17 @@ void VkDeviceManager::setBestDevice(VkInstance vkInstance)
 
     PLOG_INFO << "Found " << _physicaldeviceCount << " Vulkan physical device(s).";
 
-    int bestScore = -1;
+    uint32_t bestScore = 0;
 
     // Select the best physical device
     for (const VkPhysicalDevice& device : devices) {
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(device, &deviceProperties);
 
+        VkPhysicalDeviceFeatures deviceFeatures;
+        vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+        PLOG_INFO << "-------------------------------------------------------------------------------";
         PLOG_INFO << "Device Name: " << deviceProperties.deviceName;
         PLOG_INFO << "API Version: " << VK_VERSION_MAJOR(deviceProperties.apiVersion) << "."
                   << VK_VERSION_MINOR(deviceProperties.apiVersion) << "."
@@ -50,22 +54,30 @@ void VkDeviceManager::setBestDevice(VkInstance vkInstance)
         PLOG_INFO << "Device Type: " << deviceProperties.deviceType;
 
         // Scoring the device
-        int score = 0;
+        uint32_t score = 0;
 
         // Prefer discrete GPUs (dedicated graphics cards)
         if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             score += 1000;
         }
 
+        if (deviceFeatures.geometryShader) {
+            score += 1000;
+        }
+
         score += deviceProperties.apiVersion;
 
+        score += deviceProperties.limits.maxImageDimension1D;
         score += deviceProperties.limits.maxImageDimension2D;
+        score += deviceProperties.limits.maxImageDimension3D;
 
         PLOG_INFO << "Score for this device: " << score;
 
         if (score > bestScore) {
             bestScore = score;
             _physicalDevice = device;
+            _deviceProperties = deviceProperties;
+            _deviceFeatures = deviceFeatures;
         }
     }
 
@@ -73,10 +85,15 @@ void VkDeviceManager::setBestDevice(VkInstance vkInstance)
         throw VkException("No suitable physical device found.");
     }
 
+    PLOG_INFO << "-------------------------------------------------------------------------------";
+    PLOG_INFO << "Choosed device score: " << bestScore;
+    PLOG_INFO << "-------------------------------------------------------------------------------";
+
     uint32_t graphicsQueueFamilyIndex = _vkQueues.pushQueueInfo(_physicalDevice, VK_QUEUE_GRAPHICS_BIT, 1.0);
 
-    _deviceInfo.queueCreateInfoCount = _vkQueues.getVkDeviceQueueCreateInfos().size();
+    _deviceInfo.queueCreateInfoCount = static_cast<uint32_t>(_vkQueues.getVkDeviceQueueCreateInfos().size());
     _deviceInfo.pQueueCreateInfos = _vkQueues.getVkDeviceQueueCreateInfos().data();
+    _deviceInfo.pEnabledFeatures = &_deviceFeatures;
 
     result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
     if (result != VK_SUCCESS) {

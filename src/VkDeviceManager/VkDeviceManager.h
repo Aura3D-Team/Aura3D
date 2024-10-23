@@ -55,7 +55,7 @@ public:
      *
      * @return VkDevice The Vulkan logical device that has been created with specific queue configurations.
      */
-        VkDevice getDevice();
+    VkDevice getDevice();
 
     /**
      * @brief Retrieves the Vulkan physical device.
@@ -72,7 +72,10 @@ public:
 private:
     VkDeviceCreateInfo _deviceInfo;  ///< Information required to create the logical device
     VkDevice _device;  ///< Handle to the Vulkan logical device
+
     VkPhysicalDevice _physicalDevice;  ///< Handle to the selected Vulkan physical device
+    VkPhysicalDeviceProperties _deviceProperties; ///< Store best physical device properties
+    VkPhysicalDeviceFeatures _deviceFeatures; ///< Store best physical device features
     uint32_t _physicaldeviceCount;  ///< Number of available physical devices
 
     VkQueueManager _vkQueues; ///< Queue manager to create queues in a organized way.

@@ -14,7 +14,6 @@
 #include "GlfwWindow/GlfwWindow.h"
 #include "VkInstanceManager/VkInstanceManager.h"
 #include "VkDeviceManager/VkDeviceManager.h"
-#include "VkQueueManager/VkQueueManager.h"
 
 
 #define WIDTH 1280
@@ -25,7 +24,20 @@ int main(int argc, char **argv)
     static plog::ColorConsoleAppender<plog::TxtFormatter> consoleAppender;
     plog::init(plog::debug, &consoleAppender);
 
-    std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>("Aura3D", "Aura3DEngine");
+    VkInstanceData vkInstanceData = {
+        .appName = "Aura3D",
+        .engineName =  "Aura3DEngine",
+        .appVersion = {1, 0, 0},
+        .vkInstanceExtensions = {
+            VK_KHR_SURFACE_EXTENSION_NAME,
+            // VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        },
+        .vkValidationLayers {
+            "VK_LAYER_KHRONOS_validation",
+        }
+    };
+
+    std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>(vkInstanceData);
     std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>();
     vkDeviceManager->setBestDevice(vkInstance->getVkInstance());
 

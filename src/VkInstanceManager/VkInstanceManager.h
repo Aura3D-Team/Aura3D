@@ -7,6 +7,19 @@
 #include <vector>
 
 /**
+ * @brief This struct represents Important data for VkInstance creation
+ *
+ * Obs: for more details, it can have more parameters in the future
+ */
+struct VkInstanceData {
+    const char* appName;
+    const char* engineName;
+    std::vector<int> appVersion;
+    std::vector<const char*> vkInstanceExtensions;
+    std::vector<const char*> vkValidationLayers;
+};
+
+/**
  * @class to manage Vulkan instance creation, configuration, and destruction.
  *
  * This class is responsible for:
@@ -28,7 +41,7 @@ public:
      * validation layers, and required instance extensions.
      * If the Vulkan instance cannot be created, it throws an exception.
      */
-    VkInstanceManager(const char* appName, const char* engineName);
+    VkInstanceManager(VkInstanceData vkInstanceData);
 
     /**
      * Destructor.

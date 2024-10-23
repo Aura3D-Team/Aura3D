@@ -31,12 +31,12 @@ void VkQueueManager::setupQueue(VkPhysicalDevice physicalDevice, VkDevice device
 
 uint32_t VkQueueManager::pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueueFlags flags,  const float queuePriority) {
     if (_mapVkQueues.find(flags) == _mapVkQueues.end()) {
-        uint32_t graphicsQueueFamilyIndex = findQueueFamilyIndex(physicalDevice, flags);
-        if (graphicsQueueFamilyIndex == UINT32_MAX) {
+        uint32_t queueFamilyIndex = findQueueFamilyIndex(physicalDevice, flags);
+        if (queueFamilyIndex == UINT32_MAX) {
             throw VkException("No suitable queue family found for graphics.");
         }
 
-        _mapVkQueues[flags] = { .queue = VK_NULL_HANDLE, .familyIndex = graphicsQueueFamilyIndex, .queueCount = 1, .queuePriority = queuePriority};
+        _mapVkQueues[flags] = { .queue = VK_NULL_HANDLE, .familyIndex = queueFamilyIndex, .queueCount = 1, .queuePriority = queuePriority};
 
         QueueData& queueData = _mapVkQueues[flags];
 
@@ -48,7 +48,7 @@ uint32_t VkQueueManager::pushQueueInfo(VkPhysicalDevice physicalDevice, const Vk
 
         _vkDeviceQueueCreateInfos.push_back(queueCreateInfo);
 
-        return graphicsQueueFamilyIndex;
+        return queueFamilyIndex;
     } else {
         QueueData& queueData = _mapVkQueues[flags];
         queueData.queueCount++;
