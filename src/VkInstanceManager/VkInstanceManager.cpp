@@ -29,9 +29,9 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData)
     if (vkResult != VK_SUCCESS) throw VkException(vkResult);
 }
 
-VkInstance VkInstanceManager::getVkInstance()
+VkInstance* VkInstanceManager::getVkInstance()
 {
-    return _vkInstance;
+    return &_vkInstance;
 }
 
 VkInstanceManager::~VkInstanceManager()

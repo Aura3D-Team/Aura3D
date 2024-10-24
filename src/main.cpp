@@ -4,6 +4,8 @@
 #include <memory.h>
 
 #define GLFW_INCLUDE_VULKAN
+// #define VK_USE_PLATFORM_WIN32_KHR
+// #define GLFW_EXPOSE_NATIVE_WIN32
 
 #include <plog/Log.h>
 #include <plog/Initializers/ConsoleInitializer.h>
@@ -38,8 +40,7 @@ int main(int argc, char **argv)
     };
 
     std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>(vkInstanceData);
-    std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>();
-    vkDeviceManager->setBestDevice(vkInstance->getVkInstance());
+    std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>(vkInstance->getVkInstance());
 
     std::unique_ptr<GlfwWindow> glfwWindow = std::make_unique<GlfwWindow>(WIDTH, HEIGHT, "Aura3D");
 

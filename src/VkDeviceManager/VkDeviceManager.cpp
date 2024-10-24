@@ -2,12 +2,13 @@
 #include "VkException/VkException.h"
 #include "plog/Log.h"
 
-VkDeviceManager::VkDeviceManager()
-    : _physicaldeviceCount(0), _deviceInfo(),
+VkDeviceManager::VkDeviceManager(VkInstance* vkInstance)
+    : _vkInstance(vkInstance), _physicaldeviceCount(0), _deviceInfo(),
     _physicalDevice(VK_NULL_HANDLE), _device(VK_NULL_HANDLE),
     _vkQueues(VkQueueManager())
 {
     _deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    _setBestDevice(*_vkInstance);
 }
 
 VkDeviceManager::~VkDeviceManager() {
@@ -17,7 +18,7 @@ VkDeviceManager::~VkDeviceManager() {
     }
 }
 
-void VkDeviceManager::setBestDevice(VkInstance vkInstance)
+void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 {
     // Enumerate physical devices
     VkResult result = vkEnumeratePhysicalDevices(vkInstance, &_physicaldeviceCount, nullptr);

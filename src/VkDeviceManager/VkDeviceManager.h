@@ -26,7 +26,7 @@ public:
      *
      * @param vkInstance The Vulkan instance to use for device management.
      */
-    VkDeviceManager();
+    VkDeviceManager(VkInstance* vkInstance);
 
     /**
      * @brief Destructor that cleans up the logical device.
@@ -34,17 +34,6 @@ public:
      * Cleans up and destroys the Vulkan logical device created by the manager.
      */
     ~VkDeviceManager();
-
-    /**
-     * @brief Sets the best physical and logical device.
-     *
-     * This function enumerates the physical devices available and selects the best one
-     * based on the required criteria (e.g., queue family support). It then creates a logical
-     * device from the selected physical device.
-     *
-     * Throws a `VkException` if any Vulkan operation fails during device selection or creation.
-     */
-    void setBestDevice(VkInstance vkInstance);
 
     /**
      * @brief Retrieves the Vulkan logical device.
@@ -68,8 +57,9 @@ public:
      */
     VkPhysicalDevice getPhysicalDevice();
 
-
 private:
+    VkInstance* _vkInstance;
+
     VkDeviceCreateInfo _deviceInfo;  ///< Information required to create the logical device
     VkDevice _device;  ///< Handle to the Vulkan logical device
 
@@ -79,6 +69,17 @@ private:
     uint32_t _physicaldeviceCount;  ///< Number of available physical devices
 
     VkQueueManager _vkQueues; ///< Queue manager to create queues in a organized way.
+
+    /**
+     * @brief Sets the best physical and logical device.
+     *
+     * This function enumerates the physical devices available and selects the best one
+     * based on the required criteria (e.g., queue family support). It then creates a logical
+     * device from the selected physical device.
+     *
+     * Throws a `VkException` if any Vulkan operation fails during device selection or creation.
+     */
+    void _setBestDevice(VkInstance vkInstance);
 };
 
 #endif // VKDEVICEMANAGER_H
