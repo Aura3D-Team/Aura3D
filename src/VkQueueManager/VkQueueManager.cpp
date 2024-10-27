@@ -69,11 +69,10 @@ std::vector<VkDeviceQueueCreateInfo>& VkQueueManager::getVkDeviceQueueCreateInfo
     return _vkDeviceQueueCreateInfos;
 }
 
-VkQueue VkQueueManager::getQueue(VkQueueFlags flags) const
+VkQueue& VkQueueManager::getQueue(VkQueueFlags flags) const
 {
-    const std::unordered_map<uint32_t, QueueData>::const_iterator& it = _mapVkQueues.find(flags);
-    if (it != _mapVkQueues.end()) {
-        return it->second.queue;
+    if ( _mapVkQueues.find(flags) != _mapVkQueues.end()) {
+        return _mapVkQueues.at(flags).queue;
     } else {
         throw VkException("Requested queue not found.");
     }

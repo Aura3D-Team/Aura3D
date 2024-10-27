@@ -46,12 +46,12 @@ public:
     uint32_t pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueueFlags flags, const float queuePriority);
 
     /**
-     * @brief Retrieves the Vulkan queue based on the provided queue flag (e.g., VK_QUEUE_GRAPHICS_BIT).
+     * @brief Retrieves the Vulkan queue reference based on the provided queue flag (e.g., VK_QUEUE_GRAPHICS_BIT).
      *
      * @param flags The Vulkan queue flags (e.g., VK_QUEUE_GRAPHICS_BIT).
      * @return VkQueue The Vulkan queue associated with the given flags.
      */
-    VkQueue getQueue(VkQueueFlags flags) const;
+    VkQueue& getQueue(VkQueueFlags flags) const;
 
     /**
      * @brief Retrieves the Vulkan queues infos created in this application

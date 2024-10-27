@@ -15,7 +15,7 @@
  *
  * This class is responsible for selecting the best available physical device,
  * creating a logical device, and managing device resources. It integrates with
- * Vulkan by taking a `VkInstance` and working with it to enumerate and choose
+ * Vulkan instance by taking a `VkInstance` and working with it to enumerate and choose
  * the best physical device available.
  */
 class VkDeviceManager
@@ -58,7 +58,7 @@ public:
     VkPhysicalDevice getPhysicalDevice();
 
 private:
-    VkInstance* _vkInstance;
+    VkInstance* _vkInstance; ///< Vulkan instance pointer used bind the best device
 
     VkDeviceCreateInfo _deviceInfo;  ///< Information required to create the logical device
     VkDevice _device;  ///< Handle to the Vulkan logical device
