@@ -16,6 +16,7 @@ VkDeviceManager::~VkDeviceManager() {
         vkDestroyDevice(_device, nullptr);
         PLOG_INFO << "Vulkan device destroyed.";
     }
+    _vkInstance = nullptr;
 }
 
 void VkDeviceManager::_setBestDevice(VkInstance vkInstance)

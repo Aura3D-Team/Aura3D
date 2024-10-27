@@ -1,19 +1,20 @@
-#ifndef GLFWWINDOW_H
-#define GLFWWINDOW_H
+#ifndef GLFWWINDOWMANAGER_H
+#define GLFWWINDOWMANAGER_H
 
 #pragma once
 
 #include <GLFW/glfw3.h>
 #include <functional>
+#include <GLFW/glfw3.h>
 
 /**
- * @class GlfwWindow
+ * @class GlfwWindowManager
  *
  * A wrapper class to manage the lifecycle of a GLFW window, designed for use with Vulkan.
  * It initializes GLFW, creates a Vulkan-compatible window, and provides a method to handle
  * the window's main loop with user-defined actions.
  */
-class GlfwWindow
+class GlfwWindowManager
 {
 public:
     /**
@@ -23,19 +24,18 @@ public:
      *
      * @param width The width of the window.
      * @param height The height of the window.
-     * @param windowName The title of the window.
      */
-    GlfwWindow(int width, int height, const char* windowName);
+    GlfwWindowManager(const int width, const int height);
 
     /**
      * Destructor. Cleans up and terminates GLFW.
      */
-    ~GlfwWindow();
+    ~GlfwWindowManager();
 
     /**
      * Returns the underlying GLFW window instance.
      *
-     * @return GLFWwindow* A pointer to the GLFW window.
+     * @return GlfwWindowManager* A pointer to the GLFW window.
      */
     GLFWwindow* getWindowInstance();
 
@@ -47,15 +47,22 @@ public:
      */
     void process(const std::function<void ()>& actions);
 
-private:
     /**
-     * Helper function to initialize GLFW. Throws an exception if initialization fails or Vulkan is not supported.
+     * Create a cross-plataform Vulkan-compatible window
+     *
+     * @param windowName The title of the window.
      */
-    void initializeGLFW();
+    void createGlfwWindowManager(const char* windowName);
 
+    /**
+     * Retrives Vulkan required extensions for surface creation.
+     */
+    std::vector<const char*> getGlfwVulkanExtensions() const;
+
+private:
     GLFWwindow* _window;  ///< The GLFW window instance.
     int _width;           ///< The width of the window.
     int _height;          ///< The height of the window.
 };
 
-#endif // GLFWWINDOW_H
+#endif // GLFWWINDOWMANAGER_H

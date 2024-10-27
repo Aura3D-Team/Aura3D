@@ -13,38 +13,43 @@
 // #include <plog/Formatters/MessageOnlyFormatter.h>
 #include <plog/Appenders/ColorConsoleAppender.h>
 
-#include "GlfwWindow/GlfwWindow.h"
+#include "GlfwWindowManager/GlfwWindowManager.h"
 #include "VkInstanceManager/VkInstanceManager.h"
 #include "VkDeviceManager/VkDeviceManager.h"
-
-
-#define WIDTH 1280
-#define HEIGHT 720
+#include "VkSurfaceManager/VkSurfaceManager.h"
 
 int main(int argc, char **argv)
 {
     static plog::ColorConsoleAppender<plog::TxtFormatter> consoleAppender;
     plog::init(plog::debug, &consoleAppender);
 
+    std::unique_ptr<GlfwWindowManager> glfwWindowManager = std::make_unique<GlfwWindowManager>(1280, 720);
+
     VkInstanceData vkInstanceData = {
         .appName = "Aura3D",
-        .engineName =  "Aura3DEngine",
+        .engineName = "Aura3DEngine",
         .appVersion = {1, 0, 0},
-        .vkInstanceExtensions = {
-            VK_KHR_SURFACE_EXTENSION_NAME,
-            // VK_KHR_SWAPCHAIN_EXTENSION_NAME
-        },
-        .vkValidationLayers {
+        .vkInstanceExtensions = {},
+        .vkValidationLayers = {
             "VK_LAYER_KHRONOS_validation",
         }
     };
 
+    const std::vector<const char*> glfwExtensions = glfwWindowManager->getGlfwVulkanExtensions();
+    for (const char* ext : glfwExtensions) {
+        vkInstanceData.vkInstanceExtensions.push_back(ext);
+    }
+
     std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>(vkInstanceData);
     std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>(vkInstance->getVkInstance());
 
-    std::unique_ptr<GlfwWindow> glfwWindow = std::make_unique<GlfwWindow>(WIDTH, HEIGHT, "Aura3D");
+    glfwWindowManager->createGlfwWindowManager("Aura3D");
+    std::unique_ptr<VkSurfaceManager> vkSurfaceManager = std::make_unique<VkSurfaceManager>(
+        vkInstance->getVkInstance(),
+        glfwWindowManager->getWindowInstance()
+    );
 
-    glfwWindow->process([&](){
+    glfwWindowManager->process([&](){
 
     });
 

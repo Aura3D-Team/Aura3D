@@ -1,16 +1,21 @@
 #include "VkSurfaceManager.h"
-#include <GLFW/glfw3.h>
 
 #include "VkException/VkException.h"
 
-VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance)
+VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
     : _vkInstance(vkInstance)
 {
-    // eMPTY
+    VkResult result = glfwCreateWindowSurface(*_vkInstance, window, nullptr, &_vkSurface);
+    if (result != VK_SUCCESS) {
+        throw VkException(result);
+    }
 }
 
 VkSurfaceManager::~VkSurfaceManager() {
-    vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
+    if (_vkSurface != VK_NULL_HANDLE) {
+        vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
+    }
+    _vkInstance = nullptr;
 }
 
 VkSurfaceKHR* VkSurfaceManager::getSurface()
