@@ -6,6 +6,20 @@
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <vector>
+#include <set>
+
+/**
+     * @brief Holds information about a Vulkan queue.
+     *
+     * This struct stores data related to a Vulkan queue, including the queue itself,
+     * the index of the queue family it belongs to, the number of queues requested from the family,
+     * and the priority of the queue.
+     */
+struct QueueData {
+    VkQueue queue;
+    float queuePriority;
+    VkDeviceQueueCreateInfo vkDeviceQueueCreateInfo;
+};
 
 /**
  * @class VkQueueManager
@@ -51,14 +65,14 @@ public:
      * @param flags The Vulkan queue flags (e.g., VK_QUEUE_GRAPHICS_BIT).
      * @return VkQueue The Vulkan queue associated with the given flags.
      */
-    VkQueue* getQueue(VkQueueFlags flags);
+    QueueData* getQueueData(VkQueueFlags flags);
 
     /**
      * @brief Retrieves the Vulkan queues infos created in this application
      *
-     * @return std::vector<VkDeviceQueueCreateInfo>& The Vulkan queues infos vector.
+     * @return std::vector<VkDeviceQueueCreateInfo> The Vulkan queues infos vector.
      */
-    std::vector<VkDeviceQueueCreateInfo>& getVkDeviceQueueCreateInfos();
+    std::vector<VkDeviceQueueCreateInfo> getDeviceQueueCreateInfos() const;
 
 private:
     /**
@@ -70,23 +84,7 @@ private:
      */
     uint32_t findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueueFlags flags);
 
-    /**
-     * @brief Holds information about a Vulkan queue.
-     *
-     * This struct stores data related to a Vulkan queue, including the queue itself,
-     * the index of the queue family it belongs to, the number of queues requested from the family,
-     * and the priority of the queue.
-     */
-    struct QueueData {
-        VkQueue queue;
-        uint32_t familyIndex;
-        uint32_t queueCount;
-        float queuePriority;
-    };
-
     std::unordered_map<VkQueueFlags, QueueData> _mapVkQueues; ///< Stores Vulkan queues data by their capatibilities.
-
-    std::vector<VkDeviceQueueCreateInfo> _vkDeviceQueueCreateInfos; ///< Stores Vulkan queues infos.
 };
 
 #endif // VKQUEUEMANAGER_H

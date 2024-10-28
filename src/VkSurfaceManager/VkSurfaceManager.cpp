@@ -22,3 +22,9 @@ VkSurfaceKHR* VkSurfaceManager::getSurface()
 {
     return &_vkSurface;
 }
+
+VkBool32 VkSurfaceManager::getQueuePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, const int familyIndex) {
+    VkBool32 presentSupport = false;
+    vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, familyIndex, _vkSurface, &presentSupport);
+    return presentSupport;
+}

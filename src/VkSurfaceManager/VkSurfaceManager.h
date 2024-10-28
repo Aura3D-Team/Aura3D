@@ -47,6 +47,16 @@ public:
      */
     VkSurfaceKHR* getSurface();
 
+    /**
+     * @brief Avaliate physical device support for a queue family that allows operations on a VkSurface
+     *
+     * @param physicalDevice A physical device choosed on a machine.
+     * @param familyIndex A VkQueue family index.
+     *
+     * @return VkBool32 if physicalDevice device support that queue on a VkSurface
+     */
+    VkBool32 getQueuePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, const int familyIndex);
+
 private:
     VkInstance* _vkInstance; ///< Pointer to the Vulkan instance used to bind the surface.
     VkSurfaceKHR _vkSurface; ///< Vulkan surface for rendering on cross-platform windowing systems (GLFW).

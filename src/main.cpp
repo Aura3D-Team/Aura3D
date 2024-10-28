@@ -41,7 +41,15 @@ int main(int argc, char **argv)
     }
 
     std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>(vkInstanceData);
-    std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>(vkInstance->getVkInstance());
+
+    VkDeviceData vkDeviceData = {
+        .vkDeviceExtensions = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        },
+        .vkEnabledLayers = {}
+    };
+
+    std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>(vkInstance->getVkInstance(), vkDeviceData);
 
     glfwWindowManager->createGlfwWindowManager("Aura3D");
     std::unique_ptr<VkSurfaceManager> vkSurfaceManager = std::make_unique<VkSurfaceManager>(

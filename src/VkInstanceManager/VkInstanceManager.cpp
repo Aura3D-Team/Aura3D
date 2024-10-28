@@ -1,10 +1,18 @@
 #include "VkInstanceManager.h"
+#include <set>
+
 #include "VkException/VkException.h"
+
 
 VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData)
     : _appInfo({}), _instanceInfo({}), _vkInstance(VK_NULL_HANDLE),
     _vkInstanceExtensions(vkInstanceData.vkInstanceExtensions), _vkValidationLayers(vkInstanceData.vkValidationLayers)
 {
+    VkResult result = _checkInstanceExtensionSupport(vkInstanceData.vkInstanceExtensions);
+    if (result != VK_SUCCESS) {
+        throw VkException(result);
+    }
+
     // App Info
     _appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     _appInfo.pApplicationName = vkInstanceData.appName;
@@ -39,4 +47,20 @@ VkInstanceManager::~VkInstanceManager()
     if (_vkInstance != VK_NULL_HANDLE) {
         vkDestroyInstance(_vkInstance, nullptr);
     }
+}
+
+VkResult VkInstanceManager::_checkInstanceExtensionSupport(const std::vector<const char*>& exts) const {
+    uint32_t extensionCount = 0;
+
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
+    std::set<std::string> requiredExtensions(exts.begin(), exts.end());
+
+    for (const VkExtensionProperties& extension : availableExtensions) {
+        requiredExtensions.erase(extension.extensionName);
+    }
+
+    return requiredExtensions.empty() ? VK_SUCCESS : VK_ERROR_EXTENSION_NOT_PRESENT;
 }

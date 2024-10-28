@@ -106,6 +106,14 @@ private:
      * application, such as surface creation extensions for rendering windows.
      */
     std::vector<const char*> _vkInstanceExtensions;
+
+    /**
+     * @brief Check extension support for the instance.
+     *
+     * @param exts Extensions supposed to be used for this app.
+     * @return VkResult Result format for vulkan error code.
+     */
+    VkResult _checkInstanceExtensionSupport(const std::vector<const char*>& exts) const;
 };
 
 #endif // VKINSTANCEMANAGER_H

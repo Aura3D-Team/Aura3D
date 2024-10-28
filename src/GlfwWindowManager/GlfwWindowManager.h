@@ -18,7 +18,8 @@ class GlfwWindowManager
 {
 public:
     /**
-     * Parameterized constructor to create a Vulkan-compatible window.
+     * @brief Create a Vulkan-compatible window and manage it resources.
+     *
      * Initializes GLFW and creates a window of the specified width and height.
      * Throws an exception if window creation fails.
      *
@@ -28,19 +29,19 @@ public:
     GlfwWindowManager(const int width, const int height);
 
     /**
-     * Destructor. Cleans up and terminates GLFW.
+     * @brief Cleans up and terminates GLFW.
      */
     ~GlfwWindowManager();
 
     /**
-     * Returns the underlying GLFW window instance.
+     * @brief Returns the underlying GLFW window instance.
      *
      * @return GlfwWindowManager* A pointer to the GLFW window.
      */
     GLFWwindow* getWindowInstance();
 
     /**
-     * Main loop processing function. Runs the window's event loop and executes user-defined
+     * @brief Main loop processing function. Runs the window's event loop and executes user-defined
      * actions passed as a callback function.
      *
      * @param actions A callback function that contains custom actions to perform in the loop.
@@ -48,14 +49,14 @@ public:
     void process(const std::function<void ()>& actions);
 
     /**
-     * Create a cross-plataform Vulkan-compatible window
+     * @brief Create a cross-plataform Vulkan-compatible window
      *
      * @param windowName The title of the window.
      */
     void createGlfwWindowManager(const char* windowName);
 
     /**
-     * Retrives Vulkan required extensions for surface creation.
+     * @brief Retrives Vulkan required extensions for surface creation.
      */
     std::vector<const char*> getGlfwVulkanExtensions() const;
 

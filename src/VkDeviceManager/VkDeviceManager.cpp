@@ -1,14 +1,14 @@
 #include "VkDeviceManager.h"
-#include "VkException/VkException.h"
 #include "plog/Log.h"
 
-VkDeviceManager::VkDeviceManager(VkInstance* vkInstance)
+#include "VkException/VkException.h"
+
+VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData)
     : _vkInstance(vkInstance), _physicaldeviceCount(0), _deviceInfo(),
     _physicalDevice(VK_NULL_HANDLE), _device(VK_NULL_HANDLE),
-    _vkQueues(VkQueueManager())
+    _vkQueueManager(VkQueueManager())
 {
-    _deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    _setBestDevice(*_vkInstance);
+    _setBestDevice(*_vkInstance, vkDeviceData);
 }
 
 VkDeviceManager::~VkDeviceManager() {
@@ -19,7 +19,7 @@ VkDeviceManager::~VkDeviceManager() {
     _vkInstance = nullptr;
 }
 
-void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
+void VkDeviceManager::_setBestDevice(VkInstance vkInstance, VkDeviceData vkDeviceData)
 {
     // Enumerate physical devices
     VkResult result = vkEnumeratePhysicalDevices(vkInstance, &_physicaldeviceCount, nullptr);
@@ -91,10 +91,21 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     PLOG_INFO << "Choosed device score: " << bestScore;
     PLOG_INFO << "-------------------------------------------------------------------------------";
 
-    uint32_t graphicsQueueFamilyIndex = _vkQueues.pushQueueInfo(_physicalDevice, VK_QUEUE_GRAPHICS_BIT, 1.0);
+    result = _checkDeviceExtensionSupport(vkDeviceData.vkDeviceExtensions);
+    if (result != VK_SUCCESS) {
+        throw VkException(result);
+    }
 
-    _deviceInfo.queueCreateInfoCount = static_cast<uint32_t>(_vkQueues.getVkDeviceQueueCreateInfos().size());
-    _deviceInfo.pQueueCreateInfos = _vkQueues.getVkDeviceQueueCreateInfos().data();
+    uint32_t graphicsQueueFamilyIndex = _vkQueueManager.pushQueueInfo(_physicalDevice, VK_QUEUE_GRAPHICS_BIT, 1.0);
+
+    const std::vector<VkDeviceQueueCreateInfo> vkDeviceQueueCreateInfos = _vkQueueManager.getDeviceQueueCreateInfos();
+    _deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    _deviceInfo.queueCreateInfoCount = static_cast<uint32_t>(vkDeviceQueueCreateInfos.size());
+    _deviceInfo.pQueueCreateInfos = vkDeviceQueueCreateInfos.data();
+    _deviceInfo.enabledLayerCount = static_cast<uint32_t>(vkDeviceData.vkEnabledLayers.size());
+    _deviceInfo.ppEnabledLayerNames = vkDeviceData.vkEnabledLayers.data();
+    _deviceInfo.enabledExtensionCount = static_cast<uint32_t>(vkDeviceData.vkDeviceExtensions.size());
+    _deviceInfo.ppEnabledExtensionNames = vkDeviceData.vkDeviceExtensions.data();
     _deviceInfo.pEnabledFeatures = &_deviceFeatures;
 
     result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
@@ -102,7 +113,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         throw VkException(result);
     }
 
-    _vkQueues.setupQueue(_physicalDevice, _device, VK_QUEUE_GRAPHICS_BIT);
+    _vkQueueManager.setupQueue(_physicalDevice, _device, VK_QUEUE_GRAPHICS_BIT);
 
     PLOG_INFO << "Logical Vulkan device created successfully.";
 }
@@ -112,7 +123,28 @@ VkDevice VkDeviceManager::getDevice()
     return _device;
 }
 
-VkPhysicalDevice VkDeviceManager::getPhysicalDevice()
+VkPhysicalDevice* VkDeviceManager::getPhysicalDevice()
 {
-    return _physicalDevice;
+    return &_physicalDevice;
+}
+
+VkBool32 VkDeviceManager::physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager vkSurfaceManager, const VkQueueFlags flags) {
+    return vkSurfaceManager.getQueuePhysicalDeviceSurfaceSupport(
+        _physicalDevice, _vkQueueManager.getQueueData(flags)->vkDeviceQueueCreateInfo.queueFamilyIndex);
+}
+
+VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> exts) const {
+    uint32_t extensionCount = 0;
+    vkEnumerateDeviceExtensionProperties(_physicalDevice, nullptr, &extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(_physicalDevice, nullptr, &extensionCount, availableExtensions.data());
+
+    std::set<std::string> requiredExtensions(exts.begin(), exts.end());
+
+    for (const VkExtensionProperties& extension : availableExtensions) {
+        requiredExtensions.erase(extension.extensionName);
+    }
+
+    return requiredExtensions.empty() ? VK_SUCCESS : VK_ERROR_EXTENSION_NOT_PRESENT;
 }
