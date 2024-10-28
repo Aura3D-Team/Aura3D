@@ -5,6 +5,7 @@
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
+#include <vector>
 
 /**
  * @brief Manages the creation and destruction of a Vulkan surface for rendering.
