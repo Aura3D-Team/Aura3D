@@ -23,7 +23,9 @@ private:
 
     VkDevice* _device;
 
-    VkSurfaceFormatKHR _chooseBestSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+    VkSurfaceFormatKHR _chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+
+    VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 };
 
 #endif // SWAPCHAINMANAGER_H

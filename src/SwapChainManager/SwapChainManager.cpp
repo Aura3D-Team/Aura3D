@@ -32,7 +32,12 @@ SwapChainManager::~SwapChainManager()
     _device = nullptr;
 }
 
-VkSurfaceFormatKHR SwapChainManager::_chooseBestSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
+VkSurfaceFormatKHR SwapChainManager::_chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
+{
+
+}
+
+VkPresentModeKHR SwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
 {
 
 }
