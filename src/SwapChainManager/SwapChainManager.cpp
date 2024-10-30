@@ -1,8 +1,24 @@
 #include "SwapChainManager.h"
 #include "VkException/VkException.h"
+#include <algorithm>
 
 SwapChainManager::SwapChainManager(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface, VkDevice* device)
     : _swapChain(VK_NULL_HANDLE), _swapChainSupportDetails({}), _device(device)
+{
+    _initSwapChainSupportDetails(physicalDevice, vkSurface);
+
+
+}
+
+SwapChainManager::~SwapChainManager()
+{
+    if (_swapChain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
+    }
+    _device = nullptr;
+}
+
+void SwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)
 {
     VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, vkSurface, &_swapChainSupportDetails.capabilities);
     if (result != VK_SUCCESS) throw VkException(result);
@@ -24,20 +40,59 @@ SwapChainManager::SwapChainManager(VkPhysicalDevice physicalDevice, VkSurfaceKHR
     }
 }
 
-SwapChainManager::~SwapChainManager()
+SwapChainSupportDetails* SwapChainManager::getSwapChainSupportDetails()
 {
-    if (_swapChain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
+    return &_swapChainSupportDetails;
+}
+
+VkExtent2D SwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window)
+{
+    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+        return capabilities.currentExtent;
     }
-    _device = nullptr;
+
+    int width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+
+    VkExtent2D actualExtent = {
+        static_cast<uint32_t>(width),
+        static_cast<uint32_t>(height)
+    };
+
+    actualExtent.width = std::clamp(
+        actualExtent.width,
+        capabilities.minImageExtent.width,
+        capabilities.maxImageExtent.width
+    );
+
+    actualExtent.height = std::clamp(
+        actualExtent.height,
+        capabilities.minImageExtent.height,
+        capabilities.maxImageExtent.height
+    );
+
+    return actualExtent;
 }
 
-VkSurfaceFormatKHR SwapChainManager::_chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
+VkSurfaceFormatKHR SwapChainManager::_chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats,
+                                                              const VkFormat vkFormat, const VkColorSpaceKHR vkColorSpace)
 {
+    for (const VkSurfaceFormatKHR& format : availableFormats) {
+        if (format.format == vkFormat && format.colorSpace == vkColorSpace) {
+            return format;
+        }
+    }
 
+    return availableFormats[0];
 }
 
-VkPresentModeKHR SwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
+VkPresentModeKHR SwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VkPresentModeKHR vkPresentMode)
 {
+    for (const VkPresentModeKHR& presentMode : availablePresentModes) {
+        if (presentMode == vkPresentMode) {
+            return presentMode;
+        }
+    }
 
+    return VK_PRESENT_MODE_FIFO_KHR;
 }

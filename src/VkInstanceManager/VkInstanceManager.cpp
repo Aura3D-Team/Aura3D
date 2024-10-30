@@ -1,5 +1,6 @@
 #include "VkInstanceManager.h"
 #include <set>
+#include <plog/Log.h>
 
 #include "VkException/VkException.h"
 
@@ -14,6 +15,7 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData)
     }
 
     // App Info
+    _appInfo.pNext = nullptr;
     _appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     _appInfo.pApplicationName = vkInstanceData.appName;
     _appInfo.applicationVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
@@ -25,13 +27,27 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData)
     _instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     _instanceInfo.pApplicationInfo = &_appInfo;
 
+#ifdef NDEBUG
+    const bool enableValidationLayers = false;
+#else
+    const bool enableValidationLayers = true;
+#endif
+
+    // Validation Layers
+    if (enableValidationLayers) {
+        _vkInstanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+        _instanceInfo.enabledLayerCount = static_cast<uint32_t>(_vkValidationLayers.size());
+        _instanceInfo.ppEnabledLayerNames = _vkValidationLayers.data();
+    } else {
+        _instanceInfo.enabledLayerCount = 0;
+    }
+
     // Extensions
     _instanceInfo.enabledExtensionCount = static_cast<uint32_t>(_vkInstanceExtensions.size());
     _instanceInfo.ppEnabledExtensionNames = _vkInstanceExtensions.data();
 
-    // Validation Layers
-    _instanceInfo.enabledLayerCount = static_cast<uint32_t>(_vkValidationLayers.size());
-    _instanceInfo.ppEnabledLayerNames = _vkValidationLayers.data();
+    _checkValidationLayerSupport(_vkValidationLayers);
 
     VkResult vkResult = vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance);
     if (vkResult != VK_SUCCESS) throw VkException(vkResult);
@@ -42,10 +58,31 @@ VkInstance* VkInstanceManager::getVkInstance()
     return &_vkInstance;
 }
 
+bool VkInstanceManager::_checkValidationLayerSupport(const std::vector<const char*>& validationLayers) const
+{
+    uint32_t layerCount;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+    std::vector<VkLayerProperties> availableLayers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+    uint32_t layerRequiredCount=0;
+    for (const char* layerName : validationLayers) {
+        for (const VkLayerProperties& layerProperties : availableLayers) {
+            if (strcmp(layerName, layerProperties.layerName) == 0) {
+                layerRequiredCount++;
+            }
+        }
+    }
+
+    return layerRequiredCount == validationLayers.size();
+}
+
 VkInstanceManager::~VkInstanceManager()
 {
     if (_vkInstance != VK_NULL_HANDLE) {
         vkDestroyInstance(_vkInstance, nullptr);
+        _vkInstance = VK_NULL_HANDLE;
     }
 }
 

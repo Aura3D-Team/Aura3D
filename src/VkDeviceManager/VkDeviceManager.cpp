@@ -14,7 +14,7 @@ VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceDa
 VkDeviceManager::~VkDeviceManager() {
     if (_device != VK_NULL_HANDLE) {
         vkDestroyDevice(_device, nullptr);
-        PLOG_INFO << "Vulkan device destroyed.";
+        _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
 }

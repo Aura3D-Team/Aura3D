@@ -114,6 +114,8 @@ private:
      * @return VkResult Result format for vulkan error code.
      */
     VkResult _checkInstanceExtensionSupport(const std::vector<const char*>& exts) const;
+
+    bool _checkValidationLayerSupport(const std::vector<const char*>& validationLayers) const;
 };
 
 #endif // VKINSTANCEMANAGER_H
