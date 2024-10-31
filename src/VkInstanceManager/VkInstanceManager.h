@@ -5,6 +5,9 @@
 
 #include <vulkan/vulkan.hpp>
 #include <vector>
+#include <memory>
+
+#include "VkDebugger/VkDebugger.h"
 
 /**
  * @brief This struct represents Important data for VkInstance creation
@@ -61,6 +64,18 @@ public:
      */
     VkInstance* getVkInstance();
 
+    /**
+     * Returns a pointer to the Vulkan instance creation info.
+     *
+     * This function provides access to the Vulkan app creation info, which can be
+     * be accessed for checks and debug creation.
+     *
+     * @return VkApplicationInfo* - Pointer to the Vulkan instance creation info.
+     */
+    VkApplicationInfo* getAppInfo();
+
+    std::unique_ptr<VkDebugger>* getVkDebugger();
+
 private:
     /**
      * Vulkan instance handle.
@@ -88,6 +103,8 @@ private:
      * extensions.
      */
     VkInstanceCreateInfo _instanceInfo;
+
+    std::unique_ptr<VkDebugger> _vkDebugger;
 
     /**
      * List of validation layers to enable.
