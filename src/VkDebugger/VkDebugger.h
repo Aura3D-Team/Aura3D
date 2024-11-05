@@ -60,17 +60,55 @@ public:
     );
 
     /**
+     * @brief Sets up configuration information for Vulkan's debug messenger.
+     *
+     * The `setupDebugMessenger` function configures a `VkDebugUtilsMessengerCreateInfoEXT` structure
+     * with the desired message severity levels, message types, and the callback function used for
+     * handling debug messages.
+     *
+     * This structure is used during Vulkan instance creation to enable validation layer messages.
+     * It can also be used when creating the debug messenger explicitly after the instance has been
+     * created.
+     *
+     * @return A `VkDebugUtilsMessengerCreateInfoEXT` structure initialized with settings for
+     *         capturing and handling debug messages from Vulkan's validation layers.
+     *
+     * ### Debug Message Configuration
+     * - **Message Severity**:
+     *   - `VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT`: Provides verbose diagnostic messages.
+     *   - `VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT`: Logs informational messages.
+     *   - `VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT`: Captures warnings that may indicate
+     *     potential issues.
+     *   - `VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT`: Captures errors that could cause
+     *     application crashes or undefined behavior.
+     * - **Message Types**:
+     *   - `VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT`: General messages from the Vulkan API.
+     *   - `VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT`: Validation layer messages for potential
+     *     misuse or non-optimal usage of Vulkan commands.
+     *   - `VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT`: Messages that provide hints for improving
+     *     performance.
+     *
+     * ### Usage
+     * This function is typically called to get a `VkDebugUtilsMessengerCreateInfoEXT` structure
+     * that can be attached to `VkInstanceCreateInfo::pNext` during Vulkan instance creation.
+     *
+     * @see VkDebugUtilsMessengerCreateInfoEXT
+     */
+    static VkDebugUtilsMessengerCreateInfoEXT setupDebugMessenger();
+
+    /**
      * @brief Creates the Vulkan debug messenger.
      *
      * This function initializes the debug messenger using the provided
      * `VkDebugUtilsMessengerCreateInfoEXT` structure, allowing Vulkan to send debug
      * and validation messages to the specified callback.
      *
+     * @param debugInfo The configuration information for Vulkan's debug messenger.
      * @param pAllocator Optional custom allocator, or nullptr for the default allocator.
      *
      * @return VkResult Result of the creation call (VK_SUCCESS if successful).
      */
-    VkResult createDebugUtilsMessengerEXT(VkAllocationCallbacks* pAllocator);
+    VkResult createDebugUtilsMessengerEXT(VkDebugUtilsMessengerCreateInfoEXT* debugInfo, VkAllocationCallbacks* pAllocator);
 
     /**
      * @brief Retrieves a pointer to the debug messenger.
@@ -82,21 +120,10 @@ public:
      */
     VkDebugUtilsMessengerEXT* getVkDebugMessenger();
 
-    /**
-     * @brief Retrieves a pointer to the debug creation info.
-     *
-     * Provides access to the created debug info, allowing it to be accessed externally
-     *
-     * @return VkDebugUtilsMessengerCreateInfoEXT* A pointer to the Vulkan debug messenger.
-     */
-    VkDebugUtilsMessengerCreateInfoEXT* getVkDebugInfo();
-
 private:
     VkInstance* _vkInstance; ///< Pointer to the Vulkan instance associated with this debug messenger.
 
     VkDebugUtilsMessengerEXT _debugMessenger; ///< The Vulkan debug messenger handle.
-
-    VkDebugUtilsMessengerCreateInfoEXT _debugInfo; ///< The create info structure with settings for the debug messenger.
 };
 
 #endif // VKDEBUGGER_H

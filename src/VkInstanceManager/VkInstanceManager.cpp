@@ -7,25 +7,11 @@
 
 VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData)
     : _appInfo({}), _instanceInfo({}), _vkInstance(VK_NULL_HANDLE),
-    _vkInstanceExtensions(vkInstanceData.vkInstanceExtensions), _vkValidationLayers(vkInstanceData.vkValidationLayers)
+    _vkInstanceExtensions(std::move(vkInstanceData.vkInstanceExtensions)), _vkValidationLayers(std::move(vkInstanceData.vkValidationLayers)),
+    _vkDebugger(nullptr)
 {
-    VkResult result = _checkInstanceExtensionSupport(vkInstanceData.vkInstanceExtensions);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
-
-    // App Info
-    _appInfo.pNext = nullptr;
-    _appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    _appInfo.pApplicationName = vkInstanceData.appName;
-    _appInfo.applicationVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
-    _appInfo.pEngineName = vkInstanceData.engineName;
-    _appInfo.engineVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
-    _appInfo.apiVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
-
-    // Instance Info config
-    _instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    _instanceInfo.pApplicationInfo = &_appInfo;
+    initializeAppInfo(vkInstanceData);
+    initializeInstanceInfo();
 
 #ifdef NDEBUG
     const bool enableValidationLayers = false;
@@ -33,32 +19,90 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData)
     const bool enableValidationLayers = true;
 #endif
 
-    // Debugger and validation layers
-    if (enableValidationLayers) {
-        _vkDebugger = std::make_unique<VkDebugger>(&_vkInstance);
-        _appInfo.pNext = _vkDebugger->getVkDebugMessenger();
+    VkResult vkDebuggerPreparationResult = prepareVkDebugger(enableValidationLayers);
 
-        _vkInstanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-
-        _instanceInfo.enabledLayerCount = static_cast<uint32_t>(_vkValidationLayers.size());
-        _instanceInfo.ppEnabledLayerNames = _vkValidationLayers.data();
-
-        VkResult result = _vkDebugger->createDebugUtilsMessengerEXT(nullptr);
-        if (result != VK_SUCCESS) {
-            throw VkException(result);
-        }
-    } else {
-        _instanceInfo.enabledLayerCount = 0;
-    }
-
-    // Extensions
-    _instanceInfo.enabledExtensionCount = static_cast<uint32_t>(_vkInstanceExtensions.size());
-    _instanceInfo.ppEnabledExtensionNames = _vkInstanceExtensions.data();
-
-    _checkValidationLayerSupport(_vkValidationLayers);
+    validateInstanceExtensions();
+    validateValidationLayers();
 
     VkResult vkResult = vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance);
     if (vkResult != VK_SUCCESS) throw VkException(vkResult);
+
+    if (vkDebuggerPreparationResult == VK_SUCCESS) {
+        createDebuggerInstance(&_debugCreateInfo);
+    }
+}
+
+VkInstanceManager::~VkInstanceManager()
+{
+    if (_vkDebugger) {
+        delete _vkDebugger;
+        _vkDebugger = nullptr;
+    }
+
+    if (_vkInstance != VK_NULL_HANDLE) {
+        vkDestroyInstance(_vkInstance, nullptr);
+        _vkInstance = VK_NULL_HANDLE;
+    }
+}
+
+void VkInstanceManager::initializeAppInfo(const VkInstanceData& vkInstanceData) {
+    _appInfo = {};
+    _appInfo.pNext = nullptr;
+    _appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    _appInfo.pApplicationName = vkInstanceData.appName;
+    _appInfo.applicationVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
+    _appInfo.pEngineName = vkInstanceData.engineName;
+    _appInfo.engineVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
+    _appInfo.apiVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
+}
+
+void VkInstanceManager::initializeInstanceInfo() {
+    _instanceInfo = {};
+    _instanceInfo.pNext = nullptr;
+    _instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    _instanceInfo.pApplicationInfo = &_appInfo;
+}
+
+void VkInstanceManager::validateInstanceExtensions() {
+    VkResult result = _checkInstanceExtensionSupport(_vkInstanceExtensions);
+    if (result != VK_SUCCESS) {
+        throw VkException(result);
+    }
+    _instanceInfo.enabledExtensionCount = static_cast<uint32_t>(_vkInstanceExtensions.size());
+    _instanceInfo.ppEnabledExtensionNames = _vkInstanceExtensions.data();
+}
+
+void VkInstanceManager::validateValidationLayers() {
+    VkResult result = _checkValidationLayerSupport(_vkValidationLayers);
+    if (result != VK_SUCCESS) {
+        throw VkException(result);
+    }
+    _instanceInfo.enabledLayerCount = static_cast<uint32_t>(_vkValidationLayers.size());
+    _instanceInfo.ppEnabledLayerNames = _vkValidationLayers.data();
+}
+
+VkResult VkInstanceManager::prepareVkDebugger(const bool enableValidationLayers)
+{
+    VkResult result = VK_NOT_READY;
+    if (enableValidationLayers) {
+        result = _checkInstanceExtensionSupport({VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+        if (result == VK_SUCCESS) {
+            _vkInstanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            _debugCreateInfo = VkDebugger::setupDebugMessenger();
+            _instanceInfo.pNext = &_debugCreateInfo;
+        } else {
+            PLOG_WARNING << "Warning: VK_EXT_DEBUG_UTILS_EXTENSION_NAME is not supported and will not be used.";
+        }
+    }
+    return result;
+}
+
+void VkInstanceManager::createDebuggerInstance(VkDebugUtilsMessengerCreateInfoEXT* debugCreateInfo) {
+    _vkDebugger = new VkDebugger(&_vkInstance);
+    VkResult result = _vkDebugger->createDebugUtilsMessengerEXT(debugCreateInfo, nullptr);
+    if (result != VK_SUCCESS) {
+        throw VkException(result);
+    }
 }
 
 VkInstance* VkInstanceManager::getVkInstance()
@@ -71,12 +115,12 @@ VkApplicationInfo* VkInstanceManager::getAppInfo()
     return &_appInfo;
 }
 
-std::unique_ptr<VkDebugger>* VkInstanceManager::getVkDebugger()
+VkDebugger* VkInstanceManager::getVkDebugger()
 {
-    return &_vkDebugger;
+    return _vkDebugger;
 }
 
-bool VkInstanceManager::_checkValidationLayerSupport(const std::vector<const char*>& validationLayers) const
+VkResult VkInstanceManager::_checkValidationLayerSupport(const std::vector<const char*>& validationLayers) const
 {
     uint32_t layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -93,15 +137,7 @@ bool VkInstanceManager::_checkValidationLayerSupport(const std::vector<const cha
         }
     }
 
-    return layerRequiredCount == validationLayers.size();
-}
-
-VkInstanceManager::~VkInstanceManager()
-{
-    if (_vkInstance != VK_NULL_HANDLE) {
-        vkDestroyInstance(_vkInstance, nullptr);
-        _vkInstance = VK_NULL_HANDLE;
-    }
+    return layerRequiredCount == validationLayers.size() ? VK_SUCCESS : VK_ERROR_LAYER_NOT_PRESENT;
 }
 
 VkResult VkInstanceManager::_checkInstanceExtensionSupport(const std::vector<const char*>& exts) const {
