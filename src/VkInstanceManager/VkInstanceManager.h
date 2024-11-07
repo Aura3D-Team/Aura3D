@@ -5,6 +5,7 @@
 
 #include <vulkan/vulkan.hpp>
 #include <vector>
+#include <memory>
 
 #include "VkDebugger/VkDebugger.h"
 
@@ -151,7 +152,7 @@ public:
      *
      * @see VkDebugger for more details.
      */
-    VkDebugger* getVkDebugger();
+    std::unique_ptr<VkDebugger>* getVkDebugger();
 
 private:
     /**
@@ -213,7 +214,7 @@ private:
      * `_vkDebugger` must be destroyed before the Vulkan instance, as the debug
      * messenger is tied to the instance's lifecycle.
      */
-    VkDebugger* _vkDebugger;
+    std::unique_ptr<VkDebugger> _vkDebugger;
 
     /**
      * @brief Configuration for Vulkan debug messaging.

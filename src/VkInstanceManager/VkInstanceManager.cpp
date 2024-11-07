@@ -34,11 +34,7 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData)
 
 VkInstanceManager::~VkInstanceManager()
 {
-    if (_vkDebugger) {
-        delete _vkDebugger;
-        _vkDebugger = nullptr;
-    }
-
+    _vkDebugger.reset();
     if (_vkInstance != VK_NULL_HANDLE) {
         vkDestroyInstance(_vkInstance, nullptr);
         _vkInstance = VK_NULL_HANDLE;
@@ -98,7 +94,7 @@ VkResult VkInstanceManager::prepareVkDebugger(const bool enableValidationLayers)
 }
 
 void VkInstanceManager::createDebuggerInstance(VkDebugUtilsMessengerCreateInfoEXT* debugCreateInfo) {
-    _vkDebugger = new VkDebugger(&_vkInstance);
+    _vkDebugger = std::make_unique<VkDebugger>(&_vkInstance);
     VkResult result = _vkDebugger->createDebugUtilsMessengerEXT(debugCreateInfo, nullptr);
     if (result != VK_SUCCESS) {
         throw VkException(result);
@@ -115,9 +111,9 @@ VkApplicationInfo* VkInstanceManager::getAppInfo()
     return &_appInfo;
 }
 
-VkDebugger* VkInstanceManager::getVkDebugger()
+std::unique_ptr<VkDebugger>* VkInstanceManager::getVkDebugger()
 {
-    return _vkDebugger;
+    return &_vkDebugger;
 }
 
 VkResult VkInstanceManager::_checkValidationLayerSupport(const std::vector<const char*>& validationLayers) const
