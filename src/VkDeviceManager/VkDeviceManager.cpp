@@ -6,9 +6,9 @@
 VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData)
     : _vkInstance(vkInstance), _physicaldeviceCount(0), _deviceInfo(),
     _physicalDevice(VK_NULL_HANDLE), _device(VK_NULL_HANDLE),
-    _vkQueueManager(VkQueueManager())
+    _vkQueueManager(VkQueueManager()), _vkDeviceCreationData(std::move(vkDeviceData))
 {
-    _setBestDevice(*_vkInstance, vkDeviceData);
+    _setBestDevice(*_vkInstance);
 }
 
 VkDeviceManager::~VkDeviceManager() {
@@ -19,7 +19,7 @@ VkDeviceManager::~VkDeviceManager() {
     _vkInstance = nullptr;
 }
 
-void VkDeviceManager::_setBestDevice(VkInstance vkInstance, VkDeviceData vkDeviceData)
+void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 {
     // Enumerate physical devices
     VkResult result = vkEnumeratePhysicalDevices(vkInstance, &_physicaldeviceCount, nullptr);
@@ -91,21 +91,35 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance, VkDeviceData vkDevic
     PLOG_INFO << "Choosed device score: " << bestScore;
     PLOG_INFO << "-------------------------------------------------------------------------------";
 
-    result = _checkDeviceExtensionSupport(vkDeviceData.vkDeviceExtensions);
+    result = _checkDeviceExtensionSupport(_vkDeviceCreationData.vkDeviceExtensions);
     if (result != VK_SUCCESS) {
         throw VkException(result);
     }
 
-    uint32_t graphicsQueueFamilyIndex = _vkQueueManager.pushQueueInfo(_physicalDevice, VK_QUEUE_GRAPHICS_BIT, 1.0);
+    VkQueueFlags exclusiveMergedFlag = 0;
+    for (const VkQueueFlags& f : _vkDeviceCreationData.exclusiveQueueFlags) {
+        exclusiveMergedFlag |= f;
+    }
+
+    if (exclusiveMergedFlag != 0) {
+        _vkQueueManager.pushQueueInfo(_physicalDevice, exclusiveMergedFlag, 1.0f);
+    }
+
+    float priority = 0.95f;
+    for (const VkQueueFlags& f : _vkDeviceCreationData.concurrentQueueFlags) {
+        _vkQueueManager.pushQueueInfo(_physicalDevice, f, priority);
+        priority -= 0.05f;
+    }
 
     const std::vector<VkDeviceQueueCreateInfo> vkDeviceQueueCreateInfos = _vkQueueManager.getDeviceQueueCreateInfos();
+    _deviceInfo.pNext = nullptr;
     _deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     _deviceInfo.queueCreateInfoCount = static_cast<uint32_t>(vkDeviceQueueCreateInfos.size());
     _deviceInfo.pQueueCreateInfos = vkDeviceQueueCreateInfos.data();
-    _deviceInfo.enabledLayerCount = static_cast<uint32_t>(vkDeviceData.vkEnabledLayers.size());
-    _deviceInfo.ppEnabledLayerNames = vkDeviceData.vkEnabledLayers.data();
-    _deviceInfo.enabledExtensionCount = static_cast<uint32_t>(vkDeviceData.vkDeviceExtensions.size());
-    _deviceInfo.ppEnabledExtensionNames = vkDeviceData.vkDeviceExtensions.data();
+    _deviceInfo.enabledLayerCount = static_cast<uint32_t>(_vkDeviceCreationData.vkEnabledLayers.size());
+    _deviceInfo.ppEnabledLayerNames = _vkDeviceCreationData.vkEnabledLayers.data();
+    _deviceInfo.enabledExtensionCount = static_cast<uint32_t>(_vkDeviceCreationData.vkDeviceExtensions.size());
+    _deviceInfo.ppEnabledExtensionNames = _vkDeviceCreationData.vkDeviceExtensions.data();
     _deviceInfo.pEnabledFeatures = &_deviceFeatures;
 
     result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
@@ -113,19 +127,27 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance, VkDeviceData vkDevic
         throw VkException(result);
     }
 
-    _vkQueueManager.setupQueue(_physicalDevice, _device, VK_QUEUE_GRAPHICS_BIT);
+    _vkQueueManager.setupQueue(_physicalDevice, _device, exclusiveMergedFlag);
+    for (const VkQueueFlags& f : _vkDeviceCreationData.concurrentQueueFlags) {
+        _vkQueueManager.setupQueue(_physicalDevice, _device, f);
+    }
 
     PLOG_INFO << "Logical Vulkan device created successfully.";
 }
 
-VkDevice VkDeviceManager::getDevice()
+VkDevice* VkDeviceManager::getDevice()
 {
-    return _device;
+    return &_device;
 }
 
 VkPhysicalDevice* VkDeviceManager::getPhysicalDevice()
 {
     return &_physicalDevice;
+}
+
+VkDeviceData* VkDeviceManager::getDeviceCreationData()
+{
+    return &_vkDeviceCreationData;
 }
 
 VkBool32 VkDeviceManager::physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager vkSurfaceManager, const VkQueueFlags flags) {

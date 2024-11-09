@@ -18,6 +18,9 @@
 struct VkDeviceData {
     std::vector<const char*> vkDeviceExtensions;
     std::vector<const char*> vkEnabledLayers;
+
+    std::vector<VkQueueFlags> concurrentQueueFlags;
+    std::vector<VkQueueFlags> exclusiveQueueFlags;
 };
 
 /**
@@ -48,7 +51,7 @@ public:
     ~VkDeviceManager();
 
     /**
-     * @brief Retrieves the Vulkan logical device.
+     * @brief Retrieves a pointer to Vulkan logical device.
      *
      * This method returns the Vulkan logical device (`VkDevice`) created by the manager,
      * which is used to perform operations such as drawing, computing, and rendering.
@@ -56,7 +59,7 @@ public:
      *
      * @return VkDevice The Vulkan logical device that has been created with specific queue configurations.
      */
-    VkDevice getDevice();
+    VkDevice* getDevice();
 
     /**
      * @brief Retrieves a pointer to the Vulkan physical device.
@@ -69,6 +72,8 @@ public:
      */
     VkPhysicalDevice* getPhysicalDevice();
 
+    VkDeviceData* getDeviceCreationData();
+
     /**
      * @brief See if physical device supports Vulkan surface operations
      * @param vkSurfaceManager The VkSurfaceManager
@@ -80,6 +85,7 @@ public:
 private:
     VkInstance* _vkInstance; ///< Vulkan instance pointer used bind the best device
 
+    VkDeviceData _vkDeviceCreationData; ///< This struct represents Important data for VkDevice creation
     VkDeviceCreateInfo _deviceInfo;  ///< Information required to create the logical device
     VkDevice _device;  ///< Handle to the Vulkan logical device
 
@@ -98,11 +104,10 @@ private:
      * device from the selected physical device.
      *
      * @param vkInstance Vulkan instance to set the device
-     * @param vkDeviceData Data for deviceInfo completion
      *
      * Throws a `VkException` if any Vulkan operation fails during device selection or creation.
      */
-    void _setBestDevice(VkInstance vkInstance, VkDeviceData vkDeviceData);
+    void _setBestDevice(VkInstance vkInstance);
 
     /**
      * @brief Check extension support for the the physical device.

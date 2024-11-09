@@ -16,13 +16,15 @@ VkQueueManager::~VkQueueManager()
 void VkQueueManager::setupQueue(VkPhysicalDevice physicalDevice, VkDevice device, const VkQueueFlags flags)
 {
     if (_mapVkQueues.find(flags) != _mapVkQueues.end()) {
-        VkQueue queue;
         QueueData& queueData = _mapVkQueues[flags];
-        vkGetDeviceQueue(device, queueData.vkDeviceQueueCreateInfo.queueFamilyIndex, queueData.vkDeviceQueueCreateInfo.queueCount-1, &queue);
 
-        queueData.queue = queue;
+        for (uint32_t i = 0; i < queueData.vkDeviceQueueCreateInfo.queueCount; ++i) {
+            VkQueue queue;
+            vkGetDeviceQueue(device, queueData.vkDeviceQueueCreateInfo.queueFamilyIndex, i, &queue);
+            queueData.queues.push_back(queue);
 
-        PLOG_INFO << "Queue set up successfully.";
+            PLOG_INFO << "Queue " << i << " set up successfully for flags " << flags;
+        }
     }
     else {
         throw VkException("There is no QueueData for this queue.");
@@ -30,28 +32,27 @@ void VkQueueManager::setupQueue(VkPhysicalDevice physicalDevice, VkDevice device
 }
 
 uint32_t VkQueueManager::pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueueFlags flags,  const float queuePriority) {
-    if (_mapVkQueues.find(flags) == _mapVkQueues.end()) {
-        uint32_t queueFamilyIndex = findQueueFamilyIndex(physicalDevice, flags);
-        if (queueFamilyIndex == UINT32_MAX) {
-            throw VkException("No suitable queue family found for graphics.");
-        }
+    uint32_t queueFamilyIndex = findQueueFamilyIndex(physicalDevice, flags);
+    if (queueFamilyIndex == UINT32_MAX) {
+        throw VkException("No suitable queue family found for graphics.");
+    }
 
+    if (_mapVkQueues.find(flags) == _mapVkQueues.end()) {
         QueueData& queueData = _mapVkQueues[flags];
-        queueData.queue = VK_NULL_HANDLE;
-        queueData.queuePriority = queuePriority;
+        queueData.queuesPriorities.push_back(queuePriority);
 
         queueData.vkDeviceQueueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueData.vkDeviceQueueCreateInfo.queueFamilyIndex = queueFamilyIndex;
         queueData.vkDeviceQueueCreateInfo.queueCount = 1;
-        queueData.vkDeviceQueueCreateInfo.pQueuePriorities = &queueData.queuePriority;
-
-        return queueFamilyIndex;
+        queueData.vkDeviceQueueCreateInfo.pQueuePriorities = queueData.queuesPriorities.data();
     } else {
         QueueData& queueData = _mapVkQueues[flags];
-        queueData.vkDeviceQueueCreateInfo.queueCount++;
+        queueData.queuesPriorities.push_back(queuePriority);
+        queueData.vkDeviceQueueCreateInfo.queueCount = queueData.queuesPriorities.size();
+        queueData.vkDeviceQueueCreateInfo.pQueuePriorities = queueData.queuesPriorities.data();
     }
 
-    return _mapVkQueues[flags].vkDeviceQueueCreateInfo.queueFamilyIndex;
+    return queueFamilyIndex;
 }
 
 QueueData* VkQueueManager::getQueueData(VkQueueFlags flags)
@@ -64,7 +65,30 @@ QueueData* VkQueueManager::getQueueData(VkQueueFlags flags)
     }
 }
 
-uint32_t VkQueueManager::findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueueFlags flags)
+uint32_t VkQueueManager::getQueueMapSize() const
+{
+    return _mapVkQueues.size();
+}
+
+uint32_t VkQueueManager::findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface) {
+    std::vector<VkQueueFamilyProperties> queueFamilies = findQueueFamilies(physicalDevice);
+
+    for (uint32_t i = 0; i < queueFamilies.size(); i++) {
+        if ((queueFamilies[i].queueFlags & flags) == flags) {
+            if (surface != VK_NULL_HANDLE) {
+                if (isPresentQueueSupported(physicalDevice, i, surface)) {
+                    return i;
+                }
+            } else {
+                return i;
+            }
+        }
+    }
+
+    return UINT32_MAX;
+}
+
+std::vector<VkQueueFamilyProperties> VkQueueManager::findQueueFamilies(VkPhysicalDevice physicalDevice)
 {
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
@@ -72,13 +96,13 @@ uint32_t VkQueueManager::findQueueFamilyIndex(VkPhysicalDevice physicalDevice, V
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-    for (uint32_t i = 0; i < queueFamilyCount; i++) {
-        if (queueFamilies[i].queueFlags & flags) {
-            return i;
-        }
-    }
+    return queueFamilies;
+}
 
-    return UINT32_MAX;
+bool VkQueueManager::isPresentQueueSupported(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, VkSurfaceKHR surface) {
+    VkBool32 presentSupport = VK_FALSE;
+    vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, queueFamilyIndex, surface, &presentSupport);
+    return presentSupport == VK_TRUE;
 }
 
 std::vector<VkDeviceQueueCreateInfo> VkQueueManager::getDeviceQueueCreateInfos() const

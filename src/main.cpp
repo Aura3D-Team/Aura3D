@@ -17,13 +17,16 @@
 #include "VkInstanceManager/VkInstanceManager.h"
 #include "VkDeviceManager/VkDeviceManager.h"
 #include "VkSurfaceManager/VkSurfaceManager.h"
+#include "VkSwapChainManager/VkSwapChainManager.h"
 
 int main(int argc, char **argv)
 {
     static plog::ColorConsoleAppender<plog::TxtFormatter> consoleAppender;
     plog::init(plog::debug, &consoleAppender);
 
+
     std::unique_ptr<GlfwWindowManager> glfwWindowManager = std::make_unique<GlfwWindowManager>(1280, 720);
+
 
     VkInstanceData vkInstanceData = {
         .appName = "Aura3D",
@@ -42,14 +45,19 @@ int main(int argc, char **argv)
 
     std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>(vkInstanceData);
 
+
     VkDeviceData vkDeviceData = {
         .vkDeviceExtensions = {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         },
-        .vkEnabledLayers = {}
+        .vkEnabledLayers = {},
+        .concurrentQueueFlags = {},
+        .exclusiveQueueFlags = {VK_QUEUE_GRAPHICS_BIT, VK_QUEUE_COMPUTE_BIT, VK_QUEUE_TRANSFER_BIT}
     };
 
+
     std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>(vkInstance->getVkInstance(), vkDeviceData);
+
 
     glfwWindowManager->createGlfwWindowManager("Aura3D");
     std::unique_ptr<VkSurfaceManager> vkSurfaceManager = std::make_unique<VkSurfaceManager>(
@@ -57,9 +65,19 @@ int main(int argc, char **argv)
         glfwWindowManager->getWindowInstance()
     );
 
+
+    std::unique_ptr<VkSwapChainManager> vkVkSwapChainManager = std::make_unique<VkSwapChainManager>(
+        *vkDeviceManager->getPhysicalDevice(),
+        vkDeviceManager->getDevice(),
+        *vkSurfaceManager->getSurface()
+    );
+    vkVkSwapChainManager->createSwapChain(glfwWindowManager->getWindowInstance(), *vkSurfaceManager->getSurface(), vkDeviceManager.get());
+
+
     glfwWindowManager->process([&](){
 
     });
+
 
     return 0;
 }
