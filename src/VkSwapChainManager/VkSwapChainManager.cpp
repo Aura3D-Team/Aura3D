@@ -44,7 +44,7 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainCreateInfo.imageFormat = surfaceFormat.format;
     _swapChainCreateInfo.imageColorSpace = surfaceFormat.colorSpace;
     _swapChainCreateInfo.imageExtent = extent;
-    _swapChainCreateInfo.imageArrayLayers = layerCount;
+    _swapChainCreateInfo.imageArrayLayers = std::min(layerCount ,_swapChainSupportDetails.capabilities.maxImageArrayLayers);
     _swapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
     VkDeviceData* vkDeviceCreationData = vkDeviceManager->getDeviceCreationData();
@@ -86,6 +86,17 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     _swapChainCreateInfo.presentMode = presentMode;
     _swapChainCreateInfo.clipped = VK_TRUE;
+    _swapChainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    VkResult result = vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, nullptr, &_swapChain);
+    if (result != VK_SUCCESS) {
+        throw VkException(result);
+    }
+
+    PLOG_INFO << "SwapChain successfuly created:";
+    PLOG_INFO << "ImageCount: " << imageCount;
+    PLOG_INFO << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
+
 }
 
 void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)
