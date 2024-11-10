@@ -19,7 +19,25 @@ file(GLOB_RECURSE SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.cpp
     ${CMAKE_SOURCE_DIR}/src/*.h
 )
+
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message("Debug build detected")
+
+    set(VK_LAYER_SETTINGS_FILE "${CMAKE_SOURCE_DIR}/vk_layer_settings.txt")
+    set(VK_LAYER_DESTINATION "${CMAKE_BINARY_DIR}")
+
+    message("Source file: ${VK_LAYER_SETTINGS_FILE}")
+    message("Destination directory: ${VK_LAYER_DESTINATION}")
+
+    add_custom_target(copy_vk_layer_settings ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${VK_LAYER_DESTINATION}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${VK_LAYER_SETTINGS_FILE}"
+            "${VK_LAYER_DESTINATION}/vk_layer_settings.txt"
+    )
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
