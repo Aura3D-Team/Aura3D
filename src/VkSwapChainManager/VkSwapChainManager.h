@@ -96,6 +96,12 @@ private:
 
     VkDevice* _device; ///< A pointer to the logical Vulkan device.
 
+    VkSurfaceFormatKHR _choosedSurfaceFormat;
+    VkPresentModeKHR _choosedPresentMode;
+    VkExtent2D _choosedExtent;
+
+    std::vector<VkImage> _swapChainImages;
+
     /**
      * @brief Initializes swap chain support details for a physical device and surface.
      *

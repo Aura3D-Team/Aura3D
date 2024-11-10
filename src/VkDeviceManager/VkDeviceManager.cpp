@@ -13,10 +13,12 @@ VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceDa
 
 VkDeviceManager::~VkDeviceManager() {
     if (_device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(_device);
         vkDestroyDevice(_device, nullptr);
         _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
+    PLOG_DEBUG << "VkDeviceManager deleted";
 }
 
 void VkDeviceManager::_setBestDevice(VkInstance vkInstance)

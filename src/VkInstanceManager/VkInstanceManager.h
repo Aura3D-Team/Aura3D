@@ -44,7 +44,7 @@ public:
      * validation layers, and required instance extensions.
      * If the Vulkan instance cannot be created, it throws an exception.
      */
-    VkInstanceManager(VkInstanceData vkInstanceData);
+    VkInstanceManager(VkInstanceData vkInstanceData, bool enableValidationLayers);
 
     /**
      * Destructor.

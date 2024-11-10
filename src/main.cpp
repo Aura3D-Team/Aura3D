@@ -19,10 +19,18 @@
 #include "VkSurfaceManager/VkSurfaceManager.h"
 #include "VkSwapChainManager/VkSwapChainManager.h"
 
+#ifdef NDEBUG
+    const bool enableValidationLayers = false;
+    const plog::Severity plogSeverity = plog::info;
+#else
+    const bool enableValidationLayers = true;
+    const plog::Severity plogSeverity = plog::debug;
+#endif
+
 int main(int argc, char **argv)
 {
     static plog::ColorConsoleAppender<plog::TxtFormatter> consoleAppender;
-    plog::init(plog::debug, &consoleAppender);
+    plog::init(plogSeverity, &consoleAppender);
 
 
     std::unique_ptr<GlfwWindowManager> glfwWindowManager = std::make_unique<GlfwWindowManager>(1280, 720);
@@ -43,7 +51,7 @@ int main(int argc, char **argv)
         vkInstanceData.vkInstanceExtensions.push_back(ext);
     }
 
-    std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>(vkInstanceData);
+    std::unique_ptr<VkInstanceManager> vkInstance = std::make_unique<VkInstanceManager>(vkInstanceData, enableValidationLayers);
 
 
     VkDeviceData vkDeviceData = {

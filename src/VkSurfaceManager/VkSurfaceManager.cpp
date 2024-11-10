@@ -1,6 +1,7 @@
 #include "VkSurfaceManager.h"
-
 #include "VkException/VkException.h"
+
+#include <plog/Log.h>
 
 VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
     : _vkInstance(vkInstance)
@@ -14,6 +15,7 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
 VkSurfaceManager::~VkSurfaceManager() {
     if (_vkSurface != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
+        PLOG_DEBUG << "VkSurface deleted";
     }
     _vkInstance = nullptr;
 }

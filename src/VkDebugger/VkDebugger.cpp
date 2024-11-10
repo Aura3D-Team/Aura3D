@@ -13,6 +13,7 @@ VkDebugger::~VkDebugger()
     if (func != nullptr && _debugMessenger != VK_NULL_HANDLE) {
         func(*_vkInstance, _debugMessenger, nullptr);
         _debugMessenger = VK_NULL_HANDLE;
+        PLOG_DEBUG << "VkDebugger deleted";
     }
     _vkInstance = nullptr;
 }

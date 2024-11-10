@@ -28,7 +28,7 @@ GlfwWindowManager::~GlfwWindowManager()
         glfwDestroyWindow(_window);
     }
     glfwTerminate();
-    PLOG_INFO << "GLFW terminated";
+    PLOG_DEBUG << "GLFW terminated";
 }
 
 GLFWwindow* GlfwWindowManager::getWindowInstance() {

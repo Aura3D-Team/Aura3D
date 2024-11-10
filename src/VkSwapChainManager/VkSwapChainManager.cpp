@@ -6,7 +6,10 @@
 #include <plog/Log.h>
 
 VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
-    : _swapChain(VK_NULL_HANDLE), _swapChainSupportDetails({}), _device(device), _swapChainCreateInfo({})
+    : _swapChain(VK_NULL_HANDLE), _swapChainSupportDetails({}),
+    _device(device), _swapChainCreateInfo({}),
+    _swapChainImages({}), _choosedSurfaceFormat(),
+    _choosedPresentMode(), _choosedExtent()
 {
     _initSwapChainSupportDetails(physicalDevice, vkSurface);
 }
@@ -15,6 +18,7 @@ VkSwapChainManager::~VkSwapChainManager()
 {
     if (_swapChain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
+        PLOG_DEBUG << "VkSwapChain deleted";
     }
     _device = nullptr;
 }
@@ -26,9 +30,9 @@ SwapChainSupportDetails* VkSwapChainManager::getSwapChainSupportDetails()
 
 void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount)
 {
-    VkSurfaceFormatKHR surfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
-    VkPresentModeKHR presentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes);
-    VkExtent2D extent = chooseSwapExtent(_swapChainSupportDetails.capabilities, window);
+    _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
+    _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes);
+    _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, window);
 
     uint32_t imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
 
@@ -41,9 +45,9 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainCreateInfo.surface = surface;
 
     _swapChainCreateInfo.minImageCount = imageCount;
-    _swapChainCreateInfo.imageFormat = surfaceFormat.format;
-    _swapChainCreateInfo.imageColorSpace = surfaceFormat.colorSpace;
-    _swapChainCreateInfo.imageExtent = extent;
+    _swapChainCreateInfo.imageFormat = _choosedSurfaceFormat.format;
+    _swapChainCreateInfo.imageColorSpace = _choosedSurfaceFormat.colorSpace;
+    _swapChainCreateInfo.imageExtent = _choosedExtent;
     _swapChainCreateInfo.imageArrayLayers = std::min(layerCount ,_swapChainSupportDetails.capabilities.maxImageArrayLayers);
     _swapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
@@ -84,7 +88,7 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
 
     _swapChainCreateInfo.preTransform = _swapChainSupportDetails.capabilities.currentTransform;
     _swapChainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    _swapChainCreateInfo.presentMode = presentMode;
+    _swapChainCreateInfo.presentMode = _choosedPresentMode;
     _swapChainCreateInfo.clipped = VK_TRUE;
     _swapChainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
 
@@ -93,10 +97,14 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
         throw VkException(result);
     }
 
-    PLOG_INFO << "SwapChain successfuly created:";
-    PLOG_INFO << "ImageCount: " << imageCount;
-    PLOG_INFO << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
+    PLOG_INFO << "SwapChain successfuly created!";
+    PLOG_DEBUG << "ImageCount: " << imageCount;
+    PLOG_DEBUG << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
 
+    vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, nullptr);
+    _swapChainImages.resize(imageCount);
+
+    vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
 }
 
 void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)

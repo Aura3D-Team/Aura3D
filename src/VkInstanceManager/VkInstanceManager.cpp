@@ -5,19 +5,13 @@
 #include "VkException/VkException.h"
 
 
-VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData)
+VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableValidationLayers)
     : _appInfo({}), _instanceInfo({}), _vkInstance(VK_NULL_HANDLE),
     _vkInstanceExtensions(std::move(vkInstanceData.vkInstanceExtensions)), _vkValidationLayers(std::move(vkInstanceData.vkValidationLayers)),
     _vkDebugger(nullptr)
 {
     initializeAppInfo(vkInstanceData);
     initializeInstanceInfo();
-
-#ifdef NDEBUG
-    const bool enableValidationLayers = false;
-#else
-    const bool enableValidationLayers = true;
-#endif
 
     VkResult vkDebuggerPreparationResult = prepareVkDebugger(enableValidationLayers);
 
@@ -38,6 +32,7 @@ VkInstanceManager::~VkInstanceManager()
     if (_vkInstance != VK_NULL_HANDLE) {
         vkDestroyInstance(_vkInstance, nullptr);
         _vkInstance = VK_NULL_HANDLE;
+        PLOG_DEBUG << "VkInstance deleted";
     }
 }
 
