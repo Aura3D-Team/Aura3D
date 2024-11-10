@@ -94,12 +94,35 @@ private:
     VkSwapchainCreateInfoKHR _swapChainCreateInfo; ///< Stores configuration settings for creating a swap chain.
     VkSwapchainKHR _swapChain; ///< Vulkan swap chain that is used to manage the presentation of rendered images to the screen.
 
-    VkDevice* _device; ///< A pointer to the logical Vulkan device.
+    VkDevice* _device; ///< A pointer to the logical Vulkan device, which is used for interfacing with the GPU.
 
+    /**
+     * @brief Swap chain surface format chosen for the Vulkan surface.
+     *
+     * This specifies the format (e.g., pixel layout) and color space for images in the swap chain.
+     */
     VkSurfaceFormatKHR _choosedSurfaceFormat;
+
+    /**
+     * @brief The presentation mode selected for the swap chain.
+     *
+     * Determines how images are presented to the surface, influencing vsync behavior and latency.
+     * Common options include VK_PRESENT_MODE_FIFO_KHR for vsync and VK_PRESENT_MODE_MAILBOX_KHR for low-latency, triple-buffering.
+     */
     VkPresentModeKHR _choosedPresentMode;
+
+    /**
+     * @brief The extent (dimensions) of the swap chain images in pixels.
+     *
+     * Typically matches the dimensions of the window or the surface on which Vulkan renders.
+     */
     VkExtent2D _choosedExtent;
 
+    /**
+     * @brief A collection of images in the swap chain.
+     *
+     * These images are used for rendering and are presented to the screen via the chosen presentation mode.
+     */
     std::vector<VkImage> _swapChainImages;
 
     /**
