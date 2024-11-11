@@ -9,7 +9,7 @@ VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice
     : _swapChain(VK_NULL_HANDLE), _swapChainSupportDetails({}),
     _device(device), _swapChainCreateInfo({}),
     _swapChainImages({}), _choosedSurfaceFormat(),
-    _choosedPresentMode(), _choosedExtent()
+    _choosedPresentMode(), _choosedExtent(), _vkImageViewsManager(nullptr)
 {
     _initSwapChainSupportDetails(physicalDevice, vkSurface);
 }
@@ -105,6 +105,9 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainImages.resize(imageCount);
 
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
+
+    _vkImageViewsManager = std::make_unique<VkImageViewsManager>(*_device, _swapChainImages, _choosedSurfaceFormat.format);
+    _vkImageViewsManager->createImageViews(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layerCount);
 }
 
 void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)

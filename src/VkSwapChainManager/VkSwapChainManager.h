@@ -6,7 +6,10 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <GLFW/glfw3.h>
+#include <memory>
+
 #include "VkDeviceManager/VkDeviceManager.h"
+#include "VkImageViewsManager/VkImageViewsManager.h"
 
 struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities;
@@ -124,6 +127,9 @@ private:
      * These images are used for rendering and are presented to the screen via the chosen presentation mode.
      */
     std::vector<VkImage> _swapChainImages;
+
+
+    std::unique_ptr<VkImageViewsManager> _vkImageViewsManager;
 
     /**
      * @brief Initializes swap chain support details for a physical device and surface.
