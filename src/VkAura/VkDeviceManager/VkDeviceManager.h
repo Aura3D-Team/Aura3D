@@ -7,8 +7,8 @@
 #include <memory>
 #include <vector>
 
-#include "VkQueueManager/VkQueueManager.h"
-#include "VkSurfaceManager/VkSurfaceManager.h"
+#include "VkAura/VkQueueManager/VkQueueManager.h"
+#include "VkAura/VkSurfaceManager/VkSurfaceManager.h"
 
 /**
  * @brief This struct represents Important data for VkDevice creation

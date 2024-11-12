@@ -1,6 +1,6 @@
 #include "VkSwapChainManager.h"
-#include "VkException/VkException.h"
-#include "VkQueueManager/VkQueueManager.h"
+#include "VkAura/VkException/VkException.h"
+#include "VkAura/VkQueueManager/VkQueueManager.h"
 
 #include <algorithm>
 #include <plog/Log.h>

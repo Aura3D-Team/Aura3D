@@ -1,5 +1,5 @@
 #include "VkImageViewsManager.h"
-#include "VkException/VkException.h"
+#include "VkAura/VkException/VkException.h"
 
 #include <plog/Log.h>
 

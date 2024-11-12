@@ -8,8 +8,8 @@
 #include <GLFW/glfw3.h>
 #include <memory>
 
-#include "VkDeviceManager/VkDeviceManager.h"
-#include "VkImageViewsManager/VkImageViewsManager.h"
+#include "VkAura/VkDeviceManager/VkDeviceManager.h"
+#include "VkAura/VkImageViewsManager/VkImageViewsManager.h"
 
 struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities;

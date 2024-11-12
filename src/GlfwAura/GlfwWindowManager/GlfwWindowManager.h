@@ -5,7 +5,6 @@
 
 #include <GLFW/glfw3.h>
 #include <functional>
-#include <GLFW/glfw3.h>
 
 /**
  * @class GlfwWindowManager

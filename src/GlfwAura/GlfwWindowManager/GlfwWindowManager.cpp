@@ -1,5 +1,5 @@
 #include "GlfwWindowManager.h"
-#include "VkException/VkException.h"
+#include "VkAura/VkException/VkException.h"
 #include "plog/Log.h"
 
 GlfwWindowManager::GlfwWindowManager(const int width, const int height)

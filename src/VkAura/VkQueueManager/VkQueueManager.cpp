@@ -1,6 +1,7 @@
 #include "VkQueueManager.h"
-#include "VkException/VkException.h"
-#include "plog/Log.h"
+#include "VkAura/VkException/VkException.h"
+
+#include <plog/Log.h>
 
 VkQueueManager::VkQueueManager()
     : _mapVkQueues()

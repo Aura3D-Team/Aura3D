@@ -13,11 +13,11 @@
 // #include <plog/Formatters/MessageOnlyFormatter.h>
 #include <plog/Appenders/ColorConsoleAppender.h>
 
-#include "GlfwWindowManager/GlfwWindowManager.h"
-#include "VkInstanceManager/VkInstanceManager.h"
-#include "VkDeviceManager/VkDeviceManager.h"
-#include "VkSurfaceManager/VkSurfaceManager.h"
-#include "VkSwapChainManager/VkSwapChainManager.h"
+#include "GlfwAura/GlfwWindowManager/GlfwWindowManager.h"
+#include "VkAura/VkInstanceManager/VkInstanceManager.h"
+#include "VkAura/VkDeviceManager/VkDeviceManager.h"
+#include "VkAura/VkSurfaceManager/VkSurfaceManager.h"
+#include "VkAura/VkSwapChainManager/VkSwapChainManager.h"
 
 #ifdef NDEBUG
     const bool enableValidationLayers = false;

@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 
-#include "VkDebugger/VkDebugger.h"
+#include "VkAura/VkDebugger/VkDebugger.h"
 
 /**
  * @brief This struct represents Important data for VkInstance creation

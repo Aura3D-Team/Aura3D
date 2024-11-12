@@ -1,7 +1,7 @@
 #include "VkDeviceManager.h"
 #include "plog/Log.h"
 
-#include "VkException/VkException.h"
+#include "VkAura/VkException/VkException.h"
 
 VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData)
     : _vkInstance(vkInstance), _physicaldeviceCount(0), _deviceInfo(),

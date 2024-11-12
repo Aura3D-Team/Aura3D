@@ -2,7 +2,7 @@
 #include <set>
 #include <plog/Log.h>
 
-#include "VkException/VkException.h"
+#include "VkAura/VkException/VkException.h"
 
 
 VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableValidationLayers)
