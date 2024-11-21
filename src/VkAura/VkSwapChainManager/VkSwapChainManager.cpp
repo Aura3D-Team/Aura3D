@@ -9,7 +9,8 @@ VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice
     : _swapChain(VK_NULL_HANDLE), _swapChainSupportDetails({}),
     _device(device), _swapChainCreateInfo({}),
     _swapChainImages({}), _choosedSurfaceFormat(),
-    _choosedPresentMode(), _choosedExtent(), _vkImageViewsManager(nullptr)
+    _choosedPresentMode(), _choosedExtent(), _vkImageViewsManager(nullptr),
+    _renderPass(VK_NULL_HANDLE)
 {
     _initSwapChainSupportDetails(physicalDevice, vkSurface);
 }
@@ -19,6 +20,9 @@ VkSwapChainManager::~VkSwapChainManager()
     if (_swapChain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
         PLOG_DEBUG << "VkSwapChain deleted";
+    }
+    if (_renderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(*_device, _renderPass, nullptr);
     }
     _device = nullptr;
 }
@@ -48,7 +52,7 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainCreateInfo.imageFormat = _choosedSurfaceFormat.format;
     _swapChainCreateInfo.imageColorSpace = _choosedSurfaceFormat.colorSpace;
     _swapChainCreateInfo.imageExtent = _choosedExtent;
-    _swapChainCreateInfo.imageArrayLayers = std::min(layerCount ,_swapChainSupportDetails.capabilities.maxImageArrayLayers);
+    _swapChainCreateInfo.imageArrayLayers = std::min(layerCount, _swapChainSupportDetails.capabilities.maxImageArrayLayers);
     _swapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
     VkDeviceData* vkDeviceCreationData = vkDeviceManager->getDeviceCreationData();
@@ -108,6 +112,71 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
 
     _vkImageViewsManager = std::make_unique<VkImageViewsManager>(*_device, _swapChainImages, _choosedSurfaceFormat.format);
     _vkImageViewsManager->createImageViews(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layerCount);
+
+    _createRenderPass(_choosedSurfaceFormat.format);
+}
+
+VkSwapchainCreateInfoKHR* VkSwapChainManager::getSwapchainCreateInfoKHR()
+{
+    return &_swapChainCreateInfo;
+}
+
+VkRenderPass* VkSwapChainManager::getRenderPass()
+{
+    return &_renderPass;
+}
+
+void VkSwapChainManager::_createRenderPass(VkFormat swapchainImageFormat) {
+    _vkRenderPassData.colorAttachment = {};
+    _vkRenderPassData.colorAttachment.format = swapchainImageFormat;
+    _vkRenderPassData.colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    _vkRenderPassData.colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    _vkRenderPassData.colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    _vkRenderPassData.colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    _vkRenderPassData.colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    _vkRenderPassData.colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    _vkRenderPassData.colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    _vkRenderPassData.colorAttachmentRef = {};
+    _vkRenderPassData.colorAttachmentRef.attachment = 0;
+    _vkRenderPassData.colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // depthAttachmentRef.attachment = 1; // Index of the depth attachment
+    // depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    // // Update render pass creation to include depth attachment
+    // std::array<VkAttachmentDescription, 2> attachments = {
+    //     _vkRenderPassData.colorAttachment, depthAttachment
+    // };
+
+    // Subpass definition
+    _vkRenderPassData.subpass = {};
+    _vkRenderPassData.subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    _vkRenderPassData.subpass.colorAttachmentCount = 1;
+    _vkRenderPassData.subpass.pColorAttachments = &_vkRenderPassData.colorAttachmentRef;
+
+    _vkRenderPassData.dependency = {};
+    _vkRenderPassData.dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    _vkRenderPassData.dependency.dstSubpass = 0;
+    _vkRenderPassData.dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    _vkRenderPassData.dependency.srcAccessMask = 0;
+    _vkRenderPassData.dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    _vkRenderPassData.dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    // Create the render pass
+    _vkRenderPassData.renderPassInfo = {};
+    _vkRenderPassData.renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    _vkRenderPassData.renderPassInfo.attachmentCount = 1;
+    _vkRenderPassData.renderPassInfo.pAttachments = &_vkRenderPassData.colorAttachment;
+    _vkRenderPassData.renderPassInfo.subpassCount = 1;
+    _vkRenderPassData.renderPassInfo.pSubpasses = &_vkRenderPassData.subpass;
+    _vkRenderPassData.renderPassInfo.dependencyCount = 1;
+    _vkRenderPassData.renderPassInfo.pDependencies = &_vkRenderPassData.dependency;
+
+    VkResult result = vkCreateRenderPass(*_device, &_vkRenderPassData.renderPassInfo, nullptr, &_renderPass);
+    if (result != VK_SUCCESS) {
+        throw VkException(result);
+    }
 }
 
 void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)

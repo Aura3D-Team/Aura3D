@@ -25,7 +25,7 @@ public:
      * @param width The width of the window.
      * @param height The height of the window.
      */
-    GlfwWindowManager(const int width, const int height);
+    GlfwWindowManager(const int width, const int height, bool resizable = false);
 
     /**
      * @brief Cleans up and terminates GLFW.

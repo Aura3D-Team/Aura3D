@@ -82,6 +82,8 @@ public:
      */
     VkBool32 physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager vkSurfaceManager, const VkQueueFlags flags);
 
+    VkQueueManager* getQueueManager();
+
 private:
     VkInstance* _vkInstance; ///< Vulkan instance pointer used bind the best device
 

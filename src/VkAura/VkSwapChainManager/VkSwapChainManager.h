@@ -17,6 +17,14 @@ struct SwapChainSupportDetails {
     std::vector<VkPresentModeKHR> presentModes;
 };
 
+struct VkRenderPassData {
+    VkAttachmentDescription colorAttachment;
+    VkAttachmentReference colorAttachmentRef;
+    VkSubpassDescription subpass;
+    VkSubpassDependency dependency;
+    VkRenderPassCreateInfo renderPassInfo;
+};
+
 class VkSwapChainManager
 {
 public:
@@ -90,6 +98,10 @@ public:
      */
     void createSwapChain(GLFWwindow* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount = 2);
 
+    VkSwapchainCreateInfoKHR* getSwapchainCreateInfoKHR();
+
+    VkRenderPass* getRenderPass();
+
 private:
     SwapChainSupportDetails _swapChainSupportDetails; ///< Holds details about swap chain support.
 
@@ -130,6 +142,12 @@ private:
 
 
     std::unique_ptr<VkImageViewsManager> _vkImageViewsManager;
+
+    VkRenderPassData _vkRenderPassData;
+
+    VkRenderPass _renderPass;
+
+    void _createRenderPass(VkFormat swapchainImageFormat);
 
     /**
      * @brief Initializes swap chain support details for a physical device and surface.

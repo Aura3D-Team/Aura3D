@@ -9,27 +9,56 @@ project(Aura3D
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Add library paths
+list(APPEND CMAKE_PREFIX_PATH "$ENV{LIBRARY_PATH}")
+
+# Find required packages
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(Vulkan REQUIRED)
+find_library(GLFW_LIB glfw3 PATHS "$ENV{LIBRARY_PATH}/lib" REQUIRED)
 
-find_library(GLFW_LIB libglfw3.a ${LIBRARY_PATH}/lib/libglfw3.a)
+# Set paths for third-party libraries
+set(IMGUI_PATH "$ENV{LIBRARY_PATH}/include/imgui")
+set(GLM_PATH "$ENV{LIBRARY_PATH}/include/glm")
+set(PLOG_PATH "$ENV{LIBRARY_PATH}/include/plog")
 
+set(IMGUI_SOURCES
+    ${IMGUI_PATH}/imgui.cpp
+    ${IMGUI_PATH}/imgui_draw.cpp
+    ${IMGUI_PATH}/imgui_tables.cpp
+    ${IMGUI_PATH}/imgui_widgets.cpp
+    ${IMGUI_PATH}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_PATH}/backends/imgui_impl_vulkan.cpp
+)
+
+# Collect source files
 file(GLOB_RECURSE SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.cpp
     ${CMAKE_SOURCE_DIR}/src/*.h
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+# Collect shader files
+file(GLOB_RECURSE SHADERS
+    ${CMAKE_SOURCE_DIR}/shaders/*.frag
+    ${CMAKE_SOURCE_DIR}/shaders/*.vert
+)
 
+
+list(APPEND SOURCES ${IMGUI_SOURCES})
+
+# Define executable target
+add_executable(${PROJECT_NAME}
+    ${SOURCES}
+    ${SHADERS}
+)
+
+# Handle Debug mode specific settings
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    message("Debug build detected")
+    message("Configuring Debug build")
 
     set(VK_LAYER_SETTINGS_FILE "${CMAKE_SOURCE_DIR}/vk_layer_settings.txt")
     set(VK_LAYER_DESTINATION "${CMAKE_BINARY_DIR}")
-
-    message("Source file: ${VK_LAYER_SETTINGS_FILE}")
-    message("Destination directory: ${VK_LAYER_DESTINATION}")
 
     add_custom_target(copy_vk_layer_settings ALL
         COMMAND ${CMAKE_COMMAND} -E make_directory "${VK_LAYER_DESTINATION}"
@@ -37,13 +66,23 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
             "${VK_LAYER_SETTINGS_FILE}"
             "${VK_LAYER_DESTINATION}/vk_layer_settings.txt"
     )
+    add_dependencies(${PROJECT_NAME} copy_vk_layer_settings)
+
+    # Set debug compile definitions or flags if needed
+    target_compile_definitions(${PROJECT_NAME} PRIVATE DEBUG_MODE)
 endif()
 
+# Include directories for the main executable
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${LIBRARY_PATH}/include
-    ${VULKAN_SDK}/include
+    "$ENV{LIBRARY_PATH}/include"
+    ${IMGUI_PATH}
+    ${IMGUI_PATH}/backends
+    ${GLM_PATH}
+    ${PLOG_PATH}
 )
+
+# Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC
     ${GLFW_LIB}
     Vulkan::Vulkan
@@ -52,6 +91,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     dl
 )
 
+# Installation settings
 include(GNUInstallDirs)
 install(TARGETS ${PROJECT_NAME}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

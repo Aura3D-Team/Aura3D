@@ -152,6 +152,11 @@ VkDeviceData* VkDeviceManager::getDeviceCreationData()
     return &_vkDeviceCreationData;
 }
 
+VkQueueManager* VkDeviceManager::getQueueManager()
+{
+    return &_vkQueueManager;
+}
+
 VkBool32 VkDeviceManager::physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager vkSurfaceManager, const VkQueueFlags flags) {
     return vkSurfaceManager.getQueuePhysicalDeviceSurfaceSupport(
         _physicalDevice, _vkQueueManager.getQueueData(flags)->vkDeviceQueueCreateInfo.queueFamilyIndex);
