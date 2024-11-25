@@ -11,9 +11,11 @@ layout(location = 1) out vec3 vNormal;    // Interpolated normal
 layout(location = 2) out vec3 vPosition;  // World-space position
 
 // Uniforms for transformation matrices
-layout(binding = 0) uniform mat4 uModel;       // Model matrix
-layout(binding = 1) uniform mat4 uView;        // View matrix
-layout(binding = 2) uniform mat4 uProjection;  // Projection matrix;
+layout(binding = 0) uniform Matrices {
+    mat4 uModel;       // Model matrix
+    mat4 uView;        // View matrix
+    mat4 uProjection;  // Projection matrix
+};
 
 void main() {
     // Transform position to clip space
@@ -21,8 +23,7 @@ void main() {
     gl_Position = uProjection * uView * worldPosition;
 
     // Pass data to the fragment shader
-    vUV = aUV;
+    vUV = aUV;                                     // Pass UV directly
     vNormal = mat3(transpose(inverse(uModel))) * aNormal;  // Transform normal to world space
-    vPosition = worldPosition.xyz;
+    vPosition = worldPosition.xyz;                // World-space position
 }
-

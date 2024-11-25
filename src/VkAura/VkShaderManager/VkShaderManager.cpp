@@ -26,6 +26,13 @@ void VkShaderManager::_createFragShaderModule(const std::string& filename)
     _fragShaderModule = _createShaderModule(*_device, _shaderFileExtractor.getFragByteCode());
 }
 
+
+void VkShaderManager::reset()
+{
+    _vertShaderModule = VK_NULL_HANDLE;
+    _fragShaderModule = VK_NULL_HANDLE;
+}
+
 VkShaderModule& VkShaderManager::getVertShaderModule()
 {
     return _vertShaderModule;

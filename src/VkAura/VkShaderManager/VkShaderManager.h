@@ -17,6 +17,8 @@ public:
     void _createVertShaderModule(const std::string& filename);
     void _createFragShaderModule(const std::string& filename);
 
+    void reset();
+
     VkShaderModule& getVertShaderModule();
     VkShaderModule& getFragShaderModule();
 

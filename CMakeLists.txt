@@ -23,6 +23,9 @@ set(IMGUI_PATH "$ENV{LIBRARY_PATH}/include/imgui")
 set(GLM_PATH "$ENV{LIBRARY_PATH}/include/glm")
 set(PLOG_PATH "$ENV{LIBRARY_PATH}/include/plog")
 
+set(GLSLC_EXECUTABLE "$ENV{VULKAN_SDK}/bin/glslc")
+set(SPIRV_OUTPUT_DIR ${CMAKE_BINARY_DIR}/shaders)
+
 set(IMGUI_SOURCES
     ${IMGUI_PATH}/imgui.cpp
     ${IMGUI_PATH}/imgui_draw.cpp
@@ -44,6 +47,30 @@ file(GLOB_RECURSE SHADERS
     ${CMAKE_SOURCE_DIR}/shaders/*.vert
 )
 
+foreach(SHADER_FILE ${SHADERS})
+    get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
+    get_filename_component(SHADER_EXT ${SHADER_FILE} EXT)
+
+    string(SUBSTRING ${SHADER_EXT} 1 -1 SHADER_EXT_STRIPPED)
+
+    # Determine the output SPIR-V file path
+    set(SPIRV_FILE ${SPIRV_OUTPUT_DIR}/${SHADER_EXT_STRIPPED}/${SHADER_NAME}_${SHADER_EXT_STRIPPED}.spv)
+
+    file(MAKE_DIRECTORY ${SPIRV_OUTPUT_DIR}/${SHADER_EXT_STRIPPED})
+
+    # Add a custom command to compile the shader
+    add_custom_command(
+        OUTPUT ${SPIRV_FILE}
+        COMMAND ${GLSLC_EXECUTABLE} ${SHADER_FILE} -o ${SPIRV_FILE}
+        DEPENDS ${SHADER_FILE}
+        COMMENT "Compiling ${SHADER_FILE} to ${SPIRV_FILE}"
+    )
+
+    # Add the output as part of the build target
+    list(APPEND SPIRV_FILES ${SPIRV_FILE})
+endforeach()
+
+add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_FILES})
 
 list(APPEND SOURCES ${IMGUI_SOURCES})
 
@@ -52,6 +79,8 @@ add_executable(${PROJECT_NAME}
     ${SOURCES}
     ${SHADERS}
 )
+
+add_dependencies(${PROJECT_NAME} CompileShaders)
 
 # Handle Debug mode specific settings
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")

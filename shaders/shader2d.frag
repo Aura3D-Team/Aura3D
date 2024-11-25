@@ -12,11 +12,14 @@ layout(location = 0) out vec4 outColor;
 layout(binding = 1) uniform sampler2D uTexture; // Base texture
 
 // Individual Uniforms (Alternative to Material Block)
-layout(binding = 2) uniform vec3 uColor;         // Base color
-layout(binding = 3) uniform float uAlpha;       // Transparency
-layout(binding = 4) uniform float uSpecular;    // Specular intensity
-layout(binding = 5) uniform vec3 uLightPosition; // Light position
-layout(binding = 6) uniform vec3 uLightColor;   // Light color
+layout(binding = 2) uniform MaterialProperties {
+    vec3 uColor;         // Base color
+    float uAlpha;        // Transparency
+    float uSpecular;     // Specular intensity
+    vec3 uLightPosition; // Light position
+    vec3 uLightColor;    // Light color
+};
+
 
 // Utility function for simple lighting
 vec3 computeLighting(vec3 normal, vec3 fragPos) {
