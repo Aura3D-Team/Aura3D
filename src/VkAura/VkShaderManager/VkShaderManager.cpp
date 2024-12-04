@@ -11,16 +11,21 @@ VkShaderManager::VkShaderManager(VkDevice* device) :
 
 VkShaderManager::~VkShaderManager()
 {
+    if (_vertShaderModule != VK_NULL_HANDLE
+        || _fragShaderModule != VK_NULL_HANDLE)
+    {
+        reset();
+    }
     _device = nullptr;
 }
 
-void VkShaderManager::_createVertShaderModule(const std::string& filename)
+void VkShaderManager::createVertShaderModule(const std::string& filename)
 {
     _shaderFileExtractor.readVertFile(filename);
     _vertShaderModule = _createShaderModule(*_device, _shaderFileExtractor.getVertByteCode());
 }
 
-void VkShaderManager::_createFragShaderModule(const std::string& filename)
+void VkShaderManager::createFragShaderModule(const std::string& filename)
 {
     _shaderFileExtractor.readFragFile(filename);
     _fragShaderModule = _createShaderModule(*_device, _shaderFileExtractor.getFragByteCode());
@@ -29,6 +34,8 @@ void VkShaderManager::_createFragShaderModule(const std::string& filename)
 
 void VkShaderManager::reset()
 {
+    vkDestroyShaderModule(*_device, _vertShaderModule, nullptr);
+    vkDestroyShaderModule(*_device, _fragShaderModule, nullptr);
     _vertShaderModule = VK_NULL_HANDLE;
     _fragShaderModule = VK_NULL_HANDLE;
 }

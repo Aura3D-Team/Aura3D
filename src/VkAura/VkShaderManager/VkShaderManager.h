@@ -14,8 +14,8 @@ public:
     VkShaderManager(VkDevice* device);
     ~VkShaderManager();
 
-    void _createVertShaderModule(const std::string& filename);
-    void _createFragShaderModule(const std::string& filename);
+    void createVertShaderModule(const std::string& filename);
+    void createFragShaderModule(const std::string& filename);
 
     void reset();
 

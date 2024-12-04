@@ -10,7 +10,7 @@ ShaderSpirvExtractor::~ShaderSpirvExtractor() {
 
 void ShaderSpirvExtractor::readVertFile(const std::string& filename)
 {
-    std::string pattern = ".vert";
+    std::string pattern = "vert.spv";
     if (filename.size() < pattern.size() || filename.substr(filename.size() - pattern.size()) != pattern)
     {
         throw std::invalid_argument("Provided file does not have a .vert extension: " + filename);
@@ -20,7 +20,7 @@ void ShaderSpirvExtractor::readVertFile(const std::string& filename)
 
 void ShaderSpirvExtractor::readFragFile(const std::string& filename)
 {
-    std::string pattern = ".frag";
+    std::string pattern = "frag.spv";
     if (filename.size() < pattern.size() || filename.substr(filename.size() - pattern.size()) != pattern)
     {
         throw std::invalid_argument("Provided file does not have a .vert extension: " + filename);
