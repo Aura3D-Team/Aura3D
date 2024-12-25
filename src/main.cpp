@@ -26,7 +26,7 @@
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/backends/imgui_impl_glfw.h>
 
-#include "Utils/LastWish.h"
+// #include "Utils/LastWish.h"
 
 #ifdef NDEBUG
     const bool enableValidationLayers = false;
@@ -43,6 +43,7 @@ int main(int argc, char **argv)
 
 
     std::unique_ptr<GlfwWindowManager> glfwWindowManager = std::make_unique<GlfwWindowManager>(1280, 720);
+
 
     VkInstanceData vkInstanceData = {
         .appName = "Aura3D",
@@ -73,6 +74,7 @@ int main(int argc, char **argv)
 
     std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>(vkInstance->getVkInstance(), vkDeviceData);
 
+
     VkQueueFlags exclusiveMergedFlag = 0;
     for (const uint32_t& f : vkDeviceData.exclusiveQueueFlags) {
         exclusiveMergedFlag |= f;
@@ -88,14 +90,16 @@ int main(int argc, char **argv)
     uint32_t graphicsIndexFamily = VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(),
                                                                         exclusiveMergedFlag, *vkSurfaceManager->getSurface());
 
+
     std::unique_ptr<VkSwapChainManager> vkSwapChainManager = std::make_unique<VkSwapChainManager>(
         *vkDeviceManager->getPhysicalDevice(),
         vkDeviceManager->getDevice(),
         *vkSurfaceManager->getSurface()
     );
-    vkSwapChainManager->createSwapChain(glfwWindowManager->getWindowInstance(), *vkSurfaceManager->getSurface(), vkDeviceManager.get());
 
+    vkSwapChainManager->createSwapChain(glfwWindowManager->getWindowInstance(), *vkSurfaceManager->getSurface(), vkDeviceManager.get());
     uint32_t imageCount = vkSwapChainManager->getSwapchainCreateInfoKHR()->minImageCount;
+
 
     std::unique_ptr<ImguiAura> imguiAura = std::make_unique<ImguiAura>(
         *vkInstance->getVkInstance(),
@@ -107,7 +111,9 @@ int main(int argc, char **argv)
         imageCount
     );
 
+
     std::unique_ptr<VkCommandManager> vkCommandManager = std::make_unique<VkCommandManager>(vkDeviceManager->getDevice(), graphicsIndexFamily);
+
 
     std::thread t1([&vkCommandManager, graphicsIndexFamily, &glfwWindowManager, vkGraphicsQueues]() {
         VkCommandPool vkCommandPool = vkCommandManager->getThreadCommandPool();
@@ -137,6 +143,7 @@ int main(int argc, char **argv)
     });
 
     t1.join();
+
 
     return 0;
 }
