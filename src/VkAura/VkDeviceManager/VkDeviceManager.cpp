@@ -31,9 +31,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 
     std::vector<VkPhysicalDevice> devices(_physicaldeviceCount);
     result = vkEnumeratePhysicalDevices(vkInstance, &_physicaldeviceCount, devices.data());
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
 
     PLOG_INFO << "Found " << _physicaldeviceCount << " Vulkan physical device(s).";
 
@@ -94,17 +92,10 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     PLOG_INFO << "-------------------------------------------------------------------------------";
 
     result = _checkDeviceExtensionSupport(_vkDeviceCreationData.vkDeviceExtensions);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
 
-    VkQueueFlags exclusiveMergedFlag = 0;
-    for (const VkQueueFlags& f : _vkDeviceCreationData.exclusiveQueueFlags) {
-        exclusiveMergedFlag |= f;
-    }
-
-    if (exclusiveMergedFlag != 0) {
-        _vkQueueManager.pushQueueInfo(_physicalDevice, exclusiveMergedFlag, 1.0f);
+    if (_vkDeviceCreationData.exclusiveQueueFlags != 0) {
+        _vkQueueManager.pushQueueInfo(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags, 1.0f);
     }
 
     float priority = 0.95f;
@@ -125,13 +116,13 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     _deviceInfo.pEnabledFeatures = &_deviceFeatures;
 
     result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
 
-    _vkQueueManager.setupQueue(_physicalDevice, _device, exclusiveMergedFlag);
+    uint32_t familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);
+    _vkQueueManager.setupQueue(_device, familyIndex, _vkDeviceCreationData.exclusiveQueueFlags);
     for (const VkQueueFlags& f : _vkDeviceCreationData.concurrentQueueFlags) {
-        _vkQueueManager.setupQueue(_physicalDevice, _device, f);
+        uint32_t familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, f);
+        _vkQueueManager.setupQueue(_device, familyIndex, f);
     }
 
     PLOG_INFO << "Logical Vulkan device created successfully.";
@@ -159,7 +150,7 @@ VkQueueManager* VkDeviceManager::getQueueManager()
 
 VkBool32 VkDeviceManager::physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager vkSurfaceManager, const VkQueueFlags flags) {
     return vkSurfaceManager.getQueuePhysicalDeviceSurfaceSupport(
-        _physicalDevice, _vkQueueManager.getQueueData(flags)->vkDeviceQueueCreateInfo.queueFamilyIndex);
+        _physicalDevice, _vkQueueManager.getQueues(flags).front()->vkDeviceQueueCreateInfo.queueFamilyIndex);
 }
 
 VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> exts) const {

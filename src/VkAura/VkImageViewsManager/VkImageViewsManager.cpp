@@ -1,31 +1,36 @@
 #include "VkImageViewsManager.h"
+
 #include "VkAura/VkException/VkException.h"
 
 #include <plog/Log.h>
 
-VkImageViewsManager::VkImageViewsManager(VkDevice device, const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat)
-    : device(device), swapChainImages(swapChainImages), swapChainImageFormat(swapChainImageFormat)
+VkImageViewsManager::VkImageViewsManager(VkDevice* device, const std::vector<VkImage>& _swapChainImages, VkFormat _swapChainImageFormat)
+    : _device(device), _swapChainImages(_swapChainImages), _swapChainImageFormat(_swapChainImageFormat)
 {
     // empty
 }
 
 VkImageViewsManager::~VkImageViewsManager()
 {
-    for (VkImageView& imageView : swapChainImageViews) {
-        vkDestroyImageView(device, imageView, nullptr);
+    for (VkImageView& imageView : _swapChainImageViews) {
+        vkDestroyImageView(*_device, imageView, nullptr);
     }
+
+    _device = nullptr;
+
+    PLOG_DEBUG << "ImageViews destroyed.";
 }
 
 void VkImageViewsManager::createImageViews(VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount)
 {
-    swapChainImageViews.resize(swapChainImages.size());
+    _swapChainImageViews.resize(_swapChainImages.size());
 
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
+    for (size_t i = 0; i < _swapChainImages.size(); i++) {
         VkImageViewCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = swapChainImages[i];
+        createInfo.image = _swapChainImages[i];
         createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = swapChainImageFormat;
+        createInfo.format = _swapChainImageFormat;
 
         createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -38,10 +43,8 @@ void VkImageViewsManager::createImageViews(VkImageAspectFlags aspectMask, uint32
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
 
-        VkResult result = vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]);
-        if (result != VK_SUCCESS) {
-            throw VkException(result);
-        }
+        VkResult result = vkCreateImageView(*_device, &createInfo, nullptr, &_swapChainImageViews[i]);
+        VK_RESULT_CHECK(result);
 
         PLOG_DEBUG << "ImageView " << i << " created!";
     }
@@ -49,6 +52,13 @@ void VkImageViewsManager::createImageViews(VkImageAspectFlags aspectMask, uint32
 
 const std::vector<VkImageView>& VkImageViewsManager::getImageViews() const
 {
-    return swapChainImageViews;
+    return _swapChainImageViews;
 }
 
+void VkImageViewsManager::clear()
+{
+    for (VkImageView& imageView : _swapChainImageViews) {
+        vkDestroyImageView(*_device, imageView, nullptr);
+    }
+    _swapChainImageViews.clear();
+}

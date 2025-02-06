@@ -7,104 +7,181 @@
 #include <unordered_map>
 #include <vector>
 #include <set>
+#include <cstdint>
+
+// Custom hash function for std::pair<uint32_t, VkQueueFlags>
+// so that it can be used as a key in std::unordered_map.
+namespace std {
+    template <>
+    struct hash<std::pair<uint32_t, VkQueueFlags>> {
+        std::size_t operator()(const std::pair<uint32_t, VkQueueFlags>& p) const noexcept {
+            return std::hash<uint32_t>{}(p.first) ^ (std::hash<VkQueueFlags>{}(p.second) << 1);
+        }
+    };
+}
 
 /**
  * @brief Holds information about a Vulkan queue.
  *
- * This struct stores data related to a Vulkan queue, including the queue itself,
- * the index of the queue family it belongs to, the number of queues requested from the family,
- * and the priority of the queue.
+ * This struct stores data related to a Vulkan queue, including the queues themselves,
+ * a map of queue priorities per queue family index, and the corresponding
+ * VkDeviceQueueCreateInfo structure.
  */
 struct QueueData {
     std::vector<VkQueue> queues;
-    std::vector<float> queuesPriorities;
-    VkDeviceQueueCreateInfo vkDeviceQueueCreateInfo;
+    std::vector<float> queuePriorities;
+    VkDeviceQueueCreateInfo vkDeviceQueueCreateInfo{};
 };
 
 /**
  * @class VkQueueManager
  *
- * @brief Manages Vulkan device queues, specifically graphics and potentially other types of queues.
- *        It stores queues in a map indexed by their capabilities (e.g., graphics, compute, transfer).
+ * @brief Manages Vulkan device queues.
+ *
+ * This class is responsible for managing Vulkan queues by storing information in a map keyed by
+ * a pair of (queue family index, queue flags). It allows you to register queue requirements,
+ * retrieve queue creation information, and later set up the actual VkQueue handles.
  */
 class VkQueueManager
 {
 public:
     /**
      * @brief Constructor for the queue manager.
-     *        Does not initialize any queues yet; requires a physical device and device to set them up.
+     *
+     * The manager is initialized empty. Queue registration must be done via pushQueueInfo()
+     * before calling setupQueue().
      */
     VkQueueManager();
 
     /**
-     * @brief Destructor for cleaning up any Vulkan resources (if necessary).
+     * @brief Destructor.
+     *
+     * Cleans up any resources if necessary.
      */
     ~VkQueueManager();
 
     /**
-     * @brief Sets up the graphics queue for the provided physical device and logical device.
+     * @brief Sets up queues for a specific queue family.
      *
-     * @param physicalDevice The Vulkan physical device to query for queue families.
-     * @param device The Vulkan logical device used to retrieve the queue.
+     * This method retrieves VkQueue handles from the logical device based on the
+     * provided queue family index and queue flags. It populates the corresponding QueueData.
+     *
+     * @param device The Vulkan logical device used to retrieve the queues.
+     * @param queueFamilyIndex The family index for which the queues were registered.
+     * @param flags The Vulkan queue flags (e.g. VK_QUEUE_GRAPHICS_BIT) corresponding to the queue.
+     *
+     * @throws VkException if no QueueData is registered for the specified key.
      */
-    void setupQueue(VkPhysicalDevice physicalDevice, VkDevice device, const VkQueueFlags flags);
+    void setupQueue(VkDevice device, uint32_t queueFamilyIndex, const VkQueueFlags flags);
 
     /**
-     * @brief Sets up the graphics queue for the provided physical device and logical device.
+     * @brief Registers a queue requirement.
+     *
+     * This function registers a queue requirement for the given physical device,
+     * queue flags, and queue priority. If a QueueData for the (queueFamilyIndex, flags)
+     * combination does not exist, it is created. Otherwise, the priority is added to
+     * the existing QueueData.
      *
      * @param physicalDevice The Vulkan physical device to query for queue families.
-     * @param flags The Vulkan flags used to queue capatibility.
-     * @param queuePriority The Vulkan priority distributed for each queue.
-     * @return uint32_t Family index of the queue, that represents it's capatibility.
+     * @param flags The Vulkan queue capability flags (e.g. VK_QUEUE_GRAPHICS_BIT).
+     * @param queuePriority The priority value for the queue (between 0.0 and 1.0).
+     *
+     * @return uint32_t The queue family index selected for the requested capabilities.
+     *
+     * @throws VkException if no suitable queue family is found.
      */
     uint32_t pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueueFlags flags, const float queuePriority);
 
     /**
-     * @brief Finds a queue family index that supports the specified queue operations (e.g., graphics).
+     * @brief Finds a queue family index that supports the specified queue operations.
      *
-     * This function inspects the available queue families of the given physical device and returns
-     * the index of the first queue family that meets the specified requirements (based on flags).
+     * The function inspects the available queue families of the provided physical device and
+     * returns the index of the first queue family that meets the specified requirements.
+     * If a presentation surface is provided, the queue family must also support presentation.
      *
-     * @param physicalDevice The Vulkan physical device to inspect for supported queue families.
-     * @param flags The required queue capabilities (e.g., VK_QUEUE_GRAPHICS_BIT).
-     * @param surface To check if a queue family supports presentation
+     * @param physicalDevice The Vulkan physical device to inspect.
+     * @param flags The required queue capabilities (e.g. VK_QUEUE_GRAPHICS_BIT).
+     * @param surface (Optional) A Vulkan surface. If not VK_NULL_HANDLE, the queue family must support presentation.
      *
-     * @return uint32_t The index of the queue family that supports the requested operations, or UINT32_MAX if none are found.
+     * @return uint32_t The index of a suitable queue family, or UINT32_MAX if none is found.
      */
     static uint32_t findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface = VK_NULL_HANDLE);
 
     /**
-     * @brief Retrieves the properties of all queue families for a given physical device.
+     * @brief Finds all queue family indices that support the specified operations.
      *
-     * This function queries the Vulkan API to get the number and properties of all queue families
-     * supported by the specified physical device.
+     * This function returns a vector of all queue family indices that support the given
+     * queue capabilities. If a presentation surface is provided, only indices that also
+     * support presentation are returned.
      *
      * @param physicalDevice The Vulkan physical device to inspect.
-     * @return std::vector<VkQueueFamilyProperties> A vector containing properties for each queue family supported by the physical device.
+     * @param flags The required queue capabilities.
+     * @param surface (Optional) A Vulkan surface.
+     *
+     * @return std::vector<uint32_t> A vector of matching queue family indices.
+     */
+    static std::vector<uint32_t> findQueueFamilyIndices(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface = VK_NULL_HANDLE);
+
+    /**
+     * @brief Retrieves the properties of all queue families for a physical device.
+     *
+     * This function queries the Vulkan API to obtain properties of all queue families supported
+     * by the provided physical device.
+     *
+     * @param physicalDevice The Vulkan physical device to query.
+     * @return std::vector<VkQueueFamilyProperties> A vector containing properties for each queue family.
      */
     static std::vector<VkQueueFamilyProperties> findQueueFamilies(VkPhysicalDevice physicalDevice);
 
+    /**
+     * @brief Checks whether a specific queue family supports presentation.
+     *
+     * This function queries if the given queue family index supports presentation to the specified surface.
+     *
+     * @param physicalDevice The Vulkan physical device.
+     * @param queueFamilyIndex The index of the queue family.
+     * @param surface The Vulkan surface.
+     *
+     * @return true if presentation is supported; false otherwise.
+     */
     static bool isPresentQueueSupported(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, VkSurfaceKHR surface);
 
     /**
-     * @brief Retrieves the Vulkan queue reference based on the provided queue flag (e.g., VK_QUEUE_GRAPHICS_BIT).
+     * @brief Retrieves the registered QueueData pointers that match the specified queue flags.
      *
-     * @param flags The Vulkan queue flags (e.g., VK_QUEUE_GRAPHICS_BIT).
-     * @return VkQueue The Vulkan queue associated with the given flags.
+     * This function returns pointers to the QueueData entries whose queue flags match
+     * (bitwise) the specified flags.
+     *
+     * @param flags The Vulkan queue flags to match.
+     * @return std::vector<QueueData*> A vector of pointers to matching QueueData.
      */
-    QueueData* getQueueData(VkQueueFlags flags);
+    std::vector<QueueData*> getQueues(VkQueueFlags flags);
 
+    /**
+     * @brief Gets the number of registered queue groups.
+     *
+     * @return uint32_t The number of entries in the queue map.
+     */
     uint32_t getQueueMapSize() const;
 
     /**
-     * @brief Retrieves the Vulkan queues infos created in this application
+     * @brief Retrieves the vector of VkDeviceQueueCreateInfo structures.
      *
-     * @return std::vector<VkDeviceQueueCreateInfo> The Vulkan queues infos vector.
+     * These structures are used during logical device creation.
+     *
+     * @return std::vector<VkDeviceQueueCreateInfo> A vector of VkDeviceQueueCreateInfo.
      */
     std::vector<VkDeviceQueueCreateInfo> getDeviceQueueCreateInfos() const;
 
+    static void submitCmdIntoQueue(VkQueue queue,
+                            VkCommandBuffer* commandBuffer,
+                            VkSemaphore* imageAvailableSemaphore,
+                            VkSemaphore* renderFinishedSemaphore);
+
 private:
-    std::unordered_map<VkQueueFlags, QueueData> _mapVkQueues; ///< Stores Vulkan queues data by their capatibilities.
+    // The key is a pair consisting of (queueFamilyIndex, VkQueueFlags).
+    // This allows multiple queue families (with different indices) that satisfy the same flag requirement.
+    std::unordered_map<std::pair<uint32_t, VkQueueFlags>, QueueData> _mapVkQueues;
 };
 
 #endif // VKQUEUEMANAGER_H

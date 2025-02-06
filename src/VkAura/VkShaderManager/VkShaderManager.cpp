@@ -60,9 +60,7 @@ VkShaderModule VkShaderManager::_createShaderModule(VkDevice device, const std::
 
     VkShaderModule shaderModule;
     VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
 
     return shaderModule;
 }

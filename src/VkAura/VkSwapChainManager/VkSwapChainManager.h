@@ -8,8 +8,9 @@
 #include <GLFW/glfw3.h>
 #include <memory>
 
-#include "VkAura/VkDeviceManager/VkDeviceManager.h"
-#include "VkAura/VkImageViewsManager/VkImageViewsManager.h"
+#include <VkAura/VkDeviceManager/VkDeviceManager.h>
+#include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
+#include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
 
 struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities;
@@ -17,13 +18,13 @@ struct SwapChainSupportDetails {
     std::vector<VkPresentModeKHR> presentModes;
 };
 
-struct VkRenderPassData {
-    VkAttachmentDescription colorAttachment;
-    VkAttachmentReference colorAttachmentRef;
-    VkSubpassDescription subpass;
-    VkSubpassDependency dependency;
-    VkRenderPassCreateInfo renderPassInfo;
-};
+// struct VkRenderPassData {
+//     VkAttachmentDescription colorAttachment;
+//     VkAttachmentReference colorAttachmentRef;
+//     VkSubpassDescription subpass;
+//     VkSubpassDependency dependency;
+//     VkRenderPassCreateInfo renderPassInfo;
+// };
 
 class VkSwapChainManager
 {
@@ -52,34 +53,6 @@ public:
     ~VkSwapChainManager();
 
     /**
-     * @brief Retrieves swap chain support details.
-     *
-     * This function provides access to the `SwapChainSupportDetails` structure, which contains
-     * information about the swap chain capabilities, available formats, and presentation modes
-     * for the associated physical device and surface. This information is crucial for creating
-     * a compatible swap chain and configuring it with the optimal settings.
-     *
-     * @return SwapChainSupportDetails* A pointer to the structure containing swap chain support details.
-     */
-    SwapChainSupportDetails* getSwapChainSupportDetails();
-
-
-    /**
-     * @brief Chooses the best swap extent (resolution) for the swap chain.
-     *
-     * This function determines the resolution for images in the swap chain.
-     * If Vulkan has specified a fixed extent (in capabilities.currentExtent), that value is used directly.
-     * Otherwise, the function queries the window's framebuffer size in pixels to calculate the
-     * extent, clamping it within the bounds of minImageExtent and maxImageExtent.
-     *
-     * @param capabilities The capabilities of the surface, including possible extent bounds.
-     * @param window The GLFW window for which to determine the framebuffer size.
-     *
-     * @return VkExtent2D The chosen extent (resolution) for the swap chain images.
-     */
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window);
-
-    /**
      * @brief Creates the Vulkan swap chain.
      *
      * This function initializes and creates a Vulkan swap chain tailored to the specified
@@ -98,13 +71,59 @@ public:
      */
     void createSwapChain(GLFWwindow* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount = 2);
 
+    /**
+     * @brief Retrieves swap chain support details.
+     *
+     * This function provides access to the `SwapChainSupportDetails` structure, which contains
+     * information about the swap chain capabilities, available formats, and presentation modes
+     * for the associated physical device and surface. This information is crucial for creating
+     * a compatible swap chain and configuring it with the optimal settings.
+     *
+     * @return SwapChainSupportDetails* A pointer to the structure containing swap chain support details.
+     */
+    SwapChainSupportDetails* getSwapChainSupportDetails();
+
     VkSwapchainCreateInfoKHR* getSwapchainCreateInfoKHR();
 
-    VkRenderPass* getRenderPass();
+
+    /**
+     * @brief Chooses the best swap extent (resolution) for the swap chain.
+     *
+     * This function determines the resolution for images in the swap chain.
+     * If Vulkan has specified a fixed extent (in capabilities.currentExtent), that value is used directly.
+     * Otherwise, the function queries the window's framebuffer size in pixels to calculate the
+     * extent, clamping it within the bounds of minImageExtent and maxImageExtent.
+     *
+     * @param capabilities The capabilities of the surface, including possible extent bounds.
+     * @param window The GLFW window for which to determine the framebuffer size.
+     *
+     * @return VkExtent2D The chosen extent (resolution) for the swap chain images.
+     */
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window);
+
+    VkExtent2D* getExtent2D();
+
+    VkSurfaceFormatKHR* getChoosedSurfaceFormat();
+
+    VkPresentModeKHR* getChoosedPresentMode();
+
+    const std::vector<VkImage>& getSwapChainImages();
+
+    const uint32_t acquireNextImage(VkSemaphore imageSemaphore);
+
+    void recreateSwapChain(VkImageViewsManager* vkImageViewsManager,
+                           VkFrameBuffersManager* vkFrameBuffersManager,
+                           GLFWwindow* window,
+                           VkSurfaceKHR surface,
+                           VkDeviceManager* vkDeviceManager,
+                           VkRenderPass renderPass);
+
+    void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const uint32_t& imageIndex);
+
+    void cmdPipelineBarrier(VkCommandBuffer commandBuffer, const uint32_t& imageIndex);
 
 private:
     SwapChainSupportDetails _swapChainSupportDetails; ///< Holds details about swap chain support.
-
 
     VkSwapchainCreateInfoKHR _swapChainCreateInfo; ///< Stores configuration settings for creating a swap chain.
     VkSwapchainKHR _swapChain; ///< Vulkan swap chain that is used to manage the presentation of rendered images to the screen.
@@ -139,15 +158,6 @@ private:
      * These images are used for rendering and are presented to the screen via the chosen presentation mode.
      */
     std::vector<VkImage> _swapChainImages;
-
-
-    std::unique_ptr<VkImageViewsManager> _vkImageViewsManager;
-
-    VkRenderPassData _vkRenderPassData;
-
-    VkRenderPass _renderPass;
-
-    void _createRenderPass(VkFormat swapchainImageFormat);
 
     /**
      * @brief Initializes swap chain support details for a physical device and surface.

@@ -1,34 +1,31 @@
 #ifndef VKGRAPHICSPIPELINEMANAGER_H
 #define VKGRAPHICSPIPELINEMANAGER_H
 
-#pragma once
+#include <VkAura/VkPipelineManager/VkPipelineManager.h>
+#include <VkAura/VkShaderManager/VkShaderManager.h>
+#include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
 
-#include <vulkan/vulkan.h>
 #include <array>
+#include <string>
 
-#include "VkAura/VkShaderManager/VkShaderManager.h"
-
-#define SIZE 2
-
-class VkGraphicsPipelineManager
+class VkGraphicsPipelineManager : public VkPipelineManager
 {
 public:
-    VkGraphicsPipelineManager(VkDevice* device);
+    VkGraphicsPipelineManager(std::string shader_vert_spv,
+                              std::string shader_frag_spv,
+                              VkDevice* device);
     ~VkGraphicsPipelineManager();
 
+    void createPipeline(VkRenderPass renderPass, VkExtent2D extent);
+
+    void cmdBindPipeline(VkCommandBuffer commandBuffer);
+
+    void cmdDraw(VkCommandBuffer commandBuffer, VkExtent2D extent);
 
 private:
-    VkDevice* _device;
     VkShaderManager _shaderManager;
-
-    std::array<VkPipelineShaderStageCreateInfo, SIZE> _shaderStages;
-    std::array<VkDynamicState, SIZE> _dynamicStates;
-
-    VkPipelineLayout _pipelineLayout;
-    VkPipeline _graphicsPipeline;
-
-
-    void _createPipeline();
+    std::array<VkPipelineShaderStageCreateInfo, 2> _shaderStages;
+    std::array<VkDynamicState, 2> _dynamicStates;
 };
 
 #endif // VKGRAPHICSPIPELINEMANAGER_H

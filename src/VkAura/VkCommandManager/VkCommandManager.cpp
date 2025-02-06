@@ -1,7 +1,8 @@
 #include "VkCommandManager.h"
 
-#include <plog/Log.h>
 #include "VkAura/VkException/VkException.h"
+
+#include <plog/Log.h>
 
 VkCommandManager::VkCommandManager(VkDevice* device, uint32_t queueFamilyIndex)
     : _device(device), _queueFamilyIndex(queueFamilyIndex) {
@@ -17,19 +18,19 @@ VkCommandManager::~VkCommandManager() {
         PLOG_DEBUG << "CommandPool for thread " << it.first << " was deleted.";
     }
     _device = nullptr;
+
+    PLOG_DEBUG << "CommandPools destroyed.";
 }
 
 VkCommandPool VkCommandManager::createThreadCommandPool() {
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = _queueFamilyIndex;
     poolInfo.flags = 0;
 
     VkCommandPool commandPool;
-    VkResult result = vkCreateCommandPool(*_device, &poolInfo, nullptr, &commandPool);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(vkCreateCommandPool(*_device, &poolInfo, nullptr, &commandPool));
 
     return commandPool;
 }
@@ -59,46 +60,26 @@ VkCommandBuffer VkCommandManager::beginCommandBuffer() {
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
-    VkResult result = vkAllocateCommandBuffers(*_device, &allocInfo, &commandBuffer);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(vkAllocateCommandBuffers(*_device, &allocInfo, &commandBuffer));
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    beginInfo.flags = 0;
+    beginInfo.pInheritanceInfo = nullptr;
 
-    // Begin recording on the command buffer
-    result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
     return commandBuffer;
 }
 
-void VkCommandManager::endCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue) {
-    VkResult result = vkEndCommandBuffer(commandBuffer);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    result = vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
-
-    result = vkQueueWaitIdle(queue);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+void VkCommandManager::endCommandBuffer(VkCommandBuffer commandBuffer) {
+    VK_RESULT_CHECK(vkEndCommandBuffer(commandBuffer));
 
     VkCommandPool commandPool = getThreadCommandPool();
     vkFreeCommandBuffers(*_device, commandPool, 1, &commandBuffer);
-}
 
+    // Optional: Reset the command pool if all buffers in it are freed
+    // Consider pool-wide reset only if pool won't be reused soon.
+    // result = vkResetCommandPool(*_device, commandPool, 0);
+    // VK_RESULT_CHECK(result);
+}

@@ -7,9 +7,7 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
     : _vkInstance(vkInstance)
 {
     VkResult result = glfwCreateWindowSurface(*_vkInstance, window, nullptr, &_vkSurface);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
 }
 
 VkSurfaceManager::~VkSurfaceManager() {

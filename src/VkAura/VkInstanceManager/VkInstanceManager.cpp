@@ -56,18 +56,16 @@ void VkInstanceManager::initializeInstanceInfo() {
 
 void VkInstanceManager::validateInstanceExtensions() {
     VkResult result = _checkInstanceExtensionSupport(_vkInstanceExtensions);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
+
     _instanceInfo.enabledExtensionCount = static_cast<uint32_t>(_vkInstanceExtensions.size());
     _instanceInfo.ppEnabledExtensionNames = _vkInstanceExtensions.data();
 }
 
 void VkInstanceManager::validateValidationLayers() {
     VkResult result = _checkValidationLayerSupport(_vkValidationLayers);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
+
     _instanceInfo.enabledLayerCount = static_cast<uint32_t>(_vkValidationLayers.size());
     _instanceInfo.ppEnabledLayerNames = _vkValidationLayers.data();
 }
@@ -91,9 +89,7 @@ VkResult VkInstanceManager::prepareVkDebugger(const bool enableValidationLayers)
 void VkInstanceManager::createDebuggerInstance(VkDebugUtilsMessengerCreateInfoEXT* debugCreateInfo) {
     _vkDebugger = std::make_unique<VkDebugger>(&_vkInstance);
     VkResult result = _vkDebugger->createDebugUtilsMessengerEXT(debugCreateInfo, nullptr);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
 }
 
 VkInstance* VkInstanceManager::getVkInstance()

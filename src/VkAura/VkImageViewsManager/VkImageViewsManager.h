@@ -27,7 +27,7 @@ public:
      * @param swapChainImages A reference to a vector of VkImage objects representing swap chain images.
      * @param swapChainImageFormat The format of the swap chain images.
      */
-    VkImageViewsManager(VkDevice device, const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat);
+    VkImageViewsManager(VkDevice* device, const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat);
 
     /**
      * @brief Destroys all created image views and releases resources.
@@ -64,11 +64,14 @@ public:
      * @return A reference to a vector of VkImageView objects.
      */
     const std::vector<VkImageView>& getImageViews() const;
+
+    void clear();
+
 private:
-    VkDevice device; ///< The Vulkan logical device used to create and manage image views.
-    const std::vector<VkImage>& swapChainImages; ///< Reference to the swap chain images for which views are created.
-    VkFormat swapChainImageFormat; ///< The format of the swap chain images, used in view creation.
-    std::vector<VkImageView> swapChainImageViews; ///< Vector storing the created VkImageView objects.
+    VkDevice* _device; ///< The Vulkan logical device used to create and manage image views.
+    const std::vector<VkImage>& _swapChainImages; ///< Reference to the swap chain images for which views are created.
+    VkFormat _swapChainImageFormat; ///< The format of the swap chain images, used in view creation.
+    std::vector<VkImageView> _swapChainImageViews; ///< Vector storing the created VkImageView objects.
 };
 
 #endif // VKIMAGEVIEWSMANAGER_H

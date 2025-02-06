@@ -1,0 +1,66 @@
+#include "VkRenderSyncManager.h"
+
+#include "VkAura/VkException/VkException.h"
+
+#include <plog/Log.h>
+
+VkRenderSyncManager::VkRenderSyncManager(VkDevice* device, const uint32_t& framesInFlight) :
+    _device(device), _framesInFlight(framesInFlight)
+{
+    _imageAvailableSemaphores.resize(_framesInFlight);
+    _renderFinishedSemaphores.resize(_framesInFlight);
+    _inFlightFences.resize(_framesInFlight);
+
+    VkSemaphoreCreateInfo semaphoreInfo = {};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphoreInfo.pNext = nullptr;
+
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.pNext = nullptr;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    for (size_t i = 0; i < _framesInFlight; i++)
+    {
+        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_imageAvailableSemaphores[i]));
+        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]));
+        VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, nullptr, &_inFlightFences[i]));
+    }
+}
+
+VkRenderSyncManager::~VkRenderSyncManager()
+{
+    for (size_t i = 0; i < _framesInFlight; i++)
+    {
+        vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], nullptr);
+        vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], nullptr);
+        vkDestroyFence(*_device, _inFlightFences[i], nullptr);
+    }
+
+    _device = nullptr;
+}
+
+void VkRenderSyncManager::waitForFences(const uint32_t& fenceIndex)
+{
+    vkWaitForFences(*_device, 1, &_inFlightFences[fenceIndex], VK_TRUE, UINT64_MAX);
+}
+
+void VkRenderSyncManager::resetFences(const uint32_t& fenceIndex)
+{
+    vkResetFences(*_device, 1, &_inFlightFences[fenceIndex]);
+}
+
+std::vector<VkSemaphore>& VkRenderSyncManager::getImageAvailableSemaphores()
+{
+    return _imageAvailableSemaphores;
+}
+
+std::vector<VkSemaphore>& VkRenderSyncManager::getRenderFinishedSemaphores()
+{
+    return _renderFinishedSemaphores;
+}
+
+std::vector<VkFence>& VkRenderSyncManager::getInFlightFences()
+{
+    return _inFlightFences;
+}

@@ -1,6 +1,7 @@
 #include "VkSwapChainManager.h"
-#include "VkAura/VkException/VkException.h"
-#include "VkAura/VkQueueManager/VkQueueManager.h"
+
+#include <VkAura/VkException/VkException.h>
+#include <VkAura/VkQueueManager/VkQueueManager.h>
 
 #include <algorithm>
 #include <plog/Log.h>
@@ -9,8 +10,7 @@ VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice
     : _swapChain(VK_NULL_HANDLE), _swapChainSupportDetails({}),
     _device(device), _swapChainCreateInfo({}),
     _swapChainImages({}), _choosedSurfaceFormat(),
-    _choosedPresentMode(), _choosedExtent(), _vkImageViewsManager(nullptr),
-    _renderPass(VK_NULL_HANDLE)
+    _choosedPresentMode(), _choosedExtent()
 {
     _initSwapChainSupportDetails(physicalDevice, vkSurface);
 }
@@ -21,15 +21,38 @@ VkSwapChainManager::~VkSwapChainManager()
         vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
         PLOG_DEBUG << "VkSwapChain deleted";
     }
-    if (_renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(*_device, _renderPass, nullptr);
-    }
+
     _device = nullptr;
+}
+
+VkSwapchainCreateInfoKHR* VkSwapChainManager::getSwapchainCreateInfoKHR()
+{
+    return &_swapChainCreateInfo;
 }
 
 SwapChainSupportDetails* VkSwapChainManager::getSwapChainSupportDetails()
 {
     return &_swapChainSupportDetails;
+}
+
+VkSurfaceFormatKHR* VkSwapChainManager::getChoosedSurfaceFormat()
+{
+    return &_choosedSurfaceFormat;
+}
+
+VkPresentModeKHR* VkSwapChainManager::getChoosedPresentMode()
+{
+    return &_choosedPresentMode;
+}
+
+const std::vector<VkImage>& VkSwapChainManager::getSwapChainImages()
+{
+    return _swapChainImages;
+}
+
+VkExtent2D* VkSwapChainManager::getExtent2D()
+{
+    return &_choosedExtent;
 }
 
 void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount)
@@ -56,18 +79,13 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
     VkDeviceData* vkDeviceCreationData = vkDeviceManager->getDeviceCreationData();
-    std::vector<VkQueueFlags>& exclusiveQueueFlags = vkDeviceCreationData->exclusiveQueueFlags;
+    VkQueueFlags& exclusiveQueueFlag = vkDeviceCreationData->exclusiveQueueFlags;
     std::vector<VkQueueFlags>& concurrentQueueFlags = vkDeviceCreationData->concurrentQueueFlags;
 
     std::vector<uint32_t> queueFamilyIndices;
 
-    VkQueueFlags exclusiveMergedFlag = 0;
-    for (const VkQueueFlags& f : exclusiveQueueFlags) {
-        exclusiveMergedFlag |= f;
-    }
-
-    if (exclusiveMergedFlag != 0) {
-        queueFamilyIndices.push_back(VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), exclusiveMergedFlag));
+    if (exclusiveQueueFlag != 0) {
+        queueFamilyIndices.push_back(VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), exclusiveQueueFlag));
     }
 
     if (!concurrentQueueFlags.empty()) {
@@ -97,9 +115,7 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
 
     VkResult result = vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, nullptr, &_swapChain);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
-    }
+    VK_RESULT_CHECK(result);
 
     PLOG_INFO << "SwapChain successfuly created!";
     PLOG_DEBUG << "ImageCount: " << imageCount;
@@ -109,80 +125,89 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainImages.resize(imageCount);
 
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
-
-    _vkImageViewsManager = std::make_unique<VkImageViewsManager>(*_device, _swapChainImages, _choosedSurfaceFormat.format);
-    _vkImageViewsManager->createImageViews(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layerCount);
-
-    _createRenderPass(_choosedSurfaceFormat.format);
 }
 
-VkSwapchainCreateInfoKHR* VkSwapChainManager::getSwapchainCreateInfoKHR()
+void VkSwapChainManager::recreateSwapChain(VkImageViewsManager* vkImageViewsManager,
+                                           VkFrameBuffersManager* vkFrameBuffersManager,
+                                           GLFWwindow* window,
+                                           VkSurfaceKHR surface,
+                                           VkDeviceManager* vkDeviceManager,
+                                           VkRenderPass renderPass) {
+    vkDeviceWaitIdle(*_device);
+
+    vkFrameBuffersManager->clear();
+    vkImageViewsManager->clear();
+
+    vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
+    PLOG_WARNING << "VkSwapChain deleted in woindow looping";
+
+    createSwapChain(window, surface, vkDeviceManager);
+    vkImageViewsManager->createImageViews(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, getSwapchainCreateInfoKHR()->minImageCount);
+    vkFrameBuffersManager->createFrameBuffers(vkImageViewsManager->getImageViews(),
+                                              renderPass,
+                                              *getExtent2D());
+}
+
+const uint32_t VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore)
 {
-    return &_swapChainCreateInfo;
-}
+    uint32_t imageIndex = UINT32_MAX;
+    VkResult result = vkAcquireNextImageKHR(*_device, _swapChain, UINT64_MAX, imageSemaphore, VK_NULL_HANDLE, &imageIndex);
 
-VkRenderPass* VkSwapChainManager::getRenderPass()
-{
-    return &_renderPass;
-}
-
-void VkSwapChainManager::_createRenderPass(VkFormat swapchainImageFormat) {
-    _vkRenderPassData.colorAttachment = {};
-    _vkRenderPassData.colorAttachment.format = swapchainImageFormat;
-    _vkRenderPassData.colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    _vkRenderPassData.colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    _vkRenderPassData.colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    _vkRenderPassData.colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    _vkRenderPassData.colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    _vkRenderPassData.colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    _vkRenderPassData.colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    _vkRenderPassData.colorAttachmentRef = {};
-    _vkRenderPassData.colorAttachmentRef.attachment = 0;
-    _vkRenderPassData.colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    // depthAttachmentRef.attachment = 1; // Index of the depth attachment
-    // depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    // // Update render pass creation to include depth attachment
-    // std::array<VkAttachmentDescription, 2> attachments = {
-    //     _vkRenderPassData.colorAttachment, depthAttachment
-    // };
-
-    // Subpass definition
-    _vkRenderPassData.subpass = {};
-    _vkRenderPassData.subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    _vkRenderPassData.subpass.colorAttachmentCount = 1;
-    _vkRenderPassData.subpass.pColorAttachments = &_vkRenderPassData.colorAttachmentRef;
-
-    _vkRenderPassData.dependency = {};
-    _vkRenderPassData.dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    _vkRenderPassData.dependency.dstSubpass = 0;
-    _vkRenderPassData.dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    _vkRenderPassData.dependency.srcAccessMask = 0;
-    _vkRenderPassData.dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    _vkRenderPassData.dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    // Create the render pass
-    _vkRenderPassData.renderPassInfo = {};
-    _vkRenderPassData.renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    _vkRenderPassData.renderPassInfo.attachmentCount = 1;
-    _vkRenderPassData.renderPassInfo.pAttachments = &_vkRenderPassData.colorAttachment;
-    _vkRenderPassData.renderPassInfo.subpassCount = 1;
-    _vkRenderPassData.renderPassInfo.pSubpasses = &_vkRenderPassData.subpass;
-    _vkRenderPassData.renderPassInfo.dependencyCount = 1;
-    _vkRenderPassData.renderPassInfo.pDependencies = &_vkRenderPassData.dependency;
-
-    VkResult result = vkCreateRenderPass(*_device, &_vkRenderPassData.renderPassInfo, nullptr, &_renderPass);
-    if (result != VK_SUCCESS) {
-        throw VkException(result);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        return imageIndex;
     }
+
+    VK_RESULT_CHECK(result);
+
+    return imageIndex;
+}
+
+void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const uint32_t& imageIndex)
+{
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = renderFinishedSemaphore;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &_swapChain;
+    presentInfo.pImageIndices = &imageIndex;
+    presentInfo.pResults = nullptr; // Optional
+
+    vkQueuePresentKHR(queue, &presentInfo);
+}
+
+void VkSwapChainManager::cmdPipelineBarrier(VkCommandBuffer commandBuffer, const uint32_t& imageIndex)
+{
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = _swapChainImages[imageIndex];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = 0;
+
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // srcStageMask
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,            // dstStageMask
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+        );
 }
 
 void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)
 {
     VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, vkSurface, &_swapChainSupportDetails.capabilities);
-    if (result != VK_SUCCESS) throw VkException(result);
+    VK_RESULT_CHECK(result);
 
     uint32_t formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vkSurface, &formatCount, nullptr);
@@ -190,7 +215,7 @@ void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalD
     if (formatCount != 0) {
         _swapChainSupportDetails.formats.resize(formatCount);
         result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vkSurface, &formatCount, _swapChainSupportDetails.formats.data());
-        if (result != VK_SUCCESS) throw VkException(result);
+        VK_RESULT_CHECK(result);
     }
 
     uint32_t presentModeCount = 0;
@@ -199,7 +224,7 @@ void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalD
     if (presentModeCount != 0) {
         _swapChainSupportDetails.presentModes.resize(presentModeCount);
         result = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, vkSurface, &presentModeCount, _swapChainSupportDetails.presentModes.data());
-        if (result != VK_SUCCESS) throw VkException(result);
+        VK_RESULT_CHECK(result);
     }
 }
 

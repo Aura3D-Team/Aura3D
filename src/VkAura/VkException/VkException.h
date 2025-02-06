@@ -156,4 +156,8 @@ static const std::unordered_map<int64_t, const char*> vkResultToString = {
     { VK_INCOMPATIBLE_SHADER_BINARY_EXT, "Incompatible shader binary" }
 };
 
+#define VK_RESULT_CHECK(result) \
+if (result != VK_SUCCESS)       \
+    throw VkException(result);  \
+
 #endif // VKEXCEPTION_H

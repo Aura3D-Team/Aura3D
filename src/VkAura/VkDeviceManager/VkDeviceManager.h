@@ -20,7 +20,7 @@ struct VkDeviceData {
     std::vector<const char*> vkEnabledLayers;
 
     std::vector<VkQueueFlags> concurrentQueueFlags;
-    std::vector<VkQueueFlags> exclusiveQueueFlags;
+    VkQueueFlags exclusiveQueueFlags;
 };
 
 /**

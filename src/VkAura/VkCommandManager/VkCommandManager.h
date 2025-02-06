@@ -69,9 +69,8 @@ public:
      * provided Vulkan queue for execution.
      *
      * @param commandBuffers The command buffer to end and submit.
-     * @param queue The Vulkan queue to which the command buffers will be submitted.
      */
-    void endCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue);
+    void endCommandBuffer(VkCommandBuffer commandBuffer);
 
     /**
      * @brief Retrieves the command pool associated with the current thread.
