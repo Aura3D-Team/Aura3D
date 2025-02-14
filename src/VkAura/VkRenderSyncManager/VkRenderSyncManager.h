@@ -5,27 +5,27 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <VkAura/VkCommon.h>
 
 class VkRenderSyncManager
 {
 public:
-    VkRenderSyncManager(VkDevice* device, const uint32_t& framesInFlight);
+    VkRenderSyncManager(VkDevice* device);
     ~VkRenderSyncManager();
 
     void waitForFences(const uint32_t& fenceIndex);
     void resetFences(const uint32_t& fenceIndex);
 
-    std::vector<VkSemaphore>& getImageAvailableSemaphores();
-    std::vector<VkSemaphore>& getRenderFinishedSemaphores();
-    std::vector<VkFence>& getInFlightFences();
+    VkFixedArray<VkSemaphore>& getImageAvailableSemaphores();
+    VkFixedArray<VkSemaphore>& getRenderFinishedSemaphores();
+    VkFixedArray<VkFence>& getInFlightFences();
 
 private:
     VkDevice* _device;
 
-    uint32_t _framesInFlight;
-    std::vector<VkSemaphore> _imageAvailableSemaphores;
-    std::vector<VkSemaphore> _renderFinishedSemaphores;
-    std::vector<VkFence> _inFlightFences;
+    VkFixedArray<VkSemaphore> _imageAvailableSemaphores;
+    VkFixedArray<VkSemaphore> _renderFinishedSemaphores;
+    VkFixedArray<VkFence> _inFlightFences;
 };
 
 #endif // VKRENDERSYNCMANAGER_H

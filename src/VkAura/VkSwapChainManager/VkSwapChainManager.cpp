@@ -78,6 +78,10 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     _swapChainCreateInfo.imageArrayLayers = std::min(layerCount, _swapChainSupportDetails.capabilities.maxImageArrayLayers);
     _swapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
+    // if (_swapChainSupportDetails.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+    //     _swapChainCreateInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // }
+
     VkDeviceData* vkDeviceCreationData = vkDeviceManager->getDeviceCreationData();
     VkQueueFlags& exclusiveQueueFlag = vkDeviceCreationData->exclusiveQueueFlags;
     std::vector<VkQueueFlags>& concurrentQueueFlags = vkDeviceCreationData->concurrentQueueFlags;
@@ -139,10 +143,10 @@ void VkSwapChainManager::recreateSwapChain(VkImageViewsManager* vkImageViewsMana
     vkImageViewsManager->clear();
 
     vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
-    PLOG_WARNING << "VkSwapChain deleted in woindow looping";
+    PLOG_WARNING << "VkSwapChain deleted in window looping";
 
     createSwapChain(window, surface, vkDeviceManager);
-    vkImageViewsManager->createImageViews(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, getSwapchainCreateInfoKHR()->minImageCount);
+    vkImageViewsManager->createImageViews(_swapChainImages, _choosedSurfaceFormat.format, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, getSwapchainCreateInfoKHR()->minImageCount);
     vkFrameBuffersManager->createFrameBuffers(vkImageViewsManager->getImageViews(),
                                               renderPass,
                                               *getExtent2D());
@@ -176,12 +180,19 @@ void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* rend
     vkQueuePresentKHR(queue, &presentInfo);
 }
 
-void VkSwapChainManager::cmdPipelineBarrier(VkCommandBuffer commandBuffer, const uint32_t& imageIndex)
+void VkSwapChainManager::transitionImageLayout(
+    VkCommandBuffer commandBuffer,
+    const uint32_t& imageIndex,
+    VkImageLayout oldLayout,
+    VkImageLayout newLayout,
+    VkFixedArray<VkPipelineStageFlags> stages,
+    VkFixedArray<VkAccessFlags> accessFlags)
+
 {
-    VkImageMemoryBarrier barrier{};
+    VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = _swapChainImages[imageIndex];
@@ -190,18 +201,23 @@ void VkSwapChainManager::cmdPipelineBarrier(VkCommandBuffer commandBuffer, const
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    barrier.dstAccessMask = 0;
+
+    barrier.srcAccessMask = accessFlags[0];
+    barrier.dstAccessMask = accessFlags[1];
 
     vkCmdPipelineBarrier(
         commandBuffer,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // srcStageMask
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,            // dstStageMask
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
+        stages[0],
+        stages[1],
+        0, 0, nullptr, 0, nullptr, 1, &barrier
         );
+}
+
+void VkSwapChainManager::debug(const uint32_t& imageIndex)
+{
+    VkImage image = _swapChainImages[imageIndex];
+
+    // PLOG_DEBUG << image;
 }
 
 void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)

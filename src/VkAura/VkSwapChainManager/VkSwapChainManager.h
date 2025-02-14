@@ -11,6 +11,7 @@
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
 #include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
+#include <VkAura/VkCommon.h>
 
 struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities;
@@ -120,8 +121,15 @@ public:
 
     void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const uint32_t& imageIndex);
 
-    void cmdPipelineBarrier(VkCommandBuffer commandBuffer, const uint32_t& imageIndex);
+    void transitionImageLayout(
+        VkCommandBuffer commandBuffer,
+        const uint32_t& imageIndex,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout,
+        VkFixedArray<VkPipelineStageFlags> stages,
+        VkFixedArray<VkAccessFlags> accessFlags);
 
+    void debug(const uint32_t& imageIndex);
 private:
     SwapChainSupportDetails _swapChainSupportDetails; ///< Holds details about swap chain support.
 

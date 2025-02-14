@@ -4,8 +4,8 @@
 
 #include <plog/Log.h>
 
-VkImageViewsManager::VkImageViewsManager(VkDevice* device, const std::vector<VkImage>& _swapChainImages, VkFormat _swapChainImageFormat)
-    : _device(device), _swapChainImages(_swapChainImages), _swapChainImageFormat(_swapChainImageFormat)
+VkImageViewsManager::VkImageViewsManager(VkDevice* device)
+    : _device(device)
 {
     // empty
 }
@@ -21,16 +21,16 @@ VkImageViewsManager::~VkImageViewsManager()
     PLOG_DEBUG << "ImageViews destroyed.";
 }
 
-void VkImageViewsManager::createImageViews(VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount)
+void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat, VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount)
 {
-    _swapChainImageViews.resize(_swapChainImages.size());
+    _swapChainImageViews.resize(swapChainImages.size());
 
-    for (size_t i = 0; i < _swapChainImages.size(); i++) {
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
         VkImageViewCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = _swapChainImages[i];
+        createInfo.image = swapChainImages[i];
         createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = _swapChainImageFormat;
+        createInfo.format = swapChainImageFormat;
 
         createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;

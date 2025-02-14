@@ -25,14 +25,19 @@ VkCommandManager::~VkCommandManager() {
 VkCommandPool VkCommandManager::createThreadCommandPool() {
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
     poolInfo.queueFamilyIndex = _queueFamilyIndex;
-    poolInfo.flags = 0;
 
     VkCommandPool commandPool;
     VK_RESULT_CHECK(vkCreateCommandPool(*_device, &poolInfo, nullptr, &commandPool));
 
     return commandPool;
+}
+
+void VkCommandManager::resetCommandPool()
+{
+    VkCommandPool commandPool = getThreadCommandPool();
+    VK_RESULT_CHECK(vkResetCommandPool(*_device, commandPool, 0));
 }
 
 VkCommandPool VkCommandManager::getThreadCommandPool() {
@@ -50,26 +55,35 @@ VkCommandPool VkCommandManager::getThreadCommandPool() {
     }
 }
 
-VkCommandBuffer VkCommandManager::beginCommandBuffer() {
+VkFixedArray<VkCommandBuffer> VkCommandManager::createCommandBuffer()
+{
     VkCommandPool commandPool = getThreadCommandPool();
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandPool = commandPool;
-    allocInfo.commandBufferCount = 1;
+    allocInfo.commandBufferCount = (uint32_t) MAX_FRAMES_IN_FLIGHT;
 
-    VkCommandBuffer commandBuffer;
-    VK_RESULT_CHECK(vkAllocateCommandBuffers(*_device, &allocInfo, &commandBuffer));
+    VkFixedArray<VkCommandBuffer> commandBuffers = {};
+    VK_RESULT_CHECK(vkAllocateCommandBuffers(*_device, &allocInfo, commandBuffers.data()));
 
+    return commandBuffers;
+}
+
+void VkCommandManager::resetCommandBuffer(VkCommandBuffer commandBuffer)
+{
+    VK_RESULT_CHECK(vkResetCommandBuffer(commandBuffer, 0));
+}
+
+void VkCommandManager::beginCommandBuffer(VkCommandBuffer commandBuffer)
+{
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = 0;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
     VK_RESULT_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
-
-    return commandBuffer;
 }
 
 void VkCommandManager::endCommandBuffer(VkCommandBuffer commandBuffer) {
@@ -77,9 +91,4 @@ void VkCommandManager::endCommandBuffer(VkCommandBuffer commandBuffer) {
 
     VkCommandPool commandPool = getThreadCommandPool();
     vkFreeCommandBuffers(*_device, commandPool, 1, &commandBuffer);
-
-    // Optional: Reset the command pool if all buffers in it are freed
-    // Consider pool-wide reset only if pool won't be reused soon.
-    // result = vkResetCommandPool(*_device, commandPool, 0);
-    // VK_RESULT_CHECK(result);
 }

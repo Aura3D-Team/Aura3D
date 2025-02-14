@@ -8,7 +8,8 @@
 #include <mutex>
 #include <thread>
 #include <memory>
-#include <array>
+#include <vector>
+#include <VkAura/VkCommon.h>
 
 /**
  * @brief Stores command pool creation info and Vulkan command pool.
@@ -51,16 +52,21 @@ public:
      */
     ~VkCommandManager();
 
+    VkFixedArray<VkCommandBuffer> createCommandBuffer();
+
+    static void resetCommandBuffer(VkCommandBuffer commandBuffer);
+
+    void resetCommandPool();
+
     /**
      * @brief Begins one or more command buffers for recording commands.
      *
      * This method allocates and begins recording on a specified number of command buffers.
      * The command buffers returned are ready for recording Vulkan commands.
      *
-     * @tparam commandBufferCount The number of command buffers to allocate and begin recording.
-     * @return VkCommandBuffer A command buffer ready for recording.
+     * @param commandBuffer The command buffer to begin recording.
      */
-    VkCommandBuffer beginCommandBuffer();
+    void beginCommandBuffer(VkCommandBuffer commandBuffer);
 
     /**
      * @brief Ends recording of a command buffer array and submits it to a Vulkan queue.
@@ -68,7 +74,7 @@ public:
      * This method finalizes the recording of the specified command buffer array and submits it to the
      * provided Vulkan queue for execution.
      *
-     * @param commandBuffers The command buffer to end and submit.
+     * @param commandBuffer The command buffer to end.
      */
     void endCommandBuffer(VkCommandBuffer commandBuffer);
 

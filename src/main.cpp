@@ -26,8 +26,6 @@
 #include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
 #include <VkAura/VkRenderSyncManager/VkRenderSyncManager.h>
 
-#define MAX_FRAMES_IN_FLIGHT 2
-
 
 // #include <ImguiAura/ImguiAura.h>
 // #include <imgui/imgui.h>
@@ -82,7 +80,7 @@ int main(int argc, char **argv)
     std::unique_ptr<VkDeviceManager> vkDeviceManager = std::make_unique<VkDeviceManager>(vkInstance->getVkInstance(), vkDeviceData);
 
 
-    glfwWindowManager->createGlfwWindowManager("Aura3D");
+    glfwWindowManager->createGlfwWindowManager(APPLICATION_NAME);
     std::unique_ptr<VkSurfaceManager> vkSurfaceManager = std::make_unique<VkSurfaceManager>(
         vkInstance->getVkInstance(),
         glfwWindowManager->getWindowInstance()
@@ -103,10 +101,9 @@ int main(int argc, char **argv)
     vkSwapChainManager->createSwapChain(glfwWindowManager->getWindowInstance(), *vkSurfaceManager->getSurface(), vkDeviceManager.get());
     // uint32_t imageCount = vkSwapChainManager->getSwapchainCreateInfoKHR()->minImageCount;
 
-    std::unique_ptr<VkImageViewsManager> vkImageViewsManager = std::make_unique<VkImageViewsManager>(vkDeviceManager->getDevice(),
-                                                                                                      vkSwapChainManager->getSwapChainImages(),
-                                                                                                      vkSwapChainManager->getChoosedSurfaceFormat()->format);
-    vkImageViewsManager->createImageViews(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, vkSwapChainManager->getSwapchainCreateInfoKHR()->minImageCount);
+
+    std::unique_ptr<VkImageViewsManager> vkImageViewsManager = std::make_unique<VkImageViewsManager>(vkDeviceManager->getDevice());
+    vkImageViewsManager->createImageViews(vkSwapChainManager->getSwapChainImages(), vkSwapChainManager->getChoosedSurfaceFormat()->format, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, vkSwapChainManager->getSwapchainCreateInfoKHR()->minImageCount);
 
 
     std::unique_ptr<VkRenderPassManager> vkRenderPassManager = std::make_unique<VkRenderPassManager>(vkDeviceManager->getDevice());
@@ -125,8 +122,9 @@ int main(int argc, char **argv)
 
 
     std::unique_ptr<VkCommandManager> vkCommandManager = std::make_unique<VkCommandManager>(vkDeviceManager->getDevice(), graphicsIndexFamily);
+    VkFixedArray<VkCommandBuffer> cmdBuffers = vkCommandManager->createCommandBuffer();
 
-    std::unique_ptr<VkRenderSyncManager> vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(vkDeviceManager->getDevice(), MAX_FRAMES_IN_FLIGHT);
+    std::unique_ptr<VkRenderSyncManager> vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(vkDeviceManager->getDevice());
 
     const auto& frameBuffers = vkFrameBuffersManager->getFrameBuffers();
     VkExtent2D extent = *vkSwapChainManager->getExtent2D();
@@ -154,27 +152,51 @@ int main(int argc, char **argv)
             return; // continue
         }
 
+        vkSwapChainManager->debug(imageIndex);
+
+        vkCommandManager->resetCommandPool();
+
         // Begin recording the command buffer.
-        VkCommandBuffer commandBuffer = vkCommandManager->beginCommandBuffer();
-        vkRenderPassManager->beginRenderPass(commandBuffer, frameBuffers[imageIndex], extent);
+        vkCommandManager->beginCommandBuffer(cmdBuffers[currentFrame]);
+
+        // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+        //                                           imageIndex,
+        //                                           VK_IMAGE_LAYOUT_UNDEFINED,
+        //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+        //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+
+        vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+                                                  imageIndex,
+                                                  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                                  {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+                                                  {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+
+        vkRenderPassManager->beginRenderPass(cmdBuffers[currentFrame], frameBuffers[currentFrame], extent);
 
         // Record drawing commands.
-        vkGraphicsPipelineManager->cmdBindPipeline(commandBuffer);
-        vkGraphicsPipelineManager->cmdDraw(commandBuffer, extent);
-
-        // vkSwapChainManager->cmdPipelineBarrier(commandBuffer, imageIndex);
+        vkGraphicsPipelineManager->cmdBindPipeline(cmdBuffers[currentFrame]);
+        vkGraphicsPipelineManager->cmdDraw(cmdBuffers[currentFrame], extent);
 
         // End the render pass and finish recording.
-        vkRenderPassManager->endRenderPass(commandBuffer);
-        vkCommandManager->endCommandBuffer(commandBuffer);
+        vkRenderPassManager->endRenderPass(cmdBuffers[currentFrame]);
+
+        vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+                                                  imageIndex,
+                                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                                  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                                  {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
+                                                  {VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE});
+
+        vkCommandManager->endCommandBuffer(cmdBuffers[currentFrame]);
 
         VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
-
         VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
 
         // Now submit the finished command buffer to the graphics queue.
         VkQueueManager::submitCmdIntoQueue(queueToDraw,
-                                           &commandBuffer,
+                                           &cmdBuffers[currentFrame],
                                            waitSemaphores,
                                            signalSemaphores);
 
@@ -182,6 +204,8 @@ int main(int argc, char **argv)
         vkSwapChainManager->presentBackToSwapChain(queueToDraw,
                                                    signalSemaphores,
                                                    imageIndex);
+
+        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     });
 
     vkDeviceWaitIdle(*vkDeviceManager->getDevice());
