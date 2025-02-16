@@ -175,7 +175,7 @@ void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* rend
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &_swapChain;
     presentInfo.pImageIndices = &imageIndex;
-    presentInfo.pResults = nullptr; // Optional
+    // presentInfo.pResults = nullptr; // Optional
 
     vkQueuePresentKHR(queue, &presentInfo);
 }

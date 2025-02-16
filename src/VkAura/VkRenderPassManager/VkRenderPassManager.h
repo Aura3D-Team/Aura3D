@@ -17,7 +17,7 @@ public:
                          VkFramebuffer framebuffer,
                          VkExtent2D swapChainExtent);
 
-    void endRenderPass(VkCommandBuffer commandBuffer);
+    static void endRenderPass(VkCommandBuffer commandBuffer);
 
     VkRenderPass* getRenderPass();
 

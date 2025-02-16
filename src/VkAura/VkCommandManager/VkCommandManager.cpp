@@ -4,6 +4,9 @@
 
 #include <plog/Log.h>
 
+std::unordered_map<std::thread::id, VkCommandPool> VkCommandManager::_threadCommandPools;
+std::mutex VkCommandManager::_poolMutex;
+
 VkCommandManager::VkCommandManager(VkDevice* device, uint32_t queueFamilyIndex)
     : _device(device), _queueFamilyIndex(queueFamilyIndex) {
     // Command pools will now be created on demand for each thread
@@ -22,18 +25,6 @@ VkCommandManager::~VkCommandManager() {
     PLOG_DEBUG << "CommandPools destroyed.";
 }
 
-VkCommandPool VkCommandManager::createThreadCommandPool() {
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    poolInfo.queueFamilyIndex = _queueFamilyIndex;
-
-    VkCommandPool commandPool;
-    VK_RESULT_CHECK(vkCreateCommandPool(*_device, &poolInfo, nullptr, &commandPool));
-
-    return commandPool;
-}
-
 void VkCommandManager::resetCommandPool()
 {
     VkCommandPool commandPool = getThreadCommandPool();
@@ -47,7 +38,14 @@ VkCommandPool VkCommandManager::getThreadCommandPool() {
     // Check if a command pool exists for this thread
     auto it = _threadCommandPools.find(threadId);
     if (it == _threadCommandPools.end()) {
-        VkCommandPool commandPool = createThreadCommandPool();
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        poolInfo.queueFamilyIndex = _queueFamilyIndex;
+
+        VkCommandPool commandPool;
+        VK_RESULT_CHECK(vkCreateCommandPool(*_device, &poolInfo, nullptr, &commandPool));
+
         _threadCommandPools[threadId] = commandPool;
         return commandPool;
     } else {
@@ -88,7 +86,10 @@ void VkCommandManager::beginCommandBuffer(VkCommandBuffer commandBuffer)
 
 void VkCommandManager::endCommandBuffer(VkCommandBuffer commandBuffer) {
     VK_RESULT_CHECK(vkEndCommandBuffer(commandBuffer));
+}
 
+void VkCommandManager::freeCmdBuffer(VkCommandBuffer* commandBuffer)
+{
     VkCommandPool commandPool = getThreadCommandPool();
-    vkFreeCommandBuffers(*_device, commandPool, 1, &commandBuffer);
+    vkFreeCommandBuffers(*_device, commandPool, 1, commandBuffer);
 }

@@ -66,7 +66,7 @@ public:
      *
      * @param commandBuffer The command buffer to begin recording.
      */
-    void beginCommandBuffer(VkCommandBuffer commandBuffer);
+    static void beginCommandBuffer(VkCommandBuffer commandBuffer);
 
     /**
      * @brief Ends recording of a command buffer array and submits it to a Vulkan queue.
@@ -76,7 +76,17 @@ public:
      *
      * @param commandBuffer The command buffer to end.
      */
-    void endCommandBuffer(VkCommandBuffer commandBuffer);
+    static void endCommandBuffer(VkCommandBuffer commandBuffer);
+
+    void freeCmdBuffer(VkCommandBuffer* commandBuffer);
+
+private:
+    VkDevice* _device;
+    uint32_t _queueFamilyIndex; /**< The queue family index for command pool allocation. */
+
+    // Map of command pools by thread ID
+    static std::unordered_map<std::thread::id, VkCommandPool> _threadCommandPools;
+    static std::mutex _poolMutex; /**< Mutex to protect access to the command pool map. */
 
     /**
      * @brief Retrieves the command pool associated with the current thread.
@@ -86,21 +96,6 @@ public:
      * @return VkCommandPool The thread-local command pool.
      */
     VkCommandPool getThreadCommandPool();
-
-private:
-    VkDevice* _device; /**< Pointer to the Vulkan logical device used for command pool creation. */
-    uint32_t _queueFamilyIndex; /**< The queue family index for command pool allocation. */
-
-    // Map of command pools by thread ID
-    std::unordered_map<std::thread::id, VkCommandPool> _threadCommandPools;
-    std::mutex _poolMutex; /**< Mutex to protect access to the command pool map. */
-
-    /**
-     * @brief Creates a command pool specifically for the calling thread.
-     *
-     * @return VkCommandPool The command pool created for the thread.
-     */
-    VkCommandPool createThreadCommandPool();
 };
 
 #endif // VKCOMMANDMANAGER_H

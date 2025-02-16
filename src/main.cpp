@@ -124,7 +124,9 @@ int main(int argc, char **argv)
     std::unique_ptr<VkCommandManager> vkCommandManager = std::make_unique<VkCommandManager>(vkDeviceManager->getDevice(), graphicsIndexFamily);
     VkFixedArray<VkCommandBuffer> cmdBuffers = vkCommandManager->createCommandBuffer();
 
+
     std::unique_ptr<VkRenderSyncManager> vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(vkDeviceManager->getDevice());
+
 
     const auto& frameBuffers = vkFrameBuffersManager->getFrameBuffers();
     VkExtent2D extent = *vkSwapChainManager->getExtent2D();
@@ -157,7 +159,15 @@ int main(int argc, char **argv)
         vkCommandManager->resetCommandPool();
 
         // Begin recording the command buffer.
-        vkCommandManager->beginCommandBuffer(cmdBuffers[currentFrame]);
+        VkCommandManager::beginCommandBuffer(cmdBuffers[currentFrame]);
+
+        // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+        //                                           imageIndex,
+        //                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+        //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+
 
         // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
         //                                           imageIndex,
@@ -166,35 +176,29 @@ int main(int argc, char **argv)
         //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
         //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
 
-        vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
-                                                  imageIndex,
-                                                  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                                  {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
-                                                  {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
-
         vkRenderPassManager->beginRenderPass(cmdBuffers[currentFrame], frameBuffers[currentFrame], extent);
 
         // Record drawing commands.
         vkGraphicsPipelineManager->cmdBindPipeline(cmdBuffers[currentFrame]);
         vkGraphicsPipelineManager->cmdDraw(cmdBuffers[currentFrame], extent);
 
-        // End the render pass and finish recording.
-        vkRenderPassManager->endRenderPass(cmdBuffers[currentFrame]);
-
-        vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
-                                                  imageIndex,
-                                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                                  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                                  {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
-                                                  {VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE});
-
-        vkCommandManager->endCommandBuffer(cmdBuffers[currentFrame]);
-
         VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
         VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
 
-        // Now submit the finished command buffer to the graphics queue.
+        VkRenderPassManager::endRenderPass(cmdBuffers[currentFrame]);
+
+        // Transition image layout for presentation.
+        // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+        //                                           imageIndex,
+        //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        //                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        //                                           {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
+        //                                           {VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE});
+
+        // ✅ END the command buffer before submission
+        VkCommandManager::endCommandBuffer(cmdBuffers[currentFrame]);
+
+        // ✅ Now submit the finished command buffer to the queue.
         VkQueueManager::submitCmdIntoQueue(queueToDraw,
                                            &cmdBuffers[currentFrame],
                                            waitSemaphores,

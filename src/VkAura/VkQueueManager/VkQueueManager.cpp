@@ -154,18 +154,20 @@ void VkQueueManager::submitCmdIntoQueue(VkQueue queue,
                         VkSemaphore* imageAvailableSemaphore,
                         VkSemaphore* renderFinishedSemaphore)
 {
+    VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = imageAvailableSemaphore;
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 0;
+    submitInfo.pWaitDstStageMask = &waitStages;
+    submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = commandBuffer;
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = renderFinishedSemaphore;
 
     VK_RESULT_CHECK(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+
+    VK_RESULT_CHECK(vkQueueWaitIdle(queue));
 }
