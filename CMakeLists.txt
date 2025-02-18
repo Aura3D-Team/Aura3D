@@ -33,6 +33,11 @@ file(GLOB_RECURSE SHADERS
     ${CMAKE_SOURCE_DIR}/shaders/*.vert
 )
 
+add_custom_target(shaders
+    SOURCES
+    ${SHADERS}
+)
+
 foreach(SHADER_FILE ${SHADERS})
     get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
     get_filename_component(SHADER_EXT ${SHADER_FILE} EXT)
@@ -70,10 +75,13 @@ set(IMGUI_SOURCES
     ${IMGUI_PATH}/backends/imgui_impl_vulkan.cpp
 )
 
-list(APPEND SOURCES ${IMGUI_SOURCES})
+add_custom_target(imgui
+    SOURCES
+    ${IMGUI_SOURCES}
+)
 
 # Add executable target
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCES} ${IMGUI_SOURCES})
 add_dependencies(${PROJECT_NAME} CompileShaders)
 
 # Handle Debug mode specific settings
