@@ -4,6 +4,8 @@
 
 #include <plog/Log.h>
 
+namespace aura3d {
+
 std::unordered_map<std::thread::id, VkCommandPool> VkCommandManager::_threadCommandPools;
 std::mutex VkCommandManager::_poolMutex;
 
@@ -92,4 +94,6 @@ void VkCommandManager::freeCmdBuffer(VkCommandBuffer* commandBuffer)
 {
     VkCommandPool commandPool = getThreadCommandPool();
     vkFreeCommandBuffers(*_device, commandPool, 1, commandBuffer);
+}
+
 }

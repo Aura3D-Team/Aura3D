@@ -20,6 +20,8 @@ namespace std {
     };
 }
 
+namespace aura3d {
+
 /**
  * @brief Holds information about a Vulkan queue.
  *
@@ -183,5 +185,7 @@ private:
     // This allows multiple queue families (with different indices) that satisfy the same flag requirement.
     std::unordered_map<std::pair<uint32_t, VkQueueFlags>, QueueData> _mapVkQueues;
 };
+
+}
 
 #endif // VKQUEUEMANAGER_H

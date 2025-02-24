@@ -2,6 +2,8 @@
 
 #include "VkAura/VkBufferManager/VkBufferManager.h"
 
+namespace aura3d {
+
 VkVertexBufferManager::VkVertexBufferManager(VkDevice* vkDevice) :
     _vkDevice(vkDevice)
 {
@@ -52,3 +54,5 @@ VkVertexBufferManager::~VkVertexBufferManager()
 //     vkDestroyBuffer(device, stagingBuffer, nullptr);
 //     vkFreeMemory(device, stagingBufferMemory, nullptr);
 // }
+
+}

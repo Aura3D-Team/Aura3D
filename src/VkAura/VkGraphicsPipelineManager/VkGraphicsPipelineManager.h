@@ -8,6 +8,8 @@
 #include <array>
 #include <string>
 
+namespace aura3d {
+
 class VkGraphicsPipelineManager : public VkPipelineManager
 {
 public:
@@ -27,5 +29,7 @@ private:
     std::array<VkPipelineShaderStageCreateInfo, 2> _shaderStages;
     std::array<VkDynamicState, 2> _dynamicStates;
 };
+
+}
 
 #endif // VKGRAPHICSPIPELINEMANAGER_H

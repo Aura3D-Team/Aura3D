@@ -4,6 +4,8 @@
 
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkRenderSyncManager::VkRenderSyncManager(VkDevice* device) :
     _device(device)
 {
@@ -59,4 +61,6 @@ VkFixedArray<VkSemaphore>& VkRenderSyncManager::getRenderFinishedSemaphores()
 VkFixedArray<VkFence>& VkRenderSyncManager::getInFlightFences()
 {
     return _inFlightFences;
+}
+
 }

@@ -1,6 +1,8 @@
 #include "VkDebugger.h"
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkDebugger::VkDebugger(VkInstance* vkInstance)
     : _vkInstance(vkInstance), _debugMessenger(VK_NULL_HANDLE)
 {
@@ -77,4 +79,6 @@ VkResult VkDebugger::createDebugUtilsMessengerEXT(VkDebugUtilsMessengerCreateInf
 VkDebugUtilsMessengerEXT* VkDebugger::getVkDebugMessenger()
 {
     return &_debugMessenger;
+}
+
 }

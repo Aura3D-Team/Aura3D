@@ -4,6 +4,8 @@
 
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkFrameBuffersManager::VkFrameBuffersManager(VkDevice* device) :
     _device(device)
 {
@@ -58,4 +60,6 @@ void VkFrameBuffersManager::clear()
     }
 
     _framebuffers.clear();
+}
+
 }

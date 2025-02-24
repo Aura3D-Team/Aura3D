@@ -2,6 +2,8 @@
 
 #include "VkAura/VkException/VkException.h"
 
+namespace aura3d {
+
 VkShaderManager::VkShaderManager(VkDevice* device) :
     _vertShaderModule(VK_NULL_HANDLE), _fragShaderModule(VK_NULL_HANDLE),
     _shaderFileExtractor(ShaderSpirvExtractor()), _device(device)
@@ -63,4 +65,6 @@ VkShaderModule VkShaderManager::_createShaderModule(VkDevice device, const std::
     VK_RESULT_CHECK(result);
 
     return shaderModule;
+}
+
 }

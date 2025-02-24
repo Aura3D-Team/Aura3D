@@ -11,6 +11,8 @@
 #include <vector>
 #include <VkAura/VkCommon.h>
 
+namespace aura3d {
+
 /**
  * @brief Stores command pool creation info and Vulkan command pool.
  *
@@ -97,5 +99,7 @@ private:
      */
     VkCommandPool getThreadCommandPool();
 };
+
+}
 
 #endif // VKCOMMANDMANAGER_H

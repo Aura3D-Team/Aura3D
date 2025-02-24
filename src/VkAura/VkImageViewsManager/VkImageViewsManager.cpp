@@ -4,6 +4,8 @@
 
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkImageViewsManager::VkImageViewsManager(VkDevice* device)
     : _device(device)
 {
@@ -61,4 +63,6 @@ void VkImageViewsManager::clear()
         vkDestroyImageView(*_device, imageView, nullptr);
     }
     _swapChainImageViews.clear();
+}
+
 }

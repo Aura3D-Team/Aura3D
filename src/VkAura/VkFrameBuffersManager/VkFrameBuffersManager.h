@@ -6,6 +6,8 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
+namespace aura3d {
+
 class VkFrameBuffersManager
 {
 public:
@@ -24,5 +26,7 @@ private:
     VkDevice* _device;
     std::vector<VkFramebuffer> _framebuffers;
 };
+
+}
 
 #endif // VKFRAMEBUFFERSMANAGER_H

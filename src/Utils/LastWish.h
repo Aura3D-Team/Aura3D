@@ -5,6 +5,8 @@
 
 #include <functional>
 
+namespace aura3d {
+
 /**
  * @class LastWish
  *
@@ -50,5 +52,7 @@ private:
      */
     std::function<void ()> _lastWish;
 };
+
+}
 
 #endif // LASTWISH_H

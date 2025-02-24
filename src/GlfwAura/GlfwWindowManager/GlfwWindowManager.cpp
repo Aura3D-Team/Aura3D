@@ -2,6 +2,8 @@
 #include "VkAura/VkException/VkException.h"
 #include "plog/Log.h"
 
+namespace aura3d {
+
 GlfwWindowManager::GlfwWindowManager(const int width, const int height, bool resizable)
     : _window(nullptr), _width(width), _height(height)
 {
@@ -16,9 +18,18 @@ GlfwWindowManager::GlfwWindowManager(const int width, const int height, bool res
 
     PLOG_INFO << "GLFW initialized and Vulkan supported.";
 
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
     glfwWindowHint(GLFW_RESIZABLE, resizable ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+
+#if defined(GLFW_INCLUDE_VULKAN)
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+#elif defined(GLFW_INCLUDE_OPENGL)
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
+#endif
+
 }
 
 GlfwWindowManager::~GlfwWindowManager()
@@ -37,6 +48,11 @@ GLFWwindow* GlfwWindowManager::getWindowInstance() {
 void GlfwWindowManager::createGlfwWindowManager(const char* windowName)
 {
     _window = glfwCreateWindow(_width, _height, windowName, nullptr, nullptr);
+
+#ifdef GLFW_INCLUDE_OPENGL
+    glfwMakeContextCurrent(_window);
+#endif
+
     if (!_window) {
         glfwTerminate();
         throw VkException("Failed to create GLFW window");
@@ -61,4 +77,6 @@ std::vector<const char*> GlfwWindowManager::getGlfwVulkanExtensions() const {
     const char** exts = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
     glfwExtensions.assign(exts, exts+glfwExtensionCount);
     return glfwExtensions;
+}
+
 }

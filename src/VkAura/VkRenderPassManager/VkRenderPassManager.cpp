@@ -4,6 +4,8 @@
 
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkRenderPassManager::VkRenderPassManager(VkDevice* device) :
     _device(device)
 {
@@ -127,4 +129,6 @@ void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer,
 
 void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer) {
     vkCmdEndRenderPass(commandBuffer);
+}
+
 }

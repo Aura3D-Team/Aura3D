@@ -6,6 +6,8 @@
 
 #include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
 
+namespace aura3d {
+
 class VkPipelineManager
 {
 public:
@@ -22,5 +24,7 @@ protected:
 
     virtual void createPipelineLayout();
 };
+
+}
 
 #endif // VKPIPELINEMANAGER_H

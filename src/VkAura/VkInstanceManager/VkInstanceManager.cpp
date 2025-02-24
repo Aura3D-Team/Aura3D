@@ -4,6 +4,7 @@
 
 #include "VkAura/VkException/VkException.h"
 
+namespace aura3d {
 
 VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableValidationLayers)
     : _appInfo({}), _instanceInfo({}), _vkInstance(VK_NULL_HANDLE),
@@ -141,4 +142,6 @@ VkResult VkInstanceManager::_checkInstanceExtensionSupport(const std::vector<con
     }
 
     return requiredExtensions.empty() ? VK_SUCCESS : VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
 }

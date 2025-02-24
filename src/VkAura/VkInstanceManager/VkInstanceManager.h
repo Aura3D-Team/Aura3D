@@ -9,6 +9,8 @@
 
 #include "VkAura/VkDebugger/VkDebugger.h"
 
+namespace aura3d {
+
 /**
  * @brief This struct represents Important data for VkInstance creation
  *
@@ -262,5 +264,7 @@ private:
      */
     VkResult _checkValidationLayerSupport(const std::vector<const char*>& validationLayers) const;
 };
+
+}
 
 #endif // VKINSTANCEMANAGER_H

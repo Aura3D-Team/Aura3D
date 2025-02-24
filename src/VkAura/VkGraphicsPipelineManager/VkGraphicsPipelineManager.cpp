@@ -4,6 +4,8 @@
 
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkGraphicsPipelineManager::VkGraphicsPipelineManager(std::string shader_vert_spv,
                                                      std::string shader_frag_spv,
                                                      VkDevice* device)
@@ -171,4 +173,6 @@ void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer, VkExtent2
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline);
 
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+}
+
 }

@@ -3,6 +3,8 @@
 
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
     : _vkInstance(vkInstance)
 {
@@ -27,4 +29,6 @@ VkBool32 VkSurfaceManager::getQueuePhysicalDeviceSurfaceSupport(VkPhysicalDevice
     VkBool32 presentSupport = false;
     vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, familyIndex, _vkSurface, &presentSupport);
     return presentSupport;
+}
+
 }

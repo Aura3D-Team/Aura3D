@@ -2,6 +2,8 @@
 
 #include <VkAura/VkException/VkException.h>
 
+namespace aura3d {
+
 VkPipelineManager::VkPipelineManager(VkDevice* device)
     : _device(device)
 {
@@ -31,4 +33,6 @@ void VkPipelineManager::createPipelineLayout()
 
     VkResult result = vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout);
     VK_RESULT_CHECK(result);
+}
+
 }

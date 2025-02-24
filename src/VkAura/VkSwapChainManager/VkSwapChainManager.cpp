@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
     : _swapChain(VK_NULL_HANDLE), _swapChainSupportDetails({}),
     _device(device), _swapChainCreateInfo({}),
@@ -302,4 +304,6 @@ VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<Vk
     }
 
     return VK_PRESENT_MODE_FIFO_KHR;
+}
+
 }

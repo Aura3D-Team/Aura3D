@@ -3,6 +3,8 @@
 
 #include "VkAura/VkException/VkException.h"
 
+namespace aura3d {
+
 VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData)
     : _vkInstance(vkInstance), _physicaldeviceCount(0), _deviceInfo(),
     _physicalDevice(VK_NULL_HANDLE), _device(VK_NULL_HANDLE),
@@ -167,4 +169,6 @@ VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> 
     }
 
     return requiredExtensions.empty() ? VK_SUCCESS : VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
 }

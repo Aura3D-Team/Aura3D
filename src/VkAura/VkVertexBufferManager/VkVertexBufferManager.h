@@ -6,6 +6,8 @@
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
+namespace aura3d {
+
 struct Vertex3d
 {
     glm::vec3 pos;
@@ -39,5 +41,7 @@ private:
     VkBuffer _vertexBuffer;
     VkDeviceMemory _vertexBufferMemory;
 };
+
+}
 
 #endif // VKVERTEXBUFFERMANGER_H

@@ -2,6 +2,8 @@
 
 #include "VkAura/VkException/VkException.h"
 
+namespace aura3d {
+
 VkBufferManager::VkBufferManager()
 {
     // Empty
@@ -129,5 +131,7 @@ uint32_t VkBufferManager::findMemoryType(VkPhysicalDevice physicalDevice, uint32
             return i;
     }
 
-    throw VkException("Failed to find suitable memory type!");
+    throw aura3d::VkException("Failed to find suitable memory type!");
+}
+
 }

@@ -8,6 +8,8 @@
 
 #include "Utils/ShaderSpirvExtractor.h"
 
+namespace aura3d {
+
 class VkShaderManager
 {
 public:
@@ -32,5 +34,7 @@ private:
 
     VkShaderModule _createShaderModule(VkDevice device, const std::vector<char>& code);
 };
+
+}
 
 #endif // VKSHADERMANAGER_H

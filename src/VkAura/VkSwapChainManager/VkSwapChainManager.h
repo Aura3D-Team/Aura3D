@@ -13,6 +13,8 @@
 #include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
 #include <VkAura/VkCommon.h>
 
+namespace aura3d {
+
 struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities;
     std::vector<VkSurfaceFormatKHR> formats;
@@ -214,5 +216,7 @@ private:
      */
     VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VkPresentModeKHR vkPresentMode = VK_PRESENT_MODE_MAILBOX_KHR);
 };
+
+}
 
 #endif // VKSWAPCHAINMANAGER_H

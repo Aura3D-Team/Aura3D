@@ -5,6 +5,8 @@
 
 #include <vulkan/vulkan.h>
 
+namespace aura3d {
+
 class VkRenderPassManager
 {
 public:
@@ -26,5 +28,7 @@ private:
 
     VkRenderPass _renderPass;
 };
+
+}
 
 #endif // VKRENDERPASSMANAGER_H

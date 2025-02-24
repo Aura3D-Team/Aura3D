@@ -8,6 +8,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
 
+option(USE_VULKAN "Use Vulkan" ON)
+
+if(USE_VULKAN)
+    add_definitions(-DGLFW_INCLUDE_VULKAN)
+else()
+    add_definitions(-DGLFW_INCLUDE_OPENGL)
+endif()
+
 # Ensure Vulkan SDK is found
 include_directories("$ENV{VULKAN_SDK}/include")
 find_library(VULKAN_LIB vulkan HINTS "$ENV{VULKAN_SDK}/lib")
@@ -19,7 +27,6 @@ find_package(OpenGL REQUIRED)
 find_library(GLFW_LIB glfw3 HINTS "$ENV{LIBRARY_PATH}/lib")
 
 # Define IMGUI paths
-set(IMGUI_PATH "$ENV{LIBRARY_PATH}/include/imgui")
 set(GLM_PATH "$ENV{LIBRARY_PATH}/include/glm")
 set(PLOG_PATH "$ENV{LIBRARY_PATH}/include/plog")
 
@@ -65,23 +72,8 @@ file(GLOB_RECURSE SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.h
 )
 
-# IMGUI sources
-set(IMGUI_SOURCES
-    ${IMGUI_PATH}/imgui.cpp
-    ${IMGUI_PATH}/imgui_draw.cpp
-    ${IMGUI_PATH}/imgui_tables.cpp
-    ${IMGUI_PATH}/imgui_widgets.cpp
-    ${IMGUI_PATH}/backends/imgui_impl_glfw.cpp
-    ${IMGUI_PATH}/backends/imgui_impl_vulkan.cpp
-)
-
-add_custom_target(imgui
-    SOURCES
-    ${IMGUI_SOURCES}
-)
-
 # Add executable target
-add_executable(${PROJECT_NAME} ${SOURCES} ${IMGUI_SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCES})
 add_dependencies(${PROJECT_NAME} CompileShaders)
 
 # Handle Debug mode specific settings
@@ -109,8 +101,6 @@ add_definitions(-DCMAKE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\")
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_SOURCE_DIR}/src
     "$ENV{LIBRARY_PATH}/include"
-    ${IMGUI_PATH}
-    ${IMGUI_PATH}/backends
     ${GLM_PATH}
     ${PLOG_PATH}
 )

@@ -7,6 +7,8 @@
 #include <GLFW/glfw3.h>
 #include <vector>
 
+namespace aura3d {
+
 /**
  * @brief Manages the creation and destruction of a Vulkan surface for rendering.
  *
@@ -63,5 +65,6 @@ private:
     VkSurfaceKHR _vkSurface; ///< Vulkan surface for rendering on cross-platform windowing systems (GLFW).
 };
 
+}
 
 #endif // VKSURFACEMANAGER_H

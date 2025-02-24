@@ -3,6 +3,8 @@
 
 #include <plog/Log.h>
 
+namespace aura3d {
+
 VkQueueManager::VkQueueManager()
     : _mapVkQueues()
 {
@@ -170,4 +172,6 @@ void VkQueueManager::submitCmdIntoQueue(VkQueue queue,
     VK_RESULT_CHECK(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
 
     VK_RESULT_CHECK(vkQueueWaitIdle(queue));
+}
+
 }

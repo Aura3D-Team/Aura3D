@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vulkan/vulkan.h>
 
+namespace aura3d {
+
 /**
  * @class VkException
  *
@@ -159,5 +161,7 @@ static const std::unordered_map<int64_t, const char*> vkResultToString = {
 #define VK_RESULT_CHECK(result) \
 if (result != VK_SUCCESS)       \
     throw VkException(result);  \
+
+}
 
 #endif // VKEXCEPTION_H

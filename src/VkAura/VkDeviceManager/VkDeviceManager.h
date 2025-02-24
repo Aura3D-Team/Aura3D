@@ -10,6 +10,8 @@
 #include "VkAura/VkQueueManager/VkQueueManager.h"
 #include "VkAura/VkSurfaceManager/VkSurfaceManager.h"
 
+namespace aura3d {
+
 /**
  * @brief This struct represents Important data for VkDevice creation
  *
@@ -119,5 +121,7 @@ private:
      */
     VkResult _checkDeviceExtensionSupport(std::vector<const char*> exts) const;
 };
+
+}
 
 #endif // VKDEVICEMANAGER_H

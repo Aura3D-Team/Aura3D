@@ -7,6 +7,8 @@
 #include <vector>
 #include <VkAura/VkCommon.h>
 
+namespace aura3d {
+
 class VkRenderSyncManager
 {
 public:
@@ -27,5 +29,7 @@ private:
     VkFixedArray<VkSemaphore> _renderFinishedSemaphores;
     VkFixedArray<VkFence> _inFlightFences;
 };
+
+}
 
 #endif // VKRENDERSYNCMANAGER_H

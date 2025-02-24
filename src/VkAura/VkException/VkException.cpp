@@ -1,5 +1,7 @@
 #include "VkException.h"
 
+namespace aura3d {
+
 VkException::VkException() noexcept
     : std::exception()
 {
@@ -26,4 +28,6 @@ VkException::~VkException() noexcept = default;
 const char* VkException::what() const noexcept
 {
     return _msg;
+}
+
 }

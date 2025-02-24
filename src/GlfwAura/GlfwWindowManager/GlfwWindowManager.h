@@ -6,6 +6,8 @@
 #include <GLFW/glfw3.h>
 #include <functional>
 
+namespace aura3d {
+
 /**
  * @class GlfwWindowManager
  *
@@ -64,5 +66,7 @@ private:
     int _width;           ///< The width of the window.
     int _height;          ///< The height of the window.
 };
+
+}
 
 #endif // GLFWWINDOWMANAGER_H

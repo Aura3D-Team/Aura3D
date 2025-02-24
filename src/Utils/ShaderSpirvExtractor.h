@@ -6,25 +6,27 @@
 #include <vector>
 #include <string>
 
-class ShaderSpirvExtractor
-{
-public:
-    ShaderSpirvExtractor();
-    ~ShaderSpirvExtractor();
+namespace aura3d {
+    class ShaderSpirvExtractor
+    {
+    public:
+        ShaderSpirvExtractor();
+        ~ShaderSpirvExtractor();
 
-    void readVertFile(const std::string& filename);
-    void readFragFile(const std::string& filename);
+        void readVertFile(const std::string& filename);
+        void readFragFile(const std::string& filename);
 
-    void clear();
+        void clear();
 
-    const std::vector<char>& getVertByteCode() const;
-    const std::vector<char>& getFragByteCode() const;
+        const std::vector<char>& getVertByteCode() const;
+        const std::vector<char>& getFragByteCode() const;
 
-private:
-    std::vector<char> _vertShaderCode;
-    std::vector<char> _fragShaderCode;
+    private:
+        std::vector<char> _vertShaderCode;
+        std::vector<char> _fragShaderCode;
 
-    std::vector<char> _readFile(const std::string& filename);
-};
+        std::vector<char> _readFile(const std::string& filename);
+    };
+}
 
 #endif // SHADERSPIRVEXTRACTOR_H

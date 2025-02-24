@@ -6,6 +6,8 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
+namespace aura3d {
+
 /**
  * @brief Manages the creation and cleanup of Vulkan image views for swap chain images.
  *
@@ -72,5 +74,7 @@ private:
 
     std::vector<VkImageView> _swapChainImageViews; ///< Vector storing the created VkImageView objects.
 };
+
+}
 
 #endif // VKIMAGEVIEWSMANAGER_H
