@@ -47,7 +47,7 @@ public:
      *
      * @param actions A callback function that contains custom actions to perform in the loop.
      */
-    void process(const std::function<void ()>& actions);
+    void process(std::function<void ()>&& actions);
 
     /**
      * @brief Create a cross-plataform Vulkan-compatible window

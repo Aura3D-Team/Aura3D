@@ -7,12 +7,12 @@ layout(location = 2) in vec4 inColor;     // Color with alpha
 layout(location = 0) out vec2 fragTexCoord;
 layout(location = 1) out vec4 fragColor;
 
-layout(set = 0, binding = 0) uniform UBO {
+/*layout(set = 0, binding = 0) uniform UBO {
     mat4 transform;  // Transformation matrix
-} ubo;  // <-- This must match your descriptor set
+} ubo;*/  // <-- This must match your descriptor set
 
 void main() {
-    gl_Position = ubo.transform * vec4(inPosition, 0.0, 1.0);
+    gl_Position = /*ubo.transform **/ vec4(inPosition, 0.0, 1.0);
     fragTexCoord = inTexCoord;
     fragColor = inColor;
 }

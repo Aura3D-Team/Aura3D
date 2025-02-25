@@ -1,6 +1,7 @@
 #include "GlfwWindowManager.h"
-#include "VkAura/VkException/VkException.h"
-#include "plog/Log.h"
+
+#include <VkAura/VkException/VkException.h>
+#include <plog/Log.h>
 
 namespace aura3d {
 
@@ -16,18 +17,19 @@ GlfwWindowManager::GlfwWindowManager(const int width, const int height, bool res
         throw VkException("Vulkan not supported by GLFW");
     }
 
-    PLOG_INFO << "GLFW initialized and Vulkan supported.";
-
-
     glfwWindowHint(GLFW_RESIZABLE, resizable ? GLFW_TRUE : GLFW_FALSE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 
 #if defined(GLFW_INCLUDE_VULKAN)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+    PLOG_INFO << "GLFW initialized with Vulkan support.";
 #elif defined(GLFW_INCLUDE_OPENGL)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    PLOG_INFO << "GLFW initialized with OpenGL support.";
 #endif
 
 }
@@ -61,7 +63,7 @@ void GlfwWindowManager::createGlfwWindowManager(const char* windowName)
     PLOG_INFO << "Created window: " << windowName;
 }
 
-void GlfwWindowManager::process(const std::function<void ()>& actions)
+void GlfwWindowManager::process(std::function<void ()>&& actions)
 {
     while (!glfwWindowShouldClose(_window)) {
         glfwPollEvents();
