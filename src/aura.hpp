@@ -1,15 +1,15 @@
-#ifndef VKCOMMON_H
-#define VKCOMMON_H
+#ifndef AURA_HPP
+#define AURA_HPP
 
 #pragma once
 
-#define APPLICATION_NAME "Aura3D"
-
 #include <array>
+
+#define APPLICATION_NAME "Aura3D"
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
 template <typename T>
 using VkFixedArray = std::array<T, MAX_FRAMES_IN_FLIGHT>;
 
-#endif // VKCOMMON_H
+#endif // AURA_HPP

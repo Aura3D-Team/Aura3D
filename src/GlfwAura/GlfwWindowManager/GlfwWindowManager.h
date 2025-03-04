@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <functional>
 
@@ -66,6 +67,8 @@ private:
     int _width;           ///< The width of the window.
     int _height;          ///< The height of the window.
 };
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
 }
 

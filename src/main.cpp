@@ -11,7 +11,6 @@
 #include <plog/Formatters/TxtFormatter.h>
 // #include <plog/Formatters/MessageOnlyFormatter.h>
 #include <plog/Appenders/ColorConsoleAppender.h>
-#include <thread>
 
 #if defined(GLFW_INCLUDE_VULKAN)
 #include <Runners/VkRunner.h>

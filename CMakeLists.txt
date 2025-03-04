@@ -18,17 +18,15 @@ endif()
 
 # Ensure Vulkan SDK is found
 include_directories("$ENV{VULKAN_SDK}/include")
-find_library(VULKAN_LIB vulkan HINTS "$ENV{VULKAN_SDK}/lib")
 
 # Find required packages
-find_package(Vulkan REQUIRED)
 find_package(Threads REQUIRED)
-find_package(OpenGL REQUIRED)
+find_library(VULKAN_LIB vulkan HINTS "$ENV{VULKAN_SDK}/lib")
 find_library(GLFW_LIB glfw3 HINTS "$ENV{LIBRARY_PATH}/lib")
+find_library(GLAD_LIB glad HINTS "$ENV{LIBRARY_PATH}/lib")
 
-# Define IMGUI paths
-set(GLM_PATH "$ENV{LIBRARY_PATH}/include/glm")
-set(PLOG_PATH "$ENV{LIBRARY_PATH}/include/plog")
+# Define General library path
+set(LIBRARY_INCLUDE "$ENV{LIBRARY_PATH}/include")
 
 # Shader compiler
 set(GLSLC_EXECUTABLE "$ENV{VULKAN_SDK}/bin/glslc")
@@ -70,6 +68,7 @@ add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_FILES})
 file(GLOB_RECURSE SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.cpp
     ${CMAKE_SOURCE_DIR}/src/*.h
+    ${CMAKE_SOURCE_DIR}/src/*.hpp
 )
 
 # Add executable target
@@ -100,17 +99,15 @@ add_definitions(-DCMAKE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\")
 # Include directories
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_SOURCE_DIR}/src
-    "$ENV{LIBRARY_PATH}/include"
-    ${GLM_PATH}
-    ${PLOG_PATH}
+    ${LIBRARY_INCLUDE}
 )
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC
     ${GLFW_LIB}
     ${VULKAN_LIB}
-    OpenGL::GL
     Threads::Threads
+    ${GLAD_LIB}
     dl
 )
 

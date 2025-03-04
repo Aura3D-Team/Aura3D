@@ -5,7 +5,7 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include <VkAura/VkCommon.h>
+#include <aura.hpp>
 
 namespace aura3d {
 
