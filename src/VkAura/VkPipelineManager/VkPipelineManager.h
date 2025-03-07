@@ -2,8 +2,6 @@
 #define VKPIPELINEMANAGER_H
 
 #include <vulkan/vulkan.h>
-#include <memory>
-
 #include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
 
 namespace aura3d {
@@ -16,6 +14,8 @@ public:
 
     VkPipeline getPipeline() const { return _pipeline; }
     VkPipelineLayout getPipelineLayout() const { return _pipelineLayout; }
+
+    void cleanup();
 
 protected:
     VkDevice* _device;

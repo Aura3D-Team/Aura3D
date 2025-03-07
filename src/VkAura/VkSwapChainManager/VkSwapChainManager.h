@@ -5,8 +5,8 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include <GLFW/glfw3.h>
 
+#include <GlfwAura/GlfwWindowManager/GlfwWindowManager.h>
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
 #include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
@@ -53,6 +53,19 @@ public:
      * managed by the swap chain manager are properly released before the manager is destroyed.
      */
     ~VkSwapChainManager();
+
+    /**
+     * @brief Initializes swap chain support details for a physical device and surface.
+     *
+     * This function populates `_swapChainSupportDetails` by querying the physical
+     * device and surface for supported swap chain capabilities, formats, and
+     * presentation modes. It ensures the device and surface are compatible with
+     * the swap chain requirements.
+     *
+     * @param physicalDevice The Vulkan physical device to query for swap chain support.
+     * @param vkSurface The Vulkan surface handle associated with the rendering window.
+     */
+    void initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface);
 
     /**
      * @brief Creates the Vulkan swap chain.
@@ -109,16 +122,11 @@ public:
 
     VkPresentModeKHR* getChoosedPresentMode();
 
+    VkSwapchainKHR* getSwapChain();
+
     const std::vector<VkImage>& getSwapChainImages();
 
-    const uint32_t acquireNextImage(VkSemaphore imageSemaphore);
-
-    void recreateSwapChain(VkImageViewsManager* vkImageViewsManager,
-                           VkFrameBuffersManager* vkFrameBuffersManager,
-                           GLFWwindow* window,
-                           VkSurfaceKHR surface,
-                           VkDeviceManager* vkDeviceManager,
-                           VkRenderPass renderPass);
+    const uint32_t acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags);
 
     void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const uint32_t& imageIndex);
 
@@ -130,7 +138,7 @@ public:
         VkFixedArray<VkPipelineStageFlags> stages,
         VkFixedArray<VkAccessFlags> accessFlags);
 
-    void debug(const uint32_t& imageIndex);
+    void cleanup();
 private:
     SwapChainSupportDetails _swapChainSupportDetails; ///< Holds details about swap chain support.
 
@@ -167,19 +175,6 @@ private:
      * These images are used for rendering and are presented to the screen via the chosen presentation mode.
      */
     std::vector<VkImage> _swapChainImages;
-
-    /**
-     * @brief Initializes swap chain support details for a physical device and surface.
-     *
-     * This function populates `_swapChainSupportDetails` by querying the physical
-     * device and surface for supported swap chain capabilities, formats, and
-     * presentation modes. It ensures the device and surface are compatible with
-     * the swap chain requirements.
-     *
-     * @param physicalDevice The Vulkan physical device to query for swap chain support.
-     * @param vkSurface The Vulkan surface handle associated with the rendering window.
-     */
-    void _initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface);
 
     /**
      * @brief Chooses a surface format for the swap chain.

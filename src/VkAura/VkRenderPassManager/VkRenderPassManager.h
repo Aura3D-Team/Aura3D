@@ -23,6 +23,8 @@ public:
 
     VkRenderPass* getRenderPass();
 
+    void cleanup();
+
 private:
     VkDevice* _device;
 

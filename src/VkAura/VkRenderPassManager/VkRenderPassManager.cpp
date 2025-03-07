@@ -14,9 +14,7 @@ VkRenderPassManager::VkRenderPassManager(VkDevice* device) :
 
 VkRenderPassManager::~VkRenderPassManager()
 {
-    if (_renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(*_device, _renderPass, nullptr);
-    }
+    cleanup();
 
     _device = nullptr;
 
@@ -50,54 +48,33 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
 
-    // depthAttachmentRef.attachment = 1; // Index of the depth attachment
-    // depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    // Dependencies
+    VkSubpassDependency attachmentDependencyBegin = {};
+    attachmentDependencyBegin.srcSubpass = VK_SUBPASS_EXTERNAL;
+    attachmentDependencyBegin.dstSubpass = 0;
+    attachmentDependencyBegin.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    attachmentDependencyBegin.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    attachmentDependencyBegin.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    attachmentDependencyBegin.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-    // // Update render pass creation to include depth attachment
-    // std::array<VkAttachmentDescription, 2> attachments = {
-    //     _vkRenderPassData.colorAttachment, depthAttachment
-    // };
+    VkSubpassDependency attachmentDependencyEnd = {};
+    attachmentDependencyEnd.srcSubpass = 0;
+    attachmentDependencyEnd.dstSubpass = VK_SUBPASS_EXTERNAL;
+    attachmentDependencyEnd.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    attachmentDependencyEnd.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    attachmentDependencyEnd.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    attachmentDependencyEnd.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 
-    // Dependencies (Layout transitions)
-    VkSubpassDependency dependencyBegin = {};
-    dependencyBegin.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencyBegin.dstSubpass = 0;
-    dependencyBegin.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    dependencyBegin.srcAccessMask = VK_ACCESS_NONE;
-    dependencyBegin.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyBegin.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    // Transition from rendering to presentation
-    VkSubpassDependency dependencyEnd = {};
-    dependencyEnd.srcSubpass = 0;
-    dependencyEnd.dstSubpass = VK_SUBPASS_EXTERNAL;
-    dependencyEnd.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyEnd.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencyEnd.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencyEnd.dstAccessMask = VK_ACCESS_NONE;  // No access required after render pass finishes
-
-    // Transition back from presentation to rendering if needed
-    VkSubpassDependency dependencyPresentation = {};
-    dependencyPresentation.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencyPresentation.dstSubpass = 0;
-    dependencyPresentation.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencyPresentation.srcAccessMask = VK_ACCESS_NONE;
-    dependencyPresentation.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyPresentation.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    std::vector<VkSubpassDependency> dependencies = {dependencyBegin, dependencyEnd, dependencyPresentation};
+    std::vector<VkSubpassDependency> dependencies = {attachmentDependencyBegin, attachmentDependencyEnd};
+    std::vector<VkAttachmentDescription> attachments = {colorAttachment};
 
     // Create Render Pass
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.pNext = nullptr;
-    renderPassInfo.flags = 0;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
-    // renderPassInfo.dependencyCount = 0;
-    // renderPassInfo.pDependencies = nullptr;
     renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     renderPassInfo.pDependencies = dependencies.data();
 
@@ -129,6 +106,13 @@ void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer,
 
 void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer) {
     vkCmdEndRenderPass(commandBuffer);
+}
+
+void VkRenderPassManager::cleanup()
+{
+    if (_renderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(*_device, _renderPass, nullptr);
+    }
 }
 
 }

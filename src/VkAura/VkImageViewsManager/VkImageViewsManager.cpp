@@ -14,16 +14,16 @@ VkImageViewsManager::VkImageViewsManager(VkDevice* device)
 
 VkImageViewsManager::~VkImageViewsManager()
 {
-    for (VkImageView& imageView : _swapChainImageViews) {
-        vkDestroyImageView(*_device, imageView, nullptr);
-    }
+    cleanup();
 
     _device = nullptr;
 
     PLOG_DEBUG << "ImageViews destroyed.";
 }
 
-void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat, VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount)
+void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChainImages,
+                                           VkFormat swapChainImageFormat,
+                                           ImageViewData vkImageViewData)
 {
     _swapChainImageViews.resize(swapChainImages.size());
 
@@ -39,11 +39,11 @@ void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChain
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
+        createInfo.subresourceRange.aspectMask = vkImageViewData.aspectMask;
+        createInfo.subresourceRange.baseMipLevel = vkImageViewData.baseMipLevel;
+        createInfo.subresourceRange.levelCount = vkImageViewData.levelCount;
+        createInfo.subresourceRange.baseArrayLayer = vkImageViewData.baseArrayLayer;
+        createInfo.subresourceRange.layerCount = vkImageViewData.layerCount;
 
         VkResult result = vkCreateImageView(*_device, &createInfo, nullptr, &_swapChainImageViews[i]);
         VK_RESULT_CHECK(result);
@@ -57,7 +57,7 @@ const std::vector<VkImageView>& VkImageViewsManager::getImageViews() const
     return _swapChainImageViews;
 }
 
-void VkImageViewsManager::clear()
+void VkImageViewsManager::cleanup()
 {
     for (VkImageView& imageView : _swapChainImageViews) {
         vkDestroyImageView(*_device, imageView, nullptr);

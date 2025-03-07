@@ -20,7 +20,7 @@ public:
 
     const std::vector<VkFramebuffer>& getFrameBuffers();
 
-    void clear();
+    void cleanup();
 
 private:
     VkDevice* _device;

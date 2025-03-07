@@ -53,7 +53,7 @@ const std::vector<VkFramebuffer>& VkFrameBuffersManager::getFrameBuffers()
     return _framebuffers;
 }
 
-void VkFrameBuffersManager::clear()
+void VkFrameBuffersManager::cleanup()
 {
     for (auto& framebuffer : _framebuffers) {
         vkDestroyFramebuffer(*_device, framebuffer, nullptr);

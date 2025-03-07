@@ -176,9 +176,10 @@ public:
     std::vector<VkDeviceQueueCreateInfo> getDeviceQueueCreateInfos() const;
 
     static void submitCmdIntoQueue(VkQueue queue,
-                            VkCommandBuffer* commandBuffer,
-                            VkSemaphore* imageAvailableSemaphore,
-                            VkSemaphore* renderFinishedSemaphore);
+                                   VkCommandBuffer* commandBuffer,
+                                   VkSemaphore* imageAvailableSemaphore,
+                                   VkSemaphore* renderFinishedSemaphore,
+                                   VkFence fence);
 
 private:
     // The key is a pair consisting of (queueFamilyIndex, VkQueueFlags).

@@ -35,4 +35,16 @@ void VkPipelineManager::createPipelineLayout()
     VK_RESULT_CHECK(result);
 }
 
+void VkPipelineManager::cleanup()
+{
+    if (_pipeline)
+    {
+        vkDestroyPipeline(*_device, _pipeline, nullptr);
+    }
+    if (_pipelineLayout)
+    {
+        vkDestroyPipelineLayout(*_device, _pipelineLayout, nullptr);
+    }
+}
+
 }

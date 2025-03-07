@@ -6,8 +6,23 @@
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <functional>
+#include <memory>
+
+#include <GlfwAura/GlfwKeyboardListener/GlfwKeyboardListener.h>
 
 namespace aura3d {
+
+struct WindowDetails {
+    int width;
+    int height;
+    bool resizable;
+};
+
+struct WindowFlags {
+    bool resized;
+};
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
 /**
  * @class GlfwWindowManager
@@ -28,7 +43,7 @@ public:
      * @param width The width of the window.
      * @param height The height of the window.
      */
-    GlfwWindowManager(const int width, const int height, bool resizable = false);
+    GlfwWindowManager(WindowDetails windowDetails);
 
     /**
      * @brief Cleans up and terminates GLFW.
@@ -62,13 +77,16 @@ public:
      */
     std::vector<const char*> getGlfwVulkanExtensions() const;
 
+    WindowFlags* getWindowFlags();
+
 private:
     GLFWwindow* _window;  ///< The GLFW window instance.
-    int _width;           ///< The width of the window.
-    int _height;          ///< The height of the window.
-};
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+    WindowDetails _windowDetails;
+
+    WindowFlags _windowFlags;
+    std::unique_ptr<GlfwKeyboardListener> _keyboardListener;
+};
 
 }
 

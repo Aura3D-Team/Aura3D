@@ -1,20 +1,15 @@
 #include "VkRunner.h"
 
-#include <GlfwAura/GlfwWindowManager/GlfwWindowManager.h>
-#include <VkAura/VkInstanceManager/VkInstanceManager.h>
-#include <VkAura/VkDeviceManager/VkDeviceManager.h>
-#include <VkAura/VkSurfaceManager/VkSurfaceManager.h>
-#include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
-#include <VkAura/VkGraphicsPipelineManager/VkGraphicsPipelineManager.h>
-#include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
-#include <VkAura/VkRenderPassManager/VkRenderPassManager.h>
-#include <VkAura/VkCommandManager/VkCommandManager.h>
-#include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
-#include <VkAura/VkRenderSyncManager/VkRenderSyncManager.h>
+#include <set>
+#include <plog/Log.h>
 
-VkRunner::VkRunner() {}
+namespace aura3d {
 
-void VkRunner::run()
+VkRunner::VkRunner(WindowDetails windowDetails,
+                   VkInstanceData vkInstanceData,
+                   VkDeviceData vkDeviceData,
+                   ImageViewData vkImageViewData) :
+    _vkImageViewData(vkImageViewData)
 {
 #ifdef NDEBUG
     const bool enableValidationLayers = false;
@@ -22,169 +17,231 @@ void VkRunner::run()
     const bool enableValidationLayers = true;
 #endif
 
-    std::unique_ptr<aura3d::GlfwWindowManager> glfwWindowManager = std::make_unique<aura3d::GlfwWindowManager>(1280, 720);
+    _glfwWindowManager = std::make_unique<aura3d::GlfwWindowManager>(windowDetails);
 
 
-    aura3d::VkInstanceData vkInstanceData = {
-        .appName = "Aura3D",
-        .engineName = "Aura3DEngine",
-        .appVersion = {1, 0, 0},
-        .vkInstanceExtensions = {},
-        .vkValidationLayers = {
-            "VK_LAYER_KHRONOS_validation",
-        }
-    };
-
-    const std::vector<const char*> glfwExtensions = glfwWindowManager->getGlfwVulkanExtensions();
+    const std::vector<const char*> glfwExtensions = _glfwWindowManager->getGlfwVulkanExtensions();
     for (const char* ext : glfwExtensions) {
         vkInstanceData.vkInstanceExtensions.push_back(ext);
     }
 
-    std::unique_ptr<aura3d::VkInstanceManager> vkInstance = std::make_unique<aura3d::VkInstanceManager>(vkInstanceData, enableValidationLayers);
 
-    aura3d::VkDeviceData vkDeviceData = {
-        .vkDeviceExtensions = {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        },
-        .vkEnabledLayers = {},
-        .concurrentQueueFlags = {},
-        .exclusiveQueueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT
-    };
-
-    std::unique_ptr<aura3d::VkDeviceManager> vkDeviceManager = std::make_unique<aura3d::VkDeviceManager>(vkInstance->getVkInstance(), vkDeviceData);
+    _vkInstance = std::make_unique<aura3d::VkInstanceManager>(vkInstanceData, enableValidationLayers);
 
 
-    glfwWindowManager->createGlfwWindowManager(APPLICATION_NAME);
-    std::unique_ptr<aura3d::VkSurfaceManager> vkSurfaceManager = std::make_unique<aura3d::VkSurfaceManager>(
-        vkInstance->getVkInstance(),
-        glfwWindowManager->getWindowInstance()
-        );
+    _vkDeviceManager = std::make_unique<aura3d::VkDeviceManager>(_vkInstance->getVkInstance(), vkDeviceData);
 
 
-    std::vector<aura3d::QueueData*> arrayQueueData = vkDeviceManager->getQueueManager()->getQueues(vkDeviceData.exclusiveQueueFlags);
-    uint32_t graphicsIndexFamily = aura3d::VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(),
-                                                                                vkDeviceData.exclusiveQueueFlags, *vkSurfaceManager->getSurface());
+    _glfwWindowManager->createGlfwWindowManager(APPLICATION_NAME);
+    _vkSurfaceManager = std::make_unique<aura3d::VkSurfaceManager>(
+        _vkInstance->getVkInstance(),
+        _glfwWindowManager->getWindowInstance()
+    );
 
 
-    std::unique_ptr<aura3d::VkSwapChainManager> vkSwapChainManager = std::make_unique<aura3d::VkSwapChainManager>(
-        *vkDeviceManager->getPhysicalDevice(),
-        vkDeviceManager->getDevice(),
-        *vkSurfaceManager->getSurface()
-        );
+    _queueDataFromExclusiveFlags = _vkDeviceManager->getQueueManager()->getQueues(vkDeviceData.exclusiveQueueFlags);
+    _graphicsIndexFamily = aura3d::VkQueueManager::findQueueFamilyIndex(*_vkDeviceManager->getPhysicalDevice(),
+                                                                                vkDeviceData.exclusiveQueueFlags,
+                                                                                *_vkSurfaceManager->getSurface());
 
-    vkSwapChainManager->createSwapChain(glfwWindowManager->getWindowInstance(), *vkSurfaceManager->getSurface(), vkDeviceManager.get());
+
+    _vkSwapChainManager = std::make_unique<aura3d::VkSwapChainManager>(
+        *_vkDeviceManager->getPhysicalDevice(),
+        _vkDeviceManager->getDevice(),
+        *_vkSurfaceManager->getSurface()
+    );
+
+
+    _vkImageViewsManager = std::make_unique<aura3d::VkImageViewsManager>(_vkDeviceManager->getDevice());
+
+
+    _vkRenderPassManager = std::make_unique<aura3d::VkRenderPassManager>(_vkDeviceManager->getDevice());
+
+
+    _vkFrameBuffersManager = std::make_unique<aura3d::VkFrameBuffersManager>(_vkDeviceManager->getDevice());
+
+
+    _vkGraphicsPipelineManager = std::make_unique<aura3d::VkGraphicsPipelineManager>("./shaders/vert/test_shader2d_vert.spv",
+                                                                                     "./shaders/frag/test_shader2d_frag.spv",
+                                                                                     _vkDeviceManager->getDevice());
+
+
+    _vkCommandManager = std::make_unique<aura3d::VkCommandManager>(_vkDeviceManager->getDevice(),
+                                                                   _graphicsIndexFamily);
+
+
+    _vkRenderSyncManager = std::make_unique<aura3d::VkRenderSyncManager>(_vkDeviceManager->getDevice());
+}
+
+VkRunner::~VkRunner()
+{
+
+}
+
+void VkRunner::run()
+{
+
+    _vkSwapChainManager->createSwapChain(_glfwWindowManager->getWindowInstance(), *_vkSurfaceManager->getSurface(), _vkDeviceManager.get());
     // uint32_t imageCount = vkSwapChainManager->getSwapchainCreateInfoKHR()->minImageCount;
 
 
-    std::unique_ptr<aura3d::VkImageViewsManager> vkImageViewsManager = std::make_unique<aura3d::VkImageViewsManager>(vkDeviceManager->getDevice());
-    vkImageViewsManager->createImageViews(vkSwapChainManager->getSwapChainImages(), vkSwapChainManager->getChoosedSurfaceFormat()->format, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, vkSwapChainManager->getSwapchainCreateInfoKHR()->minImageCount);
+    _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
+                                           _vkSwapChainManager->getChoosedSurfaceFormat()->format,
+                                           _vkImageViewData);
 
 
-    std::unique_ptr<aura3d::VkRenderPassManager> vkRenderPassManager = std::make_unique<aura3d::VkRenderPassManager>(vkDeviceManager->getDevice());
-    vkRenderPassManager->createRenderPass(vkSwapChainManager->getChoosedSurfaceFormat()->format);
-
-    std::unique_ptr<aura3d::VkFrameBuffersManager> vkFrameBuffersManager = std::make_unique<aura3d::VkFrameBuffersManager>(vkDeviceManager->getDevice());
-    vkFrameBuffersManager->createFrameBuffers(vkImageViewsManager->getImageViews(),
-                                              *vkRenderPassManager->getRenderPass(),
-                                              *vkSwapChainManager->getExtent2D());
+    _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format);
 
 
-    std::unique_ptr<aura3d::VkGraphicsPipelineManager> vkGraphicsPipelineManager = std::make_unique<aura3d::VkGraphicsPipelineManager>("./shaders/vert/test_shader2d_vert.spv",
-                                                                                                                                       "./shaders/frag/test_shader2d_frag.spv",
-                                                                                                                                       vkDeviceManager->getDevice());
-    vkGraphicsPipelineManager->createPipeline(*vkRenderPassManager->getRenderPass(), *vkSwapChainManager->getExtent2D());
+    _vkFrameBuffersManager->createFrameBuffers(_vkImageViewsManager->getImageViews(),
+                                               *_vkRenderPassManager->getRenderPass(),
+                                               *_vkSwapChainManager->getExtent2D());
 
 
-    std::unique_ptr<aura3d::VkCommandManager> vkCommandManager = std::make_unique<aura3d::VkCommandManager>(vkDeviceManager->getDevice(), graphicsIndexFamily);
-    VkFixedArray<VkCommandBuffer> cmdBuffers = vkCommandManager->createCommandBuffer();
+    // _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(), *_vkSwapChainManager->getExtent2D());
 
 
-    std::unique_ptr<aura3d::VkRenderSyncManager> vkRenderSyncManager = std::make_unique<aura3d::VkRenderSyncManager>(vkDeviceManager->getDevice());
+    VkFixedArray<VkCommandBuffer> cmdBuffers = _vkCommandManager->createCommandBuffer();
 
 
-    const auto& frameBuffers = vkFrameBuffersManager->getFrameBuffers();
-    VkExtent2D extent = *vkSwapChainManager->getExtent2D();
-    VkQueue queueToDraw = arrayQueueData.front()->queues.front();
+    _vkRenderSyncManager->create();
 
-    auto& imageAvailableSemaphores = vkRenderSyncManager->getImageAvailableSemaphores();
-    auto& renderFinishedSemaphores = vkRenderSyncManager->getRenderFinishedSemaphores();
+    auto* windowFlags = _glfwWindowManager->getWindowFlags();
+    const auto& frameBuffers = _vkFrameBuffersManager->getFrameBuffers();
+    VkExtent2D* extent = _vkSwapChainManager->getExtent2D();
+    VkQueue queueToDraw = _queueDataFromExclusiveFlags.front()->queues.front();
+
+    auto& imageAvailableSemaphores = _vkRenderSyncManager->getImageAvailableSemaphores();
+    auto& renderFinishedSemaphores = _vkRenderSyncManager->getRenderFinishedSemaphores();
+    auto& fences = _vkRenderSyncManager->getInFlightFences();
+
+    uint32_t ImagesCount = _vkSwapChainManager->getSwapChainImages().size();
 
     uint32_t currentFrame = 0;
 
-    glfwWindowManager->process([&]() {
-        vkRenderSyncManager->waitForFences(currentFrame);
-        vkRenderSyncManager->resetFences(currentFrame);
+    std::set<uint32_t> imageIndexes = {};
 
-        const uint32_t imageIndex = vkSwapChainManager->acquireNextImage(imageAvailableSemaphores[currentFrame]);
+    _glfwWindowManager->process([&]() {
+        _vkRenderSyncManager->waitForFences(currentFrame);
 
-        if (imageIndex == UINT32_MAX)
+        const uint32_t imageIndex = _vkSwapChainManager->acquireNextImage(imageAvailableSemaphores[currentFrame], windowFlags);
+
+        if (imageIndex >= ImagesCount)
         {
-            vkSwapChainManager->recreateSwapChain(vkImageViewsManager.get(),
-                                                  vkFrameBuffersManager.get(),
-                                                  glfwWindowManager->getWindowInstance(),
-                                                  *vkSurfaceManager->getSurface(),
-                                                  vkDeviceManager.get(),
-                                                  *vkRenderPassManager->getRenderPass());
-            return; // continue
+            PLOG_WARNING << "Swap chain needs recreation!";
+            windowFlags->resized = false;
+            handleWindowChanges();
+            imageIndexes.clear();
+            return;
         }
 
-        vkSwapChainManager->debug(imageIndex);
+        _vkRenderSyncManager->resetFences(currentFrame);
 
-        vkCommandManager->resetCommandPool();
+        _vkCommandManager->resetCommandPool();
 
         // Begin recording the command buffer.
         aura3d::VkCommandManager::beginCommandBuffer(cmdBuffers[currentFrame]);
 
-        // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
-        //                                           imageIndex,
-        //                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
-        //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+        // Transition image layout if it is the first time we encounter this imageIndex
+        if (imageIndexes.find(imageIndex) == imageIndexes.end())
+        {
+            // PLOG_DEBUG << "Transitioning image layout for first use of imageIndex " << imageIndex;
+            _vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+                                                       imageIndex,
+                                                       VK_IMAGE_LAYOUT_UNDEFINED,
+                                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                                       {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+                                                       {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+            imageIndexes.insert(imageIndex);
+        }
+        else
+        {
+            // PLOG_DEBUG << "Transitioning image layout for already used imageIndex " << imageIndex;
+            _vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+                                                       imageIndex,
+                                                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                                       {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+                                                       {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+        }
 
+        // Transition image layout for final presentation
+        _vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+                                                   imageIndex,
+                                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                                   {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
+                                                   {VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE});
 
-        // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
-        //                                           imageIndex,
-        //                                           VK_IMAGE_LAYOUT_UNDEFINED,
-        //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
-        //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+        // Begin render pass
+        _vkRenderPassManager->beginRenderPass(cmdBuffers[currentFrame], frameBuffers[currentFrame], *extent);
 
-        vkRenderPassManager->beginRenderPass(cmdBuffers[currentFrame], frameBuffers[currentFrame], extent);
-
-        // Record drawing commands.
-        vkGraphicsPipelineManager->cmdBindPipeline(cmdBuffers[currentFrame]);
-        vkGraphicsPipelineManager->cmdDraw(cmdBuffers[currentFrame], extent);
-
-        VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
-        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
+        // Record drawing commands
+        // _vkGraphicsPipelineManager->cmdBindPipeline(cmdBuffers[currentFrame]);
+        // _vkGraphicsPipelineManager->cmdDraw(cmdBuffers[currentFrame], extent);
 
         aura3d::VkRenderPassManager::endRenderPass(cmdBuffers[currentFrame]);
 
-        // Transition image layout for presentation.
-        // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
-        //                                           imageIndex,
-        //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        //                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        //                                           {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
-        //                                           {VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE});
-
-        // ✅ END the command buffer before submission
+        // End command buffer recording
         aura3d::VkCommandManager::endCommandBuffer(cmdBuffers[currentFrame]);
 
-        // ✅ Now submit the finished command buffer to the queue.
+        // Submit command buffer to the queue
         aura3d::VkQueueManager::submitCmdIntoQueue(queueToDraw,
                                                    &cmdBuffers[currentFrame],
-                                                   waitSemaphores,
-                                                   signalSemaphores);
+                                                   &imageAvailableSemaphores[currentFrame],
+                                                   &renderFinishedSemaphores[currentFrame],
+                                                   fences[currentFrame]);
 
-        // Present the image.
-        vkSwapChainManager->presentBackToSwapChain(queueToDraw,
-                                                   signalSemaphores,
-                                                   imageIndex);
+        // Present the image to the swap chain
+        _vkSwapChainManager->presentBackToSwapChain(queueToDraw,
+                                                    &renderFinishedSemaphores[currentFrame],
+                                                    imageIndex);
 
+        // Move to the next frame
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     });
 
-    vkDeviceWaitIdle(*vkDeviceManager->getDevice());
+    vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
+}
+
+void VkRunner::handleWindowChanges()
+{
+    auto device = *_vkDeviceManager->getDevice();
+    GLFWwindow* window = _glfwWindowManager->getWindowInstance();
+
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+
+    // Wait for window to be restored
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    vkDeviceWaitIdle(device);
+
+    _vkFrameBuffersManager->cleanup();
+    _vkImageViewsManager->cleanup();
+    _vkSwapChainManager->cleanup();
+    _vkRenderPassManager->cleanup();
+    _vkRenderSyncManager->cleanup();
+    _vkImageViewsManager->cleanup();
+
+    _vkSwapChainManager->initSwapChainSupportDetails(*_vkDeviceManager->getPhysicalDevice(), *_vkSurfaceManager->getSurface());
+
+    _vkSwapChainManager->createSwapChain(window, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get());
+
+    _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
+                                           _vkSwapChainManager->getChoosedSurfaceFormat()->format,
+                                           _vkImageViewData);
+
+    _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format);
+
+    _vkFrameBuffersManager->createFrameBuffers(_vkImageViewsManager->getImageViews(),
+                                               *_vkRenderPassManager->getRenderPass(),
+                                               *_vkSwapChainManager->getExtent2D());
+
+    _vkRenderSyncManager->create();
+}
+
 }

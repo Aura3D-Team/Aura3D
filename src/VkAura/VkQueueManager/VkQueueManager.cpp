@@ -152,24 +152,27 @@ std::vector<VkDeviceQueueCreateInfo> VkQueueManager::getDeviceQueueCreateInfos()
 }
 
 void VkQueueManager::submitCmdIntoQueue(VkQueue queue,
-                        VkCommandBuffer* commandBuffer,
-                        VkSemaphore* imageAvailableSemaphore,
-                        VkSemaphore* renderFinishedSemaphore)
+                                        VkCommandBuffer* commandBuffer,
+                                        VkSemaphore* imageAvailableSemaphore,
+                                        VkSemaphore* renderFinishedSemaphore,
+                                        VkFence fence)
 {
-    VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = imageAvailableSemaphore;
-    submitInfo.pWaitDstStageMask = &waitStages;
+    submitInfo.pWaitDstStageMask = waitStages;
+
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = commandBuffer;
+
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = renderFinishedSemaphore;
 
-    VK_RESULT_CHECK(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+    VK_RESULT_CHECK(vkQueueSubmit(queue, 1, &submitInfo, fence));
 
     VK_RESULT_CHECK(vkQueueWaitIdle(queue));
 }

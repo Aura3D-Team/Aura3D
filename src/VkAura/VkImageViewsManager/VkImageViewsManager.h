@@ -8,6 +8,14 @@
 
 namespace aura3d {
 
+struct ImageViewData {
+    VkImageAspectFlags aspectMask;
+    uint32_t baseMipLevel;
+    uint32_t levelCount;
+    uint32_t baseArrayLayer;
+    uint32_t layerCount;
+};
+
 /**
  * @brief Manages the creation and cleanup of Vulkan image views for swap chain images.
  *
@@ -55,7 +63,7 @@ public:
      *
      * @throws VkException If vkCreateImageView fails to create an image view.
      */
-    void createImageViews(const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t baseMipLevel=0, uint32_t levelCount=1, uint32_t baseArrayLayer=0, uint32_t layerCount=1);
+    void createImageViews(const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat, ImageViewData vkImageViewData);
 
     /**
      * @brief Provides access to the vector of created VkImageView objects.
@@ -67,7 +75,7 @@ public:
      */
     const std::vector<VkImageView>& getImageViews() const;
 
-    void clear();
+    void cleanup();
 
 private:
     VkDevice* _device; ///< The Vulkan logical device used to create and manage image views.

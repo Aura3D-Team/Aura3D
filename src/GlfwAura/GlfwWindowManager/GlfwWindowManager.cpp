@@ -3,30 +3,37 @@
 #include <plog/Log.h>
 #include <VkAura/VkException/VkException.h>
 
+#include <GlfwAura/GlfwKeyboardListener/GlfwKeyboardListener.h>
+
 namespace aura3d {
 
 // Callback for framebuffer size change (resizing the window)
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
+#if defined(GLFW_INCLUDE_VULKAN)
+    WindowFlags* windowFlags = static_cast<WindowFlags*>(glfwGetWindowUserPointer(window));
+    windowFlags->resized = true;
+#elif defined(GLFW_INCLUDE_OPENGL)
     glViewport(0, 0, width, height);
+#endif
 }
 
-GlfwWindowManager::GlfwWindowManager(int width, int height, bool resizable)
-    : _window(nullptr), _width(width), _height(height)
+GlfwWindowManager::GlfwWindowManager(WindowDetails windowDetails)
+    : _window(nullptr), _windowDetails(windowDetails), _windowFlags({}), _keyboardListener(nullptr)
 {
     // Initialize GLFW
     if (!glfwInit()) {
-        throw VkException("Failed to initialize GLFW");
+        throw aura3d::VkException("Failed to initialize GLFW");
     }
 
     // Check for Vulkan support in GLFW
     if (!glfwVulkanSupported()) {
         glfwTerminate();
-        throw VkException("Vulkan is not supported by GLFW");
+        throw aura3d::VkException("Vulkan is not supported by GLFW");
     }
 
     // Set window hints for OpenGL/Vulkan context
-    glfwWindowHint(GLFW_RESIZABLE, resizable ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, _windowDetails.resizable ? GLFW_TRUE : GLFW_FALSE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 
@@ -60,10 +67,10 @@ GLFWwindow* GlfwWindowManager::getWindowInstance()
 void GlfwWindowManager::createGlfwWindowManager(const char* windowName)
 {
     // Create GLFW window
-    _window = glfwCreateWindow(_width, _height, windowName, nullptr, nullptr);
+    _window = glfwCreateWindow(_windowDetails.width, _windowDetails.height, windowName, nullptr, nullptr);
     if (!_window) {
         glfwTerminate();
-        throw VkException("Failed to create GLFW window");
+        throw aura3d::VkException("Failed to create GLFW window");
     }
 
 #ifdef GLFW_INCLUDE_OPENGL
@@ -78,16 +85,27 @@ void GlfwWindowManager::createGlfwWindowManager(const char* windowName)
 
     glfwSetFramebufferSizeCallback(_window, framebuffer_size_callback);
 
-    PLOG_INFO << "Created window: " << windowName;
+    _windowFlags = {
+        .resized = false,
+    };
+
+    glfwSetWindowUserPointer(_window, &_windowFlags);
+
+    _keyboardListener = std::make_unique<GlfwKeyboardListener>(_window);
+
+    PLOG_INFO << "Created window and listeners: " << windowName;
 }
 
 void GlfwWindowManager::process(std::function<void()>&& actions)
 {
+    int count = 0;
     // Main event loop
     while (!glfwWindowShouldClose(_window)) {
-        actions();  // Execute the actions provided by the user
+        glfwPollEvents(); // Poll for events (input, window resize, etc.)
 
-        glfwPollEvents();  // Poll for events (input, window resize, etc.)
+        count++;
+
+        actions();  // Execute the actions provided by the user
 
 #ifdef GLFW_INCLUDE_OPENGL
         // OpenGL rendering
@@ -97,6 +115,12 @@ void GlfwWindowManager::process(std::function<void()>&& actions)
     }
 
     PLOG_INFO << "Window event loop ended.";
+    PLOG_INFO << count << " frames processed!";
+}
+
+WindowFlags* GlfwWindowManager::getWindowFlags()
+{
+    return &_windowFlags;
 }
 
 std::vector<const char*> GlfwWindowManager::getGlfwVulkanExtensions() const

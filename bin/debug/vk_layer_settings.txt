@@ -1,0 +1,2 @@
+khronos_validation.report_flags = DEBUG | WARNING | ERROR
+khronos_validation.enables = VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT

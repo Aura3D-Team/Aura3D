@@ -1,0 +1,11 @@
+/workspace/Aura3D/bin/debug/CMakeFiles/glad.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/shaders.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/CompileShaders.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/Aura3D.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/copy_vk_layer_settings.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/edit_cache.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/rebuild_cache.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/list_install_components.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/install.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/install/local.dir
+/workspace/Aura3D/bin/debug/CMakeFiles/install/strip.dir

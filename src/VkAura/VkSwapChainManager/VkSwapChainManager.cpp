@@ -14,15 +14,12 @@ VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice
     _swapChainImages({}), _choosedSurfaceFormat(),
     _choosedPresentMode(), _choosedExtent()
 {
-    _initSwapChainSupportDetails(physicalDevice, vkSurface);
+    initSwapChainSupportDetails(physicalDevice, vkSurface);
 }
 
 VkSwapChainManager::~VkSwapChainManager()
 {
-    if (_swapChain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
-        PLOG_DEBUG << "VkSwapChain deleted";
-    }
+    cleanup();
 
     _device = nullptr;
 }
@@ -50,6 +47,11 @@ VkPresentModeKHR* VkSwapChainManager::getChoosedPresentMode()
 const std::vector<VkImage>& VkSwapChainManager::getSwapChainImages()
 {
     return _swapChainImages;
+}
+
+VkSwapchainKHR* VkSwapChainManager::getSwapChain()
+{
+    return &_swapChain;
 }
 
 VkExtent2D* VkSwapChainManager::getExtent2D()
@@ -133,35 +135,16 @@ void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surfac
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
 }
 
-void VkSwapChainManager::recreateSwapChain(VkImageViewsManager* vkImageViewsManager,
-                                           VkFrameBuffersManager* vkFrameBuffersManager,
-                                           GLFWwindow* window,
-                                           VkSurfaceKHR surface,
-                                           VkDeviceManager* vkDeviceManager,
-                                           VkRenderPass renderPass) {
-    vkDeviceWaitIdle(*_device);
-
-    vkFrameBuffersManager->clear();
-    vkImageViewsManager->clear();
-
-    vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
-    PLOG_WARNING << "VkSwapChain deleted in window looping";
-
-    createSwapChain(window, surface, vkDeviceManager);
-    vkImageViewsManager->createImageViews(_swapChainImages, _choosedSurfaceFormat.format, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, getSwapchainCreateInfoKHR()->minImageCount);
-    vkFrameBuffersManager->createFrameBuffers(vkImageViewsManager->getImageViews(),
-                                              renderPass,
-                                              *getExtent2D());
-}
-
-const uint32_t VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore)
+const uint32_t VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags)
 {
     uint32_t imageIndex = UINT32_MAX;
     VkResult result = vkAcquireNextImageKHR(*_device, _swapChain, UINT64_MAX, imageSemaphore, VK_NULL_HANDLE, &imageIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR ||
+        result == VK_SUBOPTIMAL_KHR ||
+        windowFlags->resized) {
         return imageIndex;
-    }
+    };
 
     VK_RESULT_CHECK(result);
 
@@ -207,6 +190,31 @@ void VkSwapChainManager::transitionImageLayout(
     barrier.srcAccessMask = accessFlags[0];
     barrier.dstAccessMask = accessFlags[1];
 
+    // Some trasintions examples:
+
+    // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+    //                                           imageIndex,
+    //                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+    //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+
+
+    // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+    //                                           imageIndex,
+    //                                           VK_IMAGE_LAYOUT_UNDEFINED,
+    //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+    //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+
+    // Transition image layout for presentation.
+    // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
+    //                                           imageIndex,
+    //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    //                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    //                                           {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
+    //                                           {VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE});
+
     vkCmdPipelineBarrier(
         commandBuffer,
         stages[0],
@@ -215,14 +223,17 @@ void VkSwapChainManager::transitionImageLayout(
         );
 }
 
-void VkSwapChainManager::debug(const uint32_t& imageIndex)
+void VkSwapChainManager::cleanup()
 {
-    VkImage image = _swapChainImages[imageIndex];
+    if (_swapChain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
+        PLOG_DEBUG << "VkSwapChain deleted";
+    }
 
-    // PLOG_DEBUG << image;
+    _swapChainImages.clear();
 }
 
-void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)
+void VkSwapChainManager::initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)
 {
     VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, vkSurface, &_swapChainSupportDetails.capabilities);
     VK_RESULT_CHECK(result);
@@ -248,11 +259,7 @@ void VkSwapChainManager::_initSwapChainSupportDetails(VkPhysicalDevice physicalD
 
 VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window)
 {
-    if (capabilities.currentExtent.width != UINT32_MAX) {
-        return capabilities.currentExtent;
-    }
-
-    int width, height;
+    int width=0, height=0;
     glfwGetFramebufferSize(window, &width, &height);
 
     VkExtent2D actualExtent = {

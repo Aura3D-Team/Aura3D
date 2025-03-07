@@ -3,19 +3,21 @@
 #include <aura.hpp>
 #include <memory>
 
-// #include <glad/glad.h>
-#include <GlfwAura/GlfwWindowManager/GlfwWindowManager.h>
-
 #include <plog/Log.h>
 
-GlRunner::GlRunner() {}
+namespace aura3d {
+
+GlRunner::GlRunner(WindowDetails windowDetails) {
+    _glfwWindowManager = std::make_unique<aura3d::GlfwWindowManager>(windowDetails);
+}
 
 void GlRunner::run()
 {
-    std::unique_ptr<aura3d::GlfwWindowManager> glfwWindowManager = std::make_unique<aura3d::GlfwWindowManager>(1280, 720);
-    glfwWindowManager->createGlfwWindowManager(APPLICATION_NAME);
+    _glfwWindowManager->createGlfwWindowManager(APPLICATION_NAME);
 
-    glfwWindowManager->process([&]() {
+    _glfwWindowManager->process([&]() {
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     });
+}
+
 }

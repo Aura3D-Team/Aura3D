@@ -4,7 +4,6 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <vector>
 #include <aura.hpp>
 
 namespace aura3d {
@@ -15,12 +14,16 @@ public:
     VkRenderSyncManager(VkDevice* device);
     ~VkRenderSyncManager();
 
+    void create();
+
     void waitForFences(const uint32_t& fenceIndex);
     void resetFences(const uint32_t& fenceIndex);
 
     VkFixedArray<VkSemaphore>& getImageAvailableSemaphores();
     VkFixedArray<VkSemaphore>& getRenderFinishedSemaphores();
     VkFixedArray<VkFence>& getInFlightFences();
+
+    void cleanup();
 
 private:
     VkDevice* _device;

@@ -9,6 +9,11 @@ namespace aura3d {
 VkRenderSyncManager::VkRenderSyncManager(VkDevice* device) :
     _device(device)
 {
+    // Empty
+}
+
+void VkRenderSyncManager::create()
+{
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     semaphoreInfo.pNext = nullptr;
@@ -61,6 +66,16 @@ VkFixedArray<VkSemaphore>& VkRenderSyncManager::getRenderFinishedSemaphores()
 VkFixedArray<VkFence>& VkRenderSyncManager::getInFlightFences()
 {
     return _inFlightFences;
+}
+
+void VkRenderSyncManager::cleanup()
+{
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], nullptr);
+        vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], nullptr);
+        vkDestroyFence(*_device, _inFlightFences[i], nullptr);
+    }
 }
 
 }
