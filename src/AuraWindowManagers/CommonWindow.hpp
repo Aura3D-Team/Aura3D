@@ -26,7 +26,7 @@ namespace aura3d {
 #endif
 
     // Callbacks for framebuffer size change (resizing the window)
-    void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+    inline void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     {
 #if defined(GLFW_INCLUDE_VULKAN)
         WindowFlags* windowFlags = static_cast<WindowFlags*>(glfwGetWindowUserPointer(window));

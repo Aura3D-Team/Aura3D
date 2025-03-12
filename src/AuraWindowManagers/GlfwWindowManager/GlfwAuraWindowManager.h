@@ -1,3 +1,5 @@
+#ifndef SDL_WINDOW_MANAGER
+
 #ifndef GLFWAURAWINDOWMANAGER_H
 #define GLFWAURAWINDOWMANAGER_H
 
@@ -80,3 +82,5 @@ private:
 }
 
 #endif // GlfwAuraWindowManager_H
+
+#endif

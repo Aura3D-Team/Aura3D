@@ -1,5 +1,8 @@
+#ifdef SDL_WINDOW_MANAGER
+
 #include "SDLAuraWindowManager.h"
 
+#include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <SDL2/SDL_vulkan.h>
 #include <plog/Log.h>
@@ -145,7 +148,7 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
         throw aura3d::AuraException("Failed to create OpenGL context");
     }
 
-    if (!gladLoadGLLoader((GLADloadfunc)SDL_GL_GetProcAddress)) {
+    if (!gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress)) {
         SDL_GL_DeleteContext(glContext);
         SDL_DestroyWindow(_window);
         SDL_Quit();
@@ -191,3 +194,5 @@ std::vector<const char*> SDLAuraWindowManager::getVulkanExtensions() const
 }
 
 }
+
+#endif

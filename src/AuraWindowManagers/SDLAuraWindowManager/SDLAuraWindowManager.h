@@ -1,3 +1,5 @@
+#ifdef SDL_WINDOW_MANAGER
+
 #ifndef SDLAURAWINDOWMANAGER_H
 #define SDLAURAWINDOWMANAGER_H
 
@@ -85,3 +87,5 @@ private:
 } // namespace aura3d
 
 #endif // SDLAuraWindowManager_H
+
+#endif

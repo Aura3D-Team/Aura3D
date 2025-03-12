@@ -1,3 +1,5 @@
+#ifndef SDL_WINDOW_MANAGER
+
 #include "GlfwAuraWindowManager.h"
 
 #include <plog/Log.h>
@@ -81,7 +83,7 @@ void GlfwAuraWindowManager::createWindow(const char* windowName)
     glfwSetWindowUserPointer(_window, &_windowFlags);
 
     // KeyboardListener setup
-    _keyboardListener = std::make_unique<AuraKeyboardListener>(static_cast<GLFWwindow*>(_window));
+    _keyboardListener = std::make_unique<AuraKeyboardListener>(_window);
 
     _keyboardListener->addKeyAction(GLFW_KEY_ESCAPE, AuraKeyAction(
         [this]() { glfwSetWindowShouldClose(_window, true); }, // onPress
@@ -133,3 +135,5 @@ std::vector<const char*> GlfwAuraWindowManager::getVulkanExtensions() const
 }
 
 }  // namespace aura3d
+
+#endif

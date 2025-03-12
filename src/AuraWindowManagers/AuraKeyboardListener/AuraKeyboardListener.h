@@ -24,11 +24,7 @@ private:
 
     static std::unordered_map<int, AuraKeyAction> _mapKeyActions;
 
-#ifdef SDL_WINDOW_MANAGER
-    SDL_Window* _window;
-#else
-    GLFWwindow* _window;
-#endif
+    WindowAPI* _window;
 };
 
 } // namespace aura
