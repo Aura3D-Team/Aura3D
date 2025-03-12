@@ -4,8 +4,9 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_vulkan.h>
 #include <GLFW/glfw3.h>
-#include <vector>
 
 namespace aura3d {
 
@@ -30,6 +31,7 @@ public:
      * @param window A pointer to the GLFW window for which the surface will be created.
      */
     VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window);
+    VkSurfaceManager(VkInstance* vkInstance, SDL_Window* window);
 
     /**
      * @brief Destroys the Vulkan surface and cleans up resources.

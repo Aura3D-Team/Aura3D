@@ -1,5 +1,5 @@
-#ifndef GLFWKEYACTION_H
-#define GLFWKEYACTION_H
+#ifndef AURAKEYACTION_H
+#define AURAKEYACTION_H
 
 #pragma once
 
@@ -7,9 +7,9 @@
 
 namespace aura3d {
 
-class GlfwKeyAction {
+class AuraKeyAction {
 public:
-    GlfwKeyAction(std::function<void()> onPress = nullptr, std::function<void()> onRelease = nullptr)
+    AuraKeyAction(std::function<void()> onPress = nullptr, std::function<void()> onRelease = nullptr)
         : _onPress(std::move(onPress)), _onRelease(std::move(onRelease)) {}
 
     void onPressAction() {
@@ -27,4 +27,4 @@ private:
 
 } // namespace aura
 
-#endif // GLFWKEYACTION_H
+#endif // AURAKEYACTION_H

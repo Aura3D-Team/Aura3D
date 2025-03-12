@@ -1,5 +1,5 @@
 #include "VkSurfaceManager.h"
-#include "VkAura/VkException/VkException.h"
+#include "AuraException/AuraException.h"
 
 #include <plog/Log.h>
 
@@ -10,6 +10,19 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
 {
     VkResult result = glfwCreateWindowSurface(*_vkInstance, window, nullptr, &_vkSurface);
     VK_RESULT_CHECK(result);
+}
+
+VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, SDL_Window* window)
+    : _vkInstance(vkInstance)
+{
+    if (SDL_Vulkan_CreateSurface(window, *_vkInstance, &_vkSurface))
+    {
+        PLOG_INFO << "SDL Window Surface created!";
+    }
+    else
+    {
+        throw AuraException("Fail to create SDL Window surfce!");
+    }
 }
 
 VkSurfaceManager::~VkSurfaceManager() {

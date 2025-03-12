@@ -3,7 +3,12 @@
 
 #pragma once
 
-#include <GlfwAura/GlfwWindowManager/GlfwWindowManager.h>
+#ifdef SDL_WINDOW_MANAGER
+#include <AuraWindowManagers/SDLAuraWindowManager/SDLAuraWindowManager.h>
+#else
+#include <AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h>
+#endif
+
 #include <VkAura/VkInstanceManager/VkInstanceManager.h>
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkSurfaceManager/VkSurfaceManager.h>
@@ -31,7 +36,11 @@ public:
 
     void handleWindowChanges();
 private:
-    std::unique_ptr<aura3d::GlfwWindowManager> _glfwWindowManager;
+#ifdef SDL_WINDOW_MANAGER
+    std::unique_ptr<aura3d::SDLAuraWindowManager> _windowManagerApi;
+#else
+    std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
+#endif
 
     std::unique_ptr<aura3d::VkInstanceManager> _vkInstance;
     std::unique_ptr<aura3d::VkDeviceManager> _vkDeviceManager;

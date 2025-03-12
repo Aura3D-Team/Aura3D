@@ -1,6 +1,6 @@
 #include "VkImageViewsManager.h"
 
-#include "VkAura/VkException/VkException.h"
+#include "AuraException/AuraException.h"
 
 #include <plog/Log.h>
 

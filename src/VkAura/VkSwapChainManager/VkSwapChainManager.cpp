@@ -1,7 +1,6 @@
 #include "VkSwapChainManager.h"
 
-#include <VkAura/VkException/VkException.h>
-#include <VkAura/VkQueueManager/VkQueueManager.h>
+#include <AuraException/AuraException.h>
 
 #include <algorithm>
 #include <plog/Log.h>
@@ -59,7 +58,7 @@ VkExtent2D* VkSwapChainManager::getExtent2D()
     return &_choosedExtent;
 }
 
-void VkSwapChainManager::createSwapChain(GLFWwindow* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount)
+void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount)
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
     _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes);
@@ -257,10 +256,14 @@ void VkSwapChainManager::initSwapChainSupportDetails(VkPhysicalDevice physicalDe
     }
 }
 
-VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window)
+VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, WindowAPI* window)
 {
     int width=0, height=0;
+#ifdef SDL_WINDOW_MANAGER
+    SDL_GetWindowSize(window, &width, &height);
+#else
     glfwGetFramebufferSize(window, &width, &height);
+#endif
 
     VkExtent2D actualExtent = {
         static_cast<uint32_t>(width),
@@ -286,7 +289,7 @@ VkSurfaceFormatKHR VkSwapChainManager::_chooseSwapSurfaceFormat(const std::vecto
                                                               const VkFormat vkFormat, const VkColorSpaceKHR vkColorSpace)
 {
     if (availableFormats.empty()) {
-        throw VkException("No available surface formats found.");
+        throw AuraException("No available surface formats found.");
     }
 
     for (const VkSurfaceFormatKHR& format : availableFormats) {
@@ -301,7 +304,7 @@ VkSurfaceFormatKHR VkSwapChainManager::_chooseSwapSurfaceFormat(const std::vecto
 VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VkPresentModeKHR vkPresentMode)
 {
     if (availablePresentModes.empty()) {
-        throw VkException("No available present modes found.");
+        throw AuraException("No available present modes found.");
     }
 
     for (const VkPresentModeKHR& presentMode : availablePresentModes) {

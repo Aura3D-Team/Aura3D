@@ -2,7 +2,7 @@
 #include <set>
 #include <plog/Log.h>
 
-#include "VkAura/VkException/VkException.h"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
 
@@ -20,7 +20,7 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableV
     validateValidationLayers();
 
     VkResult vkResult = vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance);
-    if (vkResult != VK_SUCCESS) throw VkException(vkResult);
+    if (vkResult != VK_SUCCESS) throw AuraException(vkResult);
 
     if (vkDebuggerPreparationResult == VK_SUCCESS) {
         createDebuggerInstance(&_debugCreateInfo);

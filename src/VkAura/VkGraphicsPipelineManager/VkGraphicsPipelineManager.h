@@ -18,7 +18,10 @@ public:
                               VkDevice* device);
     ~VkGraphicsPipelineManager();
 
-    void createPipeline(VkRenderPass renderPass, VkExtent2D extent);
+    void createPipeline(VkRenderPass renderPass,
+                        VkExtent2D extent,
+                        const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
+                        const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray);
 
     void cmdBindPipeline(VkCommandBuffer commandBuffer);
 

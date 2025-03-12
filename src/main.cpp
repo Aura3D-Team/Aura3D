@@ -3,6 +3,7 @@
 #include <plog/Formatters/TxtFormatter.h>
 // #include <plog/Formatters/MessageOnlyFormatter.h>
 #include <plog/Appenders/ColorConsoleAppender.h>
+#include <AuraWindowManagers/CommonWindow.hpp>
 
 // #define VK_USE_PLATFORM_WIN32_KHR
 // #define GLFW_EXPOSE_NATIVE_WIN32

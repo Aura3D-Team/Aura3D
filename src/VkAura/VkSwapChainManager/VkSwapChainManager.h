@@ -6,11 +6,11 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
-#include <GlfwAura/GlfwWindowManager/GlfwWindowManager.h>
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
 #include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
 #include <aura.hpp>
+#include <AuraWindowManagers/CommonWindow.hpp>
 
 namespace aura3d {
 
@@ -84,7 +84,7 @@ public:
      * @param vkDeviceManager A pointer to the VkDeviceManager responsible for managing the logical device and queue families.
      * @param layerCount Optional parameter specifying the number of image layers in the swap chain; defaults to 2.
      */
-    void createSwapChain(GLFWwindow* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount = 2);
+    void createSwapChain(WindowAPI* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount = 2);
 
     /**
      * @brief Retrieves swap chain support details.
@@ -114,7 +114,7 @@ public:
      *
      * @return VkExtent2D The chosen extent (resolution) for the swap chain images.
      */
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window);
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, WindowAPI* window);
 
     VkExtent2D* getExtent2D();
 

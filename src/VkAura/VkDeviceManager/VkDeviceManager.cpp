@@ -1,7 +1,7 @@
 #include "VkDeviceManager.h"
 #include "plog/Log.h"
 
-#include "VkAura/VkException/VkException.h"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
 
@@ -28,7 +28,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     // Enumerate physical devices
     VkResult result = vkEnumeratePhysicalDevices(vkInstance, &_physicaldeviceCount, nullptr);
     if (result != VK_SUCCESS || _physicaldeviceCount == 0) {
-        throw VkException(result != VK_SUCCESS ? result : VK_ERROR_INITIALIZATION_FAILED);
+        throw AuraException(result != VK_SUCCESS ? result : VK_ERROR_INITIALIZATION_FAILED);
     }
 
     std::vector<VkPhysicalDevice> devices(_physicaldeviceCount);
@@ -86,7 +86,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     }
 
     if (_physicalDevice == VK_NULL_HANDLE) {
-        throw VkException("No suitable physical device found.");
+        throw AuraException("No suitable physical device found.");
     }
 
     PLOG_INFO << "-------------------------------------------------------------------------------";

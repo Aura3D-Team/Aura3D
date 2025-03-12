@@ -1,6 +1,6 @@
 #include "VkGraphicsPipelineManager.h"
 
-#include <VkAura/VkException/VkException.h>
+#include <AuraException/AuraException.h>
 
 #include <plog/Log.h>
 
@@ -41,7 +41,10 @@ VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
     PLOG_DEBUG << "Graphics Pipeline destroyed.";
 }
 
-void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass, VkExtent2D extent)
+void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
+                                               VkExtent2D extent,
+                                               const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
+                                               const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray)
 {
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -50,10 +53,10 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass, VkExtent
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexBindingDescArray.size());
+    vertexInputInfo.pVertexBindingDescriptions = vertexBindingDescArray.data();
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttributeDescArray.size());
+    vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDescArray.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;

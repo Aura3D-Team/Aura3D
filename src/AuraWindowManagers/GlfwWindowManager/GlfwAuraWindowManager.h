@@ -1,5 +1,5 @@
-#ifndef GLFWWINDOWMANAGER_H
-#define GLFWWINDOWMANAGER_H
+#ifndef GLFWAURAWINDOWMANAGER_H
+#define GLFWAURAWINDOWMANAGER_H
 
 #pragma once
 
@@ -8,30 +8,19 @@
 #include <functional>
 #include <memory>
 
-#include <GlfwAura/GlfwKeyboardListener/GlfwKeyboardListener.h>
+#include <AuraWindowManagers/AuraKeyboardListener/AuraKeyboardListener.h>
+#include <AuraWindowManagers/CommonWindow.hpp>
 
 namespace aura3d {
 
-struct WindowDetails {
-    int width;
-    int height;
-    bool resizable;
-};
-
-struct WindowFlags {
-    bool resized;
-};
-
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-
 /**
- * @class GlfwWindowManager
+ * @class GlfwAuraWindowManager
  *
  * A wrapper class to manage the lifecycle of a GLFW window, designed for use with Vulkan.
  * It initializes GLFW, creates a Vulkan-compatible window, and provides a method to handle
  * the window's main loop with user-defined actions.
  */
-class GlfwWindowManager
+class GlfwAuraWindowManager
 {
 public:
     /**
@@ -43,17 +32,17 @@ public:
      * @param width The width of the window.
      * @param height The height of the window.
      */
-    GlfwWindowManager(WindowDetails windowDetails);
+    GlfwAuraWindowManager(WindowDetails windowDetails);
 
     /**
      * @brief Cleans up and terminates GLFW.
      */
-    ~GlfwWindowManager();
+    ~GlfwAuraWindowManager();
 
     /**
      * @brief Returns the underlying GLFW window instance.
      *
-     * @return GlfwWindowManager* A pointer to the GLFW window.
+     * @return GlfwAuraWindowManager* A pointer to the GLFW window.
      */
     GLFWwindow* getWindowInstance();
 
@@ -70,12 +59,12 @@ public:
      *
      * @param windowName The title of the window.
      */
-    void createGlfwWindowManager(const char* windowName);
+    void createWindow(const char* windowName);
 
     /**
      * @brief Retrives Vulkan required extensions for surface creation.
      */
-    std::vector<const char*> getGlfwVulkanExtensions() const;
+    std::vector<const char*> getVulkanExtensions() const;
 
     WindowFlags* getWindowFlags();
 
@@ -85,9 +74,9 @@ private:
     WindowDetails _windowDetails;
 
     WindowFlags _windowFlags;
-    std::unique_ptr<GlfwKeyboardListener> _keyboardListener;
+    std::unique_ptr<AuraKeyboardListener> _keyboardListener;
 };
 
 }
 
-#endif // GLFWWINDOWMANAGER_H
+#endif // GlfwAuraWindowManager_H

@@ -1,6 +1,6 @@
 #include "VkShaderManager.h"
 
-#include "VkAura/VkException/VkException.h"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
 

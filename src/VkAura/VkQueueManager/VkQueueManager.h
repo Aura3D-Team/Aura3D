@@ -72,7 +72,7 @@ public:
      * @param queueFamilyIndex The family index for which the queues were registered.
      * @param flags The Vulkan queue flags (e.g. VK_QUEUE_GRAPHICS_BIT) corresponding to the queue.
      *
-     * @throws VkException if no QueueData is registered for the specified key.
+     * @throws AuraException if no QueueData is registered for the specified key.
      */
     void setupQueue(VkDevice device, uint32_t queueFamilyIndex, const VkQueueFlags flags);
 
@@ -90,7 +90,7 @@ public:
      *
      * @return uint32_t The queue family index selected for the requested capabilities.
      *
-     * @throws VkException if no suitable queue family is found.
+     * @throws AuraException if no suitable queue family is found.
      */
     uint32_t pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueueFlags flags, const float queuePriority);
 

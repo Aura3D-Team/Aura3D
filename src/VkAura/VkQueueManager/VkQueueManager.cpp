@@ -1,5 +1,5 @@
 #include "VkQueueManager.h"
-#include "VkAura/VkException/VkException.h"
+#include "AuraException/AuraException.h"
 
 #include <plog/Log.h>
 
@@ -33,7 +33,7 @@ void VkQueueManager::setupQueue(VkDevice device, uint32_t queueFamilyIndex, cons
         }
     }
     else {
-        throw VkException("There is no QueueData registered for the given queue family index and flags.");
+        throw AuraException("There is no QueueData registered for the given queue family index and flags.");
     }
 }
 
@@ -41,7 +41,7 @@ uint32_t VkQueueManager::pushQueueInfo(VkPhysicalDevice physicalDevice, const Vk
 {
     uint32_t queueFamilyIndex = findQueueFamilyIndex(physicalDevice, flags);
     if (queueFamilyIndex == UINT32_MAX) {
-        throw VkException("No suitable queue family found for the requested capabilities.");
+        throw AuraException("No suitable queue family found for the requested capabilities.");
     }
 
     std::pair<uint32_t, VkQueueFlags> key = std::make_pair(queueFamilyIndex, flags);

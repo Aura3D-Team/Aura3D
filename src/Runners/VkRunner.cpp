@@ -1,4 +1,5 @@
 #include "VkRunner.h"
+#include "VkAura/VkVertexBufferManager/VkVertexBufferManager.h"
 
 #include <set>
 #include <plog/Log.h>
@@ -17,10 +18,13 @@ VkRunner::VkRunner(WindowDetails windowDetails,
     const bool enableValidationLayers = true;
 #endif
 
-    _glfwWindowManager = std::make_unique<aura3d::GlfwWindowManager>(windowDetails);
+#ifdef SDL_WINDOW_MANAGER
+    _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(windowDetails);
+#else
+    _windowManagerApi = std::make_unique<aura3d::GlfwAuraWindowManager>(windowDetails);
+#endif
 
-
-    const std::vector<const char*> glfwExtensions = _glfwWindowManager->getGlfwVulkanExtensions();
+    const std::vector<const char*> glfwExtensions = _windowManagerApi->getVulkanExtensions();
     for (const char* ext : glfwExtensions) {
         vkInstanceData.vkInstanceExtensions.push_back(ext);
     }
@@ -32,10 +36,10 @@ VkRunner::VkRunner(WindowDetails windowDetails,
     _vkDeviceManager = std::make_unique<aura3d::VkDeviceManager>(_vkInstance->getVkInstance(), vkDeviceData);
 
 
-    _glfwWindowManager->createGlfwWindowManager(APPLICATION_NAME);
+    _windowManagerApi->createWindow(APPLICATION_NAME);
     _vkSurfaceManager = std::make_unique<aura3d::VkSurfaceManager>(
         _vkInstance->getVkInstance(),
-        _glfwWindowManager->getWindowInstance()
+        _windowManagerApi->getWindowInstance()
     );
 
 
@@ -81,7 +85,7 @@ VkRunner::~VkRunner()
 void VkRunner::run()
 {
 
-    _vkSwapChainManager->createSwapChain(_glfwWindowManager->getWindowInstance(), *_vkSurfaceManager->getSurface(), _vkDeviceManager.get());
+    _vkSwapChainManager->createSwapChain(_windowManagerApi->getWindowInstance(), *_vkSurfaceManager->getSurface(), _vkDeviceManager.get());
     // uint32_t imageCount = vkSwapChainManager->getSwapchainCreateInfoKHR()->minImageCount;
 
 
@@ -97,8 +101,24 @@ void VkRunner::run()
                                                *_vkRenderPassManager->getRenderPass(),
                                                *_vkSwapChainManager->getExtent2D());
 
+    // TODO
+    // Things are hardcoded like bool is2d, think of a interesting way of solving this.
+    std::vector<Vertex2d> vertices = {
+        {{0.0f, -0.5f}, {0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{0.0f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+        {{0.0f, -0.5f}, {1.0f, 0.0f}, {1.0f, 0.0f, 1.0f, 1.0f}}
+    };
 
-    // _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(), *_vkSwapChainManager->getExtent2D());
+    std::vector<VkVertexInputBindingDescription> vertexBindingDescArray = {
+        VkVertexBufferManager::getBindingDescription(true),
+    };
+
+    auto vertexAttributeArray = VkVertexBufferManager::getAttributeDescriptions(true);
+
+    _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(),
+                                               *_vkSwapChainManager->getExtent2D(),
+                                               vertexBindingDescArray,
+                                               vertexAttributeArray);
 
 
     VkFixedArray<VkCommandBuffer> cmdBuffers = _vkCommandManager->createCommandBuffer();
@@ -106,7 +126,7 @@ void VkRunner::run()
 
     _vkRenderSyncManager->create();
 
-    auto* windowFlags = _glfwWindowManager->getWindowFlags();
+    auto* windowFlags = _windowManagerApi->getWindowFlags();
     const auto& frameBuffers = _vkFrameBuffersManager->getFrameBuffers();
     VkExtent2D* extent = _vkSwapChainManager->getExtent2D();
     VkQueue queueToDraw = _queueDataFromExclusiveFlags.front()->queues.front();
@@ -121,7 +141,7 @@ void VkRunner::run()
 
     std::set<uint32_t> imageIndexes = {};
 
-    _glfwWindowManager->process([&]() {
+    _windowManagerApi->process([&]() {
         _vkRenderSyncManager->waitForFences(currentFrame);
 
         const uint32_t imageIndex = _vkSwapChainManager->acquireNextImage(imageAvailableSemaphores[currentFrame], windowFlags);
@@ -129,7 +149,7 @@ void VkRunner::run()
         if (imageIndex >= ImagesCount)
         {
             PLOG_WARNING << "Swap chain needs recreation!";
-            windowFlags->resized = false;
+            windowFlags->resized = false; // TODO: SDL HAndle
             handleWindowChanges();
             imageIndexes.clear();
             return;
@@ -207,7 +227,29 @@ void VkRunner::run()
 void VkRunner::handleWindowChanges()
 {
     auto device = *_vkDeviceManager->getDevice();
-    GLFWwindow* window = _glfwWindowManager->getWindowInstance();
+
+#ifdef SDL_WINDOW_MANAGER
+    SDL_Window* window = _windowManagerApi->getWindowInstance();
+
+    int width = 0, height = 0;
+    SDL_GetWindowSize(window, &width, &height);
+
+    // Wait for window to be restored
+    while (width == 0 || height == 0) {
+        SDL_Event event;
+        while (SDL_WaitEvent(&event)) {
+            if (event.type == SDL_WINDOWEVENT &&
+                (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                 event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                 event.window.event == SDL_WINDOWEVENT_RESTORED)) {
+                SDL_GetWindowSize(window, &width, &height);
+                if (width > 0 && height > 0)
+                    break;
+            }
+        }
+    }
+#else
+    GLFWwindow* window = _windowManagerApi->getWindowInstance();
 
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
@@ -217,6 +259,7 @@ void VkRunner::handleWindowChanges()
         glfwGetFramebufferSize(window, &width, &height);
         glfwWaitEvents();
     }
+#endif
 
     vkDeviceWaitIdle(device);
 

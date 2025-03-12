@@ -3,7 +3,11 @@
 
 #pragma once
 
-#include <GlfwAura/GlfwWindowManager/GlfwWindowManager.h>
+#ifdef SDL_WINDOW_MANAGER
+#include <AuraWindowManagers/SDLAuraWindowManager/SDLAuraWindowManager.h>
+#else
+#include <AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h>
+#endif
 
 namespace aura3d {
 
@@ -15,7 +19,11 @@ public:
     void run();
 
 private:
-    std::unique_ptr<aura3d::GlfwWindowManager> _glfwWindowManager;
+#ifdef SDL_WINDOW_MANAGER
+    std::unique_ptr<aura3d::SDLAuraWindowManager> _windowManagerApi;
+#else
+    std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
+#endif
 };
 
 }

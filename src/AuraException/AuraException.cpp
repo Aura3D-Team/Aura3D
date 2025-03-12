@@ -1,20 +1,20 @@
-#include "VkException.h"
+#include "AuraException.h"
 
 namespace aura3d {
 
-VkException::VkException() noexcept
+AuraException::AuraException() noexcept
     : std::exception()
 {
     //Empty
 }
 
-VkException::VkException(const char* msg)
+AuraException::AuraException(const char* msg)
     : _msg(msg)
 {
     // Empty
 }
 
-VkException::VkException(const VkResult code)
+AuraException::AuraException(const VkResult code)
 {
     if (vkResultToString.find(code) != vkResultToString.end()) {
         _msg = vkResultToString.at(code);
@@ -23,9 +23,9 @@ VkException::VkException(const VkResult code)
     }
 }
 
-VkException::~VkException() noexcept = default;
+AuraException::~AuraException() noexcept = default;
 
-const char* VkException::what() const noexcept
+const char* AuraException::what() const noexcept
 {
     return _msg;
 }

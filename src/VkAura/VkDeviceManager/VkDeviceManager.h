@@ -109,7 +109,7 @@ private:
      *
      * @param vkInstance Vulkan instance to set the device
      *
-     * Throws a `VkException` if any Vulkan operation fails during device selection or creation.
+     * Throws a `AuraException` if any Vulkan operation fails during device selection or creation.
      */
     void _setBestDevice(VkInstance vkInstance);
 

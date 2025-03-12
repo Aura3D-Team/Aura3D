@@ -83,7 +83,7 @@ public:
      * implementation. Unsupported extensions are removed from the list, and a warning is
      * logged if any are not supported.
      *
-     * @throws VkException if any required instance extensions are not available.
+     * @throws AuraException if any required instance extensions are not available.
      */
     void validateInstanceExtensions();
 
@@ -92,9 +92,9 @@ public:
      *
      * Checks that each requested validation layer in `_vkValidationLayers` is supported by
      * the Vulkan implementation. If unsupported layers are found, a warning is logged, and
-     * the function throws `VkException`.
+     * the function throws `AuraException`.
      *
-     * @throws VkException if any required validation layers are not available.
+     * @throws AuraException if any required validation layers are not available.
      */
     void validateValidationLayers();
 
@@ -117,7 +117,7 @@ public:
      * Throws an exception if the debug messenger creation fails.
      *
      * @param debugCreateInfo Pointer to the debug messenger creation info structure.
-     * @throws VkException if the debug messenger cannot be created.
+     * @throws AuraException if the debug messenger cannot be created.
      */
     void createDebuggerInstance(VkDebugUtilsMessengerCreateInfoEXT* debugCreateInfo);
 

@@ -1,6 +1,6 @@
 #include "VkBufferManager.h"
 
-#include "VkAura/VkException/VkException.h"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
 
@@ -43,7 +43,7 @@ void VkBufferManager::createBuffer(VkDevice device,
     result = vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory);
     VK_RESULT_CHECK(result);
 
-    vkBindBufferMemory(device, buffer, bufferMemory, 0);
+    VK_RESULT_CHECK(vkBindBufferMemory(device, buffer, bufferMemory, 0));
 }
 
 void VkBufferManager::bufferCopy(VkDevice device,
@@ -99,8 +99,7 @@ void VkBufferManager::bufferCopy(VkDevice device,
 void* VkBufferManager::mapBufferMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize size)
 {
     void* data;
-    VkResult result = vkMapMemory(device, memory, 0, size, VK_MEMORY_MAP_PLACED_BIT_EXT, &data);
-    VK_RESULT_CHECK(result);
+    VK_RESULT_CHECK(vkMapMemory(device, memory, 0, size, 0, &data));
 
     return data;
 }
@@ -131,7 +130,7 @@ uint32_t VkBufferManager::findMemoryType(VkPhysicalDevice physicalDevice, uint32
             return i;
     }
 
-    throw aura3d::VkException("Failed to find suitable memory type!");
+    throw aura3d::AuraException("Failed to find suitable memory type!");
 }
 
 }

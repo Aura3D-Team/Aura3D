@@ -5,25 +5,48 @@ project(Aura3D LANGUAGES CXX VERSION 1.0.0)
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# set(CMAKE_CXX_FLAGS_DEBUG "-g")
 
 message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
 
-option(USE_VULKAN "Use Vulkan" ON)
+# Opção para escolher o gerenciador de janelas
+option(SDL_WINDOW_MANAGER "Use SDL" ON)
 
-if(USE_VULKAN)
-    add_definitions(-DGLFW_INCLUDE_VULKAN)
+if(SDL_WINDOW_MANAGER)
+    add_definitions(-DSDL_WINDOW_MANAGER)
 else()
-    add_definitions(-DGLFW_INCLUDE_OPENGL)
+    add_definitions(-DGLFW_WINDOW_MANAGER)
+    message(STATUS "Using GLFW Window Manager.")
+endif()
+
+# Opções para escolher a API de renderização
+option(USE_CPU "Use CPU rendering" OFF)
+option(USE_VULKAN_API "Use Vulkan API" ON)
+
+# Lógica para definir a API de renderização
+if(USE_CPU)
+    add_definitions(-DUSE_CPU)
+    message(STATUS "Using CPU for rendering.")
+elseif(USE_VULKAN_API)
+    add_definitions(-DUSE_VULKAN_API)
+    message(STATUS "Using Vulkan API for rendering.")
+else()
+    add_definitions(-DUSE_OPENGL_API)
+    message(STATUS "Using OpenGL API for rendering.")
 endif()
 
 # Ensure Vulkan SDK is found
 include_directories("$ENV{VULKAN_SDK}/include")
 
+# All libs
+set(ALL_LIBRARY_PATH "$ENV{LIBRARY_PATH}/lib")
+
 # Find required packages
 find_package(Threads REQUIRED)
 find_library(VULKAN_LIB vulkan HINTS "$ENV{VULKAN_SDK}/lib")
-find_library(GLFW_LIB glfw3 HINTS "$ENV{LIBRARY_PATH}/lib")
-find_library(GLAD_LIB glad HINTS "$ENV{LIBRARY_PATH}/lib")
+find_library(GLFW_LIB glfw3 HINTS ${ALL_LIBRARY_PATH})
+find_library(GLAD_LIB glad HINTS ${ALL_LIBRARY_PATH})
+find_library(SDL2_LIB SDL2 HINTS ${ALL_LIBRARY_PATH})
 
 # Define General library path
 set(LIBRARY_INCLUDE "$ENV{LIBRARY_PATH}/include")
@@ -104,10 +127,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC
-    ${GLFW_LIB}
     ${VULKAN_LIB}
     Threads::Threads
+    ${GLFW_LIB}
     ${GLAD_LIB}
+    ${SDL2_LIB}
     dl
 )
 

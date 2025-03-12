@@ -61,7 +61,7 @@ public:
      * @param baseArrayLayer The starting layer for array textures (default is 0).
      * @param layerCount The number of layers in the array (default is 1).
      *
-     * @throws VkException If vkCreateImageView fails to create an image view.
+     * @throws AuraException If vkCreateImageView fails to create an image view.
      */
     void createImageViews(const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat, ImageViewData vkImageViewData);
 

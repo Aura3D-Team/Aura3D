@@ -1,35 +1,23 @@
-#include "GlfwWindowManager.h"
+#include "GlfwAuraWindowManager.h"
 
 #include <plog/Log.h>
-#include <VkAura/VkException/VkException.h>
-
-#include <GlfwAura/GlfwKeyboardListener/GlfwKeyboardListener.h>
+#include <AuraException/AuraException.h>
 
 namespace aura3d {
 
-// Callback for framebuffer size change (resizing the window)
-void framebuffer_size_callback(GLFWwindow* window, int width, int height)
-{
-#if defined(GLFW_INCLUDE_VULKAN)
-    WindowFlags* windowFlags = static_cast<WindowFlags*>(glfwGetWindowUserPointer(window));
-    windowFlags->resized = true;
-#elif defined(GLFW_INCLUDE_OPENGL)
-    glViewport(0, 0, width, height);
-#endif
-}
-
-GlfwWindowManager::GlfwWindowManager(WindowDetails windowDetails)
-    : _window(nullptr), _windowDetails(windowDetails), _windowFlags({}), _keyboardListener(nullptr)
+GlfwAuraWindowManager::GlfwAuraWindowManager(WindowDetails windowDetails) :
+    _window(nullptr), _windowDetails(windowDetails),
+    _windowFlags({}), _keyboardListener(nullptr)
 {
     // Initialize GLFW
     if (!glfwInit()) {
-        throw aura3d::VkException("Failed to initialize GLFW");
+        throw aura3d::AuraException("Failed to initialize GLFW");
     }
 
     // Check for Vulkan support in GLFW
     if (!glfwVulkanSupported()) {
         glfwTerminate();
-        throw aura3d::VkException("Vulkan is not supported by GLFW");
+        throw aura3d::AuraException("Vulkan is not supported by GLFW");
     }
 
     // Set window hints for OpenGL/Vulkan context
@@ -38,10 +26,10 @@ GlfwWindowManager::GlfwWindowManager(WindowDetails windowDetails)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 
 // Initialize GLFW window for Vulkan or OpenGL
-#if defined(GLFW_INCLUDE_VULKAN)
+#if defined(USE_VULKAN_API)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     PLOG_INFO << "GLFW initialized with Vulkan support.";
-#elif defined(GLFW_INCLUDE_OPENGL)
+#elif defined(USE_OPENGL_API)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     // glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // Optional, may not be necessary
@@ -49,7 +37,7 @@ GlfwWindowManager::GlfwWindowManager(WindowDetails windowDetails)
 #endif
 }
 
-GlfwWindowManager::~GlfwWindowManager()
+GlfwAuraWindowManager::~GlfwAuraWindowManager()
 {
     if (_window) {
         glfwDestroyWindow(_window);
@@ -59,44 +47,51 @@ GlfwWindowManager::~GlfwWindowManager()
     PLOG_DEBUG << "GLFW terminated";
 }
 
-GLFWwindow* GlfwWindowManager::getWindowInstance()
+GLFWwindow* GlfwAuraWindowManager::getWindowInstance()
 {
     return _window;
 }
 
-void GlfwWindowManager::createGlfwWindowManager(const char* windowName)
+void GlfwAuraWindowManager::createWindow(const char* windowName)
 {
     // Create GLFW window
     _window = glfwCreateWindow(_windowDetails.width, _windowDetails.height, windowName, nullptr, nullptr);
     if (!_window) {
         glfwTerminate();
-        throw aura3d::VkException("Failed to create GLFW window");
+        throw aura3d::AuraException("Failed to create GLFW window");
     }
 
-#ifdef GLFW_INCLUDE_OPENGL
+#ifdef USE_OPENGL_API
     // If using OpenGL, make the context current and load OpenGL functions
     glfwMakeContextCurrent(_window);
     if (!gladLoadGL((GLADloadfunc)glfwGetProcAddress)) {
         glfwDestroyWindow(_window);
         glfwTerminate();
-        throw VkException("Failed to load OpenGL functions for GLFW window");
+        throw AuraException("Failed to load OpenGL functions for GLFW window");
     }
 #endif
 
     glfwSetFramebufferSizeCallback(_window, framebuffer_size_callback);
 
     _windowFlags = {
-        .resized = false,
+        .frame_counter = 0,
+        .resized = false
     };
 
     glfwSetWindowUserPointer(_window, &_windowFlags);
 
-    _keyboardListener = std::make_unique<GlfwKeyboardListener>(_window);
+    // KeyboardListener setup
+    _keyboardListener = std::make_unique<AuraKeyboardListener>(static_cast<GLFWwindow*>(_window));
+
+    _keyboardListener->addKeyAction(GLFW_KEY_ESCAPE, AuraKeyAction(
+        [this]() { glfwSetWindowShouldClose(_window, true); }, // onPress
+        nullptr
+    ));
 
     PLOG_INFO << "Created window and listeners: " << windowName;
 }
 
-void GlfwWindowManager::process(std::function<void()>&& actions)
+void GlfwAuraWindowManager::process(std::function<void()>&& actions)
 {
     int count = 0;
     // Main event loop
@@ -107,7 +102,7 @@ void GlfwWindowManager::process(std::function<void()>&& actions)
 
         actions();  // Execute the actions provided by the user
 
-#ifdef GLFW_INCLUDE_OPENGL
+#ifdef USE_OPENGL_API
         // OpenGL rendering
         glfwSwapBuffers(_window);  // Swap buffers (draw to the window)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);  // GL Clear buffers
@@ -118,12 +113,12 @@ void GlfwWindowManager::process(std::function<void()>&& actions)
     PLOG_INFO << count << " frames processed!";
 }
 
-WindowFlags* GlfwWindowManager::getWindowFlags()
+WindowFlags* GlfwAuraWindowManager::getWindowFlags()
 {
     return &_windowFlags;
 }
 
-std::vector<const char*> GlfwWindowManager::getGlfwVulkanExtensions() const
+std::vector<const char*> GlfwAuraWindowManager::getVulkanExtensions() const
 {
     std::vector<const char*> glfwExtensions;
     uint32_t glfwExtensionCount = 0;

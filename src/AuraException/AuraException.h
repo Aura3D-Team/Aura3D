@@ -1,16 +1,15 @@
-#ifndef VKEXCEPTION_H
-#define VKEXCEPTION_H
+#ifndef AURAEXCEPTION_H
+#define AURAEXCEPTION_H
 
 #pragma once
 
-#include <stdexcept>
 #include <unordered_map>
 #include <vulkan/vulkan.h>
 
 namespace aura3d {
 
 /**
- * @class VkException
+ * @class AuraException
  *
  * Custom exception class to handle Vulkan-related errors.
  *
@@ -19,72 +18,72 @@ namespace aura3d {
  * Vulkan-related exceptions. The error code can be mapped to a human-readable string for easier debugging
  * and logging.
  */
-class VkException : public std::exception
+class AuraException : public std::exception
 {
 public:
     /**
      * Default constructor.
      *
-     * Creates a `VkException` with no specific message.
+     * Creates a `AuraException` with no specific message.
      * The default message will be "Unknown Vulkan exception" if not set.
      */
-    VkException() noexcept;
+    AuraException() noexcept;
 
     /**
      * Destructor.
      *
      * Cleans up the exception object. No custom cleanup is necessary for this class.
      */
-    virtual ~VkException() noexcept;
+    virtual ~AuraException() noexcept;
 
     /**
      * Constructor with custom message.
      *
-     * Creates a `VkException` with a specified message. This can be used to throw an exception
+     * Creates a `AuraException` with a specified message. This can be used to throw an exception
      * with a custom error message.
      *
      * @param msg Custom error message.
      */
-    VkException(const char* msg);
+    AuraException(const char* msg);
 
     /**
      * Constructor with Vulkan error code (`VkResult`).
      *
-     * Creates a `VkException` using a Vulkan error code. The error code is mapped to a descriptive
+     * Creates a `AuraException` using a Vulkan error code. The error code is mapped to a descriptive
      * error message using the static map `vkResultToString`. If the error code is not found in the
      * map, the message defaults to "Unknown Vulkan error code".
      *
      * @param code Vulkan result code (`VkResult`) representing the error.
      */
-    VkException(const VkResult code);
+    AuraException(const VkResult code);
 
     /**
      * Copy constructor.
      *
-     * Creates a copy of another `VkException` object.
+     * Creates a copy of another `AuraException` object.
      */
-    VkException(const VkException&) = default;
+    AuraException(const AuraException&) = default;
 
     /**
      * Assignment operator.
      *
-     * Copies the contents of one `VkException` to another.
+     * Copies the contents of one `AuraException` to another.
      */
-    VkException& operator=(const VkException&) = default;
+    AuraException& operator=(const AuraException&) = default;
 
     /**
      * Move constructor.
      *
-     * Moves a `VkException` object, transferring ownership of resources.
+     * Moves a `AuraException` object, transferring ownership of resources.
      */
-    VkException(VkException&&) = default;
+    AuraException(AuraException&&) = default;
 
     /**
      * Move assignment operator.
      *
-     * Moves the contents of one `VkException` to another, transferring ownership of resources.
+     * Moves the contents of one `AuraException` to another, transferring ownership of resources.
      */
-    VkException& operator=(VkException&&) = default;
+    AuraException& operator=(AuraException&&) = default;
 
     /**
      * Overrides the what() function from `std::exception`.
@@ -110,7 +109,7 @@ private:
  * Static map of Vulkan result codes (`VkResult`) to human-readable error messages.
  *
  * This map contains most Vulkan error codes and their corresponding string descriptions.
- * It is used in the `VkException` constructor that takes a `VkResult` as input to convert
+ * It is used in the `AuraException` constructor that takes a `VkResult` as input to convert
  * the result code into a meaningful error message.
  */
 static const std::unordered_map<int64_t, const char*> vkResultToString = {
@@ -160,8 +159,8 @@ static const std::unordered_map<int64_t, const char*> vkResultToString = {
 
 #define VK_RESULT_CHECK(result) \
 if (result != VK_SUCCESS)       \
-    throw VkException(result);  \
+    throw AuraException(result);  \
 
 }
 
-#endif // VKEXCEPTION_H
+#endif // AuraException_H
