@@ -17,7 +17,8 @@ public:
 
     void beginRenderPass(VkCommandBuffer commandBuffer,
                          VkFramebuffer framebuffer,
-                         VkExtent2D swapChainExtent);
+                         VkExtent2D swapChainExtent,
+                         const VkClearValue* clearColorValue = nullptr);
 
     static void endRenderPass(VkCommandBuffer commandBuffer);
 

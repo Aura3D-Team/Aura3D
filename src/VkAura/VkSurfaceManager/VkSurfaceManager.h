@@ -64,7 +64,7 @@ public:
 
 private:
     VkInstance* _vkInstance; ///< Pointer to the Vulkan instance used to bind the surface.
-    VkSurfaceKHR _vkSurface; ///< Vulkan surface for rendering on cross-platform windowing systems (GLFW).
+    VkSurfaceKHR _vkSurface; ///< Vulkan surface for rendering on cross-platform windowing systems (GLFW/SDL2).
 };
 
 }

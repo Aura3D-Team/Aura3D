@@ -83,24 +83,27 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
 
 
 void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer,
-                     VkFramebuffer framebuffer,
-                     VkExtent2D swapChainExtent)
+                                          VkFramebuffer framebuffer,
+                                          VkExtent2D swapChainExtent,
+                                          const VkClearValue* clearColorValue)
 {
     VkRenderPassBeginInfo renderPassBeginInfo = {};
     renderPassBeginInfo.pNext = nullptr;
     renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassBeginInfo.renderPass = _renderPass;
     renderPassBeginInfo.framebuffer = framebuffer;
-
     renderPassBeginInfo.renderArea.offset = {0, 0};
     renderPassBeginInfo.renderArea.extent = swapChainExtent;
 
     VkClearValue clearColor = {};
-    clearColor.color = {0.0f, 0.0f, 0.0f, 1.0f};
+    if (clearColorValue) {
+        clearColor = *clearColorValue;
+    } else {
+        clearColor.color = {0.0f, 0.0f, 0.0f, 1.0f}; // Default to black
+    }
 
     renderPassBeginInfo.clearValueCount = 1;
     renderPassBeginInfo.pClearValues = &clearColor;
-
     vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 }
 

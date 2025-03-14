@@ -52,6 +52,15 @@ public:
      */
     ~VkCommandManager();
 
+    /**
+     * @brief Retrieves the command pool associated with the current thread.
+     *
+     * Ensures that each thread has its own command pool for safe multi-threaded command buffer allocation.
+     *
+     * @return VkCommandPool The thread-local command pool.
+     */
+    VkCommandPool getThreadCommandPool();
+
     VkFixedArray<VkCommandBuffer> createCommandBuffer();
 
     static void resetCommandBuffer(VkCommandBuffer commandBuffer);
@@ -87,15 +96,6 @@ private:
     // Map of command pools by thread ID
     static std::unordered_map<std::thread::id, VkCommandPool> _threadCommandPools;
     static std::mutex _poolMutex; /**< Mutex to protect access to the command pool map. */
-
-    /**
-     * @brief Retrieves the command pool associated with the current thread.
-     *
-     * Ensures that each thread has its own command pool for safe multi-threaded command buffer allocation.
-     *
-     * @return VkCommandPool The thread-local command pool.
-     */
-    VkCommandPool getThreadCommandPool();
 };
 
 }

@@ -25,9 +25,9 @@ void AuraKeyboardListener::keyCallback(SDL_KeyboardEvent keyEvent)
 {
     auto it = _mapKeyActions.find(keyEvent.keysym.sym);
     if (it != _mapKeyActions.end()) {
-        if (keyEvent.state == SDL_PRESSED) {
+        if (keyEvent.type == SDL_KEYDOWN) {
             it->second.onPressAction();
-        } else if (keyEvent.state == SDL_RELEASED) {
+        } else if (keyEvent.type == SDL_KEYUP) {
             it->second.onReleaseAction();
         }
     }

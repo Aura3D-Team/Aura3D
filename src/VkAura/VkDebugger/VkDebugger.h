@@ -1,9 +1,10 @@
+// VkDebugger.h
 #ifndef VKDEBUGGER_H
 #define VKDEBUGGER_H
-
 #pragma once
-
 #include <vulkan/vulkan.h>
+#include <string>
+#include <vector>
 
 namespace aura3d {
 
@@ -59,7 +60,7 @@ public:
         VkDebugUtilsMessageTypeFlagsEXT messageType,
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
         void* pUserData
-    );
+        );
 
     /**
      * @brief Sets up configuration information for Vulkan's debug messenger.
@@ -74,27 +75,6 @@ public:
      *
      * @return A `VkDebugUtilsMessengerCreateInfoEXT` structure initialized with settings for
      *         capturing and handling debug messages from Vulkan's validation layers.
-     *
-     * ### Debug Message Configuration
-     * - **Message Severity**:
-     *   - `VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT`: Provides verbose diagnostic messages.
-     *   - `VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT`: Logs informational messages.
-     *   - `VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT`: Captures warnings that may indicate
-     *     potential issues.
-     *   - `VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT`: Captures errors that could cause
-     *     application crashes or undefined behavior.
-     * - **Message Types**:
-     *   - `VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT`: General messages from the Vulkan API.
-     *   - `VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT`: Validation layer messages for potential
-     *     misuse or non-optimal usage of Vulkan commands.
-     *   - `VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT`: Messages that provide hints for improving
-     *     performance.
-     *
-     * ### Usage
-     * This function is typically called to get a `VkDebugUtilsMessengerCreateInfoEXT` structure
-     * that can be attached to `VkInstanceCreateInfo::pNext` during Vulkan instance creation.
-     *
-     * @see VkDebugUtilsMessengerCreateInfoEXT
      */
     static VkDebugUtilsMessengerCreateInfoEXT setupDebugMessenger();
 
@@ -123,11 +103,29 @@ public:
     VkDebugUtilsMessengerEXT* getVkDebugMessenger();
 
 private:
-    VkInstance* _vkInstance; ///< Pointer to the Vulkan instance associated with this debug messenger.
+    /**
+     * @brief Convert VkDebugUtilsMessageSeverityFlagBitsEXT to string
+     */
+    static std::string severityToString(VkDebugUtilsMessageSeverityFlagBitsEXT severity);
 
+    /**
+     * @brief Convert VkDebugUtilsMessageTypeFlagsEXT to string
+     */
+    static std::string messageTypeToString(VkDebugUtilsMessageTypeFlagsEXT type);
+
+    /**
+     * @brief Format object information from debug callback data
+     */
+    static std::string formatObjectInfo(const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+
+    /**
+     * @brief Format label information from debug callback data
+     */
+    static std::string formatLabelInfo(const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+
+    VkInstance* _vkInstance; ///< Pointer to the Vulkan instance associated with this debug messenger.
     VkDebugUtilsMessengerEXT _debugMessenger; ///< The Vulkan debug messenger handle.
 };
 
-}
-
+} // namespace aura3d
 #endif // VKDEBUGGER_H

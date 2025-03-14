@@ -17,8 +17,8 @@ SDLAuraWindowManager::SDLAuraWindowManager(WindowDetails windowDetails) :
     _keyboardListener(nullptr)
 {
     // Initialize SDL2
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        throw AuraException("Failed to initialize SDL2");
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+        throw AuraException("Failed to initialize SDL: " + std::string(SDL_GetError()));
     }
 
 #if defined(USE_OPENGL_API)
@@ -29,9 +29,9 @@ SDLAuraWindowManager::SDLAuraWindowManager(WindowDetails windowDetails) :
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 #elif defined(USE_VULKAN_API)
     // Not needed if you have a VkInstanceManager
-    // if (!SDL_Vulkan_LoadLibrary(nullptr)) {
-    //     throw AuraException("Failed to load Vulkan library in SDL.");
-    // }
+    if (SDL_Vulkan_LoadLibrary(nullptr) != VK_SUCCESS) {
+        throw AuraException("Failed to load Vulkan library in SDL.");
+    }
 #endif
 
     PLOG_INFO << "SDL2 initialized.";
@@ -39,7 +39,6 @@ SDLAuraWindowManager::SDLAuraWindowManager(WindowDetails windowDetails) :
 
 SDLAuraWindowManager::~SDLAuraWindowManager()
 {
-    stopEventLoop();
     if (_window) {
         SDL_DestroyWindow(_window);
         PLOG_DEBUG << "SDL2 window destroyed.";
@@ -58,24 +57,8 @@ WindowFlags* SDLAuraWindowManager::getWindowFlags()
     return &_windowFlags;
 }
 
-void SDLAuraWindowManager::startEventLoop()
+void SDLAuraWindowManager::eventLoop(SDL_Event& event)
 {
-    if (!_eventThread.joinable()) {
-        _eventThread = std::thread(&SDLAuraWindowManager::eventLoop, this);
-    }
-}
-
-void SDLAuraWindowManager::stopEventLoop()
-{
-    if (_eventThread.joinable()) {
-        _eventThread.join();
-    }
-}
-
-void SDLAuraWindowManager::eventLoop()
-{
-    SDL_Event event;
-
     while (SDL_PollEvent(&event)) {
         switch (event.type)
         {
@@ -84,16 +67,17 @@ void SDLAuraWindowManager::eventLoop()
                 break;
             case SDL_WINDOWEVENT:
                 if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                    _windowFlags.resized = true;
-                    PLOG_INFO << "Window resized: " << event.window.data1 << " x " << event.window.data2;
+                    // _windowFlags.resized = true;
                 }
+                break;
+            case SDL_KEYDOWN:
+            case SDL_KEYUP:
+                _keyboardListener->keyCallback(event.key);
                 break;
             default:
                 // Handle unexpected state, if necessary
                 break;
         }
-
-        SDL_Delay(10);
     }
 }
 
@@ -109,9 +93,9 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
 #ifdef USE_CPU
         SDL_WINDOW_SHOWN // CPU rendering
 #elif defined(USE_OPENGL_API)
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN
 #elif defined(USE_VULKAN_API)
-        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
+        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN
 #endif
         );
 
@@ -163,8 +147,11 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
 
 void SDLAuraWindowManager::process(std::function<void ()>&& actions)
 {
+    SDL_Event event;
+
     // Main event loop
     while (!_windowShouldClose) {
+        eventLoop(event);
 
         actions();  // Execute the actions provided by the user
 
@@ -179,18 +166,17 @@ void SDLAuraWindowManager::process(std::function<void ()>&& actions)
 
 std::vector<const char*> SDLAuraWindowManager::getVulkanExtensions() const
 {
-    std::vector<const char*> sdlExtensions;
-    uint32_t sdlExtensionCount = 0;
-    const char** exts = {};
-
-    // Get required Vulkan extensions for GLFW
-    if (!SDL_Vulkan_GetInstanceExtensions(_window, &sdlExtensionCount, exts)) {
-        AuraException("Couldn't extract SDL Vulcan extensions");
+    unsigned int count = 0;
+    if (!SDL_Vulkan_GetInstanceExtensions(_window, &count, nullptr)) {
+        throw AuraException("Failed to get Vulkan extension count: " + std::string(SDL_GetError()));
     }
 
-    sdlExtensions.assign(exts, exts + sdlExtensionCount);
+    std::vector<const char*> extensions(count);
+    if (!SDL_Vulkan_GetInstanceExtensions(_window, &count, extensions.data())) {
+        throw AuraException("Failed to get Vulkan extensions: " + std::string(SDL_GetError()));
+    }
 
-    return sdlExtensions;
+    return extensions;
 }
 
 }

@@ -3,14 +3,13 @@
 #include <plog/Formatters/TxtFormatter.h>
 // #include <plog/Formatters/MessageOnlyFormatter.h>
 #include <plog/Appenders/ColorConsoleAppender.h>
-#include <AuraWindowManagers/CommonWindow.hpp>
 
 // #define VK_USE_PLATFORM_WIN32_KHR
 // #define GLFW_EXPOSE_NATIVE_WIN32
 
-#if defined(GLFW_INCLUDE_VULKAN)
+#ifdef USE_VULKAN_API
 #include <Runners/VkRunner.h>
-#elif defined(GLFW_INCLUDE_OPENGL)
+#else
 #include <Runners/GlRunner.h>
 #endif
 
@@ -31,7 +30,10 @@ int main(int argc, char **argv)
         .resizable = true
     };
 
-#if defined(GLFW_INCLUDE_VULKAN)
+#ifdef USE_CPU
+    aura3d::GlRunner glRunner(windowDetails);
+    glRunner.run();
+#elif defined(USE_VULKAN_API)
     aura3d::VkInstanceData vkInstanceData = {
         .appName = "Aura3D",
         .engineName = "Aura3DEngine",
@@ -64,7 +66,7 @@ int main(int argc, char **argv)
                               vkDeviceData,
                               vkImageViewData);
     vkRunner.run();
-#elif defined(GLFW_INCLUDE_OPENGL)
+#else
     aura3d::GlRunner glRunner(windowDetails);
     glRunner.run();
 #endif

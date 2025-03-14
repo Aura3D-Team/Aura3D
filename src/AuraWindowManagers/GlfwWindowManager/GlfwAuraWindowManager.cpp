@@ -90,6 +90,11 @@ void GlfwAuraWindowManager::createWindow(const char* windowName)
         nullptr
     ));
 
+    _keyboardListener->addKeyAction(GLFW_KEY_M, AuraKeyAction(
+        [this]() { PLOG_INFO << "Metatada key m pressed"; }, // onPress
+        [this]() { PLOG_INFO << "Metatada key m released"; } // onRelease
+    ));
+
     PLOG_INFO << "Created window and listeners: " << windowName;
 }
 

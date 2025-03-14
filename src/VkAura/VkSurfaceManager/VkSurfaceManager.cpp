@@ -15,13 +15,8 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
 VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, SDL_Window* window)
     : _vkInstance(vkInstance)
 {
-    if (SDL_Vulkan_CreateSurface(window, *_vkInstance, &_vkSurface))
-    {
-        PLOG_INFO << "SDL Window Surface created!";
-    }
-    else
-    {
-        throw AuraException("Fail to create SDL Window surfce!");
+    if (!SDL_Vulkan_CreateSurface(window, *_vkInstance, &_vkSurface)) {
+        throw AuraException("Fail to create SDL Window surface! SDL Error: " + std::string(SDL_GetError()));
     }
 }
 

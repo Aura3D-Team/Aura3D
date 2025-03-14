@@ -63,10 +63,6 @@ public:
      */
     void createWindow(const char* windowName);
 
-    void startEventLoop();
-    void stopEventLoop();
-    void eventLoop();
-
     /**
      * @brief Retrieves Vulkan required extensions for surface creation.
      */
@@ -77,7 +73,8 @@ public:
 private:
     SDL_Window* _window;  ///< The SDL_Window instance.
     bool _windowShouldClose;
-    std::thread _eventThread;
+
+    void eventLoop(SDL_Event& event);
 
     WindowDetails _windowDetails;
     WindowFlags _windowFlags;

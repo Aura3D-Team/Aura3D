@@ -19,8 +19,7 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableV
     validateInstanceExtensions();
     validateValidationLayers();
 
-    VkResult vkResult = vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance);
-    if (vkResult != VK_SUCCESS) throw AuraException(vkResult);
+    VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance));
 
     if (vkDebuggerPreparationResult == VK_SUCCESS) {
         createDebuggerInstance(&_debugCreateInfo);

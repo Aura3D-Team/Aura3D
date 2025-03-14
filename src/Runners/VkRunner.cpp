@@ -1,7 +1,4 @@
 #include "VkRunner.h"
-#include "VkAura/VkVertexBufferManager/VkVertexBufferManager.h"
-
-#include <set>
 #include <plog/Log.h>
 
 namespace aura3d {
@@ -17,96 +14,82 @@ VkRunner::VkRunner(WindowDetails windowDetails,
 #else
     const bool enableValidationLayers = true;
 #endif
-
 #ifdef SDL_WINDOW_MANAGER
     _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(windowDetails);
 #else
     _windowManagerApi = std::make_unique<aura3d::GlfwAuraWindowManager>(windowDetails);
 #endif
-
-    const std::vector<const char*> glfwExtensions = _windowManagerApi->getVulkanExtensions();
-    for (const char* ext : glfwExtensions) {
+    const std::vector<const char*> windowApiExts = _windowManagerApi->getVulkanExtensions();
+    for (const char* ext : windowApiExts) {
         vkInstanceData.vkInstanceExtensions.push_back(ext);
     }
-
-
     _vkInstance = std::make_unique<aura3d::VkInstanceManager>(vkInstanceData, enableValidationLayers);
-
-
     _vkDeviceManager = std::make_unique<aura3d::VkDeviceManager>(_vkInstance->getVkInstance(), vkDeviceData);
-
-
     _windowManagerApi->createWindow(APPLICATION_NAME);
     _vkSurfaceManager = std::make_unique<aura3d::VkSurfaceManager>(
         _vkInstance->getVkInstance(),
         _windowManagerApi->getWindowInstance()
-    );
-
-
+        );
     _queueDataFromExclusiveFlags = _vkDeviceManager->getQueueManager()->getQueues(vkDeviceData.exclusiveQueueFlags);
     _graphicsIndexFamily = aura3d::VkQueueManager::findQueueFamilyIndex(*_vkDeviceManager->getPhysicalDevice(),
-                                                                                vkDeviceData.exclusiveQueueFlags,
-                                                                                *_vkSurfaceManager->getSurface());
-
-
+                                                                        vkDeviceData.exclusiveQueueFlags,
+                                                                        *_vkSurfaceManager->getSurface());
     _vkSwapChainManager = std::make_unique<aura3d::VkSwapChainManager>(
         *_vkDeviceManager->getPhysicalDevice(),
         _vkDeviceManager->getDevice(),
         *_vkSurfaceManager->getSurface()
-    );
-
-
+        );
     _vkImageViewsManager = std::make_unique<aura3d::VkImageViewsManager>(_vkDeviceManager->getDevice());
-
-
     _vkRenderPassManager = std::make_unique<aura3d::VkRenderPassManager>(_vkDeviceManager->getDevice());
-
-
     _vkFrameBuffersManager = std::make_unique<aura3d::VkFrameBuffersManager>(_vkDeviceManager->getDevice());
-
-
     _vkGraphicsPipelineManager = std::make_unique<aura3d::VkGraphicsPipelineManager>("./shaders/vert/test_shader2d_vert.spv",
                                                                                      "./shaders/frag/test_shader2d_frag.spv",
                                                                                      _vkDeviceManager->getDevice());
-
-
+    _vkDescriptorManager = std::make_unique<aura3d::VkDescriptorManager>(_vkDeviceManager->getDevice());
+    _vkBufferMemoryAllocator = std::make_unique<aura3d::VkBufferMemoryAllocator>(_vkDeviceManager->getDevice(), *_vkDeviceManager->getPhysicalDevice());
+    _vkVertexBufferManager = std::make_unique<aura3d::VkVertexBufferManager>(_vkDeviceManager->getDevice());
+    _vkUniformBufferManager = std::make_unique<aura3d::VkUniformBufferManager>(_vkDeviceManager->getDevice());
     _vkCommandManager = std::make_unique<aura3d::VkCommandManager>(_vkDeviceManager->getDevice(),
                                                                    _graphicsIndexFamily);
-
-
+    _vkTextureManager = std::make_unique<VkTextureManager>(
+        _vkDeviceManager->getDevice(),
+        _vkDeviceManager->getPhysicalDevice(),
+        _vkCommandManager->getThreadCommandPool(),
+        _queueDataFromExclusiveFlags.front()->queues.front(),
+        _vkBufferMemoryAllocator.get()
+        );
     _vkRenderSyncManager = std::make_unique<aura3d::VkRenderSyncManager>(_vkDeviceManager->getDevice());
 }
 
 VkRunner::~VkRunner()
 {
+    // Wait for the device to finish operations before destroying resources
+    if (_vkDeviceManager && _vkDeviceManager->getDevice()) {
+        vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
+    }
 
+    cleanup();
 }
 
 void VkRunner::run()
 {
-
     _vkSwapChainManager->createSwapChain(_windowManagerApi->getWindowInstance(), *_vkSurfaceManager->getSurface(), _vkDeviceManager.get());
-    // uint32_t imageCount = vkSwapChainManager->getSwapchainCreateInfoKHR()->minImageCount;
-
 
     _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
                                            _vkSwapChainManager->getChoosedSurfaceFormat()->format,
                                            _vkImageViewData);
 
-
     _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format);
-
 
     _vkFrameBuffersManager->createFrameBuffers(_vkImageViewsManager->getImageViews(),
                                                *_vkRenderPassManager->getRenderPass(),
                                                *_vkSwapChainManager->getExtent2D());
 
-    // TODO
-    // Things are hardcoded like bool is2d, think of a interesting way of solving this.
+    // Define a proper triangle with non-overlapping vertices
     std::vector<Vertex2d> vertices = {
-        {{0.0f, -0.5f}, {0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{0.0f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.0f, -0.5f}, {1.0f, 0.0f}, {1.0f, 0.0f, 1.0f, 1.0f}}
+        {{-0.5f, -0.5f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},  // Bottom-left, red
+        {{ 0.5f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},  // Bottom-right, green
+        {{ 0.0f,  0.5f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}   // Top-center, blue
     };
 
     std::vector<VkVertexInputBindingDescription> vertexBindingDescArray = {
@@ -114,92 +97,155 @@ void VkRunner::run()
     };
 
     auto vertexAttributeArray = VkVertexBufferManager::getAttributeDescriptions(true);
+    VkQueue queueToDraw = _queueDataFromExclusiveFlags.front()->queues.front();
+
+    // Create vertex buffer with named buffer for easier management
+    _vkVertexBufferManager->createVertexBuffer("mainTriangle",
+                                               *_vkDeviceManager->getPhysicalDevice(),
+                                               _vkCommandManager->getThreadCommandPool(),
+                                               _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
+                                               queueToDraw,
+                                               _vkBufferMemoryAllocator.get(),
+                                               vertices,
+                                               false);  // No need for persistent mapping for static geometry
+
+    // Get swapchain image count for multiple descriptor sets
+    uint32_t swapChainImageCount = _vkSwapChainManager->getSwapChainImages().size();
+
+    // 1. Set up UBO for transformation
+    _vkUniformBufferManager->createUniformBuffers(
+        *_vkDeviceManager->getPhysicalDevice(),
+        _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
+        swapChainImageCount,
+        _vkBufferMemoryAllocator.get()
+        );
+
+    // Update uniform buffer with identity matrix
+    TransformUBO ubo{};
+    ubo.transform = glm::mat4(1.0f);
+    for (uint32_t i = 0; i < swapChainImageCount; i++) {
+        _vkUniformBufferManager->updateUniformBuffer(i, ubo);
+    }
+
+    // Create descriptor set layouts in your pipeline manager
+    _vkGraphicsPipelineManager->createDescriptorSetLayouts();
+
+    // Allocate and update descriptor sets using VkDescriptorManager
+    std::vector<VkDescriptorSet> descriptorSets(swapChainImageCount);
+    for (size_t i = 0; i < swapChainImageCount; i++) {
+        // Allocate a descriptor set
+        descriptorSets[i] = _vkDescriptorManager->allocateDescriptorSet(
+            _vkGraphicsPipelineManager->getDescriptorSetLayout(0)
+            );
+
+        // Update the descriptor set with uniform buffer
+        _vkDescriptorManager->updateDescriptorSet(
+            descriptorSets[i],             // The descriptor set
+            0,                             // Binding point in shader
+            _vkUniformBufferManager->getUniformBuffer(i),   // Uniform buffer
+            _vkUniformBufferManager->getUniformBufferSize() // Size of the data
+            );
+    }
+
+    // Create a white texture for our triangle
+    auto whiteTexture = _vkTextureManager->createSolidColorTexture("white", 255, 255, 255);
+
+    // Allocate and update descriptor sets for the texture (set 1)
+    std::vector<VkDescriptorSet> textureDescriptorSets(swapChainImageCount);
+    for (size_t i = 0; i < swapChainImageCount; i++) {
+        // Allocate descriptor set for texture
+        textureDescriptorSets[i] = _vkDescriptorManager->allocateDescriptorSet(
+            _vkGraphicsPipelineManager->getDescriptorSetLayout(1)
+            );
+
+        // Get the texture data
+        const auto* texture = _vkTextureManager->getTexture("white");
+
+        // Update descriptor set with texture
+        _vkDescriptorManager->updateCombinedImageSamplerDescriptorSet(
+            textureDescriptorSets[i],
+            0,
+            texture->view,
+            texture->sampler
+            );
+    }
 
     _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(),
                                                *_vkSwapChainManager->getExtent2D(),
                                                vertexBindingDescArray,
                                                vertexAttributeArray);
 
-
     VkFixedArray<VkCommandBuffer> cmdBuffers = _vkCommandManager->createCommandBuffer();
-
-
     _vkRenderSyncManager->create();
 
     auto* windowFlags = _windowManagerApi->getWindowFlags();
     const auto& frameBuffers = _vkFrameBuffersManager->getFrameBuffers();
     VkExtent2D* extent = _vkSwapChainManager->getExtent2D();
-    VkQueue queueToDraw = _queueDataFromExclusiveFlags.front()->queues.front();
-
     auto& imageAvailableSemaphores = _vkRenderSyncManager->getImageAvailableSemaphores();
     auto& renderFinishedSemaphores = _vkRenderSyncManager->getRenderFinishedSemaphores();
     auto& fences = _vkRenderSyncManager->getInFlightFences();
-
     uint32_t ImagesCount = _vkSwapChainManager->getSwapChainImages().size();
-
     uint32_t currentFrame = 0;
-
-    std::set<uint32_t> imageIndexes = {};
 
     _windowManagerApi->process([&]() {
         _vkRenderSyncManager->waitForFences(currentFrame);
-
         const uint32_t imageIndex = _vkSwapChainManager->acquireNextImage(imageAvailableSemaphores[currentFrame], windowFlags);
 
         if (imageIndex >= ImagesCount)
         {
             PLOG_WARNING << "Swap chain needs recreation!";
-            windowFlags->resized = false; // TODO: SDL HAndle
+            windowFlags->resized = false;
             handleWindowChanges();
-            imageIndexes.clear();
             return;
         }
 
         _vkRenderSyncManager->resetFences(currentFrame);
-
         _vkCommandManager->resetCommandPool();
 
         // Begin recording the command buffer.
         aura3d::VkCommandManager::beginCommandBuffer(cmdBuffers[currentFrame]);
 
-        // Transition image layout if it is the first time we encounter this imageIndex
-        if (imageIndexes.find(imageIndex) == imageIndexes.end())
-        {
-            // PLOG_DEBUG << "Transitioning image layout for first use of imageIndex " << imageIndex;
-            _vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
-                                                       imageIndex,
-                                                       VK_IMAGE_LAYOUT_UNDEFINED,
-                                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                                       {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
-                                                       {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
-            imageIndexes.insert(imageIndex);
-        }
-        else
-        {
-            // PLOG_DEBUG << "Transitioning image layout for already used imageIndex " << imageIndex;
-            _vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
-                                                       imageIndex,
-                                                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                                       {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
-                                                       {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
-        }
-
-        // Transition image layout for final presentation
-        _vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
-                                                   imageIndex,
-                                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                                   {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
-                                                   {VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE});
-
-        // Begin render pass
-        _vkRenderPassManager->beginRenderPass(cmdBuffers[currentFrame], frameBuffers[currentFrame], *extent);
+        // Begin render pass with clear values
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.2f, 1.0f}}};  // Dark blue background
+        _vkRenderPassManager->beginRenderPass(cmdBuffers[currentFrame],
+                                              frameBuffers[imageIndex],  // Use imageIndex, not currentFrame!
+                                              *extent,
+                                              &clearColor);
 
         // Record drawing commands
-        // _vkGraphicsPipelineManager->cmdBindPipeline(cmdBuffers[currentFrame]);
-        // _vkGraphicsPipelineManager->cmdDraw(cmdBuffers[currentFrame], extent);
+        _vkGraphicsPipelineManager->cmdBindPipeline(cmdBuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS);
 
+        // Bind vertex buffer
+        auto vertexBuffer = _vkVertexBufferManager->getVertexBuffer("mainTriangle");
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmdBuffers[currentFrame], 0, 1, &vertexBuffer.buffer, &vertexBuffer.offset);
+
+        // Bind the UBO descriptor set (set 0)
+        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
+            cmdBuffers[currentFrame],
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            0,  // First set index to bind
+            1,  // Number of sets to bind
+            &descriptorSets[imageIndex],
+            0,
+            nullptr
+        );
+
+        // Bind the texture descriptor set (set 1)
+        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
+            cmdBuffers[currentFrame],
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            1,  // First set index to bind
+            1,  // Number of sets to bind
+            &textureDescriptorSets[imageIndex],
+            0,
+            nullptr
+        );
+
+        // Draw the triangle
+        _vkGraphicsPipelineManager->cmdDraw(cmdBuffers[currentFrame], *extent, static_cast<uint32_t>(vertices.size()));
+
+        // End render pass
         aura3d::VkRenderPassManager::endRenderPass(cmdBuffers[currentFrame]);
 
         // End command buffer recording
@@ -227,13 +273,10 @@ void VkRunner::run()
 void VkRunner::handleWindowChanges()
 {
     auto device = *_vkDeviceManager->getDevice();
-
 #ifdef SDL_WINDOW_MANAGER
     SDL_Window* window = _windowManagerApi->getWindowInstance();
-
     int width = 0, height = 0;
     SDL_GetWindowSize(window, &width, &height);
-
     // Wait for window to be restored
     while (width == 0 || height == 0) {
         SDL_Event event;
@@ -250,41 +293,69 @@ void VkRunner::handleWindowChanges()
     }
 #else
     GLFWwindow* window = _windowManagerApi->getWindowInstance();
-
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
-
     // Wait for window to be restored
     while (width == 0 || height == 0) {
         glfwGetFramebufferSize(window, &width, &height);
         glfwWaitEvents();
     }
 #endif
-
     vkDeviceWaitIdle(device);
-
     _vkFrameBuffersManager->cleanup();
     _vkImageViewsManager->cleanup();
     _vkSwapChainManager->cleanup();
     _vkRenderPassManager->cleanup();
     _vkRenderSyncManager->cleanup();
-    _vkImageViewsManager->cleanup();
 
     _vkSwapChainManager->initSwapChainSupportDetails(*_vkDeviceManager->getPhysicalDevice(), *_vkSurfaceManager->getSurface());
-
     _vkSwapChainManager->createSwapChain(window, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get());
-
     _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
                                            _vkSwapChainManager->getChoosedSurfaceFormat()->format,
                                            _vkImageViewData);
-
     _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format);
-
     _vkFrameBuffersManager->createFrameBuffers(_vkImageViewsManager->getImageViews(),
                                                *_vkRenderPassManager->getRenderPass(),
                                                *_vkSwapChainManager->getExtent2D());
-
     _vkRenderSyncManager->create();
 }
 
+void VkRunner::cleanup() {
+    // Wait for device to be idle before cleanup
+    if (_vkDeviceManager && _vkDeviceManager->getDevice()) {
+        vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
+    }
+
+    // First explicitly destroy all buffers
+    if (_vkVertexBufferManager) {
+        _vkVertexBufferManager->cleanup();  // Explicitly destroy vertex buffers
+    }
+
+    if (_vkUniformBufferManager) {
+        _vkUniformBufferManager->cleanup(); // Explicitly destroy uniform buffers
+    }
+
+    // Next destroy texture resources
+    if (_vkTextureManager) {
+        _vkTextureManager->cleanup();       // Explicitly destroy textures
+    }
+
+    // Then destroy memory allocator which frees memory
+    _vkBufferMemoryAllocator.reset();
+
+    // Rest of cleanup...
+    _vkDescriptorManager.reset();
+    _vkFrameBuffersManager.reset();
+    _vkGraphicsPipelineManager.reset();
+    _vkRenderPassManager.reset();
+    _vkImageViewsManager.reset();
+    _vkSwapChainManager.reset();
+    _vkCommandManager.reset();
+    _vkRenderSyncManager.reset();
+    _vkSurfaceManager.reset();
+    _vkDeviceManager.reset();
+    _vkInstance.reset();
+    _windowManagerApi.reset();
 }
+
+} // namespace aura3d

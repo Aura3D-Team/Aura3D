@@ -14,6 +14,12 @@ AuraException::AuraException(const char* msg)
     // Empty
 }
 
+AuraException::AuraException(const std::string& msg)
+    : _msg(msg.c_str())
+{
+    // Empty
+}
+
 AuraException::AuraException(const VkResult code)
 {
     if (vkResultToString.find(code) != vkResultToString.end()) {
@@ -27,7 +33,7 @@ AuraException::~AuraException() noexcept = default;
 
 const char* AuraException::what() const noexcept
 {
-    return _msg;
+    return _msg.c_str();;
 }
 
 }

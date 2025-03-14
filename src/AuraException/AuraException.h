@@ -5,6 +5,7 @@
 
 #include <unordered_map>
 #include <vulkan/vulkan.h>
+#include <string>
 
 namespace aura3d {
 
@@ -45,6 +46,7 @@ public:
      * @param msg Custom error message.
      */
     AuraException(const char* msg);
+    AuraException(const std::string& msg);
 
     /**
      * Constructor with Vulkan error code (`VkResult`).
@@ -102,7 +104,7 @@ private:
      *
      * This message is either set via a custom string or automatically mapped from a Vulkan error code.
      */
-    const char* _msg;
+    std::string _msg;
 };
 
 /**
