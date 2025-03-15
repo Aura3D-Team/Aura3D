@@ -1,13 +1,16 @@
 #include "VkUniformBufferManager.h"
-#include "VkAura/VkBufferManager/VkBufferManager.h"
+#include <aura.hpp>
 #include <cstring>
+
+#include "VkAura/VkBufferManager/VkBufferManager.h"
+#include <AuraException/AuraException.h>
 
 namespace aura3d {
 
 VkUniformBufferManager::VkUniformBufferManager(VkDevice* vkDevice) :
     _vkDevice(vkDevice)
 {
-    // Initialize buffers with empty vectors
+    // Initialize with empty vectors - will be populated in createUniformBuffers
 }
 
 VkUniformBufferManager::~VkUniformBufferManager()
@@ -18,8 +21,7 @@ VkUniformBufferManager::~VkUniformBufferManager()
 void VkUniformBufferManager::createUniformBuffers(
     VkPhysicalDevice physicalDevice,
     VkSharingMode sharingMode,
-    uint32_t count,
-    VkBufferMemoryAllocator* allocator)
+    uint32_t count)
 {
     // Clean up existing buffers if any
     cleanup();
@@ -29,9 +31,7 @@ void VkUniformBufferManager::createUniformBuffers(
 
     // Resize vectors to hold the requested number of buffers
     _uniformBuffers.resize(count, VK_NULL_HANDLE);
-    _uniformBuffersMemory.resize(count, VK_NULL_HANDLE);
-    _bufferOffsets.resize(count, 0); // Add this to store offsets
-    _mappedMemory.resize(count, nullptr);
+    _allocations.resize(count);
 
     // Create uniform buffers
     for (size_t i = 0; i < count; i++) {
@@ -44,36 +44,26 @@ void VkUniformBufferManager::createUniformBuffers(
             sharingMode,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             _uniformBuffers[i],
-            _uniformBuffersMemory[i],
-            _bufferOffsets[i], // Pass the offset
-            allocator
-            );
+            _allocations[i]);
 
         // Persistently map the memory for efficient updates
-        // If using allocator, we need to get the mapping from it
-        if (allocator) {
-            AllocationInfo info = allocator->getAllocationInfo(_uniformBuffersMemory[i], _bufferOffsets[i]);
-            _mappedMemory[i] = info.mappedData;
-        } else {
-            _mappedMemory[i] = VkBufferManager::mapBufferMemory(
-                *_vkDevice,
-                _uniformBuffersMemory[i],
-                bufferSize
-                );
-        }
+        void* data = nullptr;
+        VK_RESULT_CHECK(VkDeviceAllocator::getInstance().mapMemory(_allocations[i], 0, bufferSize, &data));
+        // Note: The mappedData field in the allocation is automatically set by the
+        // mapMemory function, so we don't need to store it separately
     }
 }
+
 void VkUniformBufferManager::updateUniformBuffer(uint32_t currentImage, const TransformUBO& ubo)
 {
     // Check if the index is valid
-    if (currentImage >= _mappedMemory.size() || _mappedMemory[currentImage] == nullptr) {
-        // Index out of range or buffer not initialized
+    if (currentImage >= _allocations.size() || _allocations[currentImage].mappedData == nullptr) {
+        // Index out of range or buffer not mapped
         return;
     }
 
     // Copy the new UBO data directly to the mapped memory
-    std::memcpy(_mappedMemory[currentImage], &ubo, sizeof(ubo));
-
+    std::memcpy(_allocations[currentImage].mappedData, &ubo, sizeof(ubo));
     // No need to call vkFlushMappedMemoryRanges if the memory is coherent
     // (which we specified when creating the buffer)
 }
@@ -100,7 +90,6 @@ VkDescriptorSetLayoutBinding VkUniformBufferManager::getDescriptorSetLayoutBindi
     layoutBinding.descriptorCount = 1;
     layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // Used in vertex shader
     layoutBinding.pImmutableSamplers = nullptr;
-
     return layoutBinding;
 }
 
@@ -108,36 +97,37 @@ VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(uint32_t 
 {
     // Create a descriptor buffer info for the uniform buffer
     VkDescriptorBufferInfo bufferInfo{};
-
-    if (index < _uniformBuffers.size()) {
+    if (index < _uniformBuffers.size() && index < _allocations.size()) {
         bufferInfo.buffer = _uniformBuffers[index];
-        bufferInfo.offset = 0;
+        bufferInfo.offset = _allocations[index].offset;
         bufferInfo.range = sizeof(TransformUBO);
     }
-
     return bufferInfo;
 }
 
 void VkUniformBufferManager::cleanup()
 {
+    // Get device allocator
+    VkDeviceAllocator& deviceAllocator = VkDeviceAllocator::getInstance();
+
     // Unmap memory, destroy buffers, and free memory
     for (size_t i = 0; i < _uniformBuffers.size(); i++) {
-        if (_mappedMemory[i] != nullptr) {
-            VkBufferManager::unmapBufferMemory(*_vkDevice, _uniformBuffersMemory[i]);
-            _mappedMemory[i] = nullptr;
+        if (i < _allocations.size() && _allocations[i].mappedData != nullptr) {
+            deviceAllocator.unmapMemory(_allocations[i]);
+            // mappedData will be set to nullptr in unmapMemory
         }
 
         if (_uniformBuffers[i] != VK_NULL_HANDLE) {
-            VkBufferManager::destroyBuffer(*_vkDevice, _uniformBuffers[i], _uniformBuffersMemory[i]);
+            if (i < _allocations.size()) {
+                VkBufferManager::destroyBuffer(*_vkDevice, _uniformBuffers[i], _allocations[i]);
+            }
             _uniformBuffers[i] = VK_NULL_HANDLE;
-            _uniformBuffersMemory[i] = VK_NULL_HANDLE;
         }
     }
 
     // Clear the vectors
     _uniformBuffers.clear();
-    _uniformBuffersMemory.clear();
-    _mappedMemory.clear();
+    _allocations.clear();
 }
 
 } // namespace aura3d

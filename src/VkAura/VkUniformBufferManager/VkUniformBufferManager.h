@@ -1,11 +1,13 @@
 #ifndef VKUNIFORMBUFFERMANAGER_H
 #define VKUNIFORMBUFFERMANAGER_H
+
 #pragma once
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 #include <vector>
-#include "VkAura/VkBufferMemoryAllocator/VkBufferMemoryAllocator.h"
+
+#include "VkAura/VkDeviceAllocator/VkDeviceAllocator.h"
 
 namespace aura3d {
 
@@ -48,8 +50,7 @@ public:
     void createUniformBuffers(
         VkPhysicalDevice physicalDevice,
         VkSharingMode sharingMode,
-        uint32_t count,
-        VkBufferMemoryAllocator* allocator);
+        uint32_t count);
 
     /**
      * @brief Updates a uniform buffer with new transform data
@@ -98,11 +99,8 @@ public:
 private:
     VkDevice* _vkDevice;                      ///< Pointer to Vulkan device
     std::vector<VkBuffer> _uniformBuffers;    ///< Uniform buffer handles
-    std::vector<VkDeviceMemory> _uniformBuffersMemory; ///< Memory for uniform buffers
-    std::vector<VkDeviceSize> _bufferOffsets; ///< Buffer offsets for uniform buffers
-    std::vector<void*> _mappedMemory;         ///< Pointers to mapped memory
+    std::vector<VkDeviceAllocation> _allocations; ///< Memory allocations with mapping info
 };
 
 } // namespace aura3d
-
 #endif // VKUNIFORMBUFFERMANAGER_H

@@ -46,7 +46,7 @@ VkCommandPool VkCommandManager::getThreadCommandPool() {
         poolInfo.queueFamilyIndex = _queueFamilyIndex;
 
         VkCommandPool commandPool;
-        VK_RESULT_CHECK(vkCreateCommandPool(*_device, &poolInfo, nullptr, &commandPool));
+        VK_RESULT_CHECK(vkCreateCommandPool(*_device, &poolInfo, allocationCallbacks, &commandPool));
 
         _threadCommandPools[threadId] = commandPool;
         return commandPool;

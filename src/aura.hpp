@@ -5,6 +5,8 @@
 
 #include <array>
 
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+
 #define APPLICATION_NAME "Aura3D"
 
 #define MAX_FRAMES_IN_FLIGHT 2
@@ -15,5 +17,7 @@ using VkFixedArray = std::array<T, MAX_FRAMES_IN_FLIGHT>;
 
 template <typename T>
 using AttributeDescriptionArray = std::array<T, MAX_ATTRIBUTE_DESCRIPTION>;
+
+inline VkAllocationCallbacks* allocationCallbacks = aura3d::VkHostAllocator::getCallbacks();
 
 #endif // AURA_HPP

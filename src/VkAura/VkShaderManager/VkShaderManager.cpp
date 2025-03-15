@@ -1,5 +1,6 @@
 #include "VkShaderManager.h"
 
+#include <aura.hpp>
 #include "AuraException/AuraException.h"
 
 namespace aura3d {
@@ -36,8 +37,8 @@ void VkShaderManager::createFragShaderModule(const std::string& filename)
 
 void VkShaderManager::reset()
 {
-    vkDestroyShaderModule(*_device, _vertShaderModule, nullptr);
-    vkDestroyShaderModule(*_device, _fragShaderModule, nullptr);
+    vkDestroyShaderModule(*_device, _vertShaderModule, allocationCallbacks);
+    vkDestroyShaderModule(*_device, _fragShaderModule, allocationCallbacks);
     _vertShaderModule = VK_NULL_HANDLE;
     _fragShaderModule = VK_NULL_HANDLE;
 }

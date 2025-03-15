@@ -3,12 +3,14 @@
 
 #pragma once
 
+#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
+
 #include <aura.hpp>
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 #include <unordered_map>
 #include <string>
-#include "VkAura/VkBufferMemoryAllocator/VkBufferMemoryAllocator.h"
+
 
 namespace aura3d {
 
@@ -48,7 +50,6 @@ public:
                             VkCommandPool commandPool,
                             VkSharingMode sharingMode,
                             VkQueue graphicsQueue,
-                            VkBufferMemoryAllocator* allocator,
                             const std::vector<Vertex2d>& vertices2d,
                             bool persistentMapping = false);
 
@@ -58,7 +59,6 @@ public:
                             VkCommandPool commandPool,
                             VkSharingMode sharingMode,
                             VkQueue graphicsQueue,
-                            VkBufferMemoryAllocator* allocator,
                             const std::vector<Vertex3d>& vertices3d,
                             bool persistentMapping = false);
 

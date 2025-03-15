@@ -1,4 +1,6 @@
 #include "VkDescriptorManager.h"
+
+#include <aura.hpp>
 #include <AuraException/AuraException.h>
 #include <aura.hpp>
 
@@ -33,7 +35,7 @@ VkDescriptorManager::VkDescriptorManager(VkDevice* vkDevice, int pool_size) :
     _poolCreateInfo.maxSets = _pool_size * 2;  // Maximum number of descriptor sets (for both types)
 
     // Create the descriptor pool
-    VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, nullptr, &_descriptorPool));
+    VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, allocationCallbacks, &_descriptorPool));
 }
 
 /**
@@ -52,7 +54,7 @@ VkDescriptorManager::~VkDescriptorManager()
  */
 void VkDescriptorManager::cleanup()
 {
-    vkDestroyDescriptorPool(*_vkDevice, _descriptorPool, nullptr);
+    vkDestroyDescriptorPool(*_vkDevice, _descriptorPool, allocationCallbacks);
 }
 
 /**

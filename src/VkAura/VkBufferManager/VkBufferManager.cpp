@@ -1,7 +1,6 @@
 #include "VkBufferManager.h"
-
+#include <aura.hpp>
 #include "AuraException/AuraException.h"
-
 #include <cstring>
 
 namespace aura3d {
@@ -23,9 +22,7 @@ void VkBufferManager::createBuffer(VkDevice device,
                                    VkSharingMode sharingMode,
                                    VkMemoryPropertyFlags properties,
                                    VkBuffer& buffer,
-                                   VkDeviceMemory& bufferMemory,
-                                   VkDeviceSize& bufferOffset,
-                                   VkBufferMemoryAllocator* allocator)
+                                   VkDeviceAllocation& allocation)
 {
     // Create buffer object
     VkBufferCreateInfo bufferInfo = {};
@@ -34,27 +31,43 @@ void VkBufferManager::createBuffer(VkDevice device,
     bufferInfo.usage = usage;
     bufferInfo.sharingMode = sharingMode;
 
-    VkResult result = vkCreateBuffer(device, &bufferInfo, nullptr, &buffer);
-    if (result != VK_SUCCESS) {
-        throw AuraException("Failed to create buffer! Error code: " + std::to_string(result));
-    }
+    VK_RESULT_CHECK(vkCreateBuffer(device, &bufferInfo, allocationCallbacks, &buffer));
 
     try {
-        // Allocate memory from the allocator
-        AllocationInfo allocation = allocator->allocate(buffer, properties);
+        // Get the device allocator singleton
+        VkDeviceAllocator& deviceAllocator = VkDeviceAllocator::getInstance();
 
-        // Store the memory handle and offset
-        bufferMemory = allocation.memory;
-        bufferOffset = allocation.offset;
+        // Allocate memory for the buffer
+        VK_RESULT_CHECK(deviceAllocator.allocateMemoryForBuffer(buffer, properties, allocation));
 
-        // Note: We don't need to call vkBindBufferMemory here because
-        // the allocator already does it for us
+        // Bind the memory to the buffer
+        VK_RESULT_CHECK(deviceAllocator.bindBufferMemory(buffer, allocation));
     }
-    catch (const AuraException& e) {
+    catch (const std::exception& e) {
         // Clean up if allocation fails
-        vkDestroyBuffer(device, buffer, nullptr);
-        throw; // Re-throw the exception
+        vkDestroyBuffer(device, buffer, allocationCallbacks);
+        buffer = VK_NULL_HANDLE;
+        throw AuraException("Buffer creation failed: " + std::string(e.what()));
     }
+}
+
+void VkBufferManager::createBufferLegacy(VkDevice device,
+                                         VkPhysicalDevice physicalDevice,
+                                         VkDeviceSize size,
+                                         VkBufferUsageFlags usage,
+                                         VkSharingMode sharingMode,
+                                         VkMemoryPropertyFlags properties,
+                                         VkBuffer& buffer,
+                                         VkDeviceMemory& bufferMemory,
+                                         VkDeviceSize& bufferOffset)
+{
+    // Use the new implementation
+    VkDeviceAllocation allocation;
+    createBuffer(device, physicalDevice, size, usage, sharingMode, properties, buffer, allocation);
+
+    // Extract legacy values for compatibility
+    bufferMemory = allocation.memory;
+    bufferOffset = allocation.offset;
 }
 
 void VkBufferManager::bufferCopy(VkDevice device,
@@ -62,6 +75,7 @@ void VkBufferManager::bufferCopy(VkDevice device,
                                  VkQueue queue,
                                  VkBuffer srcBuffer,
                                  VkBuffer dstBuffer,
+                                 VkFence fence,
                                  VkDeviceSize size,
                                  VkDeviceSize srcOffset,
                                  VkDeviceSize dstOffset)
@@ -110,7 +124,7 @@ void VkBufferManager::bufferCopy(VkDevice device,
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    result = vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+    result = vkQueueSubmit(queue, 1, &submitInfo, fence);
     if (result != VK_SUCCESS) {
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
         throw AuraException("Failed to submit command buffer! Error code: " + std::to_string(result));
@@ -127,51 +141,36 @@ void VkBufferManager::bufferCopy(VkDevice device,
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-void* VkBufferManager::mapBufferMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize size, VkDeviceSize offset)
+void* VkBufferManager::mapBufferMemory(VkDeviceAllocation& allocation,
+                                       VkDeviceSize offset,
+                                       VkDeviceSize size)
 {
     void* data = nullptr;
-    VkResult result = vkMapMemory(device, memory, offset, size, 0, &data);
 
-    if (result != VK_SUCCESS) {
-        throw AuraException("Failed to map memory! Error code: " + std::to_string(result));
-    }
+    VK_RESULT_CHECK(VkDeviceAllocator::getInstance().mapMemory(allocation, offset, size, &data));
 
     return data;
 }
 
-void VkBufferManager::unmapBufferMemory(VkDevice device, VkDeviceMemory memory)
+void VkBufferManager::unmapBufferMemory(VkDeviceAllocation& allocation)
 {
-    vkUnmapMemory(device, memory);
+    VkDeviceAllocator::getInstance().unmapMemory(allocation);
 }
 
-void VkBufferManager::destroyBuffer(VkDevice device, VkBuffer buffer, VkDeviceMemory memory)
+void VkBufferManager::destroyBuffer(VkDevice device,
+                                    VkBuffer buffer,
+                                    VkDeviceAllocation& allocation)
 {
     if (buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(device, buffer, nullptr);
+        // Get the device allocator singleton
+        VkDeviceAllocator& deviceAllocator = VkDeviceAllocator::getInstance();
+
+        // Destroy the buffer
+        vkDestroyBuffer(device, buffer, allocationCallbacks);
+
+        // Free the memory using the allocator
+        deviceAllocator.freeMemory(allocation);
     }
-
-    if (memory != VK_NULL_HANDLE) {
-        vkFreeMemory(device, memory, nullptr);
-    }
-}
-
-uint32_t VkBufferManager::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties)
-{
-    // Get memory properties of the physical device
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-
-    // Find a suitable memory type that satisfies our requirements
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        bool typeMatch = (typeFilter & (1 << i)) != 0;
-        bool propertyMatch = (memProperties.memoryTypes[i].propertyFlags & properties) == properties;
-
-        if (typeMatch && propertyMatch) {
-            return i;
-        }
-    }
-
-    throw AuraException("Failed to find suitable memory type!");
 }
 
 void VkBufferManager::executeImmediateCommand(VkDevice device,

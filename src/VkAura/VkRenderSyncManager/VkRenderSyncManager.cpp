@@ -25,20 +25,15 @@ void VkRenderSyncManager::create()
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_imageAvailableSemaphores[i]));
-        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]));
-        VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, nullptr, &_inFlightFences[i]));
+        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, allocationCallbacks, &_imageAvailableSemaphores[i]));
+        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, allocationCallbacks, &_renderFinishedSemaphores[i]));
+        VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, allocationCallbacks, &_inFlightFences[i]));
     }
 }
 
 VkRenderSyncManager::~VkRenderSyncManager()
 {
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-    {
-        vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], nullptr);
-        vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], nullptr);
-        vkDestroyFence(*_device, _inFlightFences[i], nullptr);
-    }
+    cleanup();
 
     _device = nullptr;
 }
@@ -72,9 +67,9 @@ void VkRenderSyncManager::cleanup()
 {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-        vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], nullptr);
-        vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], nullptr);
-        vkDestroyFence(*_device, _inFlightFences[i], nullptr);
+        vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], allocationCallbacks);
+        vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], allocationCallbacks);
+        vkDestroyFence(*_device, _inFlightFences[i], allocationCallbacks);
     }
 }
 

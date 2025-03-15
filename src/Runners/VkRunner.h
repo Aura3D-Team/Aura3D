@@ -9,6 +9,7 @@
 #include <AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h>
 #endif
 
+// #include <aura.hpp>
 #include <VkAura/VkInstanceManager/VkInstanceManager.h>
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkSurfaceManager/VkSurfaceManager.h>
@@ -19,7 +20,7 @@
 #include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
 #include <VkAura/VkDescriptorManager/VkDescriptorManager.h>
 #include <VkAura/VkTextureManager/VkTextureManager.h>
-#include <VkAura/VkBufferMemoryAllocator/VkBufferMemoryAllocator.h>
+#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 #include <VkAura/VkVertexBufferManager/VkVertexBufferManager.h>
 #include <VkAura/VkUniformBufferManager/VkUniformBufferManager.h>
 #include <VkAura/VkCommandManager/VkCommandManager.h>
@@ -49,6 +50,9 @@ private:
     std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
 #endif
 
+    // std::unique_ptr<aura3d::VkHostAllocator> _vkHostAllocator;
+    // std::unique_ptr<aura3d::VkDeviceAllocator> _vkDeviceAllocator;
+
     std::unique_ptr<aura3d::VkInstanceManager> _vkInstance;
     std::unique_ptr<aura3d::VkDeviceManager> _vkDeviceManager;
     std::unique_ptr<aura3d::VkSurfaceManager> _vkSurfaceManager;
@@ -59,7 +63,6 @@ private:
     std::unique_ptr<aura3d::VkGraphicsPipelineManager> _vkGraphicsPipelineManager;
     std::unique_ptr<aura3d::VkTextureManager> _vkTextureManager;
     std::unique_ptr<aura3d::VkDescriptorManager> _vkDescriptorManager;
-    std::unique_ptr<aura3d::VkBufferMemoryAllocator> _vkBufferMemoryAllocator;
     std::unique_ptr<aura3d::VkVertexBufferManager> _vkVertexBufferManager;
     std::unique_ptr<aura3d::VkUniformBufferManager> _vkUniformBufferManager;
     std::unique_ptr<aura3d::VkCommandManager> _vkCommandManager;

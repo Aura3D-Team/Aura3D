@@ -1,5 +1,6 @@
 #include "VkRenderPassManager.h"
 
+#include <aura.hpp>
 #include "AuraException/AuraException.h"
 
 #include <plog/Log.h>
@@ -78,7 +79,7 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
     renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     renderPassInfo.pDependencies = dependencies.data();
 
-    VK_RESULT_CHECK(vkCreateRenderPass(*_device, &renderPassInfo, nullptr, &_renderPass));
+    VK_RESULT_CHECK(vkCreateRenderPass(*_device, &renderPassInfo, allocationCallbacks, &_renderPass));
 }
 
 
@@ -114,7 +115,7 @@ void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer) {
 void VkRenderPassManager::cleanup()
 {
     if (_renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(*_device, _renderPass, nullptr);
+        vkDestroyRenderPass(*_device, _renderPass, allocationCallbacks);
     }
 }
 

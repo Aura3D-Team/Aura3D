@@ -1,4 +1,6 @@
 #include "VkQueueManager.h"
+
+#include <aura.hpp>
 #include "AuraException/AuraException.h"
 
 #include <plog/Log.h>

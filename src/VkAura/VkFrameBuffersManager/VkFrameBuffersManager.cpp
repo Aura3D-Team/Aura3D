@@ -1,5 +1,6 @@
 #include "VkFrameBuffersManager.h"
 
+#include <aura.hpp>
 #include "AuraException/AuraException.h"
 
 #include <plog/Log.h>
@@ -14,9 +15,7 @@ VkFrameBuffersManager::VkFrameBuffersManager(VkDevice* device) :
 
 VkFrameBuffersManager::~VkFrameBuffersManager()
 {
-    for (auto& framebuffer : _framebuffers) {
-        vkDestroyFramebuffer(*_device, framebuffer, nullptr);
-    }
+    cleanup();
 
     _device = nullptr;
 
@@ -44,7 +43,7 @@ void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& i
         framebufferInfo.height = frameExtent.height;
         framebufferInfo.layers = 1;
 
-        VK_RESULT_CHECK(vkCreateFramebuffer(*_device, &framebufferInfo, nullptr, &_framebuffers[i]));
+        VK_RESULT_CHECK(vkCreateFramebuffer(*_device, &framebufferInfo, allocationCallbacks, &_framebuffers[i]));
     }
 }
 
@@ -56,7 +55,7 @@ const std::vector<VkFramebuffer>& VkFrameBuffersManager::getFrameBuffers()
 void VkFrameBuffersManager::cleanup()
 {
     for (auto& framebuffer : _framebuffers) {
-        vkDestroyFramebuffer(*_device, framebuffer, nullptr);
+        vkDestroyFramebuffer(*_device, framebuffer, allocationCallbacks);
     }
 
     _framebuffers.clear();

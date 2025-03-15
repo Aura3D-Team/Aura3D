@@ -1,5 +1,6 @@
 #include "VkImageViewsManager.h"
 
+#include <aura.hpp>
 #include "AuraException/AuraException.h"
 
 #include <plog/Log.h>
@@ -45,7 +46,7 @@ void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChain
         createInfo.subresourceRange.baseArrayLayer = vkImageViewData.baseArrayLayer;
         createInfo.subresourceRange.layerCount = vkImageViewData.layerCount;
 
-        VkResult result = vkCreateImageView(*_device, &createInfo, nullptr, &_swapChainImageViews[i]);
+        VkResult result = vkCreateImageView(*_device, &createInfo, allocationCallbacks, &_swapChainImageViews[i]);
         VK_RESULT_CHECK(result);
 
         PLOG_DEBUG << "ImageView " << i << " created!";
@@ -60,7 +61,7 @@ const std::vector<VkImageView>& VkImageViewsManager::getImageViews() const
 void VkImageViewsManager::cleanup()
 {
     for (VkImageView& imageView : _swapChainImageViews) {
-        vkDestroyImageView(*_device, imageView, nullptr);
+        vkDestroyImageView(*_device, imageView, allocationCallbacks);
     }
     _swapChainImageViews.clear();
 }

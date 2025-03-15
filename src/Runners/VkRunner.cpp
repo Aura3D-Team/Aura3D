@@ -14,6 +14,7 @@ VkRunner::VkRunner(WindowDetails windowDetails,
 #else
     const bool enableValidationLayers = true;
 #endif
+
 #ifdef SDL_WINDOW_MANAGER
     _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(windowDetails);
 #else
@@ -23,13 +24,23 @@ VkRunner::VkRunner(WindowDetails windowDetails,
     for (const char* ext : windowApiExts) {
         vkInstanceData.vkInstanceExtensions.push_back(ext);
     }
+
     _vkInstance = std::make_unique<aura3d::VkInstanceManager>(vkInstanceData, enableValidationLayers);
     _vkDeviceManager = std::make_unique<aura3d::VkDeviceManager>(_vkInstance->getVkInstance(), vkDeviceData);
+
+    aura3d::VkDeviceAllocatorCreateInfo vkDeviceAllocatorCreateInfo = {
+        .physicalDevice = *_vkDeviceManager->getPhysicalDevice(),
+        .device = *_vkDeviceManager->getDevice()
+    };
+
+    aura3d::VkDeviceAllocator::initialize(vkDeviceAllocatorCreateInfo);
+
     _windowManagerApi->createWindow(APPLICATION_NAME);
     _vkSurfaceManager = std::make_unique<aura3d::VkSurfaceManager>(
         _vkInstance->getVkInstance(),
         _windowManagerApi->getWindowInstance()
         );
+
     _queueDataFromExclusiveFlags = _vkDeviceManager->getQueueManager()->getQueues(vkDeviceData.exclusiveQueueFlags);
     _graphicsIndexFamily = aura3d::VkQueueManager::findQueueFamilyIndex(*_vkDeviceManager->getPhysicalDevice(),
                                                                         vkDeviceData.exclusiveQueueFlags,
@@ -42,11 +53,11 @@ VkRunner::VkRunner(WindowDetails windowDetails,
     _vkImageViewsManager = std::make_unique<aura3d::VkImageViewsManager>(_vkDeviceManager->getDevice());
     _vkRenderPassManager = std::make_unique<aura3d::VkRenderPassManager>(_vkDeviceManager->getDevice());
     _vkFrameBuffersManager = std::make_unique<aura3d::VkFrameBuffersManager>(_vkDeviceManager->getDevice());
+
     _vkGraphicsPipelineManager = std::make_unique<aura3d::VkGraphicsPipelineManager>("./shaders/vert/test_shader2d_vert.spv",
                                                                                      "./shaders/frag/test_shader2d_frag.spv",
                                                                                      _vkDeviceManager->getDevice());
     _vkDescriptorManager = std::make_unique<aura3d::VkDescriptorManager>(_vkDeviceManager->getDevice());
-    _vkBufferMemoryAllocator = std::make_unique<aura3d::VkBufferMemoryAllocator>(_vkDeviceManager->getDevice(), *_vkDeviceManager->getPhysicalDevice());
     _vkVertexBufferManager = std::make_unique<aura3d::VkVertexBufferManager>(_vkDeviceManager->getDevice());
     _vkUniformBufferManager = std::make_unique<aura3d::VkUniformBufferManager>(_vkDeviceManager->getDevice());
     _vkCommandManager = std::make_unique<aura3d::VkCommandManager>(_vkDeviceManager->getDevice(),
@@ -55,9 +66,9 @@ VkRunner::VkRunner(WindowDetails windowDetails,
         _vkDeviceManager->getDevice(),
         _vkDeviceManager->getPhysicalDevice(),
         _vkCommandManager->getThreadCommandPool(),
-        _queueDataFromExclusiveFlags.front()->queues.front(),
-        _vkBufferMemoryAllocator.get()
+        _queueDataFromExclusiveFlags.front()->queues.front()
         );
+
     _vkRenderSyncManager = std::make_unique<aura3d::VkRenderSyncManager>(_vkDeviceManager->getDevice());
 }
 
@@ -105,7 +116,6 @@ void VkRunner::run()
                                                _vkCommandManager->getThreadCommandPool(),
                                                _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
                                                queueToDraw,
-                                               _vkBufferMemoryAllocator.get(),
                                                vertices,
                                                false);  // No need for persistent mapping for static geometry
 
@@ -116,8 +126,7 @@ void VkRunner::run()
     _vkUniformBufferManager->createUniformBuffers(
         *_vkDeviceManager->getPhysicalDevice(),
         _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
-        swapChainImageCount,
-        _vkBufferMemoryAllocator.get()
+        swapChainImageCount
         );
 
     // Update uniform buffer with identity matrix
@@ -339,9 +348,6 @@ void VkRunner::cleanup() {
     if (_vkTextureManager) {
         _vkTextureManager->cleanup();       // Explicitly destroy textures
     }
-
-    // Then destroy memory allocator which frees memory
-    _vkBufferMemoryAllocator.reset();
 
     // Rest of cleanup...
     _vkDescriptorManager.reset();

@@ -1,4 +1,6 @@
 #include "VkSurfaceManager.h"
+
+#include <aura.hpp>
 #include "AuraException/AuraException.h"
 
 #include <plog/Log.h>
@@ -8,7 +10,7 @@ namespace aura3d {
 VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
     : _vkInstance(vkInstance)
 {
-    VkResult result = glfwCreateWindowSurface(*_vkInstance, window, nullptr, &_vkSurface);
+    VkResult result = glfwCreateWindowSurface(*_vkInstance, window, allocationCallbacks, &_vkSurface);
     VK_RESULT_CHECK(result);
 }
 
@@ -22,7 +24,7 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, SDL_Window* window)
 
 VkSurfaceManager::~VkSurfaceManager() {
     if (_vkSurface != VK_NULL_HANDLE) {
-        vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
+        vkDestroySurfaceKHR(*_vkInstance, _vkSurface, allocationCallbacks);
         PLOG_DEBUG << "VkSurface deleted";
     }
     _vkInstance = nullptr;

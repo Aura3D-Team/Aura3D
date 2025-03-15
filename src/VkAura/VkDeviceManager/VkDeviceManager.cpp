@@ -1,6 +1,7 @@
 #include "VkDeviceManager.h"
 #include "plog/Log.h"
 
+#include <aura.hpp>
 #include "AuraException/AuraException.h"
 
 namespace aura3d {
@@ -16,7 +17,7 @@ VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceDa
 VkDeviceManager::~VkDeviceManager() {
     if (_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(_device);
-        vkDestroyDevice(_device, nullptr);
+        vkDestroyDevice(_device, allocationCallbacks);
         _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
@@ -117,7 +118,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     _deviceInfo.ppEnabledExtensionNames = _vkDeviceCreationData.vkDeviceExtensions.data();
     _deviceInfo.pEnabledFeatures = &_deviceFeatures;
 
-    result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
+    result = vkCreateDevice(_physicalDevice, &_deviceInfo, allocationCallbacks, &_device);
     VK_RESULT_CHECK(result);
 
     uint32_t familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);

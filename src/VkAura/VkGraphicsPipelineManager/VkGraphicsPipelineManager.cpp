@@ -1,4 +1,6 @@
 #include "VkGraphicsPipelineManager.h"
+
+#include <aura.hpp>
 #include <AuraException/AuraException.h>
 #include <plog/Log.h>
 
@@ -111,12 +113,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         layoutInfo.pBindings = layoutBindings.data();
 
         VkDescriptorSetLayout layout;
-        VkResult result = vkCreateDescriptorSetLayout(*_device, &layoutInfo, nullptr, &layout);
-        if (result != VK_SUCCESS) {
-            throw AuraException("Failed to create descriptor set layout for set " +
-                                std::to_string(setInfo.setIndex) +
-                                ". Error code: " + std::to_string(result));
-        }
+        VK_RESULT_CHECK(vkCreateDescriptorSetLayout(*_device, &layoutInfo, allocationCallbacks, &layout));
 
         // Store the layout
         _descriptorSetLayouts[setInfo.setIndex] = layout;
@@ -149,10 +146,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     pipelineLayoutInfo.pSetLayouts = layouts.data();
 
     // Create the pipeline layout
-    VkResult result = vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout);
-    if (result != VK_SUCCESS) {
-        throw AuraException("Failed to create pipeline layout. Error code: " + std::to_string(result));
-    }
+    VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, allocationCallbacks, &_pipelineLayout));
 
     PLOG_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts";
 }
@@ -287,11 +281,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     pipelineInfo.basePipelineIndex = -1;
 
     // Create the graphics pipeline
-    VkResult result = vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &_pipeline);
-
-    if (result != VK_SUCCESS) {
-        throw AuraException("Failed to create graphics pipeline. Error code: " + std::to_string(result));
-    }
+    VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, allocationCallbacks, &_pipeline));
 
     PLOG_DEBUG << "Graphics pipeline created";
 }

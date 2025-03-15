@@ -1,5 +1,6 @@
 #include "VkPipelineManager.h"
 
+#include <aura.hpp>
 #include <AuraException/AuraException.h>
 
 namespace aura3d {
@@ -12,14 +13,7 @@ VkPipelineManager::VkPipelineManager(VkDevice* device)
 
 VkPipelineManager::~VkPipelineManager()
 {
-    if (_pipeline)
-    {
-        vkDestroyPipeline(*_device, _pipeline, nullptr);
-    }
-    if (_pipelineLayout)
-    {
-        vkDestroyPipelineLayout(*_device, _pipelineLayout, nullptr);
-    }
+    cleanup();
 }
 
 void VkPipelineManager::createPipelineLayout()
@@ -31,7 +25,7 @@ void VkPipelineManager::createPipelineLayout()
     pipelineLayoutInfo.pushConstantRangeCount = 0;
     pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-    VkResult result = vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout);
+    VkResult result = vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, allocationCallbacks, &_pipelineLayout);
     VK_RESULT_CHECK(result);
 }
 
@@ -39,11 +33,11 @@ void VkPipelineManager::cleanup()
 {
     if (_pipeline)
     {
-        vkDestroyPipeline(*_device, _pipeline, nullptr);
+        vkDestroyPipeline(*_device, _pipeline, allocationCallbacks);
     }
     if (_pipelineLayout)
     {
-        vkDestroyPipelineLayout(*_device, _pipelineLayout, nullptr);
+        vkDestroyPipelineLayout(*_device, _pipelineLayout, allocationCallbacks);
     }
 }
 
