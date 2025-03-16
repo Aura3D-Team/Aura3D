@@ -13,12 +13,11 @@
 
 namespace aura3d {
 
-std::unique_ptr<VkHostAllocator> VkHostAllocator::instance = nullptr;
-std::once_flag VkHostAllocator::initInstanceFlag;
-VkAllocationCallbacks VkHostAllocator::callbacks = {};
+// std::unique_ptr<VkHostAllocator> VkHostAllocator::instance = nullptr;
+// std::once_flag VkHostAllocator::initInstanceFlag;
 
 VkHostAllocator::VkHostAllocator()
-    : totalAllocatedSize(0), totalAllocationCount(0)
+    : callbacks({}), totalAllocatedSize(0), totalAllocationCount(0)
 {
     callbacks.pUserData = this;
     callbacks.pfnAllocation = &VkHostAllocator::Allocation;
@@ -41,16 +40,15 @@ VkHostAllocator::~VkHostAllocator()
     }
 }
 
-VkHostAllocator& VkHostAllocator::getInstance() {
-    std::call_once(initInstanceFlag, []() {
-        instance = std::unique_ptr<VkHostAllocator>(new VkHostAllocator());
-    });
-    return *instance;
-}
+// VkHostAllocator& VkHostAllocator::getInstance() {
+//     std::call_once(initInstanceFlag, [&]() {
+//         instance = std::make_unique<VkHostAllocator>();
+//     });
+//     return *instance;
+// }
 
 VkAllocationCallbacks* VkHostAllocator::getCallbacks()
 {
-    getInstance();
     return &callbacks;
 }
 

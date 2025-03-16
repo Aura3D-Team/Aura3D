@@ -5,27 +5,22 @@
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <mutex>
-#include <memory>
+// #include <memory>
 
 namespace aura3d {
 
 class VkHostAllocator
 {
 public:
-    // Singleton access
-    static VkHostAllocator& getInstance();
+    VkHostAllocator();
 
-    // Delete copy and move constructors/assignments
-    VkHostAllocator(const VkHostAllocator&) = delete;
-    VkHostAllocator& operator=(const VkHostAllocator&) = delete;
-    VkHostAllocator(VkHostAllocator&&) = delete;
-    VkHostAllocator& operator=(VkHostAllocator&&) = delete;
+    // static VkHostAllocator& getInstance();
 
     // Destructor
     ~VkHostAllocator();
 
     // Static method to get callbacks
-    static VkAllocationCallbacks* getCallbacks();
+    VkAllocationCallbacks* getCallbacks();
 
     // Memory statistics
     size_t getTotalAllocatedSize() const;
@@ -33,15 +28,11 @@ public:
     void printMemoryStats() const;
 
 private:
-    // Private constructor for singleton
-    VkHostAllocator();
-
     // Static singleton instance
-    static std::unique_ptr<VkHostAllocator> instance;
-    static std::once_flag initInstanceFlag;
+    // static std::unique_ptr<VkHostAllocator> instance;
+    // static std::once_flag initInstanceFlag;
 
-    // Static callbacks
-    static VkAllocationCallbacks callbacks;
+    VkAllocationCallbacks callbacks;
 
     // Memory tracking
     struct AllocationInfo {

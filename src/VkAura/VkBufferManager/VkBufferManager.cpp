@@ -15,7 +15,9 @@ VkBufferManager::~VkBufferManager()
     // Empty destructor - all methods are static
 }
 
-void VkBufferManager::createBuffer(VkDevice device,
+void VkBufferManager::createBuffer(VkHostAllocator* vkHostAllocator,
+                                   VkDeviceAllocator* vkDeviceAllocator,
+                                   VkDevice device,
                                    VkPhysicalDevice physicalDevice,
                                    VkDeviceSize size,
                                    VkBufferUsageFlags usage,
@@ -31,43 +33,21 @@ void VkBufferManager::createBuffer(VkDevice device,
     bufferInfo.usage = usage;
     bufferInfo.sharingMode = sharingMode;
 
-    VK_RESULT_CHECK(vkCreateBuffer(device, &bufferInfo, allocationCallbacks, &buffer));
+    VK_RESULT_CHECK(vkCreateBuffer(device, &bufferInfo, vkHostAllocator->getCallbacks(), &buffer));
 
     try {
-        // Get the device allocator singleton
-        VkDeviceAllocator& deviceAllocator = VkDeviceAllocator::getInstance();
-
         // Allocate memory for the buffer
-        VK_RESULT_CHECK(deviceAllocator.allocateMemoryForBuffer(buffer, properties, allocation));
+        VK_RESULT_CHECK(vkDeviceAllocator->allocateMemoryForBuffer(buffer, properties, allocation));
 
         // Bind the memory to the buffer
-        VK_RESULT_CHECK(deviceAllocator.bindBufferMemory(buffer, allocation));
+        VK_RESULT_CHECK(vkDeviceAllocator->bindBufferMemory(buffer, allocation));
     }
     catch (const std::exception& e) {
         // Clean up if allocation fails
-        vkDestroyBuffer(device, buffer, allocationCallbacks);
+        vkDestroyBuffer(device, buffer, vkHostAllocator->getCallbacks());
         buffer = VK_NULL_HANDLE;
         throw AuraException("Buffer creation failed: " + std::string(e.what()));
     }
-}
-
-void VkBufferManager::createBufferLegacy(VkDevice device,
-                                         VkPhysicalDevice physicalDevice,
-                                         VkDeviceSize size,
-                                         VkBufferUsageFlags usage,
-                                         VkSharingMode sharingMode,
-                                         VkMemoryPropertyFlags properties,
-                                         VkBuffer& buffer,
-                                         VkDeviceMemory& bufferMemory,
-                                         VkDeviceSize& bufferOffset)
-{
-    // Use the new implementation
-    VkDeviceAllocation allocation;
-    createBuffer(device, physicalDevice, size, usage, sharingMode, properties, buffer, allocation);
-
-    // Extract legacy values for compatibility
-    bufferMemory = allocation.memory;
-    bufferOffset = allocation.offset;
 }
 
 void VkBufferManager::bufferCopy(VkDevice device,
@@ -141,35 +121,19 @@ void VkBufferManager::bufferCopy(VkDevice device,
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-void* VkBufferManager::mapBufferMemory(VkDeviceAllocation& allocation,
-                                       VkDeviceSize offset,
-                                       VkDeviceSize size)
-{
-    void* data = nullptr;
 
-    VK_RESULT_CHECK(VkDeviceAllocator::getInstance().mapMemory(allocation, offset, size, &data));
-
-    return data;
-}
-
-void VkBufferManager::unmapBufferMemory(VkDeviceAllocation& allocation)
-{
-    VkDeviceAllocator::getInstance().unmapMemory(allocation);
-}
-
-void VkBufferManager::destroyBuffer(VkDevice device,
+void VkBufferManager::destroyBuffer(VkHostAllocator* vkHostAllocator,
+                                    VkDeviceAllocator* vkDeviceAllocator,
+                                    VkDevice device,
                                     VkBuffer buffer,
                                     VkDeviceAllocation& allocation)
 {
     if (buffer != VK_NULL_HANDLE) {
-        // Get the device allocator singleton
-        VkDeviceAllocator& deviceAllocator = VkDeviceAllocator::getInstance();
-
         // Destroy the buffer
-        vkDestroyBuffer(device, buffer, allocationCallbacks);
+        vkDestroyBuffer(device, buffer, vkHostAllocator->getCallbacks());
 
         // Free the memory using the allocator
-        deviceAllocator.freeMemory(allocation);
+        vkDeviceAllocator->freeMemory(allocation);
     }
 }
 

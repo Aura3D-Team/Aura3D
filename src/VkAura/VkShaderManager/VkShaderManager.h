@@ -7,13 +7,14 @@
 #include <vector>
 
 #include "Utils/ShaderSpirvExtractor.h"
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
 
 class VkShaderManager
 {
 public:
-    VkShaderManager(VkDevice* device);
+    VkShaderManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
     ~VkShaderManager();
 
     void createVertShaderModule(const std::string& filename);
@@ -25,6 +26,7 @@ public:
     VkShaderModule& getFragShaderModule();
 
 private:
+    VkHostAllocator* vkHostAllocator;
     VkDevice* _device;
 
     VkShaderModule _vertShaderModule;

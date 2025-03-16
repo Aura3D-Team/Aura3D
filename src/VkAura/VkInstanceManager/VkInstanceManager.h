@@ -7,7 +7,9 @@
 #include <vector>
 #include <memory>
 
-#include "VkAura/VkDebugger/VkDebugger.h"
+#include <VkAura/VkDebugger/VkDebugger.h>
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
 
@@ -46,7 +48,9 @@ public:
      * validation layers, and required instance extensions.
      * If the Vulkan instance cannot be created, it throws an exception.
      */
-    VkInstanceManager(VkInstanceData vkInstanceData, bool enableValidationLayers);
+    VkInstanceManager(VkHostAllocator* vkHostAllocator,
+                      VkInstanceData vkInstanceData,
+                      bool enableValidationLayers);
 
     /**
      * Destructor.
@@ -157,6 +161,8 @@ public:
     std::unique_ptr<VkDebugger>* getVkDebugger();
 
 private:
+    VkHostAllocator* vkHosAllocator;
+
     /**
      * Vulkan instance handle.
      *

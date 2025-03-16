@@ -1,12 +1,18 @@
 #ifndef VKGRAPHICSPIPELINEMANAGER_H
 #define VKGRAPHICSPIPELINEMANAGER_H
-#include <VkAura/VkPipelineManager/VkPipelineManager.h>
-#include <VkAura/VkShaderManager/VkShaderManager.h>
-#include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
+
+#pragma once
+
 #include <array>
 #include <string>
 #include <vector>
 #include <unordered_map>
+
+#include <VkAura/VkPipelineManager/VkPipelineManager.h>
+#include <VkAura/VkShaderManager/VkShaderManager.h>
+#include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+
 
 namespace aura3d {
 
@@ -34,7 +40,8 @@ struct DescriptorSetLayoutInfo {
 class VkGraphicsPipelineManager : public VkPipelineManager
 {
 public:
-    VkGraphicsPipelineManager(std::string shader_vert_spv,
+    VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
+                              std::string shader_vert_spv,
                               std::string shader_frag_spv,
                               VkDevice* device);
     ~VkGraphicsPipelineManager();
@@ -79,6 +86,7 @@ public:
     VkDescriptorSetLayout getDescriptorSetLayout(uint32_t setIndex) const;
 
 private:
+    VkHostAllocator* vkHostAllocator;
     VkShaderManager _shaderManager;
     std::array<VkPipelineShaderStageCreateInfo, 2> _shaderStages;
     std::array<VkDynamicState, 2> _dynamicStates;

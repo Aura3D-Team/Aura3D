@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
 #include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
@@ -49,7 +50,9 @@ public:
      * @param graphicsQueue Queue for submitting texture commands
      * @param bufferAllocator Memory allocator for texture resources
      */
-    VkTextureManager(VkDevice* device,
+    VkTextureManager(VkHostAllocator* vkHostAllocator,
+                     VkDeviceAllocator* vkDeviceAllocator,
+                     VkDevice* device,
                      VkPhysicalDevice* physicalDevice,
                      VkCommandPool commandPool,
                      VkQueue graphicsQueue);
@@ -89,6 +92,9 @@ public:
     void cleanup();
 
 private:
+    VkHostAllocator* vkHostAllocator;
+    VkDeviceAllocator* vkDeviceAllocator;
+
     VkDevice* _device;                  // Logical Vulkan device
     VkPhysicalDevice* _physicalDevice;  // Physical Vulkan device
     VkCommandPool _commandPool;         // Command pool for operations

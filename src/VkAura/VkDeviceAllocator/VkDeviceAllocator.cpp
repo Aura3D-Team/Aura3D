@@ -1,40 +1,12 @@
 #include "VkDeviceAllocator.h"
 
-#include <AuraException/AuraException.h>
-
-#include <iostream>
+// #include "AuraException/AuraException.h"
 #include <algorithm>
+#include <iostream>
 #include <sstream>
 #include <plog/Log.h>
 
 namespace aura3d {
-
-// Initialize static members
-std::unique_ptr<VkDeviceAllocator> VkDeviceAllocator::instance = nullptr;
-std::once_flag VkDeviceAllocator::initInstanceFlag;
-
-// Initialize the singleton
-void VkDeviceAllocator::initialize(const VkDeviceAllocatorCreateInfo& createInfo) {
-    std::call_once(initInstanceFlag, [&createInfo]() {
-        instance = std::unique_ptr<VkDeviceAllocator>(new VkDeviceAllocator(createInfo));
-    });
-}
-
-// Get the singleton instance
-VkDeviceAllocator& VkDeviceAllocator::getInstance() {
-    if (!instance) {
-        throw AuraException("VkDeviceAllocator has not been initialized. Call initialize() first.");
-    }
-    return *instance;
-}
-
-// Destroy the singleton instance
-void VkDeviceAllocator::destroy() {
-    if (instance) {
-        PLOG_INFO << "Destroying VkDeviceAllocator singleton";
-        instance.reset();
-    }
-}
 
 // Constructor
 VkDeviceAllocator::VkDeviceAllocator(const VkDeviceAllocatorCreateInfo& createInfo)
@@ -42,8 +14,10 @@ VkDeviceAllocator::VkDeviceAllocator(const VkDeviceAllocatorCreateInfo& createIn
     device(createInfo.device),
     defaultBlockSize(createInfo.blockSize),
     defragmentationEnabled(createInfo.enableDefragmentation),
-    nextAllocationId(1) {
-
+    trackLeaks(createInfo.trackLeaks),
+    nextAllocationId(1),
+    inShutdown(false)
+{
     // Get memory properties for later use
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
 
@@ -53,34 +27,46 @@ VkDeviceAllocator::VkDeviceAllocator(const VkDeviceAllocatorCreateInfo& createIn
 }
 
 // Destructor
-VkDeviceAllocator::~VkDeviceAllocator() {
-    std::lock_guard<std::mutex> lock(allocationMutex);
-
-    if (!allocationMap.empty()) {
+VkDeviceAllocator::~VkDeviceAllocator()
+{
+    // Check for leaks before cleanup if tracking is enabled
+    if (trackLeaks && !allocationMap.empty() && !inShutdown) {
         PLOG_WARNING << "VkDeviceAllocator destructed with " << allocationMap.size()
         << " allocations still active!";
+
+        // Print details of leaked allocations
+        for (const auto& pair : allocationMap) {
+            const auto& alloc = pair.second;
+            PLOG_WARNING << "Leaked allocation: id=" << alloc.allocationId
+                         << ", size=" << alloc.size << " bytes"
+                         << ", mapped=" << (alloc.mappedData != nullptr ? "yes" : "no");
+        }
     }
 
-    // Free all memory blocks
-    for (auto& pool : memoryTypePools) {
-        for (auto& block : pool.blocks) {
-            if (block.mappedAddress != nullptr) {
-                vkUnmapMemory(device, block.memory);
-            }
-            vkFreeMemory(device, block.memory, nullptr);
-        }
+    // Call cleanup to properly free everything
+    if (!inShutdown) {
+        cleanup();
     }
 
     PLOG_INFO << "VkDeviceAllocator destroyed";
 }
 
+
 // Core allocation method
 VkResult VkDeviceAllocator::allocateMemory(
     const VkMemoryRequirements& memRequirements,
     VkMemoryPropertyFlags properties,
-    VkDeviceAllocation& allocation) {
-
+    VkDeviceAllocation& allocation)
+{
     std::lock_guard<std::mutex> lock(allocationMutex);
+
+    if (inShutdown) {
+        PLOG_ERROR << "Attempting to allocate memory during shutdown";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    // Reset the allocation
+    allocation.reset();
 
     uint32_t memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
     if (memoryTypeIndex == UINT32_MAX) {
@@ -129,10 +115,10 @@ VkResult VkDeviceAllocator::allocateMemory(
         // Track the allocation
         allocationMap[allocation.allocationId] = allocation;
 
-        PLOG_DEBUG << "Allocated memory: id=" << allocation.allocationId
-                   << ", size=" << allocation.size
-                   << ", type=" << allocation.memoryTypeIndex
-                   << ", offset=" << allocation.offset;
+        // PLOG_DEBUG << "Allocated memory: id=" << allocation.allocationId
+        //            << ", size=" << allocation.size
+        //            << ", type=" << allocation.memoryTypeIndex
+        //            << ", offset=" << allocation.offset;
     }
 
     return result;
@@ -144,10 +130,13 @@ VkResult VkDeviceAllocator::allocateMemoryForBuffer(
     VkMemoryPropertyFlags properties,
     VkDeviceAllocation& allocation)
 {
+    if (buffer == VK_NULL_HANDLE) {
+        PLOG_ERROR << "Cannot allocate memory for null buffer";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-
     return allocateMemory(memRequirements, properties, allocation);
 }
 
@@ -155,22 +144,34 @@ VkResult VkDeviceAllocator::allocateMemoryForBuffer(
 VkResult VkDeviceAllocator::allocateMemoryForImage(
     VkImage image,
     VkMemoryPropertyFlags properties,
-    VkDeviceAllocation& allocation) {
+    VkDeviceAllocation& allocation)
+{
+    if (image == VK_NULL_HANDLE) {
+        PLOG_ERROR << "Cannot allocate memory for null image";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     VkMemoryRequirements memRequirements;
     vkGetImageMemoryRequirements(device, image, &memRequirements);
-
     return allocateMemory(memRequirements, properties, allocation);
 }
 
 // Free an allocation
-void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation) {
+void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
+{
     std::lock_guard<std::mutex> lock(allocationMutex);
 
     auto it = allocationMap.find(allocation.allocationId);
     if (it == allocationMap.end()) {
         PLOG_WARNING << "Attempting to free unknown allocation: " << allocation.allocationId;
         return;
+    }
+
+    // Unmap memory first if it's mapped
+    if (allocation.mappingState != AllocationMappingState::UNMAPPED) {
+        if (!inShutdown) {  // Skip during shutdown as we'll unmap everything
+            unmapMemory(allocation);
+        }
     }
 
     // Find the pool for this memory type
@@ -182,13 +183,18 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation) {
                     // Add the freed range back to the free list
                     block.freeList.push_back(MemoryChunk(allocation.offset, allocation.size));
 
+                    // Remove from mapping tracking if needed
+                    if (block.mappedRegions.count(allocation.offset) > 0) {
+                        block.mappedRegions.erase(allocation.offset);
+                    }
+
                     // Decrease used size in the pool
                     pool.usedSize -= allocation.size;
 
-                    PLOG_DEBUG << "Freed memory: id=" << allocation.allocationId
-                               << ", size=" << allocation.size
-                               << ", type=" << allocation.memoryTypeIndex
-                               << ", offset=" << allocation.offset;
+                    // PLOG_DEBUG << "Freed memory: id=" << allocation.allocationId
+                    //            << ", size=" << allocation.size
+                    //            << ", type=" << allocation.memoryTypeIndex
+                    //            << ", offset=" << allocation.offset;
 
                     // Coalesce adjacent free chunks to reduce fragmentation
                     if (block.freeList.size() > 1) {
@@ -213,16 +219,15 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation) {
                             }
                         }
 
-                        PLOG_DEBUG << "After coalescing, block has " << block.freeList.size()
-                                   << " free chunks";
+                        // PLOG_DEBUG << "After coalescing, block has " << block.freeList.size()
+                        //            << " free chunks";
                     }
 
                     // Remove from tracking
                     allocationMap.erase(it);
 
                     // Clear the allocation
-                    allocation.memory = VK_NULL_HANDLE;
-                    allocation.mappedData = nullptr;
+                    allocation.reset();
 
                     return;
                 }
@@ -238,7 +243,25 @@ VkResult VkDeviceAllocator::mapMemory(
     VkDeviceAllocation& allocation,
     VkDeviceSize offset,
     VkDeviceSize size,
-    void** ppData) {
+    void** ppData)
+{
+    std::lock_guard<std::mutex> lock(allocationMutex);
+    if (inShutdown) {
+        PLOG_WARNING << "Attempting to map memory during shutdown";
+        return VK_ERROR_DEVICE_LOST;
+    }
+    if (allocation.memory == VK_NULL_HANDLE) {
+        PLOG_ERROR << "Attempting to map invalid allocation";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    // Check if this specific allocation is already mapped
+    if (allocation.mappingState != AllocationMappingState::UNMAPPED) {
+        // If this specific allocation is already mapped, return the existing pointer
+        PLOG_DEBUG << "Allocation already mapped: id=" << allocation.allocationId;
+        *ppData = allocation.mappedData;
+        return VK_SUCCESS;
+    }
 
     // Check if memory is host visible
     VkMemoryPropertyFlags memFlags = memoryProperties.memoryTypes[allocation.memoryTypeIndex].propertyFlags;
@@ -255,39 +278,123 @@ VkResult VkDeviceAllocator::mapMemory(
     // Calculate the actual offset in the device memory
     VkDeviceSize actualOffset = allocation.offset + offset;
 
-    // Map the memory
+    // Find the memory block
+    MemoryBlock* block = nullptr;
+    if (!findBlockByMemory(allocation.memory, &block)) {
+        PLOG_ERROR << "Failed to find memory block for mapping";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    // IMPORTANT FIX: Check if block is already mapped
     void* mappedData = nullptr;
-    VkResult result = vkMapMemory(device, allocation.memory, actualOffset, size, 0, &mappedData);
+    if (block->isMapped) {
+        // Block is already mapped, just calculate the right pointer
+        mappedData = static_cast<char*>(block->mappedAddress) + actualOffset;
+    } else {
+        // Map the memory if not already mapped
+        VkResult result = vkMapMemory(device, allocation.memory, 0, block->size, 0, &block->mappedAddress);
+        if (result != VK_SUCCESS) {
+            PLOG_ERROR << "Failed to map memory: id=" << allocation.allocationId << ", error=" << result;
+            return result;
+        }
+        block->isMapped = true;
+        mappedData = static_cast<char*>(block->mappedAddress) + actualOffset;
+    }
 
-    if (result == VK_SUCCESS) {
-        allocation.mappedData = mappedData;
-        *ppData = mappedData;
+    // Track this mapped region in the block
+    block->mappedRegions[allocation.offset] = allocation.allocationId;
 
-        // If memory is not host coherent, we'll need to flush/invalidate explicitly
-        if ((memFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0) {
-            PLOG_DEBUG << "Mapped non-coherent memory, explicit flushes required";
+    // Update allocation state
+    allocation.mappedData = mappedData;
+    allocation.mappingState = AllocationMappingState::MAPPED;
+    *ppData = mappedData;
+
+    // Update the allocation in our map
+    allocationMap[allocation.allocationId] = allocation;
+
+    return VK_SUCCESS;
+}
+
+// 2. Modify unmapMemory to handle reference counting correctly
+void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation)
+{
+    std::lock_guard<std::mutex> lock(allocationMutex);
+
+    // Check if actually mapped
+    if (allocation.mappingState == AllocationMappingState::UNMAPPED) {
+        return;
+    }
+
+    // For persistently mapped memory during normal operation, don't unmap
+    if (!inShutdown && allocation.mappingState == AllocationMappingState::PERSISTENTLY_MAPPED) {
+        return;
+    }
+
+    // Find the block for this memory
+    MemoryBlock* block = nullptr;
+    if (!findBlockByMemory(allocation.memory, &block)) {
+        PLOG_ERROR << "Failed to find memory block for unmapping";
+        return;
+    }
+
+    // Update allocation state first
+    allocation.mappedData = nullptr;
+    allocation.mappingState = AllocationMappingState::UNMAPPED;
+
+    // Remove from mapped regions
+    if (block->mappedRegions.count(allocation.offset) > 0) {
+        block->mappedRegions.erase(allocation.offset);
+    }
+
+    // Only unmap the block if there are no more mapped regions
+    if (block->mappedRegions.empty() && block->isMapped) {
+        vkUnmapMemory(device, allocation.memory);
+        block->isMapped = false;
+        block->mappedAddress = nullptr;
+    }
+
+    // Update the allocation in our map if not during shutdown
+    if (!inShutdown && allocationMap.count(allocation.allocationId) > 0) {
+        allocationMap[allocation.allocationId] = allocation;
+    }
+
+    // PLOG_DEBUG << "Unmapped allocation: id=" << allocation.allocationId;
+}
+
+// Force unmap all memory - useful during shutdown
+void VkDeviceAllocator::unmapAllMemory()
+{
+    PLOG_DEBUG << "Unmapping all memory";
+
+    // First, mark all allocations as unmapped
+    for (auto& pair : allocationMap) {
+        auto& alloc = pair.second;
+        alloc.mappedData = nullptr;
+        alloc.mappingState = AllocationMappingState::UNMAPPED;
+    }
+
+    // Then unmap all blocks that are mapped
+    for (auto& pool : memoryTypePools) {
+        for (auto& block : pool.blocks) {
+            if (block.isMapped) {
+                // Clear mapped regions first
+                block.mappedRegions.clear();
+                // Only unmap if actually mapped
+                vkUnmapMemory(device, block.memory);
+                block.isMapped = false;
+                block.mappedAddress = nullptr;
+            }
         }
     }
-
-    return result;
 }
 
-// Unmap memory
-void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation) {
-    if (allocation.mappedData != nullptr) {
-        vkUnmapMemory(device, allocation.memory);
-        allocation.mappedData = nullptr;
-
-        PLOG_DEBUG << "Unmapped memory: id=" << allocation.allocationId;
-    }
-}
 
 // Bind buffer to allocation
 VkResult VkDeviceAllocator::bindBufferMemory(
     VkBuffer buffer,
     const VkDeviceAllocation& allocation,
-    VkDeviceSize offsetInAllocation) {
-
+    VkDeviceSize offsetInAllocation)
+{
     if (allocation.memory == VK_NULL_HANDLE) {
         PLOG_ERROR << "Attempting to bind to null allocation";
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -296,10 +403,10 @@ VkResult VkDeviceAllocator::bindBufferMemory(
     VkDeviceSize bindOffset = allocation.offset + offsetInAllocation;
     VkResult result = vkBindBufferMemory(device, buffer, allocation.memory, bindOffset);
 
-    if (result == VK_SUCCESS) {
-        PLOG_DEBUG << "Bound buffer to allocation: id=" << allocation.allocationId
-                   << ", offset=" << bindOffset;
-    }
+    // if (result == VK_SUCCESS) {
+    //     PLOG_DEBUG << "Bound buffer to allocation: id=" << allocation.allocationId
+    //                << ", offset=" << bindOffset;
+    // }
 
     return result;
 }
@@ -308,8 +415,8 @@ VkResult VkDeviceAllocator::bindBufferMemory(
 VkResult VkDeviceAllocator::bindImageMemory(
     VkImage image,
     const VkDeviceAllocation& allocation,
-    VkDeviceSize offsetInAllocation) {
-
+    VkDeviceSize offsetInAllocation)
+{
     if (allocation.memory == VK_NULL_HANDLE) {
         PLOG_ERROR << "Attempting to bind to null allocation";
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -327,7 +434,8 @@ VkResult VkDeviceAllocator::bindImageMemory(
 }
 
 // Get memory stats
-VkDeviceAllocator::MemoryStats VkDeviceAllocator::getMemoryStats() const {
+VkDeviceAllocator::MemoryStats VkDeviceAllocator::getMemoryStats() const
+{
     std::lock_guard<std::mutex> lock(allocationMutex);
 
     MemoryStats stats;
@@ -341,7 +449,6 @@ VkDeviceAllocator::MemoryStats VkDeviceAllocator::getMemoryStats() const {
         stats.totalSize += pool.totalSize;
         stats.usedSize += pool.usedSize;
         stats.blockCount += static_cast<uint32_t>(pool.blocks.size());
-
         stats.sizeByMemoryType.push_back(std::make_pair(pool.memoryTypeIndex, pool.usedSize));
     }
 
@@ -349,9 +456,9 @@ VkDeviceAllocator::MemoryStats VkDeviceAllocator::getMemoryStats() const {
 }
 
 // Print memory stats
-void VkDeviceAllocator::printMemoryStats() const {
+void VkDeviceAllocator::printMemoryStats() const
+{
     MemoryStats stats = getMemoryStats();
-
     std::cout << "===== VkDeviceAllocator Memory Stats =====" << std::endl;
     std::cout << "Total allocated: " << (stats.totalSize / (1024 * 1024)) << " MB" << std::endl;
     std::cout << "Total used: " << (stats.usedSize / (1024 * 1024)) << " MB" << std::endl;
@@ -367,12 +474,12 @@ void VkDeviceAllocator::printMemoryStats() const {
 
         if (memoryTypeIndex < memoryProperties.memoryTypeCount) {
             VkMemoryPropertyFlags flags = memoryProperties.memoryTypes[memoryTypeIndex].propertyFlags;
-
             std::stringstream flagStr;
-            if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) flagStr << "DEVICE_LOCAL ";
-            if (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) flagStr << "HOST_VISIBLE ";
-            if (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) flagStr << "HOST_COHERENT ";
-            if (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) flagStr << "HOST_CACHED ";
+
+            if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)     flagStr << "DEVICE_LOCAL ";
+            if (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)     flagStr << "HOST_VISIBLE ";
+            if (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)    flagStr << "HOST_COHERENT ";
+            if (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)      flagStr << "HOST_CACHED ";
             if (flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) flagStr << "LAZILY_ALLOCATED ";
 
             std::cout << "  Type " << memoryTypeIndex << " (" << flagStr.str() << "): "
@@ -403,7 +510,8 @@ void VkDeviceAllocator::printMemoryStats() const {
 }
 
 // Find memory type
-uint32_t VkDeviceAllocator::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+uint32_t VkDeviceAllocator::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
     for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
         if ((typeFilter & (1 << i)) &&
             (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
@@ -413,11 +521,13 @@ uint32_t VkDeviceAllocator::findMemoryType(uint32_t typeFilter, VkMemoryProperty
 
     PLOG_ERROR << "Failed to find suitable memory type with filter " << typeFilter
                << " and properties " << properties;
+
     return UINT32_MAX;
 }
 
 // Allocate a new memory block
-VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceSize blockSize) {
+VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceSize blockSize)
+{
     MemoryTypePool& pool = getOrCreateMemoryTypePool(memoryTypeIndex);
 
     // Check device memory limits
@@ -433,7 +543,6 @@ VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceS
                          << "Current: " << (pool.totalSize / (1024 * 1024)) << "MB, "
                          << "Adding: " << (blockSize / (1024 * 1024)) << "MB, "
                          << "Heap: " << (heapSize / (1024 * 1024)) << "MB";
-
             // Continue anyway - the allocation might still succeed depending on global memory usage
         }
     }
@@ -458,6 +567,7 @@ VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceS
     block.memory = memory;
     block.size = blockSize;
     block.mappedAddress = nullptr;
+    block.isMapped = false;
 
     // Check if memory can be mapped
     VkMemoryPropertyFlags memFlags = memProps.memoryTypes[memoryTypeIndex].propertyFlags;
@@ -470,9 +580,9 @@ VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceS
     pool.blocks.push_back(block);
     pool.totalSize += blockSize;
 
-    PLOG_INFO << "Allocated new memory block: size=" << (blockSize / (1024 * 1024))
-              << "MB, type=" << memoryTypeIndex
-              << ", is_mappable=" << (block.canBeMapped ? "yes" : "no");
+    // PLOG_DEBUG << "Allocated new memory block: size=" << (blockSize / (1024 * 1024))
+    //           << "MB, type=" << memoryTypeIndex
+    //           << ", is_mappable=" << (block.canBeMapped ? "yes" : "no");
 
     return VK_SUCCESS;
 }
@@ -482,8 +592,8 @@ VkResult VkDeviceAllocator::findAndAllocateInBlock(
     uint32_t memoryTypeIndex,
     VkDeviceSize size,
     VkDeviceSize alignment,
-    VkDeviceAllocation& allocation) {
-
+    VkDeviceAllocation& allocation)
+{
     // Get the memory pool for this type
     MemoryTypePool* pool = nullptr;
     for (auto& p : memoryTypePools) {
@@ -494,7 +604,7 @@ VkResult VkDeviceAllocator::findAndAllocateInBlock(
     }
 
     if (!pool) {
-        PLOG_ERROR << "No memory pool found for type " << memoryTypeIndex;
+        // PLOG_ERROR << "No memory pool found for type " << memoryTypeIndex;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -532,13 +642,14 @@ VkResult VkDeviceAllocator::findAndAllocateInBlock(
                 allocation.size = size;
                 allocation.memoryTypeIndex = memoryTypeIndex;
                 allocation.mappedData = nullptr;
+                allocation.mappingState = AllocationMappingState::UNMAPPED;
 
                 // Update pool stats
                 pool->usedSize += size;
 
-                PLOG_DEBUG << "Sub-allocated memory: size=" << size
-                           << ", aligned_offset=" << alignedOffset
-                           << ", type=" << memoryTypeIndex;
+                // PLOG_DEBUG << "Sub-allocated memory: size=" << size
+                //            << ", aligned_offset=" << alignedOffset
+                //            << ", type=" << memoryTypeIndex;
 
                 return VK_SUCCESS;
             }
@@ -550,7 +661,8 @@ VkResult VkDeviceAllocator::findAndAllocateInBlock(
 }
 
 // Get or create a memory type pool
-MemoryTypePool& VkDeviceAllocator::getOrCreateMemoryTypePool(uint32_t memoryTypeIndex) {
+MemoryTypePool& VkDeviceAllocator::getOrCreateMemoryTypePool(uint32_t memoryTypeIndex)
+{
     // Look for existing pool
     for (auto& pool : memoryTypePools) {
         if (pool.memoryTypeIndex == memoryTypeIndex) {
@@ -567,9 +679,110 @@ MemoryTypePool& VkDeviceAllocator::getOrCreateMemoryTypePool(uint32_t memoryType
 
     memoryTypePools.push_back(newPool);
 
-    PLOG_INFO << "Created new memory type pool for type " << memoryTypeIndex;
+    // PLOG_DEBUG << "Created new memory type pool for type " << memoryTypeIndex;
 
     return memoryTypePools.back();
 }
+
+// Find block by memory handle
+bool VkDeviceAllocator::findBlockByMemory(VkDeviceMemory memory, MemoryBlock** outBlock)
+{
+    for (auto& pool : memoryTypePools) {
+        for (auto& block : pool.blocks) {
+            if (block.memory == memory) {
+                *outBlock = &block;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Get allocation by ID
+VkDeviceAllocation& VkDeviceAllocator::getAllocation(uint32_t allocationId)
+{
+    std::lock_guard<std::mutex> lock(allocationMutex);
+    auto it = allocationMap.find(allocationId);
+    if (it == allocationMap.end()) {
+        static VkDeviceAllocation invalidAllocation;
+        PLOG_ERROR << "Attempting to access invalid allocation ID: " << allocationId;
+        return invalidAllocation;
+    }
+    return it->second;
+}
+
+void VkDeviceAllocator::cleanup()
+{
+    if (inShutdown) {
+        return;  // Prevent recursive cleanup
+    }
+
+    inShutdown = true;
+    PLOG_INFO << "Starting VkDeviceAllocator cleanup";
+
+    // First, unmap all memory to avoid Vulkan validation errors
+    unmapAllMemory();
+
+    // Create a copy of all allocations to avoid iterator invalidation
+    std::vector<uint32_t> allocationIds;
+    for (const auto& pair : allocationMap) {
+        allocationIds.push_back(pair.first);
+    }
+
+    // Free all allocations
+    for (uint32_t id : allocationIds) {
+        if (allocationMap.count(id) > 0) {
+            auto allocation = allocationMap[id];
+            PLOG_DEBUG << "Cleaning up allocation: id=" << id;
+
+            // Skip actual unmapping since we did that in unmapAllMemory
+            allocation.mappingState = AllocationMappingState::UNMAPPED;
+            allocation.mappedData = nullptr;
+
+            // Find the pool for this memory type
+            for (auto& pool : memoryTypePools) {
+                if (pool.memoryTypeIndex == allocation.memoryTypeIndex) {
+                    // Find the block containing this allocation
+                    for (auto& block : pool.blocks) {
+                        if (block.memory == allocation.memory) {
+                            // Add the freed range back to the free list
+                            block.freeList.push_back(MemoryChunk(allocation.offset, allocation.size));
+                            // Remove from mapping tracking
+                            if (block.mappedRegions.count(allocation.offset) > 0) {
+                                block.mappedRegions.erase(allocation.offset);
+                            }
+                            // Decrease used size in the pool
+                            pool.usedSize -= allocation.size;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // Remove from tracking
+            allocationMap.erase(id);
+        }
+    }
+
+    // Now free all memory blocks
+    for (auto& pool : memoryTypePools) {
+        for (auto& block : pool.blocks) {
+            if (block.memory != VK_NULL_HANDLE) {
+                // PLOG_DEBUG << "Freeing memory block of size " << block.size
+                //            << " for memory type " << pool.memoryTypeIndex;
+                vkFreeMemory(device, block.memory, nullptr);
+                block.memory = VK_NULL_HANDLE;
+            }
+        }
+    }
+
+    // Clear all data structures
+    memoryTypePools.clear();
+    allocationMap.clear();
+
+    PLOG_INFO << "VkDeviceAllocator cleanup completed";
+}
+
 
 } // namespace aura3d

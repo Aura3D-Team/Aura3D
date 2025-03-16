@@ -7,15 +7,15 @@
 
 namespace aura3d {
 
-VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window)
-    : _vkInstance(vkInstance)
+VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, GLFWwindow* window)
+    : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance)
 {
-    VkResult result = glfwCreateWindowSurface(*_vkInstance, window, allocationCallbacks, &_vkSurface);
+    VkResult result = glfwCreateWindowSurface(*_vkInstance, window, nullptr, &_vkSurface);
     VK_RESULT_CHECK(result);
 }
 
-VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, SDL_Window* window)
-    : _vkInstance(vkInstance)
+VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, SDL_Window* window)
+    : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance)
 {
     if (!SDL_Vulkan_CreateSurface(window, *_vkInstance, &_vkSurface)) {
         throw AuraException("Fail to create SDL Window surface! SDL Error: " + std::string(SDL_GetError()));
@@ -24,7 +24,7 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, SDL_Window* window)
 
 VkSurfaceManager::~VkSurfaceManager() {
     if (_vkSurface != VK_NULL_HANDLE) {
-        vkDestroySurfaceKHR(*_vkInstance, _vkSurface, allocationCallbacks);
+        vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
         PLOG_DEBUG << "VkSurface deleted";
     }
     _vkInstance = nullptr;

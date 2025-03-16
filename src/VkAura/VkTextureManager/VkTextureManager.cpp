@@ -9,14 +9,15 @@ namespace aura3d {
 /**
  * Constructor - initializes the texture manager with required Vulkan resources
  */
-VkTextureManager::VkTextureManager(VkDevice* device,
+VkTextureManager::VkTextureManager(VkHostAllocator* vkHostAllocator,
+                                   VkDeviceAllocator* vkDeviceAllocator,
+                                   VkDevice* device,
                                    VkPhysicalDevice* physicalDevice,
                                    VkCommandPool commandPool,
                                    VkQueue graphicsQueue)
-    : _device(device),
-    _physicalDevice(physicalDevice),
-    _commandPool(commandPool),
-    _graphicsQueue(graphicsQueue)
+    : vkHostAllocator(vkHostAllocator), vkDeviceAllocator(vkDeviceAllocator),
+      _device(device), _physicalDevice(physicalDevice),
+      _commandPool(commandPool), _graphicsQueue(graphicsQueue)
 {
     // Constructor now correctly initializes member variables
 }
@@ -37,25 +38,25 @@ VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
     // Create a 1x1 texture with the given color
     uint32_t width = 1;
     uint32_t height = 1;
-    VkDeviceAllocator& allocator = VkDeviceAllocator::getInstance();
+    auto vkCallbacks = vkHostAllocator->getCallbacks();
 
     // Check if texture already exists and clean it up if so
     auto it = _textures.find(name);
     if (it != _textures.end()) {
         // Destroy existing texture resources in correct order
         if (it->second.sampler != VK_NULL_HANDLE) {
-            vkDestroySampler(*_device, it->second.sampler, allocationCallbacks);
+            vkDestroySampler(*_device, it->second.sampler, vkCallbacks);
         }
         if (it->second.view != VK_NULL_HANDLE) {
-            vkDestroyImageView(*_device, it->second.view, allocationCallbacks);
+            vkDestroyImageView(*_device, it->second.view, vkCallbacks);
         }
         if (it->second.image != VK_NULL_HANDLE) {
-            vkDestroyImage(*_device, it->second.image, allocationCallbacks);
+            vkDestroyImage(*_device, it->second.image, vkCallbacks);
         }
 
         // Free memory allocation using device allocator
         if (it->second.allocation != nullptr) {
-            allocator.freeMemory(*it->second.allocation);
+            vkDeviceAllocator->freeMemory(*it->second.allocation);
             delete it->second.allocation;
         }
 
@@ -73,6 +74,8 @@ VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
 
     // Create staging buffer with the device allocator
     VkBufferManager::createBuffer(
+        vkHostAllocator,
+        vkDeviceAllocator,
         *_device,
         *_physicalDevice,
         4, // RGBA = 4 bytes
@@ -86,11 +89,11 @@ VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
     // Copy pixel data to the staging buffer
     uint8_t pixelData[4] = { r, g, b, a };
     void* data = nullptr;
-    VK_RESULT_CHECK(allocator.mapMemory(
+    VK_RESULT_CHECK(vkDeviceAllocator->mapMemory(
         stagingAllocation, 0, 4, &data
         ));
     std::memcpy(data, pixelData, 4);
-    allocator.unmapMemory(stagingAllocation);
+    vkDeviceAllocator->unmapMemory(stagingAllocation);
 
     // Create the image
     createImage(width, height, VK_FORMAT_R8G8B8A8_UNORM, textureData.image);
@@ -101,7 +104,7 @@ VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
 
     // Allocate device-local memory for the image
     textureData.allocation = new VkDeviceAllocation();
-    VK_RESULT_CHECK(allocator.allocateMemory(
+    VK_RESULT_CHECK(vkDeviceAllocator->allocateMemory(
         memRequirements,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         *textureData.allocation
@@ -131,8 +134,8 @@ VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
     textureData.sampler = createSampler();
 
     // Clean up staging resources
-    vkDestroyBuffer(*_device, stagingBuffer, allocationCallbacks);
-    allocator.freeMemory(stagingAllocation);
+    vkDestroyBuffer(*_device, stagingBuffer, vkCallbacks);
+    vkDeviceAllocator->freeMemory(stagingAllocation);
 
     // Store the texture
     _textures[name] = textureData;
@@ -155,30 +158,31 @@ const VkTextureManager::TextureData* VkTextureManager::getTexture(const std::str
  */
 void VkTextureManager::cleanup() {
     // Clean up all textures in the proper order
+    auto vkCallbacks = vkHostAllocator->getCallbacks();
     for (auto& pair : _textures) {
         TextureData& texture = pair.second;
 
         // Destroy sampler
         if (texture.sampler != VK_NULL_HANDLE) {
-            vkDestroySampler(*_device, texture.sampler, allocationCallbacks);
+            vkDestroySampler(*_device, texture.sampler, vkCallbacks);
             texture.sampler = VK_NULL_HANDLE;
         }
 
         // Destroy image view
         if (texture.view != VK_NULL_HANDLE) {
-            vkDestroyImageView(*_device, texture.view, allocationCallbacks);
+            vkDestroyImageView(*_device, texture.view, vkCallbacks);
             texture.view = VK_NULL_HANDLE;
         }
 
         // Destroy image
         if (texture.image != VK_NULL_HANDLE) {
-            vkDestroyImage(*_device, texture.image, allocationCallbacks);
+            vkDestroyImage(*_device, texture.image, vkCallbacks);
             texture.image = VK_NULL_HANDLE;
         }
 
         // Free memory allocation
         if (texture.allocation != nullptr) {
-            VkDeviceAllocator::getInstance().freeMemory(*texture.allocation);
+            vkDeviceAllocator->freeMemory(*texture.allocation);
             delete texture.allocation;
             texture.allocation = nullptr;
         }
@@ -209,7 +213,7 @@ void VkTextureManager::createImage(uint32_t width, uint32_t height, VkFormat for
     imageInfo.flags = 0;
 
     // Create the image - memory will be allocated separately
-    VK_RESULT_CHECK(vkCreateImage(*_device, &imageInfo, allocationCallbacks, &image))
+    VK_RESULT_CHECK(vkCreateImage(*_device, &imageInfo, vkHostAllocator->getCallbacks(), &image))
 }
 
 /**
@@ -230,7 +234,7 @@ VkImageView VkTextureManager::createImageView(VkImage image, VkFormat format) {
 
     // Create the image view
     VkImageView imageView;
-    VK_RESULT_CHECK(vkCreateImageView(*_device, &viewInfo, allocationCallbacks, &imageView))
+    VK_RESULT_CHECK(vkCreateImageView(*_device, &viewInfo, vkHostAllocator->getCallbacks(), &imageView))
 
     return imageView;
 }
@@ -260,7 +264,7 @@ VkSampler VkTextureManager::createSampler() {
 
     // Create the sampler
     VkSampler sampler;
-    VK_RESULT_CHECK(vkCreateSampler(*_device, &samplerInfo, allocationCallbacks, &sampler));
+    VK_RESULT_CHECK(vkCreateSampler(*_device, &samplerInfo, vkHostAllocator->getCallbacks(), &sampler));
 
     return sampler;
 }

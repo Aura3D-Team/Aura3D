@@ -7,10 +7,13 @@
 
 namespace aura3d {
 
-VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableValidationLayers)
-    : _appInfo({}), _instanceInfo({}), _vkInstance(VK_NULL_HANDLE),
-    _vkInstanceExtensions(std::move(vkInstanceData.vkInstanceExtensions)), _vkValidationLayers(std::move(vkInstanceData.vkValidationLayers)),
-    _vkDebugger(nullptr)
+VkInstanceManager::VkInstanceManager(VkHostAllocator* vkHostAllocator,
+                                     VkInstanceData vkInstanceData,
+                                     bool enableValidationLayers)
+    : vkHosAllocator(vkHostAllocator),
+    _appInfo({}), _instanceInfo({}),
+    _vkInstance(VK_NULL_HANDLE), _vkInstanceExtensions(std::move(vkInstanceData.vkInstanceExtensions)),
+    _vkValidationLayers(std::move(vkInstanceData.vkValidationLayers)), _vkDebugger(nullptr)
 {
     initializeAppInfo(vkInstanceData);
     initializeInstanceInfo();
@@ -20,7 +23,7 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableV
     validateInstanceExtensions();
     validateValidationLayers();
 
-    VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, allocationCallbacks, &_vkInstance));
+    VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, vkHosAllocator->getCallbacks(), &_vkInstance));
 
     if (vkDebuggerPreparationResult == VK_SUCCESS) {
         createDebuggerInstance(&_debugCreateInfo);
@@ -31,7 +34,7 @@ VkInstanceManager::~VkInstanceManager()
 {
     _vkDebugger.reset();
     if (_vkInstance != VK_NULL_HANDLE) {
-        vkDestroyInstance(_vkInstance, nullptr);
+        vkDestroyInstance(_vkInstance, vkHosAllocator->getCallbacks());
         _vkInstance = VK_NULL_HANDLE;
         PLOG_DEBUG << "VkInstance deleted";
     }

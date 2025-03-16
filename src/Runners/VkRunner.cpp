@@ -15,6 +15,8 @@ VkRunner::VkRunner(WindowDetails windowDetails,
     const bool enableValidationLayers = true;
 #endif
 
+    _vkHostAllocator = std::make_unique<aura3d::VkHostAllocator>();
+
 #ifdef SDL_WINDOW_MANAGER
     _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(windowDetails);
 #else
@@ -25,18 +27,19 @@ VkRunner::VkRunner(WindowDetails windowDetails,
         vkInstanceData.vkInstanceExtensions.push_back(ext);
     }
 
-    _vkInstance = std::make_unique<aura3d::VkInstanceManager>(vkInstanceData, enableValidationLayers);
-    _vkDeviceManager = std::make_unique<aura3d::VkDeviceManager>(_vkInstance->getVkInstance(), vkDeviceData);
+    _vkInstance = std::make_unique<aura3d::VkInstanceManager>(_vkHostAllocator.get(), vkInstanceData, enableValidationLayers);
+    _vkDeviceManager = std::make_unique<aura3d::VkDeviceManager>(_vkHostAllocator.get(), _vkInstance->getVkInstance(), vkDeviceData);
 
     aura3d::VkDeviceAllocatorCreateInfo vkDeviceAllocatorCreateInfo = {
         .physicalDevice = *_vkDeviceManager->getPhysicalDevice(),
         .device = *_vkDeviceManager->getDevice()
     };
 
-    aura3d::VkDeviceAllocator::initialize(vkDeviceAllocatorCreateInfo);
+    _vkDeviceAllocator = std::make_unique<aura3d::VkDeviceAllocator>(vkDeviceAllocatorCreateInfo);
 
     _windowManagerApi->createWindow(APPLICATION_NAME);
     _vkSurfaceManager = std::make_unique<aura3d::VkSurfaceManager>(
+        _vkHostAllocator.get(),
         _vkInstance->getVkInstance(),
         _windowManagerApi->getWindowInstance()
         );
@@ -46,30 +49,44 @@ VkRunner::VkRunner(WindowDetails windowDetails,
                                                                         vkDeviceData.exclusiveQueueFlags,
                                                                         *_vkSurfaceManager->getSurface());
     _vkSwapChainManager = std::make_unique<aura3d::VkSwapChainManager>(
+        _vkHostAllocator.get(),
         *_vkDeviceManager->getPhysicalDevice(),
         _vkDeviceManager->getDevice(),
         *_vkSurfaceManager->getSurface()
         );
-    _vkImageViewsManager = std::make_unique<aura3d::VkImageViewsManager>(_vkDeviceManager->getDevice());
-    _vkRenderPassManager = std::make_unique<aura3d::VkRenderPassManager>(_vkDeviceManager->getDevice());
-    _vkFrameBuffersManager = std::make_unique<aura3d::VkFrameBuffersManager>(_vkDeviceManager->getDevice());
+    _vkImageViewsManager = std::make_unique<aura3d::VkImageViewsManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
+    _vkRenderPassManager = std::make_unique<aura3d::VkRenderPassManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
+    _vkFrameBuffersManager = std::make_unique<aura3d::VkFrameBuffersManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
 
-    _vkGraphicsPipelineManager = std::make_unique<aura3d::VkGraphicsPipelineManager>("./shaders/vert/test_shader2d_vert.spv",
+    _vkGraphicsPipelineManager = std::make_unique<aura3d::VkGraphicsPipelineManager>(_vkHostAllocator.get(),
+                                                                                     "./shaders/vert/test_shader2d_vert.spv",
                                                                                      "./shaders/frag/test_shader2d_frag.spv",
                                                                                      _vkDeviceManager->getDevice());
-    _vkDescriptorManager = std::make_unique<aura3d::VkDescriptorManager>(_vkDeviceManager->getDevice());
-    _vkVertexBufferManager = std::make_unique<aura3d::VkVertexBufferManager>(_vkDeviceManager->getDevice());
-    _vkUniformBufferManager = std::make_unique<aura3d::VkUniformBufferManager>(_vkDeviceManager->getDevice());
-    _vkCommandManager = std::make_unique<aura3d::VkCommandManager>(_vkDeviceManager->getDevice(),
+
+    _vkDescriptorManager = std::make_unique<aura3d::VkDescriptorManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
+    _vkVertexBufferManager = std::make_unique<aura3d::VkVertexBufferManager>(
+        _vkHostAllocator.get(),
+        _vkDeviceAllocator.get(),
+        _vkDeviceManager->getDevice()
+    );
+    _vkUniformBufferManager = std::make_unique<aura3d::VkUniformBufferManager>(
+        _vkHostAllocator.get(),
+        _vkDeviceAllocator.get(),
+        _vkDeviceManager->getDevice()
+    );
+    _vkCommandManager = std::make_unique<aura3d::VkCommandManager>(_vkHostAllocator.get(),
+                                                                   _vkDeviceManager->getDevice(),
                                                                    _graphicsIndexFamily);
     _vkTextureManager = std::make_unique<VkTextureManager>(
+        _vkHostAllocator.get(),
+        _vkDeviceAllocator.get(),
         _vkDeviceManager->getDevice(),
         _vkDeviceManager->getPhysicalDevice(),
         _vkCommandManager->getThreadCommandPool(),
         _queueDataFromExclusiveFlags.front()->queues.front()
         );
 
-    _vkRenderSyncManager = std::make_unique<aura3d::VkRenderSyncManager>(_vkDeviceManager->getDevice());
+    _vkRenderSyncManager = std::make_unique<aura3d::VkRenderSyncManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
 }
 
 VkRunner::~VkRunner()
@@ -145,7 +162,7 @@ void VkRunner::run()
         // Allocate a descriptor set
         descriptorSets[i] = _vkDescriptorManager->allocateDescriptorSet(
             _vkGraphicsPipelineManager->getDescriptorSetLayout(0)
-            );
+        );
 
         // Update the descriptor set with uniform buffer
         _vkDescriptorManager->updateDescriptorSet(
@@ -153,7 +170,7 @@ void VkRunner::run()
             0,                             // Binding point in shader
             _vkUniformBufferManager->getUniformBuffer(i),   // Uniform buffer
             _vkUniformBufferManager->getUniformBufferSize() // Size of the data
-            );
+        );
     }
 
     // Create a white texture for our triangle
@@ -165,7 +182,7 @@ void VkRunner::run()
         // Allocate descriptor set for texture
         textureDescriptorSets[i] = _vkDescriptorManager->allocateDescriptorSet(
             _vkGraphicsPipelineManager->getDescriptorSetLayout(1)
-            );
+        );
 
         // Get the texture data
         const auto* texture = _vkTextureManager->getTexture("white");
@@ -176,7 +193,7 @@ void VkRunner::run()
             0,
             texture->view,
             texture->sampler
-            );
+        );
     }
 
     _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(),
@@ -195,6 +212,9 @@ void VkRunner::run()
     auto& fences = _vkRenderSyncManager->getInFlightFences();
     uint32_t ImagesCount = _vkSwapChainManager->getSwapChainImages().size();
     uint32_t currentFrame = 0;
+
+    auto vertexBuffer = _vkVertexBufferManager->getVertexBuffer("mainTriangle");
+    auto& vertexAllocationInfo = _vkDeviceAllocator->getAllocation(vertexBuffer.allocationId);
 
     _windowManagerApi->process([&]() {
         _vkRenderSyncManager->waitForFences(currentFrame);
@@ -225,9 +245,8 @@ void VkRunner::run()
         _vkGraphicsPipelineManager->cmdBindPipeline(cmdBuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS);
 
         // Bind vertex buffer
-        auto vertexBuffer = _vkVertexBufferManager->getVertexBuffer("mainTriangle");
-        VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(cmdBuffers[currentFrame], 0, 1, &vertexBuffer.buffer, &vertexBuffer.offset);
+        // auto vertexBuffer = _vkVertexBufferManager->getVertexBuffer("mainTriangle");
+        vkCmdBindVertexBuffers(cmdBuffers[currentFrame], 0, 1, &vertexBuffer.buffer, &vertexAllocationInfo.offset);
 
         // Bind the UBO descriptor set (set 0)
         _vkGraphicsPipelineManager->cmdBindDescriptorSets(
@@ -335,21 +354,18 @@ void VkRunner::cleanup() {
         vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
     }
 
-    // First explicitly destroy all buffers
+    // 1. First explicitly destroy all buffers and resources
     if (_vkVertexBufferManager) {
         _vkVertexBufferManager->cleanup();  // Explicitly destroy vertex buffers
     }
-
     if (_vkUniformBufferManager) {
         _vkUniformBufferManager->cleanup(); // Explicitly destroy uniform buffers
     }
-
-    // Next destroy texture resources
     if (_vkTextureManager) {
         _vkTextureManager->cleanup();       // Explicitly destroy textures
     }
 
-    // Rest of cleanup...
+    // 2. Reset higher-level managers
     _vkDescriptorManager.reset();
     _vkFrameBuffersManager.reset();
     _vkGraphicsPipelineManager.reset();
@@ -358,9 +374,22 @@ void VkRunner::cleanup() {
     _vkSwapChainManager.reset();
     _vkCommandManager.reset();
     _vkRenderSyncManager.reset();
-    _vkSurfaceManager.reset();
+
+    // 3. Reset allocators BEFORE device manager
+    // deallocate memory before destroying the device
+    _vkDeviceAllocator.reset();  // MUST be before device manager
+
+    // 4. Now it's safe to reset device
     _vkDeviceManager.reset();
+
+    // 5. Reset surface and instance after device
+    _vkSurfaceManager.reset();
     _vkInstance.reset();
+
+    // 6. Destroying allocator after other managers that use it are destroyed
+    _vkHostAllocator.reset();
+
+    // 7. Finally reset window system
     _windowManagerApi.reset();
 }
 

@@ -8,6 +8,8 @@
 #include <SDL2/SDL_vulkan.h>
 #include <GLFW/glfw3.h>
 
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+
 namespace aura3d {
 
 /**
@@ -30,8 +32,8 @@ public:
      * @param vkInstance A pointer to the Vulkan instance, used to create the surface.
      * @param window A pointer to the GLFW window for which the surface will be created.
      */
-    VkSurfaceManager(VkInstance* vkInstance, GLFWwindow* window);
-    VkSurfaceManager(VkInstance* vkInstance, SDL_Window* window);
+    VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, GLFWwindow* window);
+    VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, SDL_Window* window);
 
     /**
      * @brief Destroys the Vulkan surface and cleans up resources.
@@ -63,6 +65,7 @@ public:
     VkBool32 getQueuePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, const int familyIndex);
 
 private:
+    VkHostAllocator* vkHostAllocator;
     VkInstance* _vkInstance; ///< Pointer to the Vulkan instance used to bind the surface.
     VkSurfaceKHR _vkSurface; ///< Vulkan surface for rendering on cross-platform windowing systems (GLFW/SDL2).
 };

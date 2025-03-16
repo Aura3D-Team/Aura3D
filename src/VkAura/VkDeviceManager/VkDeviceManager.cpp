@@ -6,8 +6,8 @@
 
 namespace aura3d {
 
-VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData)
-    : _vkInstance(vkInstance), _physicaldeviceCount(0), _deviceInfo(),
+VkDeviceManager::VkDeviceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, VkDeviceData vkDeviceData)
+    : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance), _physicaldeviceCount(0), _deviceInfo(),
     _physicalDevice(VK_NULL_HANDLE), _device(VK_NULL_HANDLE),
     _vkQueueManager(VkQueueManager()), _vkDeviceCreationData(std::move(vkDeviceData))
 {
@@ -17,7 +17,7 @@ VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceDa
 VkDeviceManager::~VkDeviceManager() {
     if (_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(_device);
-        vkDestroyDevice(_device, allocationCallbacks);
+        vkDestroyDevice(_device, vkHostAllocator->getCallbacks());
         _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
@@ -118,7 +118,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     _deviceInfo.ppEnabledExtensionNames = _vkDeviceCreationData.vkDeviceExtensions.data();
     _deviceInfo.pEnabledFeatures = &_deviceFeatures;
 
-    result = vkCreateDevice(_physicalDevice, &_deviceInfo, allocationCallbacks, &_device);
+    result = vkCreateDevice(_physicalDevice, &_deviceInfo, vkHostAllocator->getCallbacks(), &_device);
     VK_RESULT_CHECK(result);
 
     uint32_t familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);

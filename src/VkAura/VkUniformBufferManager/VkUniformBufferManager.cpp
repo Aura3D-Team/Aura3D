@@ -7,8 +7,10 @@
 
 namespace aura3d {
 
-VkUniformBufferManager::VkUniformBufferManager(VkDevice* vkDevice) :
-    _vkDevice(vkDevice)
+VkUniformBufferManager::VkUniformBufferManager(VkHostAllocator* vkHostAllocator,
+                                               VkDeviceAllocator* vkDeviceAllocator,
+                                               VkDevice* vkDevice) :
+    vkHostAllocator(vkHostAllocator), vkDeviceAllocator(vkDeviceAllocator), _vkDevice(vkDevice)
 {
     // Initialize with empty vectors - will be populated in createUniformBuffers
 }
@@ -37,6 +39,8 @@ void VkUniformBufferManager::createUniformBuffers(
     for (size_t i = 0; i < count; i++) {
         // Create host-visible buffer for easy updates
         VkBufferManager::createBuffer(
+            vkHostAllocator,
+            vkDeviceAllocator,
             *_vkDevice,
             physicalDevice,
             bufferSize,
@@ -48,7 +52,7 @@ void VkUniformBufferManager::createUniformBuffers(
 
         // Persistently map the memory for efficient updates
         void* data = nullptr;
-        VK_RESULT_CHECK(VkDeviceAllocator::getInstance().mapMemory(_allocations[i], 0, bufferSize, &data));
+        VK_RESULT_CHECK(vkDeviceAllocator->mapMemory(_allocations[i], 0, bufferSize, &data));
         // Note: The mappedData field in the allocation is automatically set by the
         // mapMemory function, so we don't need to store it separately
     }
@@ -107,19 +111,17 @@ VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(uint32_t 
 
 void VkUniformBufferManager::cleanup()
 {
-    // Get device allocator
-    VkDeviceAllocator& deviceAllocator = VkDeviceAllocator::getInstance();
-
     // Unmap memory, destroy buffers, and free memory
     for (size_t i = 0; i < _uniformBuffers.size(); i++) {
         if (i < _allocations.size() && _allocations[i].mappedData != nullptr) {
-            deviceAllocator.unmapMemory(_allocations[i]);
+            vkDeviceAllocator->unmapMemory(_allocations[i]);
             // mappedData will be set to nullptr in unmapMemory
         }
 
         if (_uniformBuffers[i] != VK_NULL_HANDLE) {
             if (i < _allocations.size()) {
-                VkBufferManager::destroyBuffer(*_vkDevice, _uniformBuffers[i], _allocations[i]);
+                vkDestroyBuffer(*_vkDevice, _uniformBuffers[i], vkHostAllocator->getCallbacks());
+                vkDeviceAllocator->freeMemory(_allocations[i]);
             }
             _uniformBuffers[i] = VK_NULL_HANDLE;
         }

@@ -5,6 +5,7 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
 
@@ -37,7 +38,7 @@ public:
      * @param swapChainImages A reference to a vector of VkImage objects representing swap chain images.
      * @param swapChainImageFormat The format of the swap chain images.
      */
-    VkImageViewsManager(VkDevice* device);
+    VkImageViewsManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
 
     /**
      * @brief Destroys all created image views and releases resources.
@@ -78,6 +79,7 @@ public:
     void cleanup();
 
 private:
+    VkHostAllocator* vkHostAllocator;
     VkDevice* _device; ///< The Vulkan logical device used to create and manage image views.
 
     std::vector<VkImageView> _swapChainImageViews; ///< Vector storing the created VkImageView objects.

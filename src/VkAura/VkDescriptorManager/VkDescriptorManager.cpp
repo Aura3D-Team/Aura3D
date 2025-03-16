@@ -13,8 +13,8 @@ namespace aura3d {
  * It pre-allocates memory for a certain number and type of descriptors.
  * This allows efficient allocation/deallocation of descriptor sets.
  */
-VkDescriptorManager::VkDescriptorManager(VkDevice* vkDevice, int pool_size) :
-    _pool_size(pool_size), _vkDevice(vkDevice)
+VkDescriptorManager::VkDescriptorManager(VkHostAllocator* vkHostAllocator,VkDevice* vkDevice, int pool_size) :
+    vkHostAllocator(vkHostAllocator), _pool_size(pool_size), _vkDevice(vkDevice)
 {
     // Configure the pool sizes - for both uniform buffers and combined image samplers
     VkFixedArray<VkDescriptorPoolSize> poolSizes = {};
@@ -35,7 +35,7 @@ VkDescriptorManager::VkDescriptorManager(VkDevice* vkDevice, int pool_size) :
     _poolCreateInfo.maxSets = _pool_size * 2;  // Maximum number of descriptor sets (for both types)
 
     // Create the descriptor pool
-    VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, allocationCallbacks, &_descriptorPool));
+    VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, vkHostAllocator->getCallbacks(), &_descriptorPool));
 }
 
 /**
@@ -54,7 +54,7 @@ VkDescriptorManager::~VkDescriptorManager()
  */
 void VkDescriptorManager::cleanup()
 {
-    vkDestroyDescriptorPool(*_vkDevice, _descriptorPool, allocationCallbacks);
+    vkDestroyDescriptorPool(*_vkDevice, _descriptorPool, vkHostAllocator->getCallbacks());
 }
 
 /**

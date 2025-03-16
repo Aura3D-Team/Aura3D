@@ -7,7 +7,8 @@
 #include <glm/glm.hpp>
 #include <vector>
 
-#include "VkAura/VkDeviceAllocator/VkDeviceAllocator.h"
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
 
@@ -33,7 +34,9 @@ public:
      * @brief Constructor
      * @param vkDevice Pointer to the Vulkan device
      */
-    VkUniformBufferManager(VkDevice* vkDevice);
+    VkUniformBufferManager(VkHostAllocator* vkHostAllocator,
+                           VkDeviceAllocator* vkDeviceAllocator,
+                           VkDevice* vkDevice);
 
     /**
      * @brief Destructor - cleans up resources
@@ -97,7 +100,10 @@ public:
     void cleanup();
 
 private:
-    VkDevice* _vkDevice;                      ///< Pointer to Vulkan device
+    VkHostAllocator* vkHostAllocator;
+    VkDeviceAllocator* vkDeviceAllocator;
+    VkDevice* _vkDevice; ///< Pointer to Vulkan device
+
     std::vector<VkBuffer> _uniformBuffers;    ///< Uniform buffer handles
     std::vector<VkDeviceAllocation> _allocations; ///< Memory allocations with mapping info
 };

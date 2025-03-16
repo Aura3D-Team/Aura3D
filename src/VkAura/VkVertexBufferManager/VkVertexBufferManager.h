@@ -3,45 +3,46 @@
 
 #pragma once
 
-#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
-
-#include <aura.hpp>
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 #include <unordered_map>
 #include <string>
+#include <vector>
 
+#include <aura.hpp>
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
 
 struct Vertex3d
 {
-    glm::vec3 pos; // (x, y, z)
+    glm::vec3 pos;      // (x, y, z)
     glm::vec2 texCoord; // (u, v)
-    glm::vec4 color; // (r, g, b, a)
+    glm::vec4 color;    // (r, g, b, a)
 };
 
 struct Vertex2d {
-    glm::vec2 pos;  // (x, y)
-    glm::vec2 texCoord;  // (u, v)
-    glm::vec4 color;     // (r, g, b, a)
+    glm::vec2 pos;      // (x, y)
+    glm::vec2 texCoord; // (u, v)
+    glm::vec4 color;    // (r, g, b, a)
 };
 
-// Structure to hold vertex buffer information
+// Simplified structure to hold vertex buffer information
 struct VertexBufferInfo {
-    VkBuffer buffer;
-    VkDeviceMemory memory;
-    VkDeviceSize offset;     // Add this to store the memory offset
-    void* mappedMemory;      // For persistent mapping
-    size_t vertexCount;
-    bool is2d;              // Whether the buffer contains 2D or 3D vertices
-    bool persistent;        // Whether the buffer is persistently mapped
+    VkBuffer buffer = VK_NULL_HANDLE;
+    uint32_t allocationId = 0;      // ID for tracking in VkDeviceAllocator
+    size_t vertexCount = 0;
+    bool is2d = true;               // Whether the buffer contains 2D or 3D vertices
+    bool persistent = false;        // Whether the buffer is persistently mapped
 };
 
 class VkVertexBufferManager
 {
 public:
-    VkVertexBufferManager(VkDevice* vkDevice);
+    VkVertexBufferManager(VkHostAllocator* vkHostAllocator,
+                          VkDeviceAllocator* vkDeviceAllocator,
+                          VkDevice* vkDevice);
     ~VkVertexBufferManager();
 
     // Create a named vertex buffer with 2D vertices
@@ -81,11 +82,11 @@ public:
     void cleanup();
 
 private:
+    VkHostAllocator* vkHostAllocator;
+    VkDeviceAllocator* vkDeviceAllocator;
     VkDevice* _vkDevice;
-    std::unordered_map<std::string, VertexBufferInfo> _vertexBuffers;
 
-    // Helper to unmap memory if needed
-    void unmapMemory(const std::string& name);
+    std::unordered_map<std::string, VertexBufferInfo> _vertexBuffers;
 };
 
 } // namespace aura3d

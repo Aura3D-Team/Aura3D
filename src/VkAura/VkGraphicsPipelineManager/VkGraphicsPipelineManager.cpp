@@ -6,10 +6,11 @@
 
 namespace aura3d {
 
-VkGraphicsPipelineManager::VkGraphicsPipelineManager(std::string shader_vert_spv,
+VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
+                                                     std::string shader_vert_spv,
                                                      std::string shader_frag_spv,
                                                      VkDevice* device)
-    : VkPipelineManager(device), _shaderManager(VkShaderManager(device))
+    : vkHostAllocator(vkHostAllocator), VkPipelineManager(vkHostAllocator, device), _shaderManager(VkShaderManager(vkHostAllocator, device))
 {
     // Load shader modules
     _shaderManager.createVertShaderModule(shader_vert_spv);
@@ -57,7 +58,7 @@ VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
 {
     // Clean up descriptor set layouts
     for (auto& pair : _descriptorSetLayouts) {
-        vkDestroyDescriptorSetLayout(*_device, pair.second, nullptr);
+        vkDestroyDescriptorSetLayout(*_device, pair.second, vkHostAllocator->getCallbacks());
     }
 
     // Base class destructor will handle pipeline and pipeline layout
@@ -113,7 +114,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         layoutInfo.pBindings = layoutBindings.data();
 
         VkDescriptorSetLayout layout;
-        VK_RESULT_CHECK(vkCreateDescriptorSetLayout(*_device, &layoutInfo, allocationCallbacks, &layout));
+        VK_RESULT_CHECK(vkCreateDescriptorSetLayout(*_device, &layoutInfo, vkHostAllocator->getCallbacks(), &layout));
 
         // Store the layout
         _descriptorSetLayouts[setInfo.setIndex] = layout;
@@ -146,7 +147,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     pipelineLayoutInfo.pSetLayouts = layouts.data();
 
     // Create the pipeline layout
-    VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, allocationCallbacks, &_pipelineLayout));
+    VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, vkHostAllocator->getCallbacks(), &_pipelineLayout));
 
     PLOG_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts";
 }
@@ -281,7 +282,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     pipelineInfo.basePipelineIndex = -1;
 
     // Create the graphics pipeline
-    VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, allocationCallbacks, &_pipeline));
+    VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, vkHostAllocator->getCallbacks(), &_pipeline));
 
     PLOG_DEBUG << "Graphics pipeline created";
 }

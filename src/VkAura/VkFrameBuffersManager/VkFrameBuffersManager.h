@@ -5,13 +5,14 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
 
 class VkFrameBuffersManager
 {
 public:
-    VkFrameBuffersManager(VkDevice* device);
+    VkFrameBuffersManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
     ~VkFrameBuffersManager();
 
     void createFrameBuffers(const std::vector<VkImageView>& imageViews,
@@ -23,6 +24,7 @@ public:
     void cleanup();
 
 private:
+    VkHostAllocator* vkHostAllocator;
     VkDevice* _device;
     std::vector<VkFramebuffer> _framebuffers;
 };

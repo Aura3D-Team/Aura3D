@@ -4,13 +4,14 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
 
 class VkRenderPassManager
 {
 public:
-    VkRenderPassManager(VkDevice* device);
+    VkRenderPassManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
     ~VkRenderPassManager();
 
     void createRenderPass(VkFormat swapchainImageFormat);
@@ -27,6 +28,7 @@ public:
     void cleanup();
 
 private:
+    VkHostAllocator* vkHostAllocator;
     VkDevice* _device;
 
     VkRenderPass _renderPass;

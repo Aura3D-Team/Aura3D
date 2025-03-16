@@ -18,6 +18,4 @@ using VkFixedArray = std::array<T, MAX_FRAMES_IN_FLIGHT>;
 template <typename T>
 using AttributeDescriptionArray = std::array<T, MAX_ATTRIBUTE_DESCRIPTION>;
 
-inline VkAllocationCallbacks* allocationCallbacks = aura3d::VkHostAllocator::getCallbacks();
-
 #endif // AURA_HPP

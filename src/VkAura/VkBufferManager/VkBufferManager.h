@@ -1,7 +1,11 @@
 #ifndef VKBUFFERMANAGER_H
 #define VKBUFFERMANAGER_H
+
 #pragma once
+
 #include <vulkan/vulkan.h>
+
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
 #include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
@@ -23,7 +27,9 @@ public:
      * @param buffer Output parameter for the created buffer handle
      * @param allocation Output parameter for the device allocation
      */
-    static void createBuffer(VkDevice device,
+    static void createBuffer(VkHostAllocator* vkHostAllocator,
+                             VkDeviceAllocator* vkDeviceAllocator,
+                             VkDevice device,
                              VkPhysicalDevice physicalDevice,
                              VkDeviceSize size,
                              VkBufferUsageFlags usage,
@@ -46,7 +52,9 @@ public:
      * @param bufferMemory Output parameter for the memory handle (legacy format)
      * @param bufferOffset Output parameter for the memory offset (legacy format)
      */
-    static void createBufferLegacy(VkDevice device,
+    static void createBufferLegacy(VkHostAllocator* vkHostAllocator,
+                                   VkDeviceAllocator* vkDeviceAllocator,
+                                   VkDevice device,
                                    VkPhysicalDevice physicalDevice,
                                    VkDeviceSize size,
                                    VkBufferUsageFlags usage,
@@ -79,32 +87,15 @@ public:
                            VkDeviceSize dstOffset = 0);
 
     /**
-     * Maps memory for host access using the VkDeviceAllocator
-     *
-     * @param allocation Device allocation to map
-     * @param offset Offset into the allocation (default: 0)
-     * @param size Size to map (can be VK_WHOLE_SIZE)
-     * @return Pointer to mapped memory
-     */
-    static void* mapBufferMemory(VkDeviceAllocation& allocation,
-                                 VkDeviceSize offset = 0,
-                                 VkDeviceSize size = VK_WHOLE_SIZE);
-
-    /**
-     * Unmaps previously mapped memory using the VkDeviceAllocator
-     *
-     * @param allocation Device allocation to unmap
-     */
-    static void unmapBufferMemory(VkDeviceAllocation& allocation);
-
-    /**
      * Destroys a buffer and frees its memory using the VkDeviceAllocator
      *
      * @param device Vulkan logical device
      * @param buffer Buffer handle to destroy
      * @param allocation Device allocation to free
      */
-    static void destroyBuffer(VkDevice device,
+    static void destroyBuffer(VkHostAllocator* vkHostAllocator,
+                              VkDeviceAllocator* vkDeviceAllocator,
+                              VkDevice device,
                               VkBuffer buffer,
                               VkDeviceAllocation& allocation);
 

@@ -7,8 +7,8 @@
 
 namespace aura3d {
 
-VkImageViewsManager::VkImageViewsManager(VkDevice* device)
-    : _device(device)
+VkImageViewsManager::VkImageViewsManager(VkHostAllocator* vkHostAllocator, VkDevice* device)
+    : vkHostAllocator(vkHostAllocator), _device(device)
 {
     // empty
 }
@@ -46,7 +46,7 @@ void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChain
         createInfo.subresourceRange.baseArrayLayer = vkImageViewData.baseArrayLayer;
         createInfo.subresourceRange.layerCount = vkImageViewData.layerCount;
 
-        VkResult result = vkCreateImageView(*_device, &createInfo, allocationCallbacks, &_swapChainImageViews[i]);
+        VkResult result = vkCreateImageView(*_device, &createInfo, vkHostAllocator->getCallbacks(), &_swapChainImageViews[i]);
         VK_RESULT_CHECK(result);
 
         PLOG_DEBUG << "ImageView " << i << " created!";
@@ -61,7 +61,7 @@ const std::vector<VkImageView>& VkImageViewsManager::getImageViews() const
 void VkImageViewsManager::cleanup()
 {
     for (VkImageView& imageView : _swapChainImageViews) {
-        vkDestroyImageView(*_device, imageView, allocationCallbacks);
+        vkDestroyImageView(*_device, imageView, vkHostAllocator->getCallbacks());
     }
     _swapChainImageViews.clear();
 }

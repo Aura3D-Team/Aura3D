@@ -7,8 +7,8 @@
 
 namespace aura3d {
 
-VkRenderPassManager::VkRenderPassManager(VkDevice* device) :
-    _device(device)
+VkRenderPassManager::VkRenderPassManager(VkHostAllocator* vkHostAllocator, VkDevice* device) :
+    vkHostAllocator(vkHostAllocator), _device(device)
 {
     // Empty
 }
@@ -79,7 +79,7 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
     renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     renderPassInfo.pDependencies = dependencies.data();
 
-    VK_RESULT_CHECK(vkCreateRenderPass(*_device, &renderPassInfo, allocationCallbacks, &_renderPass));
+    VK_RESULT_CHECK(vkCreateRenderPass(*_device, &renderPassInfo, vkHostAllocator->getCallbacks(), &_renderPass));
 }
 
 
@@ -115,7 +115,7 @@ void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer) {
 void VkRenderPassManager::cleanup()
 {
     if (_renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(*_device, _renderPass, allocationCallbacks);
+        vkDestroyRenderPass(*_device, _renderPass, vkHostAllocator->getCallbacks());
     }
 }
 
