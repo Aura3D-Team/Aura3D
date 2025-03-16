@@ -15,7 +15,19 @@ VkRunner::VkRunner(WindowDetails windowDetails,
     const bool enableValidationLayers = true;
 #endif
 
-    _vkHostAllocator = std::make_unique<aura3d::VkHostAllocator>();
+    VkHostAllocatorCreateInfo vkHostAllocatorConfig = {
+        .threadSafetyMode = HostThreadSafetyMode::NONE,
+        .enableMemoryPools = true,
+#ifdef NDEBUG
+        .trackLeaks = false,  // Disable in release builds
+#else
+        .trackLeaks = true,
+#endif
+        .enableBatchProcessing = true,
+        .batchDeallocLimit = 256  // Higher batch threshold
+    };
+
+    _vkHostAllocator = std::make_unique<aura3d::VkHostAllocator>(vkHostAllocatorConfig);
 
 #ifdef SDL_WINDOW_MANAGER
     _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(windowDetails);
@@ -32,7 +44,21 @@ VkRunner::VkRunner(WindowDetails windowDetails,
 
     aura3d::VkDeviceAllocatorCreateInfo vkDeviceAllocatorCreateInfo = {
         .physicalDevice = *_vkDeviceManager->getPhysicalDevice(),
-        .device = *_vkDeviceManager->getDevice()
+        .device = *_vkDeviceManager->getDevice(),
+        .blockSize = 128 * 1024 * 1024,  // 128MB for fewer reallocations if you have lots of memory
+        .smallBlockSize = 8 * 1024 * 1024, // 8MB for small allocations
+        .enableDefragmentation = false, // Disable unless needed
+#ifdef NDEBUG
+        .trackLeaks = false,  // Disable in release builds
+#else
+        .trackLeaks = true,
+#endif
+        .threadSafetyMode = ThreadSafetyMode::NONE,
+        .strategy = AllocationStrategy::FIRST_FIT, // Fastest allocation strategy
+        .dedicatedAllocationThreshold = 64 * 1024 * 1024, // 64MB threshold for dedicated allocations
+        .useBuddyAllocatorForBuffers = true,
+        .deferFrees = true,
+        .deferredFreeLimit = 256, // Larger batch for complex scenes
     };
 
     _vkDeviceAllocator = std::make_unique<aura3d::VkDeviceAllocator>(vkDeviceAllocatorCreateInfo);
@@ -216,6 +242,8 @@ void VkRunner::run()
     auto vertexBuffer = _vkVertexBufferManager->getVertexBuffer("mainTriangle");
     auto& vertexAllocationInfo = _vkDeviceAllocator->getAllocation(vertexBuffer.allocationId);
 
+    VkClearValue clearColor = {{{0.05f, 0.05f, 0.05f, 1.0f}}};  // Dark blue background
+
     _windowManagerApi->process([&]() {
         _vkRenderSyncManager->waitForFences(currentFrame);
         const uint32_t imageIndex = _vkSwapChainManager->acquireNextImage(imageAvailableSemaphores[currentFrame], windowFlags);
@@ -235,7 +263,6 @@ void VkRunner::run()
         aura3d::VkCommandManager::beginCommandBuffer(cmdBuffers[currentFrame]);
 
         // Begin render pass with clear values
-        VkClearValue clearColor = {{{0.0f, 0.0f, 0.2f, 1.0f}}};  // Dark blue background
         _vkRenderPassManager->beginRenderPass(cmdBuffers[currentFrame],
                                               frameBuffers[imageIndex],  // Use imageIndex, not currentFrame!
                                               *extent,

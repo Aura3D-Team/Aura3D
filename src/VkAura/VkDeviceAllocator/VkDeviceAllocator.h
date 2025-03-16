@@ -1,150 +1,31 @@
 #ifndef VK_DEVICE_ALLOCATOR_H
 #define VK_DEVICE_ALLOCATOR_H
 
+#include "VkDeviceAllocatorTypes.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <vector>
 #include <mutex>
-// #include <memory>
+// #include <shared_mutex>
+#include <atomic>
+#include <memory>
+// #include <queue>
 
 namespace aura3d {
 
-// Enum to track allocation mapping state
-enum class AllocationMappingState {
-    UNMAPPED,
-    MAPPED,
-    PERSISTENTLY_MAPPED
-};
-
-// Represents an allocation from the device allocator
-struct VkDeviceAllocation {
-    VkDeviceMemory memory = VK_NULL_HANDLE;    // The Vulkan memory object
-    VkDeviceSize offset = 0;                   // Offset within the memory object
-    VkDeviceSize size = 0;                     // Size of the allocation
-    uint32_t memoryTypeIndex = 0;              // Memory type index
-    void* mappedData = nullptr;                // Pointer to mapped memory (nullptr if not mapped)
-    uint32_t allocationId = 0;                 // Unique ID for this allocation
-    AllocationMappingState mappingState = AllocationMappingState::UNMAPPED; // Current mapping state
-
-    // Reset the allocation to default state
-    void reset() {
-        memory = VK_NULL_HANDLE;
-        offset = 0;
-        size = 0;
-        memoryTypeIndex = 0;
-        mappedData = nullptr;
-        // Don't reset allocationId to keep it unique
-        mappingState = AllocationMappingState::UNMAPPED;
-    }
-};
-
-// Configuration for the device allocator
-struct VkDeviceAllocatorCreateInfo {
-    VkPhysicalDevice physicalDevice;
-    VkDevice device;
-    VkDeviceSize blockSize = 64 * 1024 * 1024;  // 64MB default block size
-    bool enableDefragmentation = false;         // Defragmentation support
-    bool enableHostMapping = true;              // Support for memory mapping
-    bool trackLeaks = true;                     // Track memory leaks in debug mode
-};
-
-// Free memory chunk within a memory block
-struct MemoryChunk {
-    VkDeviceSize offset;
-    VkDeviceSize size;
-
-    // Constructor for convenience
-    MemoryChunk(VkDeviceSize offset = 0, VkDeviceSize size = 0)
-        : offset(offset), size(size) {}
-
-    // Comparison operators for sorting chunks by offset
-    bool operator<(const MemoryChunk& other) const {
-        return offset < other.offset;
-    }
-};
-
-// Memory block within a memory type pool
-struct MemoryBlock {
-    VkDeviceMemory memory;
-    VkDeviceSize size;
-    std::vector<MemoryChunk> freeList;  // List of free ranges
-    bool canBeMapped;
-    bool isMapped;                      // Will be protected by allocationMutex
-    void* mappedAddress;
-    std::unordered_map<VkDeviceSize, uint32_t> mappedRegions;  // Track active mappings by offset->allocationId
-
-    MemoryBlock()
-        : memory(VK_NULL_HANDLE), size(0), canBeMapped(false), isMapped(false), mappedAddress(nullptr) {}
-
-    // Define copy constructor explicitly
-    MemoryBlock(const MemoryBlock& other)
-        : memory(other.memory),
-        size(other.size),
-        freeList(other.freeList),
-        canBeMapped(other.canBeMapped),
-        isMapped(other.isMapped),
-        mappedAddress(other.mappedAddress),
-        mappedRegions(other.mappedRegions) {}
-
-    // Add assignment operator
-    MemoryBlock& operator=(const MemoryBlock& other) {
-        if (this != &other) {
-            memory = other.memory;
-            size = other.size;
-            freeList = other.freeList;
-            canBeMapped = other.canBeMapped;
-            isMapped = other.isMapped;
-            mappedAddress = other.mappedAddress;
-            mappedRegions = other.mappedRegions;
-        }
-        return *this;
-    }
-};
-
-// Pool of memory blocks for a specific memory type
-struct MemoryTypePool {
-    uint32_t memoryTypeIndex;
-    VkMemoryPropertyFlags properties;
-    std::vector<MemoryBlock> blocks;
-    VkDeviceSize totalSize;
-    VkDeviceSize usedSize;
-
-    MemoryTypePool()
-        : memoryTypeIndex(0), properties(0), totalSize(0), usedSize(0) {}
-
-    // Define copy constructor explicitly
-    MemoryTypePool(const MemoryTypePool& other)
-        : memoryTypeIndex(other.memoryTypeIndex),
-        properties(other.properties),
-        blocks(other.blocks),  // This will call MemoryBlock's copy constructor
-        totalSize(other.totalSize),
-        usedSize(other.usedSize) {}
-
-    // Add assignment operator
-    MemoryTypePool& operator=(const MemoryTypePool& other) {
-        if (this != &other) {
-            memoryTypeIndex = other.memoryTypeIndex;
-            properties = other.properties;
-            blocks = other.blocks;
-            totalSize = other.totalSize;
-            usedSize = other.usedSize;
-        }
-        return *this;
-    }
-};
-
 /**
  * @class VkDeviceAllocator
- * @brief A device memory allocator for Vulkan that efficiently manages memory allocations.
+ * @brief A high-performance device memory allocator for Vulkan.
  *
- * This class provides a singleton instance that manages Vulkan device memory allocations
+ * This class provides a memory allocator that efficiently manages Vulkan device memory allocations
  * using a sub-allocation strategy to reduce the number of actual Vulkan memory allocations.
- * It handles mapping and unmapping memory, binding resources, and tracking allocations.
+ * It handles mapping and unmapping memory, binding resources, and tracking allocations with
+ * configurable thread safety and allocation strategies.
  */
 class VkDeviceAllocator {
 public:
     /**
-     * @brief Constructor - use initialize() instead
+     * @brief Constructor
      * @param createInfo The configuration for the allocator
      */
     explicit VkDeviceAllocator(const VkDeviceAllocatorCreateInfo& createInfo);
@@ -228,17 +109,6 @@ public:
     VkResult bindImageMemory(VkImage image, const VkDeviceAllocation& allocation, VkDeviceSize offsetInAllocation = 0);
 
     /**
-     * @brief Structure to hold memory statistics
-     */
-    struct MemoryStats {
-        VkDeviceSize totalSize;
-        VkDeviceSize usedSize;
-        uint32_t allocationCount;
-        uint32_t blockCount;
-        std::vector<std::pair<uint32_t, VkDeviceSize>> sizeByMemoryType;
-    };
-
-    /**
      * @brief Get memory statistics
      * @return MemoryStats structure with current statistics
      */
@@ -273,7 +143,23 @@ public:
      */
     VkDeviceAllocation& getAllocation(uint32_t allocationId);
 
+    /**
+     * @brief Process any deferred free operations
+     * @param processAll If true, process all pending frees regardless of the limit
+     */
+    void processDeferredFrees(bool processAll = false);
+
+    /**
+     * @brief Cleanup and release all resources - call before destruction
+     */
     void cleanup();
+
+    /**
+     * @brief Defragment memory to reduce fragmentation
+     * @param maxBytesToMove Maximum number of bytes to move during defragmentation
+     * @return VK_SUCCESS on success, other VkResult values on failure
+     */
+    VkResult defragment(VkDeviceSize maxBytesToMove = VK_WHOLE_SIZE);
 
 private:
     /**
@@ -306,6 +192,19 @@ private:
                                     VkDeviceAllocation& allocation);
 
     /**
+     * @brief Allocate using the buddy allocator if available
+     * @param memoryTypeIndex The memory type index
+     * @param size The size to allocate
+     * @param alignment The required alignment
+     * @param allocation Output parameter to receive the allocation details
+     * @return VK_SUCCESS on success, other VkResult values on failure
+     */
+    VkResult allocateUsingBuddyAllocator(uint32_t memoryTypeIndex,
+                                         VkDeviceSize size,
+                                         VkDeviceSize alignment,
+                                         VkDeviceAllocation& allocation);
+
+    /**
      * @brief Get or create a memory type pool
      * @param memoryTypeIndex The memory type index
      * @return Reference to the memory type pool
@@ -320,12 +219,55 @@ private:
      */
     bool findBlockByMemory(VkDeviceMemory memory, MemoryBlock** outBlock);
 
+    /**
+     * @brief Initialize a buddy allocator for a memory type
+     * @param memoryTypeIndex The memory type index
+     * @param blockSize The size of the block for the buddy allocator
+     */
+    void initializeBuddyAllocator(uint32_t memoryTypeIndex, VkDeviceSize blockSize);
+
+    /**
+     * @brief Find a free range using the specified allocation strategy
+     * @param block The memory block to search
+     * @param size The size required
+     * @param alignment The alignment required
+     * @param outOffset Output parameter to receive the offset
+     * @param outPadding Output parameter to receive the padding required for alignment
+     * @return true if a suitable range was found, false otherwise
+     */
+    bool findFreeRange(MemoryBlock& block,
+                       VkDeviceSize size,
+                       VkDeviceSize alignment,
+                       VkDeviceSize& outOffset,
+                       VkDeviceSize& outPadding);
+
+    /**
+     * @brief Acquire the proper lock for a memory operation
+     * @param memoryTypeIndex The memory type index involved in the operation
+     * @param forWrite True if the operation will modify the pool
+     */
+    void acquireLock(uint32_t memoryTypeIndex, bool forWrite = true);
+
+    /**
+     * @brief Release the proper lock
+     * @param memoryTypeIndex The memory type index for which the lock was acquired
+     * @param forWrite True if the lock was acquired for writing
+     */
+    void releaseLock(uint32_t memoryTypeIndex, bool forWrite = true);
+
     // Member variables
     VkPhysicalDevice physicalDevice;
     VkDevice device;
     VkDeviceSize defaultBlockSize;
+    VkDeviceSize smallBlockSize;
     bool defragmentationEnabled;
     bool trackLeaks;
+    ThreadSafetyMode threadSafetyMode;
+    AllocationStrategy allocationStrategy;
+    uint32_t dedicatedAllocationThreshold;
+    bool useBuddyAllocatorForBuffers;
+    bool deferFrees;
+    uint32_t deferredFreeLimit;
 
     // Memory pools by memory type
     std::vector<MemoryTypePool> memoryTypePools;
@@ -334,11 +276,12 @@ private:
     VkPhysicalDeviceMemoryProperties memoryProperties;
 
     // Tracking info
-    uint32_t nextAllocationId;
+    std::atomic<uint32_t> nextAllocationId;
     std::unordered_map<uint32_t, VkDeviceAllocation> allocationMap;
 
     // Thread safety
-    mutable std::mutex allocationMutex;
+    mutable std::mutex globalMutex;                                           // Global mutex for coarse-grained locking
+    mutable std::vector<std::unique_ptr<std::mutex>> poolMutexes;             // Per-pool mutexes for fine-grained locking
 
     // Flag to track if we're in shutdown to avoid errors
     bool inShutdown;
