@@ -4,13 +4,12 @@
 
 #include <SDL2/SDL.h>
 #include <vector>
-#include <atomic>
 #include <algorithm>
 #include <functional>
 #include <cmath>
 #include <immintrin.h>
 
-#include "Utils/AuraThreadPool.h"
+namespace aura3d {
 
 class CpuFrameBufferManager
 {
@@ -41,19 +40,15 @@ public:
     struct Config {
         int width;
         int height;
-        int numThreads;
-        bool useSimd;
         bool useDepthBuffer;
 
         Config() :
             width(1280),
             height(720),
-            numThreads(std::thread::hardware_concurrency()),
-            useSimd(true),
-            useDepthBuffer(true) {}
+            useDepthBuffer(false) {}
     };
 
-    CpuFrameBufferManager(Config config, aura3d::AuraThreadPool& threadPool);
+    CpuFrameBufferManager(Config config);
     ~CpuFrameBufferManager();
 
     // Core rendering
@@ -78,13 +73,6 @@ public:
     void drawTriangleWithShader(const Vertex& v0, const Vertex& v1, const Vertex& v2,
                                 std::function<uint32_t(float u, float v, float w)> fragmentShader);
 
-    // SIMD-optimized functions
-    void clearSimd(uint32_t color);
-    void fillRectSimd(int x, int y, int width, int height, uint32_t color);
-
-    // Multi-threaded rendering
-    void executeParallel(const std::function<void(int startY, int endY)>& func);
-
     // Memory management
     void resizeFramebuffer(int width, int height);
 
@@ -92,19 +80,17 @@ public:
     int getWidth() const { return settings.width; }
     int getHeight() const { return settings.height; }
 
-private:
-    Config settings;
-    std::vector<uint32_t> framebuffer;
-    std::vector<float> depthBuffer;
-    std::atomic<int> pendingTasks;
-    aura3d::AuraThreadPool& threadPool;
-
-    // Helper functions
     bool isInsideBounds(int x, int y) const;
     uint32_t blendColors(uint32_t c1, uint32_t c2, float alpha);
     float edgeFunction(float ax, float ay, float bx, float by, float px, float py) const;
     void interpolateAttributes(const Vertex& v0, const Vertex& v1, const Vertex& v2,
                                float x, float y, float& u, float& v, float& w) const;
+private:
+    Config settings;
+    std::vector<uint32_t> framebuffer;
+    std::vector<float> depthBuffer;
 };
+
+}
 
 #endif // CPUFRAMEBUFFERMANAGER_H

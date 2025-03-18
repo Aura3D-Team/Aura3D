@@ -12,6 +12,10 @@ CpuRunner::CpuRunner(WindowDetails windowDetails) {
 #else
     _windowManagerApi = std::make_unique<aura3d::GlfwAuraWindowManager>(windowDetails);
 #endif
+
+    aura3d::CpuFrameBufferManager::Config frameBufferSettings = {};
+
+    _frameBufferManager = std::make_unique<aura3d::CpuFrameBufferManager>(frameBufferSettings);
 }
 
 void CpuRunner::run()

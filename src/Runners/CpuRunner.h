@@ -9,6 +9,10 @@
 #include <AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h>
 #endif
 
+#include <memory>
+
+#include <CpuAura/CpuFrameBufferManager.h>
+
 namespace aura3d {
 
 class CpuRunner
@@ -24,6 +28,8 @@ private:
 #else
     std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
 #endif
+
+    std::unique_ptr<CpuFrameBufferManager> _cpuFrameBufferManager;
 };
 
 }

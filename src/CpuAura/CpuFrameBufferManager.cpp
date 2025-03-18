@@ -1,8 +1,8 @@
 #include "CpuFrameBufferManager.h"
 #include <cstring>
-#include <iostream>
 #include <vector>
-#include <future>
+
+namespace aura3d {
 
 CpuFrameBufferManager::CpuFrameBufferManager(Config config, aura3d::AuraThreadPool& pool) :
     settings(config),
@@ -15,30 +15,136 @@ CpuFrameBufferManager::CpuFrameBufferManager(Config config, aura3d::AuraThreadPo
     }
 }
 
-CpuFrameBufferManager::~CpuFrameBufferManager() {
-    // Nothing to clean up related to threads, as the threadPool is managed externally
+CpuFrameBufferManager::~CpuFrameBufferManager()
+{
+
 }
 
-void CpuFrameBufferManager::clear(uint32_t color) {
-    if (settings.useSimd && settings.numThreads <= 1) {
-        clearSimd(color);
-    } else if (settings.numThreads > 1) {
-        executeParallel([this, color](int startY, int endY) {
-            std::fill(framebuffer.begin() + startY * settings.width,
-                      framebuffer.begin() + endY * settings.width,
-                      color);
+void CpuFrameBufferManager::clear(uint32_t color)
+{
+    uint32_t* framebufferPtr = framebuffer.data();
+    size_t pixelCount = settings.width * settings.height;
 
-            if (settings.useDepthBuffer) {
-                std::fill(depthBuffer.begin() + startY * settings.width,
-                          depthBuffer.begin() + endY * settings.width,
-                          1.0f);
-            }
-        });
-    } else {
-        std::fill(framebuffer.begin(), framebuffer.end(), color);
+    // Process framebuffer in chunks of 50 pixels
+    size_t i = 0;
+    for (; i + 49 < pixelCount; i += 50) {
+        framebufferPtr[i]     = color;
+        framebufferPtr[i + 1] = color;
+        framebufferPtr[i + 2] = color;
+        framebufferPtr[i + 3] = color;
+        framebufferPtr[i + 4] = color;
+        framebufferPtr[i + 5] = color;
+        framebufferPtr[i + 6] = color;
+        framebufferPtr[i + 7] = color;
+        framebufferPtr[i + 8] = color;
+        framebufferPtr[i + 9] = color;
+        framebufferPtr[i + 10] = color;
+        framebufferPtr[i + 11] = color;
+        framebufferPtr[i + 12] = color;
+        framebufferPtr[i + 13] = color;
+        framebufferPtr[i + 14] = color;
+        framebufferPtr[i + 15] = color;
+        framebufferPtr[i + 16] = color;
+        framebufferPtr[i + 17] = color;
+        framebufferPtr[i + 18] = color;
+        framebufferPtr[i + 19] = color;
+        framebufferPtr[i + 20] = color;
+        framebufferPtr[i + 21] = color;
+        framebufferPtr[i + 22] = color;
+        framebufferPtr[i + 23] = color;
+        framebufferPtr[i + 24] = color;
+        framebufferPtr[i + 25] = color;
+        framebufferPtr[i + 26] = color;
+        framebufferPtr[i + 27] = color;
+        framebufferPtr[i + 28] = color;
+        framebufferPtr[i + 29] = color;
+        framebufferPtr[i + 30] = color;
+        framebufferPtr[i + 31] = color;
+        framebufferPtr[i + 32] = color;
+        framebufferPtr[i + 33] = color;
+        framebufferPtr[i + 34] = color;
+        framebufferPtr[i + 35] = color;
+        framebufferPtr[i + 36] = color;
+        framebufferPtr[i + 37] = color;
+        framebufferPtr[i + 38] = color;
+        framebufferPtr[i + 39] = color;
+        framebufferPtr[i + 40] = color;
+        framebufferPtr[i + 41] = color;
+        framebufferPtr[i + 42] = color;
+        framebufferPtr[i + 43] = color;
+        framebufferPtr[i + 44] = color;
+        framebufferPtr[i + 45] = color;
+        framebufferPtr[i + 46] = color;
+        framebufferPtr[i + 47] = color;
+        framebufferPtr[i + 48] = color;
+        framebufferPtr[i + 49] = color;
+    }
 
-        if (settings.useDepthBuffer) {
-            std::fill(depthBuffer.begin(), depthBuffer.end(), 1.0f);
+    // Handle remaining pixels
+    for (; i < pixelCount; i++) {
+        framebufferPtr[i] = color;
+    }
+
+    // Process depth buffer in chunks of 50 pixels
+    if (settings.useDepthBuffer) {
+        float* depthBufferPtr = depthBuffer.data();
+        i = 0;
+        for (; i + 49 < pixelCount; i += 50) {
+            depthBufferPtr[i]     = 1.0f;
+            depthBufferPtr[i + 1] = 1.0f;
+            depthBufferPtr[i + 2] = 1.0f;
+            depthBufferPtr[i + 3] = 1.0f;
+            depthBufferPtr[i + 4] = 1.0f;
+            depthBufferPtr[i + 5] = 1.0f;
+            depthBufferPtr[i + 6] = 1.0f;
+            depthBufferPtr[i + 7] = 1.0f;
+            depthBufferPtr[i + 8] = 1.0f;
+            depthBufferPtr[i + 9] = 1.0f;
+            depthBufferPtr[i + 10] = 1.0f;
+            depthBufferPtr[i + 11] = 1.0f;
+            depthBufferPtr[i + 12] = 1.0f;
+            depthBufferPtr[i + 13] = 1.0f;
+            depthBufferPtr[i + 14] = 1.0f;
+            depthBufferPtr[i + 15] = 1.0f;
+            depthBufferPtr[i + 16] = 1.0f;
+            depthBufferPtr[i + 17] = 1.0f;
+            depthBufferPtr[i + 18] = 1.0f;
+            depthBufferPtr[i + 19] = 1.0f;
+            depthBufferPtr[i + 20] = 1.0f;
+            depthBufferPtr[i + 21] = 1.0f;
+            depthBufferPtr[i + 22] = 1.0f;
+            depthBufferPtr[i + 23] = 1.0f;
+            depthBufferPtr[i + 24] = 1.0f;
+            depthBufferPtr[i + 25] = 1.0f;
+            depthBufferPtr[i + 26] = 1.0f;
+            depthBufferPtr[i + 27] = 1.0f;
+            depthBufferPtr[i + 28] = 1.0f;
+            depthBufferPtr[i + 29] = 1.0f;
+            depthBufferPtr[i + 30] = 1.0f;
+            depthBufferPtr[i + 31] = 1.0f;
+            depthBufferPtr[i + 32] = 1.0f;
+            depthBufferPtr[i + 33] = 1.0f;
+            depthBufferPtr[i + 34] = 1.0f;
+            depthBufferPtr[i + 35] = 1.0f;
+            depthBufferPtr[i + 36] = 1.0f;
+            depthBufferPtr[i + 37] = 1.0f;
+            depthBufferPtr[i + 38] = 1.0f;
+            depthBufferPtr[i + 39] = 1.0f;
+            depthBufferPtr[i + 40] = 1.0f;
+            depthBufferPtr[i + 41] = 1.0f;
+            depthBufferPtr[i + 42] = 1.0f;
+            depthBufferPtr[i + 43] = 1.0f;
+            depthBufferPtr[i + 44] = 1.0f;
+            depthBufferPtr[i + 45] = 1.0f;
+            depthBufferPtr[i + 46] = 1.0f;
+            depthBufferPtr[i + 47] = 1.0f;
+            depthBufferPtr[i + 48] = 1.0f;
+            depthBufferPtr[i + 49] = 1.0f;
+        }
+
+        // Handle remaining depth pixels
+        for (; i < pixelCount; i++) {
+            depthBufferPtr[i] = 1.0f;
         }
     }
 }
@@ -192,41 +298,14 @@ void CpuFrameBufferManager::drawTriangle(int x0, int y0, int x1, int y1, int x2,
     // Skip degenerate triangles
     if (std::abs(area) < 0.1f) return;
 
-    // Check if we should use multithreading for larger triangles
-    if (settings.numThreads > 1 && (maxY - minY) > 50) {
-        executeParallel([=](int startY, int endY) {
-            // Clamp Y range to triangle bounds
-            startY = std::max(startY, minY);
-            endY = std::min(endY, maxY + 1);
+    for (int y = minY; y <= maxY; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            float w0 = edgeFunction(x1, y1, x2, y2, x, y);
+            float w1 = edgeFunction(x2, y2, x0, y0, x, y);
+            float w2 = edgeFunction(x0, y0, x1, y1, x, y);
 
-            for (int y = startY; y < endY; ++y) {
-                // Scanline optimization: find left and right bounds for this scanline
-                int startX = minX;
-                int endX = maxX;
-
-                // Process pixels in this span
-                for (int x = startX; x <= endX; ++x) {
-                    float w0 = edgeFunction(x1, y1, x2, y2, x, y);
-                    float w1 = edgeFunction(x2, y2, x0, y0, x, y);
-                    float w2 = edgeFunction(x0, y0, x1, y1, x, y);
-
-                    if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                        setPixel(x, y, color);
-                    }
-                }
-            }
-        });
-    } else {
-        // Single-threaded version
-        for (int y = minY; y <= maxY; ++y) {
-            for (int x = minX; x <= maxX; ++x) {
-                float w0 = edgeFunction(x1, y1, x2, y2, x, y);
-                float w1 = edgeFunction(x2, y2, x0, y0, x, y);
-                float w2 = edgeFunction(x0, y0, x1, y1, x, y);
-
-                if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                    setPixel(x, y, color);
-                }
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+                setPixel(x, y, color);
             }
         }
     }
@@ -260,82 +339,27 @@ void CpuFrameBufferManager::drawTriangleTextured(const Vertex& v0, const Vertex&
     // Early rejection
     if (maxX < minX || maxY < minY) return;
 
-    // Check if we should use multithreading
-    if (settings.numThreads > 1 && (maxY - minY) > 50) {
-        executeParallel([=](int startY, int endY) {
-            // Clamp Y range
-            startY = std::max(startY, minY);
-            endY = std::min(endY, maxY + 1);
+    for (int y = minY; y <= maxY; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            float area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
+            float w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
+            float w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
+            float w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
 
-            for (int y = startY; y < endY; ++y) {
-                for (int x = minX; x <= maxX; ++x) {
-                    float area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-                    float w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
-                    float w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
-                    float w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+                float u, v, w;
+                interpolateAttributes(v0, v1, v2, x, y, u, v, w);
 
-                    if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                        float u, v, w;
-                        interpolateAttributes(v0, v1, v2, x, y, u, v, w);
+                // Sample texture
+                uint32_t color = texture.sample(u, v);
 
-                        uint32_t color = texture.sample(u, v);
+                // Blend with vertex colors (simplified for now)
+                uint32_t finalColor = color;
 
-                        // Color interpolation
-                        float r0 = ((v0.color >> 16) & 0xFF) / 255.0f;
-                        float g0 = ((v0.color >> 8) & 0xFF) / 255.0f;
-                        float b0 = (v0.color & 0xFF) / 255.0f;
-
-                        float r1 = ((v1.color >> 16) & 0xFF) / 255.0f;
-                        float g1 = ((v1.color >> 8) & 0xFF) / 255.0f;
-                        float b1 = (v1.color & 0xFF) / 255.0f;
-
-                        float r2 = ((v2.color >> 16) & 0xFF) / 255.0f;
-                        float g2 = ((v2.color >> 8) & 0xFF) / 255.0f;
-                        float b2 = (v2.color & 0xFF) / 255.0f;
-
-                        float r = w0 * r0 + w1 * r1 + w2 * r2;
-                        float g = w0 * g0 + w1 * g1 + w2 * g2;
-                        float b = w0 * b0 + w1 * b1 + w2 * b2;
-
-                        // Apply vertex colors to texture
-                        uint32_t finalColor =
-                            (static_cast<uint32_t>(r * ((color >> 16) & 0xFF)) << 16) |
-                            (static_cast<uint32_t>(g * ((color >> 8) & 0xFF)) << 8) |
-                            static_cast<uint32_t>(b * (color & 0xFF));
-
-                        if (settings.useDepthBuffer) {
-                            setPixelWithDepth(x, y, w, finalColor);
-                        } else {
-                            setPixel(x, y, finalColor);
-                        }
-                    }
-                }
-            }
-        });
-    } else {
-        // Single-threaded version
-        for (int y = minY; y <= maxY; ++y) {
-            for (int x = minX; x <= maxX; ++x) {
-                float area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-                float w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
-                float w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
-                float w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
-
-                if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                    float u, v, w;
-                    interpolateAttributes(v0, v1, v2, x, y, u, v, w);
-
-                    // Sample texture
-                    uint32_t color = texture.sample(u, v);
-
-                    // Blend with vertex colors (simplified for now)
-                    uint32_t finalColor = color;
-
-                    if (settings.useDepthBuffer) {
-                        setPixelWithDepth(x, y, w, finalColor);
-                    } else {
-                        setPixel(x, y, finalColor);
-                    }
+                if (settings.useDepthBuffer) {
+                    setPixelWithDepth(x, y, w, finalColor);
+                } else {
+                    setPixel(x, y, finalColor);
                 }
             }
         }
@@ -355,55 +379,26 @@ void CpuFrameBufferManager::drawTriangleWithShader(
 
     // Early rejection
     if (maxX < minX || maxY < minY) return;
+\
+    for (int y = minY; y <= maxY; ++y)
+    {
+        for (int x = minX; x <= maxX; ++x) {
+            float area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
+            float w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
+            float w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
+            float w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
 
-    if (settings.numThreads > 1 && (maxY - minY) > 50) {
-        executeParallel([=](int startY, int endY) {
-            startY = std::max(startY, minY);
-            endY = std::min(endY, maxY + 1);
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+                float u, v, w;
+                interpolateAttributes(v0, v1, v2, x, y, u, v, w);
 
-            for (int y = startY; y < endY; ++y) {
-                for (int x = minX; x <= maxX; ++x) {
-                    float area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-                    float w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
-                    float w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
-                    float w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
+                // Execute fragment shader
+                uint32_t color = fragmentShader(u, v, w);
 
-                    if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                        float u, v, w;
-                        interpolateAttributes(v0, v1, v2, x, y, u, v, w);
-
-                        // Execute fragment shader
-                        uint32_t color = fragmentShader(u, v, w);
-
-                        if (settings.useDepthBuffer) {
-                            setPixelWithDepth(x, y, w, color);
-                        } else {
-                            setPixel(x, y, color);
-                        }
-                    }
-                }
-            }
-        });
-    } else {
-        for (int y = minY; y <= maxY; ++y) {
-            for (int x = minX; x <= maxX; ++x) {
-                float area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-                float w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
-                float w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
-                float w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
-
-                if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                    float u, v, w;
-                    interpolateAttributes(v0, v1, v2, x, y, u, v, w);
-
-                    // Execute fragment shader
-                    uint32_t color = fragmentShader(u, v, w);
-
-                    if (settings.useDepthBuffer) {
-                        setPixelWithDepth(x, y, w, color);
-                    } else {
-                        setPixel(x, y, color);
-                    }
+                if (settings.useDepthBuffer) {
+                    setPixelWithDepth(x, y, w, color);
+                } else {
+                    setPixel(x, y, color);
                 }
             }
         }
@@ -440,11 +435,6 @@ void CpuFrameBufferManager::drawCircle(int centerX, int centerY, int radius, uin
 
 // Draw a filled rectangle
 void CpuFrameBufferManager::drawRect(int x, int y, int width, int height, uint32_t color) {
-    if (settings.useSimd) {
-        fillRectSimd(x, y, width, height, color);
-        return;
-    }
-
     // Clip rectangle to screen bounds
     int x1 = std::max(0, x);
     int y1 = std::max(0, y);
@@ -453,22 +443,9 @@ void CpuFrameBufferManager::drawRect(int x, int y, int width, int height, uint32
 
     if (x2 < x1 || y2 < y1) return;
 
-    if (settings.numThreads > 1 && height > 50) {
-        executeParallel([=](int startY, int endY) {
-            startY = std::max(startY, y1);
-            endY = std::min(endY, y2 + 1);
-
-            for (int cy = startY; cy < endY; ++cy) {
-                for (int cx = x1; cx <= x2; ++cx) {
-                    framebuffer[cy * settings.width + cx] = color;
-                }
-            }
-        });
-    } else {
-        for (int cy = y1; cy <= y2; ++cy) {
-            for (int cx = x1; cx <= x2; ++cx) {
-                framebuffer[cy * settings.width + cx] = color;
-            }
+    for (int cy = y1; cy <= y2; ++cy) {
+        for (int cx = x1; cx <= x2; ++cx) {
+            framebuffer[cy * settings.width + cx] = color;
         }
     }
 }
@@ -547,122 +524,6 @@ uint32_t CpuFrameBufferManager::blendColors(uint32_t c1, uint32_t c2, float alph
     return (r << 16) | (g << 8) | b;
 }
 
-// SIMD-optimized clear function
-void CpuFrameBufferManager::clearSimd(uint32_t color) {
-#ifdef __AVX2__
-    // Use AVX2 if available
-    __m256i color_vec = _mm256_set1_epi32(color);
-    int simdWidth = settings.width / 8;
-
-    for (int i = 0; i < settings.height; ++i) {
-        uint32_t* row = &framebuffer[i * settings.width];
-
-        // Process 8 pixels at a time with AVX2
-        for (int j = 0; j < simdWidth; ++j) {
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(row + j * 8), color_vec);
-        }
-
-        // Handle remaining pixels
-        for (int j = simdWidth * 8; j < settings.width; ++j) {
-            row[j] = color;
-        }
-    }
-
-    // Clear depth buffer if needed
-    if (settings.useDepthBuffer) {
-        std::fill(depthBuffer.begin(), depthBuffer.end(), 1.0f);
-    }
-#else
-    // Fall back to non-SIMD implementation
-    std::fill(framebuffer.begin(), framebuffer.end(), color);
-
-    if (settings.useDepthBuffer) {
-        std::fill(depthBuffer.begin(), depthBuffer.end(), 1.0f);
-    }
-#endif
-}
-
-// SIMD-optimized rectangle fill
-void CpuFrameBufferManager::fillRectSimd(int x, int y, int width, int height, uint32_t color) {
-    // Clip rectangle to screen bounds
-    int x1 = std::max(0, x);
-    int y1 = std::max(0, y);
-    int x2 = std::min(settings.width - 1, x + width - 1);
-    int y2 = std::min(settings.height - 1, y + height - 1);
-
-    if (x2 < x1 || y2 < y1) return;
-
-    int rectWidth = x2 - x1 + 1;
-
-#ifdef __AVX2__
-    __m256i color_vec = _mm256_set1_epi32(color);
-
-    for (int cy = y1; cy <= y2; ++cy) {
-        uint32_t* row = &framebuffer[cy * settings.width + x1];
-        int remainingWidth = rectWidth;
-        int offset = 0;
-
-        // Process chunks of 8 pixels with AVX2
-        while (remainingWidth >= 8) {
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(row + offset), color_vec);
-            offset += 8;
-            remainingWidth -= 8;
-        }
-
-        // Handle remaining pixels
-        for (int i = 0; i < remainingWidth; ++i) {
-            row[offset + i] = color;
-        }
-    }
-#else
-    // Fall back to non-SIMD implementation
-    for (int cy = y1; cy <= y2; ++cy) {
-        uint32_t* row = &framebuffer[cy * settings.width + x1];
-        for (int cx = 0; cx < rectWidth; ++cx) {
-            row[cx] = color;
-        }
-    }
-#endif
-}
-
-// Multi-threaded execution helper using the ThreadPool
-void CpuFrameBufferManager::executeParallel(const std::function<void(int startY, int endY)>& func) {
-    if (settings.numThreads <= 1) {
-        // Single-threaded execution
-        func(0, settings.height);
-        return;
-    }
-
-    // Calculate optimal chunk size
-    int linesPerTask = 32; // Adjust this value based on performance testing
-    int numTasks = (settings.height + linesPerTask - 1) / linesPerTask;
-
-    // Vector to hold futures for tracking task completion
-    std::vector<std::future<void>> futures;
-    futures.reserve(numTasks);
-
-    // Reset and increment pendingTasks counter
-    pendingTasks = numTasks;
-
-    // Submit tasks to the thread pool
-    for (int i = 0; i < numTasks; ++i) {
-        int startY = i * linesPerTask;
-        int endY = std::min(startY + linesPerTask, settings.height);
-
-        auto future = threadPool.submit([this, func, startY, endY]() {
-            func(startY, endY);
-            --pendingTasks;
-        });
-
-        futures.push_back(std::move(future));
-    }
-
-    // Wait for all tasks to complete
-    for (auto& future : futures) {
-        future.wait();
-    }
-}
-
 // Resize framebuffer
 void CpuFrameBufferManager::resizeFramebuffer(int width, int height) {
     if (width == settings.width && height == settings.height) {
@@ -677,4 +538,6 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height) {
     if (settings.useDepthBuffer) {
         depthBuffer.resize(width * height, 1.0f);
     }
+}
+
 }

@@ -2,6 +2,7 @@
 
 #include "SDLAuraWindowManager.h"
 
+#include <chrono>
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <SDL2/SDL_vulkan.h>
@@ -149,6 +150,8 @@ void SDLAuraWindowManager::process(std::function<void ()>&& actions)
 {
     SDL_Event event;
 
+    // auto start_tick = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    // uint64_t frame_counter = 0;
     // Main event loop
     while (!_windowShouldClose) {
         eventLoop(event);
@@ -161,6 +164,14 @@ void SDLAuraWindowManager::process(std::function<void ()>&& actions)
         SDL_GL_SwapWindow(_window);  // Swap OpenGL buffers
 #endif
         _windowFlags.frame_counter++;
+
+        // auto end_tick = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        // if (end_tick - start_tick >= 1)
+        // {
+        //     start_tick = end_tick;
+        //     PLOG_DEBUG << "fps: " << _windowFlags.frame_counter - frame_counter;
+        //     frame_counter = _windowFlags.frame_counter;
+        // }
     }
 }
 
