@@ -12,6 +12,7 @@ namespace aura3d {
         int width;
         int height;
         bool resizable;
+        int targetFPS;
     };
 
     struct WindowFlags {

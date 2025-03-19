@@ -9,7 +9,7 @@
 #include <glad/gl.h>
 #include <vector>
 #include <functional>
-#include <thread>
+#include <memory>
 
 #include <AuraWindowManagers/AuraKeyboardListener/AuraKeyboardListener.h>
 #include <AuraWindowManagers/CommonWindow.hpp>
@@ -68,6 +68,7 @@ public:
      */
     std::vector<const char*> getVulkanExtensions() const;
 
+    WindowDetails* getWindowDetails();
     WindowFlags* getWindowFlags();
 
 private:

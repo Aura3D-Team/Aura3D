@@ -19,6 +19,7 @@ class CpuRunner
 {
 public:
     CpuRunner(WindowDetails windowDetails);
+    ~CpuRunner();
 
     void run();
 
@@ -29,7 +30,7 @@ private:
     std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
 #endif
 
-    std::unique_ptr<CpuFrameBufferManager> _cpuFrameBufferManager;
+    std::unique_ptr<CpuFrameBufferManager> _frameBufferManager;
 };
 
 }

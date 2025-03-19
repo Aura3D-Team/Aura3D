@@ -1,38 +1,36 @@
-#include <plog/Log.h>
-#include <plog/Initializers/ConsoleInitializer.h>
-#include <plog/Formatters/TxtFormatter.h>
-// #include <plog/Formatters/MessageOnlyFormatter.h>
-#include <plog/Appenders/ColorConsoleAppender.h>
+#include "AuraLogger/AuraLogger.h"
 
 // #define VK_USE_PLATFORM_WIN32_KHR
 // #define GLFW_EXPOSE_NATIVE_WIN32
 
-#ifdef USE_VULKAN_API
+#ifdef USE_CPU
+#include <Runners/CpuRunner.h>
+#elif defined(USE_VULKAN_API)
 #include <Runners/VkRunner.h>
 #else
 #include <Runners/GlRunner.h>
 #endif
 
 #ifdef NDEBUG
-    const plog::Severity plogSeverity = plog::info;
+    const aura3d::LogLevel logSeverity = aura3d::LogLevel::INFO;
 #else
-    const plog::Severity plogSeverity = plog::debug;
+    const aura3d::LogLevel logSeverity = aura3d::LogLevel::TRACE;
 #endif
 
 int main(int argc, char **argv)
 {
-    static plog::ColorConsoleAppender<plog::TxtFormatter> consoleAppender;
-    plog::init(plogSeverity, &consoleAppender);
+    AURA_CORE_LOGGER;
 
     aura3d::WindowDetails windowDetails = {
         .width = 1280,
         .height = 720,
-        .resizable = true
+        .resizable = true,
+        .targetFPS = 30
     };
 
 #ifdef USE_CPU
-    aura3d::GlRunner glRunner(windowDetails);
-    glRunner.run();
+    aura3d::CpuRunner CpuRunner(windowDetails);
+    CpuRunner.run();
 #elif defined(USE_VULKAN_API)
     aura3d::VkInstanceData vkInstanceData = {
         .appName = "Aura3D",

@@ -3,12 +3,17 @@
 #include "SDLAuraWindowManager.h"
 
 #include <chrono>
+#include <thread>
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <SDL2/SDL_vulkan.h>
-#include <plog/Log.h>
 
 #include <AuraException/AuraException.h>
+#ifdef USE_CPU
+#include <CpuAura/CpuFrameBufferManager.h>
+#endif
+
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 
@@ -35,17 +40,17 @@ SDLAuraWindowManager::SDLAuraWindowManager(WindowDetails windowDetails) :
     }
 #endif
 
-    PLOG_INFO << "SDL2 initialized.";
+    AURA_INFO << "SDL2 initialized.";
 }
 
 SDLAuraWindowManager::~SDLAuraWindowManager()
 {
     if (_window) {
         SDL_DestroyWindow(_window);
-        PLOG_DEBUG << "SDL2 window destroyed.";
+        AURA_DEBUG << "SDL2 window destroyed.";
     }
     SDL_Quit();
-    PLOG_DEBUG << "SDL2 terminated.";
+    AURA_DEBUG << "SDL2 terminated.";
 }
 
 SDL_Window* SDLAuraWindowManager::getWindowInstance()
@@ -58,8 +63,17 @@ WindowFlags* SDLAuraWindowManager::getWindowFlags()
     return &_windowFlags;
 }
 
+WindowDetails* SDLAuraWindowManager::getWindowDetails()
+{
+    return &_windowDetails;
+}
+
 void SDLAuraWindowManager::eventLoop(SDL_Event& event)
 {
+#ifdef USE_CPU
+    CpuFrameBufferManager* RenderApiManager = static_cast<CpuFrameBufferManager*>(SDL_GetWindowData(_window, "CpuFrameBufferManager"));
+#endif
+
     while (SDL_PollEvent(&event)) {
         switch (event.type)
         {
@@ -69,6 +83,11 @@ void SDLAuraWindowManager::eventLoop(SDL_Event& event)
             case SDL_WINDOWEVENT:
                 if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
                     // _windowFlags.resized = true;
+                    int newWidth = event.window.data1;
+                    int newHeight = event.window.data2;
+                #ifdef USE_CPU
+                    // RenderApiManager->resizeFramebuffer(newWidth, newHeight);
+                #endif
                 }
                 break;
             case SDL_KEYDOWN:
@@ -92,7 +111,7 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
         _windowDetails.width,
         _windowDetails.height,
 #ifdef USE_CPU
-        SDL_WINDOW_SHOWN // CPU rendering
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN// CPU rendering
 #elif defined(USE_OPENGL_API)
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN
 #elif defined(USE_VULKAN_API)
@@ -120,8 +139,8 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
     ));
 
     _keyboardListener->addKeyAction(SDL_KeyCode::SDLK_m, AuraKeyAction(
-        [this]() { PLOG_INFO << "Metatada key m pressed"; }, // onPress
-        [this]() { PLOG_INFO << "Metatada key m released"; } // onRelease
+        [this]() { AURA_INFO << "Metatada key m pressed"; }, // onPress
+        [this]() { AURA_INFO << "Metatada key m released"; } // onRelease
     ));
 
 #ifdef USE_OPENGL_API
@@ -140,21 +159,28 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
         throw aura3d::AuraException("Failed to load OpenGL functions");
     }
 
-    PLOG_INFO << "OpenGL context created successfully.";
+    AURA_INFO << "OpenGL context created successfully.";
 #endif
 
-    PLOG_INFO << "SDL Window created: " << windowName;
+    AURA_INFO << "SDL Window created: " << windowName;
 }
 
 void SDLAuraWindowManager::process(std::function<void ()>&& actions)
 {
     SDL_Event event;
 
-    // auto start_tick = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    // uint64_t frame_counter = 0;
+    const std::chrono::milliseconds frameTime(1000 / _windowDetails.targetFPS);
     // Main event loop
     while (!_windowShouldClose) {
+        std::chrono::time_point startTime = std::chrono::high_resolution_clock::now();
+
         eventLoop(event);
+
+        if (_windowDetails.resizable)
+        {
+            _windowDetails.resizable = false;
+            continue;
+        }
 
         actions();  // Execute the actions provided by the user
 
@@ -165,13 +191,12 @@ void SDLAuraWindowManager::process(std::function<void ()>&& actions)
 #endif
         _windowFlags.frame_counter++;
 
-        // auto end_tick = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        // if (end_tick - start_tick >= 1)
-        // {
-        //     start_tick = end_tick;
-        //     PLOG_DEBUG << "fps: " << _windowFlags.frame_counter - frame_counter;
-        //     frame_counter = _windowFlags.frame_counter;
-        // }
+        std::chrono::time_point endTime = std::chrono::high_resolution_clock::now();
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+        if (elapsedTime < frameTime) {
+            std::this_thread::sleep_for(frameTime - elapsedTime);
+        }
     }
 }
 
