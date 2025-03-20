@@ -108,7 +108,8 @@ void CpuFrameBufferManager::clear(uint32_t color)
  * 3. Copy texture to renderer
  * 4. Present the renderer (display the result)
  */
-void CpuFrameBufferManager::renderFramebuffer() {
+void CpuFrameBufferManager::renderFramebuffer()
+{
     SDL_UpdateTexture(_texture, nullptr, framebuffer.data(), settings.width * sizeof(uint32_t));
     SDL_RenderClear(_renderer);
     SDL_RenderCopy(_renderer, _texture, nullptr, nullptr);
@@ -120,7 +121,8 @@ void CpuFrameBufferManager::renderFramebuffer() {
  * @param width New width in pixels
  * @param height New height in pixels
  */
-void CpuFrameBufferManager::resizeFramebuffer(int width, int height) {
+void CpuFrameBufferManager::resizeFramebuffer(int width, int height)
+{
     // Validate input dimensions
     if (width <= 0 || height <= 0) {
         AURA_ERROR << "Error: Invalid framebuffer dimensions (" << width << "x" << height << ")";
@@ -165,10 +167,10 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height) {
     settings.height = height;
 
     // Swap buffers (safer than move)
-    framebuffer.swap(newFramebuffer);
+    framebuffer = std::move(newFramebuffer);
 
     if (settings.useDepthBuffer) {
-        depthBuffer.swap(newDepthBuffer);
+        depthBuffer = std::move(newDepthBuffer);
     }
 }
 
@@ -178,7 +180,8 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height) {
  * @param y Y-coordinate to check
  * @return true if coordinates are valid, false otherwise
  */
-bool CpuFrameBufferManager::isInsideBounds(int x, int y) const {
+bool CpuFrameBufferManager::isInsideBounds(int x, int y) const
+{
     return x >= 0 && x < settings.width && y >= 0 && y < settings.height;
 }
 
@@ -188,7 +191,8 @@ bool CpuFrameBufferManager::isInsideBounds(int x, int y) const {
  * @param y Y-coordinate
  * @param color 32-bit color value (0xRRGGBB format)
  */
-void CpuFrameBufferManager::setPixel(int x, int y, uint32_t color) {
+void CpuFrameBufferManager::setPixel(int x, int y, uint32_t color)
+{
     if (isInsideBounds(x, y)) {
         framebuffer[y * settings.width + x] = color;
     }
@@ -201,16 +205,15 @@ void CpuFrameBufferManager::setPixel(int x, int y, uint32_t color) {
  * @param z Depth value (smaller values are closer to camera)
  * @param color 32-bit color value (0xRRGGBB format)
  */
-void CpuFrameBufferManager::setPixelWithDepth(int x, int y, float z, uint32_t color) {
+void CpuFrameBufferManager::setPixelWithDepth(int x, int y, float z, uint32_t color)
+{
     if (!isInsideBounds(x, y)) return;
     const int index = y * settings.width + x;
-    // Only update pixel if it's closer than the existing depth
-    // or if depth testing is disabled
-    if (!settings.useDepthBuffer || z < depthBuffer[index]) {
-        framebuffer[index] = color;
-        if (settings.useDepthBuffer) {
-            depthBuffer[index] = z; // Update depth buffer
-        }
+
+    framebuffer[index] = color;
+
+    if (settings.useDepthBuffer) {
+        depthBuffer[index] = z; // Update depth buffer
     }
 }
 
@@ -220,11 +223,20 @@ void CpuFrameBufferManager::setPixelWithDepth(int x, int y, float z, uint32_t co
  * @param y Y-coordinate
  * @return 32-bit color value, or 0 if coordinates are invalid
  */
-uint32_t CpuFrameBufferManager::getPixel(int x, int y) const {
+uint32_t CpuFrameBufferManager::getPixel(int x, int y) const
+{
     if (isInsideBounds(x, y)) {
         return framebuffer[y * settings.width + x];
     }
     return 0;
+}
+
+float CpuFrameBufferManager::getDepthPixel(int x, int y) const
+{
+    if (isInsideBounds(x, y)) {
+        return depthBuffer[y * settings.width + x];
+    }
+    return 1.0f;
 }
 
 /**
@@ -236,7 +248,8 @@ uint32_t CpuFrameBufferManager::getPixel(int x, int y) const {
  * This algorithm uses integer-only arithmetic for speed.
  * It works by determining which pixels to color based on the error accumulation.
  */
-void CpuFrameBufferManager::drawLine(int x0, int y0, int x1, int y1, uint32_t color) {
+void CpuFrameBufferManager::drawLine(int x0, int y0, int x1, int y1, uint32_t color)
+{
     int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
     int err = dx + dy, e2;
@@ -766,16 +779,17 @@ void CpuFrameBufferManager::drawText(const std::string& text, int x, int y, uint
 
             // Scale each row vertically
             for (int scaleY = 0; scaleY < fontSize; scaleY++) {
-                int pixelY = y + (row * fontSize) + scaleY;
+                int pixelY = y + (int)(row * fontSize) + scaleY;
                 if (pixelY < 0 || pixelY >= settings.height) continue;
 
                 // Process each bit in the row
                 for (int col = 0; col < _font.charWidth; col++) {
                     bool isPixelOn = (rowBits & (1 << (_font.charWidth - 1 - col))) != 0;
-                    if (isPixelOn) {
+                    if (isPixelOn)
+                    {
                         // Scale each pixel horizontally
                         for (int scaleX = 0; scaleX < fontSize; scaleX++) {
-                            int pixelX = cursorX + (col * fontSize) + scaleX;
+                            int pixelX = cursorX + (int)(col * fontSize) + scaleX;
                             if (pixelX < 0 || pixelX >= settings.width) continue;
 
                             setPixel(pixelX, pixelY, color);

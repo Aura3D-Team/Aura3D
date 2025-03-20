@@ -75,9 +75,11 @@ public:
     void resizeFramebuffer(int width, int height);
 
     // Basic drawing functions
+    uint32_t getPixel(int x, int y) const;
     void setPixel(int x, int y, uint32_t color);
     void setPixelWithDepth(int x, int y, float z, uint32_t color);
-    uint32_t getPixel(int x, int y) const;
+    float getDepthPixel(int x, int y) const;
+
     void drawLine(int x0, int y0, int x1, int y1, uint32_t color);
     void drawAALine(int x0, int y0, int x1, int y1, uint32_t color); // Anti-aliased line
 
