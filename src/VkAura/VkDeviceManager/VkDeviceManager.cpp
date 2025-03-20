@@ -1,8 +1,8 @@
 #include "VkDeviceManager.h"
-#include "plog/Log.h"
 
 #include <aura.hpp>
 #include "AuraException/AuraException.h"
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 
@@ -21,7 +21,7 @@ VkDeviceManager::~VkDeviceManager() {
         _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
-    PLOG_DEBUG << "VkDeviceManager deleted";
+    AURA_DEBUG << "VkDeviceManager deleted";
 }
 
 void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
@@ -36,7 +36,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     result = vkEnumeratePhysicalDevices(vkInstance, &_physicaldeviceCount, devices.data());
     VK_RESULT_CHECK(result);
 
-    PLOG_INFO << "Found " << _physicaldeviceCount << " Vulkan physical device(s).";
+    AURA_VERBOSE << "Found " << _physicaldeviceCount << " Vulkan physical device(s).";
 
     uint32_t bestScore = 0;
 
@@ -48,15 +48,15 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         VkPhysicalDeviceFeatures deviceFeatures;
         vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
-        PLOG_INFO << "-------------------------------------------------------------------------------";
-        PLOG_INFO << "Device Name: " << deviceProperties.deviceName;
-        PLOG_INFO << "API Version: " << VK_VERSION_MAJOR(deviceProperties.apiVersion) << "."
+        AURA_VERBOSE << "-------------------------------------------------------------------------------";
+        AURA_VERBOSE << "Device Name: " << deviceProperties.deviceName;
+        AURA_VERBOSE << "API Version: " << VK_VERSION_MAJOR(deviceProperties.apiVersion) << "."
                   << VK_VERSION_MINOR(deviceProperties.apiVersion) << "."
                   << VK_VERSION_PATCH(deviceProperties.apiVersion);
-        PLOG_INFO << "Driver Version: " << deviceProperties.driverVersion;
-        PLOG_INFO << "Vendor ID: " << deviceProperties.vendorID;
-        PLOG_INFO << "Device ID: " << deviceProperties.deviceID;
-        PLOG_INFO << "Device Type: " << deviceProperties.deviceType;
+        AURA_VERBOSE << "Driver Version: " << deviceProperties.driverVersion;
+        AURA_VERBOSE << "Vendor ID: " << deviceProperties.vendorID;
+        AURA_VERBOSE << "Device ID: " << deviceProperties.deviceID;
+        AURA_VERBOSE << "Device Type: " << deviceProperties.deviceType;
 
         // Scoring the device
         uint32_t score = 0;
@@ -76,7 +76,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         score += deviceProperties.limits.maxImageDimension2D;
         score += deviceProperties.limits.maxImageDimension3D;
 
-        PLOG_INFO << "Score for this device: " << score;
+        AURA_VERBOSE << "Score for this device: " << score;
 
         if (score > bestScore) {
             bestScore = score;
@@ -90,9 +90,9 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         throw AuraException("No suitable physical device found.");
     }
 
-    PLOG_INFO << "-------------------------------------------------------------------------------";
-    PLOG_INFO << "Choosed device score: " << bestScore;
-    PLOG_INFO << "-------------------------------------------------------------------------------";
+    AURA_VERBOSE << "-------------------------------------------------------------------------------";
+    AURA_VERBOSE << "Choosed device score: " << bestScore;
+    AURA_VERBOSE << "-------------------------------------------------------------------------------";
 
     result = _checkDeviceExtensionSupport(_vkDeviceCreationData.vkDeviceExtensions);
     VK_RESULT_CHECK(result);
@@ -128,7 +128,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         _vkQueueManager.setupQueue(_device, familyIndex, f);
     }
 
-    PLOG_INFO << "Logical Vulkan device created successfully.";
+    AURA_VERBOSE << "Logical Vulkan device created successfully.";
 }
 
 VkDevice* VkDeviceManager::getDevice()

@@ -2,7 +2,7 @@
 
 #include <aura.hpp>
 
-#include <plog/Log.h>
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 

@@ -1,5 +1,5 @@
 #include "VkRunner.h"
-#include <plog/Log.h>
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 
@@ -250,7 +250,7 @@ void VkRunner::run()
 
         if (imageIndex >= ImagesCount)
         {
-            PLOG_WARNING << "Swap chain needs recreation!";
+            AURA_WARN << "Swap chain needs recreation!";
             windowFlags->resized = false;
             handleWindowChanges();
             return;

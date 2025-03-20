@@ -1,6 +1,9 @@
 #include "CpuFrameBufferManager.h"
 
 #include <cstring>
+// #include <sstream>
+// #include <iomanip>
+#include <cmath>
 
 #include "AuraException/AuraException.h"
 #include "AuraLogger/AuraLogger.h"
@@ -17,7 +20,8 @@ CpuFrameBufferManager::CpuFrameBufferManager(SDL_Window* window, Config config) 
     framebuffer(config.width * config.height, 0), // Initialize with black pixels
     _window(window),
     _renderer(nullptr),
-    _texture(nullptr)
+    _texture(nullptr),
+    _font(GetDefaultBitmapFont())
 {
     // Create depth buffer if enabled in settings
     if (settings.useDepthBuffer) {
@@ -34,8 +38,8 @@ CpuFrameBufferManager::CpuFrameBufferManager(SDL_Window* window, Config config) 
         SDL_TEXTUREACCESS_STREAMING,
         settings.width,
         settings.height
-    );
-    AURA_ASSERT_MSG(_renderer != nullptr, "Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
+        );
+    AURA_ASSERT_MSG(_texture != nullptr, "Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
 }
 
 /**
@@ -139,7 +143,7 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height) {
         SDL_PIXELFORMAT_ARGB8888,
         SDL_TEXTUREACCESS_STREAMING,
         width, height
-    );
+        );
 
     if (_texture == nullptr) {
         throw aura3d::AuraException("Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
@@ -166,9 +170,6 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height) {
     if (settings.useDepthBuffer) {
         depthBuffer.swap(newDepthBuffer);
     }
-
-    // Log the resize operation
-    AURA_DEBUG << "Framebuffer resized to " << width << "x" << height;
 }
 
 /**
@@ -622,6 +623,12 @@ void CpuFrameBufferManager::drawFillRect(int x, int y, int width, int height, ui
     }
 }
 
+/**
+ * Draws a rectangle outline
+ * @param x, y Top-left corner coordinates
+ * @param width, height Dimensions of the rectangle
+ * @param color Rectangle color
+ */
 void CpuFrameBufferManager::drawRect(int x, int y, int width, int height, uint32_t color)
 {
     int xmin = std::max(0, x);;
@@ -724,6 +731,94 @@ uint32_t CpuFrameBufferManager::blendColors(uint32_t c1, uint32_t c2, float alph
     uint8_t b = static_cast<uint8_t>(b1 * (1.0f - alpha) + b2 * alpha);
     // Combine components back into a single color value
     return (r << 16) | (g << 8) | b;
+}
+
+void CpuFrameBufferManager::drawText(const std::string& text, int x, int y, uint32_t color, float fontSize) {
+    int cursorX = x;
+    // Calculate scaled dimensions
+    int scaledWidth = std::floor(_font.charWidth * fontSize);
+    int scaledHeight = std::floor(_font.charHeight * fontSize);
+    int scaledSpacing = std::ceil(_font.charSpacing * fontSize);
+
+    for (char c : text) {
+        // Handle newline
+        if (c == '\n') {
+            cursorX = x;
+            y += scaledHeight + scaledSpacing;
+            continue;
+        }
+
+        // Replace non-ASCII with ?
+        if (c < 0 || c > 127) c = '?';
+
+        // Skip if completely out of bounds
+        if (cursorX >= settings.width || y >= settings.height || cursorX + scaledWidth <= 0 || y + scaledHeight <= 0) {
+            cursorX += scaledWidth + scaledSpacing;
+            continue;
+        }
+
+        // Fix cast syntax
+        const auto& charData = _font.data[static_cast<unsigned char>(c)];
+
+        // Draw character with scaling
+        for (int row = 0; row < _font.charHeight; row++) {
+            uint8_t rowBits = charData[row];
+
+            // Scale each row vertically
+            for (int scaleY = 0; scaleY < fontSize; scaleY++) {
+                int pixelY = y + (row * fontSize) + scaleY;
+                if (pixelY < 0 || pixelY >= settings.height) continue;
+
+                // Process each bit in the row
+                for (int col = 0; col < _font.charWidth; col++) {
+                    bool isPixelOn = (rowBits & (1 << (_font.charWidth - 1 - col))) != 0;
+                    if (isPixelOn) {
+                        // Scale each pixel horizontally
+                        for (int scaleX = 0; scaleX < fontSize; scaleX++) {
+                            int pixelX = cursorX + (col * fontSize) + scaleX;
+                            if (pixelX < 0 || pixelX >= settings.width) continue;
+
+                            setPixel(pixelX, pixelY, color);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Move cursor to next character position
+        cursorX += scaledWidth + scaledSpacing;
+    }
+}
+
+int CpuFrameBufferManager::getTextWidth(const std::string& text)
+{
+    int width = 0;
+    int maxWidth = 0;
+
+    for (char c : text) {
+        if (c == '\n') {
+            maxWidth = std::max(maxWidth, width);
+            width = 0;
+            continue;
+        }
+
+        width += _font.charWidth + _font.charSpacing;
+    }
+
+    return std::max(maxWidth, width);
+}
+
+int CpuFrameBufferManager::getTextHeight(const std::string& text)
+{
+    int lines = 1;
+
+    for (char c : text) {
+        if (c == '\n') {
+            lines++;
+        }
+    }
+
+    return lines * (_font.charHeight + 1) - 1;
 }
 
 }  // namespace aura3d

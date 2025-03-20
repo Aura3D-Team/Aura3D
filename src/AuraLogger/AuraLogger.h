@@ -1,3 +1,6 @@
+#ifndef AURALOGGER_H
+#define AURALOGGER_H
+
 #pragma once
 #include <string>
 #include <sstream>
@@ -23,7 +26,8 @@ enum class LogLevel {
     WARN = 3,
     INFO = 4,
     DEBUG = 5,
-    TRACE = 6
+    VERBOSE = 6,
+    TRACE = 7
 };
 
 class Logger {
@@ -46,7 +50,9 @@ public:
         static constexpr const char* BLUE    = "\033[34m";
         static constexpr const char* MAGENTA = "\033[35m";
         static constexpr const char* CYAN    = "\033[36m";
+        static constexpr const char* DARK_GRAY = "\033[90;1m";
         static constexpr const char* WHITE   = "\033[37m";
+        static constexpr const char* BOLD_RED    = "\033[31;1m";
         static constexpr const char* BOLD    = "\033[1m";
         static constexpr const char* UNDERLINE = "\033[4m";
     };
@@ -131,6 +137,9 @@ private:
 #define AURA_LOG_TRACE(logger) \
 aura3d::LogStream(logger, aura3d::LogLevel::TRACE, __FILE__, __LINE__)
 
+#define AURA_LOG_VERBOSE(logger) \
+aura3d::LogStream(logger, aura3d::LogLevel::VERBOSE, __FILE__, __LINE__)
+
 #define AURA_LOG_DEBUG(logger) \
     aura3d::LogStream(logger, aura3d::LogLevel::DEBUG, __FILE__, __LINE__)
 
@@ -162,6 +171,7 @@ aura3d::LogStream(logger, aura3d::LogLevel::TRACE, __FILE__, __LINE__)
 #define AURA_FATAL ((void)0)
 #else
 #define AURA_TRACE aura3d::LogStream(AURA_CORE_LOGGER, aura3d::LogLevel::TRACE, __FILE__, __LINE__)
+#define AURA_VERBOSE aura3d::LogStream(AURA_CORE_LOGGER, aura3d::LogLevel::VERBOSE, __FILE__, __LINE__)
 #define AURA_DEBUG aura3d::LogStream(AURA_CORE_LOGGER, aura3d::LogLevel::DEBUG, __FILE__, __LINE__)
 #define AURA_INFO  aura3d::LogStream(AURA_CORE_LOGGER, aura3d::LogLevel::INFO, __FILE__, __LINE__)
 #define AURA_WARN  aura3d::LogStream(AURA_CORE_LOGGER, aura3d::LogLevel::WARN, __FILE__, __LINE__)
@@ -169,5 +179,4 @@ aura3d::LogStream(logger, aura3d::LogLevel::TRACE, __FILE__, __LINE__)
 #define AURA_FATAL aura3d::LogStream(AURA_CORE_LOGGER, aura3d::LogLevel::FATAL, __FILE__, __LINE__)
 #endif
 
-// Initialize the logger
-void InitializeLogger();
+#endif // AURALOGGER_H

@@ -32,11 +32,12 @@ std::string Logger::getColorForLevel(LogLevel level) const {
 
     switch (level) {
         case LogLevel::TRACE: return Colors::CYAN;
+        case LogLevel::VERBOSE: return Colors::DARK_GRAY;
         case LogLevel::DEBUG: return Colors::BLUE;
         case LogLevel::INFO:  return Colors::GREEN;
         case LogLevel::WARN:  return Colors::YELLOW;
         case LogLevel::ERROR: return Colors::RED;
-        case LogLevel::FATAL: return std::string(Colors::RED) + Colors::BOLD;
+        case LogLevel::FATAL: return Colors::BOLD_RED;
         default:              return "";
     }
 }
@@ -44,9 +45,10 @@ std::string Logger::getColorForLevel(LogLevel level) const {
 std::string Logger::getLevelString(LogLevel level) const {
     switch (level) {
         case LogLevel::TRACE: return "TRACE";
+        case LogLevel::VERBOSE: return "VERBOSE";
         case LogLevel::DEBUG: return "DEBUG";
-        case LogLevel::INFO:  return "INFO ";
-        case LogLevel::WARN:  return "WARN ";
+        case LogLevel::INFO:  return "INFO";
+        case LogLevel::WARN:  return "WARN";
         case LogLevel::ERROR: return "ERROR";
         case LogLevel::FATAL: return "FATAL";
         default:              return "UNKNOWN";
@@ -198,10 +200,6 @@ void LogManager::setUseColors(bool useColors) {
     for (auto& pair : m_Loggers) {
         pair.second->setUseColors(useColors);
     }
-}
-
-void InitializeLogger() {
-    LogManager::getInstance().getLogger("AURA");
 }
 
 }

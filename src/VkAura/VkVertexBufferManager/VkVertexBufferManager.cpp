@@ -1,7 +1,7 @@
 #include "VkVertexBufferManager.h"
 #include "VkAura/VkBufferManager/VkBufferManager.h"
 #include "AuraException/AuraException.h"
-#include <plog/Log.h>
+#include "AuraLogger/AuraLogger.h"
 #include <cstring>
 
 namespace aura3d {
@@ -11,13 +11,13 @@ VkVertexBufferManager::VkVertexBufferManager(VkHostAllocator* vkHostAllocator,
                                              VkDevice* vkDevice) :
     vkHostAllocator(vkHostAllocator), vkDeviceAllocator(vkDeviceAllocator), _vkDevice(vkDevice)
 {
-    PLOG_INFO << "VkVertexBufferManager created";
+    AURA_INFO << "VkVertexBufferManager created";
 }
 
 VkVertexBufferManager::~VkVertexBufferManager()
 {
     cleanup();
-    PLOG_INFO << "VkVertexBufferManager destroyed";
+    AURA_INFO << "VkVertexBufferManager destroyed";
 }
 
 void VkVertexBufferManager::createVertexBuffer(const std::string& name,
@@ -73,7 +73,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
             storedAlloc.mappingState = AllocationMappingState::PERSISTENTLY_MAPPED;
         }
 
-        PLOG_DEBUG << "Created persistently mapped vertex buffer: " << name
+        AURA_DEBUG << "Created persistently mapped vertex buffer: " << name
                    << ", vertices: " << bufferInfo.vertexCount;
     } else {
         // For non-persistent mapping, use the staging buffer approach
@@ -131,7 +131,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
         vkDestroyBuffer(*_vkDevice, stagingBuffer, vkHostAllocator->getCallbacks());
         vkDeviceAllocator->freeMemory(stagingAllocation);
 
-        PLOG_DEBUG << "Created device-local vertex buffer: " << name
+        AURA_DEBUG << "Created device-local vertex buffer: " << name
                    << ", vertices: " << bufferInfo.vertexCount;
     }
 
@@ -192,7 +192,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
             storedAlloc.mappingState = AllocationMappingState::PERSISTENTLY_MAPPED;
         }
 
-        PLOG_DEBUG << "Created persistently mapped 3D vertex buffer: " << name
+        AURA_DEBUG << "Created persistently mapped 3D vertex buffer: " << name
                    << ", vertices: " << bufferInfo.vertexCount;
     } else {
         // For non-persistent mapping, use the staging buffer approach
@@ -250,7 +250,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
         vkDestroyBuffer(*_vkDevice, stagingBuffer, vkHostAllocator->getCallbacks());
         vkDeviceAllocator->freeMemory(stagingAllocation);
 
-        PLOG_DEBUG << "Created device-local 3D vertex buffer: " << name
+        AURA_DEBUG << "Created device-local 3D vertex buffer: " << name
                    << ", vertices: " << bufferInfo.vertexCount;
     }
 
@@ -262,7 +262,7 @@ void VkVertexBufferManager::updateVertexBuffer(const std::string& name, const st
 {
     auto it = _vertexBuffers.find(name);
     if (it == _vertexBuffers.end() || !it->second.is2d) {
-        PLOG_ERROR << "Failed to update buffer - buffer doesn't exist or is not 2D: " << name;
+        AURA_ERROR << "Failed to update buffer - buffer doesn't exist or is not 2D: " << name;
         return;
     }
 
@@ -272,7 +272,7 @@ void VkVertexBufferManager::updateVertexBuffer(const std::string& name, const st
     // Retrieve allocation from allocator
     VkDeviceAllocation& allocation = vkDeviceAllocator->getAllocation(bufferInfo.allocationId);
     if (allocation.allocationId == 0) {
-        PLOG_ERROR << "Failed to retrieve allocation for buffer: " << name;
+        AURA_ERROR << "Failed to retrieve allocation for buffer: " << name;
         return;
     }
 
@@ -300,7 +300,7 @@ void VkVertexBufferManager::updateVertexBuffer(const std::string& name, const st
 {
     auto it = _vertexBuffers.find(name);
     if (it == _vertexBuffers.end() || it->second.is2d) {
-        PLOG_ERROR << "Failed to update buffer - buffer doesn't exist or is not 3D: " << name;
+        AURA_ERROR << "Failed to update buffer - buffer doesn't exist or is not 3D: " << name;
         return;
     }
 
@@ -310,7 +310,7 @@ void VkVertexBufferManager::updateVertexBuffer(const std::string& name, const st
     // Retrieve allocation from allocator
     VkDeviceAllocation& allocation = vkDeviceAllocator->getAllocation(bufferInfo.allocationId);
     if (allocation.allocationId == 0) {
-        PLOG_ERROR << "Failed to retrieve allocation for buffer: " << name;
+        AURA_ERROR << "Failed to retrieve allocation for buffer: " << name;
         return;
     }
 
@@ -341,7 +341,7 @@ VertexBufferInfo VkVertexBufferManager::getVertexBuffer(const std::string& name)
         return it->second;
     }
 
-    PLOG_ERROR << "Invalid vertex buffer name: " << name;
+    AURA_ERROR << "Invalid vertex buffer name: " << name;
     throw AuraException("Invalid VertexBuffer Name");
 }
 
@@ -378,7 +378,7 @@ void VkVertexBufferManager::cleanup(const std::string& name)
     // Remove from our map
     _vertexBuffers.erase(it);
 
-    PLOG_DEBUG << "Cleaned up vertex buffer: " << name;
+    AURA_DEBUG << "Cleaned up vertex buffer: " << name;
 }
 
 void VkVertexBufferManager::cleanup()
@@ -397,7 +397,7 @@ void VkVertexBufferManager::cleanup()
     // Clear the map (should already be empty)
     _vertexBuffers.clear();
 
-    PLOG_INFO << "Cleaned up all vertex buffers";
+    AURA_INFO << "Cleaned up all vertex buffers";
 }
 
 VkVertexInputBindingDescription VkVertexBufferManager::getBindingDescription(bool is2d)

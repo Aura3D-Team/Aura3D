@@ -2,7 +2,7 @@
 
 #include <aura.hpp>
 #include <AuraException/AuraException.h>
-#include <plog/Log.h>
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 
@@ -62,7 +62,7 @@ VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
     }
 
     // Base class destructor will handle pipeline and pipeline layout
-    PLOG_DEBUG << "Graphics Pipeline destroyed.";
+    AURA_DEBUG << "Graphics Pipeline destroyed.";
 }
 
 void VkGraphicsPipelineManager::initializeDynamicStates()
@@ -119,7 +119,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         // Store the layout
         _descriptorSetLayouts[setInfo.setIndex] = layout;
 
-        PLOG_DEBUG << "Created descriptor set layout for set " << setInfo.setIndex
+        AURA_DEBUG << "Created descriptor set layout for set " << setInfo.setIndex
                    << " with " << layoutBindings.size() << " bindings";
     }
 
@@ -149,7 +149,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     // Create the pipeline layout
     VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, vkHostAllocator->getCallbacks(), &_pipelineLayout));
 
-    PLOG_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts";
+    AURA_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts";
 }
 
 VkDescriptorSetLayout VkGraphicsPipelineManager::getDescriptorSetLayout(uint32_t setIndex) const
@@ -284,7 +284,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     // Create the graphics pipeline
     VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, vkHostAllocator->getCallbacks(), &_pipeline));
 
-    PLOG_DEBUG << "Graphics pipeline created";
+    AURA_DEBUG << "Graphics pipeline created";
 }
 
 void VkGraphicsPipelineManager::cmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint)

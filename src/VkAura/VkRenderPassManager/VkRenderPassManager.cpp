@@ -3,7 +3,7 @@
 #include <aura.hpp>
 #include "AuraException/AuraException.h"
 
-#include <plog/Log.h>
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 
@@ -19,7 +19,7 @@ VkRenderPassManager::~VkRenderPassManager()
 
     _device = nullptr;
 
-    PLOG_DEBUG << "RenderPass Destroyed.";
+    AURA_DEBUG << "RenderPass Destroyed.";
 }
 
 VkRenderPass* VkRenderPassManager::getRenderPass()

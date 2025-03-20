@@ -3,7 +3,7 @@
 #include <AuraException/AuraException.h>
 
 #include <algorithm>
-#include <plog/Log.h>
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 
@@ -105,14 +105,14 @@ void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface
         _swapChainCreateInfo.queueFamilyIndexCount = static_cast<uint32_t>(queueFamilyIndices.size());
         _swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices.data();
 
-        PLOG_DEBUG << "VK_SHARING_MODE_CONCURRENT";
+        AURA_DEBUG << "VK_SHARING_MODE_CONCURRENT";
     }
     else {
         _swapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         _swapChainCreateInfo.queueFamilyIndexCount = static_cast<uint32_t>(queueFamilyIndices.size());
         _swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices.data();
 
-        PLOG_DEBUG << "VK_SHARING_MODE_EXCLUSIVE";
+        AURA_DEBUG << "VK_SHARING_MODE_EXCLUSIVE";
     }
 
     _swapChainCreateInfo.preTransform = _swapChainSupportDetails.capabilities.currentTransform;
@@ -123,9 +123,9 @@ void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface
 
     VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, vkHostAllocator->getCallbacks(), &_swapChain));
 
-    PLOG_INFO << "SwapChain successfuly created!";
-    PLOG_DEBUG << "ImageCount: " << imageCount;
-    PLOG_DEBUG << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
+    AURA_INFO << "SwapChain successfuly created!";
+    AURA_DEBUG << "ImageCount: " << imageCount;
+    AURA_DEBUG << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
 
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, nullptr);
     _swapChainImages.resize(imageCount);
@@ -225,7 +225,7 @@ void VkSwapChainManager::cleanup()
 {
     if (_swapChain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(*_device, _swapChain, vkHostAllocator->getCallbacks());
-        PLOG_DEBUG << "VkSwapChain deleted";
+        AURA_DEBUG << "VkSwapChain deleted";
     }
 
     _swapChainImages.clear();

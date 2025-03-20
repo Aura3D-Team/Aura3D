@@ -2,7 +2,7 @@
 
 #include "AuraException/AuraException.h"
 
-#include <plog/Log.h>
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 

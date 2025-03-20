@@ -25,7 +25,7 @@ int main(int argc, char **argv)
         .width = 1280,
         .height = 720,
         .resizable = true,
-        .targetFPS = 30
+        .targetFPS = 10
     };
 
 #ifdef USE_CPU

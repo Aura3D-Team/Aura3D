@@ -3,7 +3,7 @@
 #include <aura.hpp>
 #include "AuraException/AuraException.h"
 
-#include <plog/Log.h>
+#include "AuraLogger/AuraLogger.h"
 
 namespace aura3d {
 
@@ -30,7 +30,7 @@ void VkQueueManager::setupQueue(VkDevice device, uint32_t queueFamilyIndex, cons
             vkGetDeviceQueue(device, queueData.vkDeviceQueueCreateInfo.queueFamilyIndex, i, &queue);
             queueData.queues.push_back(queue);
 
-            PLOG_DEBUG << "Queue " << i << " set up successfully for family index "
+            AURA_DEBUG << "Queue " << i << " set up successfully for family index "
                       << queueFamilyIndex << " with flags " << flags;
         }
     }

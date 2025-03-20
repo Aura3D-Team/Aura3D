@@ -14,6 +14,7 @@
 #endif
 
 #include "AuraLogger/AuraLogger.h"
+#include "AuraAssert/AuraAssert.h"
 
 namespace aura3d {
 
@@ -70,10 +71,6 @@ WindowDetails* SDLAuraWindowManager::getWindowDetails()
 
 void SDLAuraWindowManager::eventLoop(SDL_Event& event)
 {
-#ifdef USE_CPU
-    CpuFrameBufferManager* RenderApiManager = static_cast<CpuFrameBufferManager*>(SDL_GetWindowData(_window, "CpuFrameBufferManager"));
-#endif
-
     while (SDL_PollEvent(&event)) {
         switch (event.type)
         {
@@ -81,13 +78,13 @@ void SDLAuraWindowManager::eventLoop(SDL_Event& event)
                 _windowShouldClose = true;
                 break;
             case SDL_WINDOWEVENT:
-                if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                    // _windowFlags.resized = true;
+                if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                    event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    _windowFlags.resized = true;
                     int newWidth = event.window.data1;
                     int newHeight = event.window.data2;
-                #ifdef USE_CPU
-                    // RenderApiManager->resizeFramebuffer(newWidth, newHeight);
-                #endif
+                    _windowDetails.width = newWidth;
+                    _windowDetails.height = newHeight;
                 }
                 break;
             case SDL_KEYDOWN:
@@ -119,10 +116,7 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
 #endif
         );
 
-    if (!_window) {
-        SDL_Quit();
-        throw AuraException("Failed to create SDL2 window");
-    }
+    AURA_ASSERT_MSG(_window != nullptr, "Failed to create SDL2 Window!");
 
     _windowFlags = {
         .frame_counter = 0,
