@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "Utils/AlignedAllocator.h"
+#include "Utils/AlignedVector.h"
 
 namespace aura3d {
 

@@ -1,6 +1,6 @@
 #include "VkInstanceManager.h"
 #include <set>
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 
 #include <aura.hpp>
 #include "AuraException/AuraException.h"
@@ -36,7 +36,7 @@ VkInstanceManager::~VkInstanceManager()
     if (_vkInstance != VK_NULL_HANDLE) {
         vkDestroyInstance(_vkInstance, vkHosAllocator->getCallbacks());
         _vkInstance = VK_NULL_HANDLE;
-        AURA_DEBUG << "VkInstance deleted";
+        INK_DEBUG << "VkInstance deleted";
     }
 }
 
@@ -84,7 +84,7 @@ VkResult VkInstanceManager::prepareVkDebugger(const bool enableValidationLayers)
             _debugCreateInfo = VkDebugger::setupDebugMessenger();
             _instanceInfo.pNext = &_debugCreateInfo;
         } else {
-            AURA_WARN << "Warning: VK_EXT_DEBUG_UTILS_EXTENSION_NAME is not supported and will not be used.";
+            INK_WARN << "Warning: VK_EXT_DEBUG_UTILS_EXTENSION_NAME is not supported and will not be used.";
         }
     }
     return result;

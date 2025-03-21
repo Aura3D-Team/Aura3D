@@ -6,8 +6,7 @@
 #include <cmath>
 
 #include "AuraException/AuraException.h"
-#include "AuraLogger/AuraLogger.h"
-#include "AuraAssert/AuraAssert.h"
+#include <ink/ink.hpp>
 
 namespace aura3d {
 
@@ -29,7 +28,7 @@ CpuFrameBufferManager::CpuFrameBufferManager(SDL_Window* window, Config config) 
     }
 
     _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED);
-    AURA_ASSERT_MSG(_renderer != nullptr, "Renderer could not be created! SDL_Error: " + std::string(SDL_GetError()));
+    INK_ASSERT_MSG(_renderer != nullptr, "Renderer could not be created! SDL_Error: " + std::string(SDL_GetError()));
 
     // Create texture that will be used to display our framebuffer
     _texture = SDL_CreateTexture(
@@ -39,7 +38,7 @@ CpuFrameBufferManager::CpuFrameBufferManager(SDL_Window* window, Config config) 
         settings.width,
         settings.height
         );
-    AURA_ASSERT_MSG(_texture != nullptr, "Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
+    INK_ASSERT_MSG(_texture != nullptr, "Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
 }
 
 /**
@@ -125,7 +124,7 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height)
 {
     // Validate input dimensions
     if (width <= 0 || height <= 0) {
-        AURA_ERROR << "Error: Invalid framebuffer dimensions (" << width << "x" << height << ")";
+        INK_ERROR << "Error: Invalid framebuffer dimensions (" << width << "x" << height << ")";
         return;
     }
 

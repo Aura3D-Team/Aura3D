@@ -49,6 +49,7 @@ find_library(GLFW_LIB glfw3 HINTS ${ALL_LIBRARY_PATH})
 find_library(GLAD_LIB glad HINTS ${ALL_LIBRARY_PATH})
 find_library(SDL2_LIB SDL2 HINTS ${ALL_LIBRARY_PATH})
 find_library(SDL2_TTF_LIB SDL2_ttf HINTS ${ALL_LIBRARY_PATH})
+find_library(INK_LIB ink HINTS ${ALL_LIBRARY_PATH})
 
 # Define General library path
 set(LIBRARY_INCLUDE "$ENV{LIBRARY_PATH}/include")
@@ -135,6 +136,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     ${GLAD_LIB}
     ${SDL2_LIB}
     ${SDL2_TTF_LIB}
+    ${INK_LIB}
     dl
 )
 

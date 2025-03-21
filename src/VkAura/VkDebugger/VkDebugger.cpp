@@ -1,6 +1,6 @@
 // VkDebugger.cpp
 #include "VkDebugger.h"
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 #include <sstream>
 #include <iomanip>
 
@@ -50,7 +50,7 @@ VkDebugger::~VkDebugger()
     if (func != nullptr && _debugMessenger != VK_NULL_HANDLE) {
         func(*_vkInstance, _debugMessenger, nullptr);
         _debugMessenger = VK_NULL_HANDLE;
-        AURA_DEBUG << "VkDebugger deleted";
+        INK_DEBUG << "VkDebugger deleted";
     }
     _vkInstance = nullptr;
 }
@@ -169,19 +169,19 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VkDebugger::debugCallback(
     // Log the message with appropriate severity
     switch (messageSeverity) {
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-            AURA_VERBOSE << ss.str();
+            INK_VERBOSE << ss.str();
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-            AURA_INFO << ss.str();
+            INK_INFO << ss.str();
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-            AURA_WARN << ss.str();
+            INK_WARN << ss.str();
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-            AURA_ERROR << ss.str();
+            INK_ERROR << ss.str();
             break;
         default:
-            AURA_WARN << "Unknown message severity: " << ss.str();
+            INK_WARN << "Unknown message severity: " << ss.str();
             break;
     }
 

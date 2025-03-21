@@ -2,7 +2,7 @@
 
 #include "AuraException/AuraException.h"
 
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 
 namespace aura3d {
 
@@ -20,11 +20,11 @@ VkCommandManager::~VkCommandManager() {
     // Destroy all command pools created by each thread
     for (auto& it : _threadCommandPools) {
         vkDestroyCommandPool(*_device, it.second, vkHostAllocator->getCallbacks());
-        AURA_DEBUG << "CommandPool for thread " << it.first << " was deleted.";
+        INK_DEBUG << "CommandPool for thread " << it.first << " was deleted.";
     }
     _device = nullptr;
 
-    AURA_DEBUG << "CommandPools destroyed.";
+    INK_DEBUG << "CommandPools destroyed.";
 }
 
 void VkCommandManager::resetCommandPool()

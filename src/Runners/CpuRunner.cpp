@@ -1,14 +1,11 @@
 #include "CpuRunner.h"
 
 #include <nlohmann/json.hpp>
+#include <ink/ink.hpp>
 
 #include "aura.hpp"
 #include "Utils/ColorsDefinitions.h"
-#include "Utils/EnhancedJson.h"
-#include "Utils/JsonUtils.h"
 #include "Utils/AuraUtils.h"
-#include "AuraLogger/AuraLogger.h"
-#include "AuraAssert/AuraAssert.h"
 
 namespace aura3d {
 
@@ -44,10 +41,10 @@ void CpuRunner::run()
     const int centerY = windowDetails->height / 2;
 
     // POSITION HISTORIC OF ONE OBJECT
-    EnhancedJson rectPoints = JsonUtils::loadFromFile("./test.json");
-    AURA_ASSERT(rectPoints.is_array());
+    ink::EnhancedJson rectPoints = ink::EnhancedJsonUtils::loadFromFile("./test.json");
+    INK_ASSERT(rectPoints.is_array());
 
-    AURA_TRACE << AuraUtils::fast_int_sqrt(121) << " " << AuraUtils::fast_sqrt(256);
+    INK_TRACE << AuraUtils::fast_int_sqrt(121) << " " << AuraUtils::fast_sqrt(256);
 
     _windowManagerApi->process([&]() {
         if (windowFLags->resized)
@@ -85,7 +82,7 @@ void CpuRunner::run()
         bool isFirstPoint = true;
 
         for (size_t i = 0; i < rectPoints.size(); i++) {
-            auto position = static_cast<EnhancedJson>(rectPoints[i]).get("position");
+            auto position = static_cast<ink::EnhancedJson>(rectPoints[i]).get("position");
             std::string timestamp = position.get<std::string>("timestamp", "");
             float fx = position.get<float>("x", 0.0f);
             float fy = position.get<float>("y", 0.0f);
@@ -135,7 +132,7 @@ void CpuRunner::run()
         // Second pass - Draw the visualization elements
 
         // 1. Draw base rectangles (with transparency for layering)
-        for (const EnhancedJson& box : rectPoints) {
+        for (const ink::EnhancedJson& box : rectPoints) {
             auto positions = box.get("position");
             float fx = positions.get<float>("x", 0.0f);
             float fy = positions.get<float>("y", 0.0f);
@@ -173,7 +170,7 @@ void CpuRunner::run()
         //     if (pair.second > maxCount) maxCount = pair.second;
         // }
 
-        // Draw heat map (areas with more frequent visits are more intense)
+        // // Draw heat map (areas with more frequent visits are more intense)
         // for (const auto& pair : positionCounts) {
         //     int px = pair.first.first;
         //     int py = pair.first.second;
@@ -193,7 +190,7 @@ void CpuRunner::run()
 
         // 4. Overlay statistical information
         int textY = 20;
-        _frameBufferManager->drawText("Object Movement Analysis", 10, textY, aura3d::colors::RED_UINT32);
+        _frameBufferManager->drawText("ObJect Movement Analysis", 10, textY, aura3d::colors::RED_UINT32);
         textY += 20;
 
         // Total number of tracked positions
@@ -208,8 +205,8 @@ void CpuRunner::run()
 
         // Time period
         if (!rectPoints.empty()) {
-            std::string startTime = static_cast<EnhancedJson>(rectPoints.front()).get<std::string>("timestamp", "");
-            std::string endTime = static_cast<EnhancedJson>(rectPoints.back()).get<std::string>("timestamp", "");
+            std::string startTime = static_cast<ink::EnhancedJson>(rectPoints.front()).get<std::string>("timestamp", "");
+            std::string endTime = static_cast<ink::EnhancedJson>(rectPoints.back()).get<std::string>("timestamp", "");
 
             std::tm tmPrev = {}, tmCurrent = {};
             std::istringstream ssPrev(startTime);

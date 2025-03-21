@@ -4,7 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <cassert>
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 
 namespace aura3d {
 
@@ -28,7 +28,7 @@ VkDeviceAllocator::VkDeviceAllocator(const VkDeviceAllocatorCreateInfo& createIn
     // Get memory properties for later use
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
 
-    AURA_DEBUG << "VkDeviceAllocator created with block size: "
+    INK_DEBUG << "VkDeviceAllocator created with block size: "
               << (defaultBlockSize / (1024 * 1024)) << "MB, "
               << "defragmentation: " << (defragmentationEnabled ? "enabled" : "disabled") << ", "
               << "thread safety: " << (threadSafetyMode == ThreadSafetyMode::NONE ? "none" :
@@ -44,12 +44,12 @@ VkDeviceAllocator::~VkDeviceAllocator()
 
     // Check for leaks before cleanup if tracking is enabled
     if (trackLeaks && !allocationMap.empty() && !inShutdown) {
-        AURA_WARN << "VkDeviceAllocator destructed with " << allocationMap.size()
+        INK_WARN << "VkDeviceAllocator destructed with " << allocationMap.size()
         << " allocations still active!";
         // Print details of leaked allocations
         for (const auto& pair : allocationMap) {
             const auto& alloc = pair.second;
-            AURA_WARN << "Leaked allocation: id=" << alloc.allocationId
+            INK_WARN << "Leaked allocation: id=" << alloc.allocationId
                          << ", size=" << alloc.size << " bytes"
                          << ", mapped=" << (alloc.mappedData != nullptr ? "yes" : "no");
         }
@@ -60,7 +60,7 @@ VkDeviceAllocator::~VkDeviceAllocator()
         cleanup();
     }
 
-    AURA_DEBUG << "VkDeviceAllocator destroyed";
+    INK_DEBUG << "VkDeviceAllocator destroyed";
 }
 
 // Helper for thread safety
@@ -101,7 +101,7 @@ VkResult VkDeviceAllocator::allocateMemory(
     VkDeviceAllocation& allocation)
 {
     if (inShutdown) {
-        AURA_ERROR << "Attempting to allocate memory during shutdown";
+        INK_ERROR << "Attempting to allocate memory during shutdown";
         return VK_ERROR_DEVICE_LOST;
     }
 
@@ -110,7 +110,7 @@ VkResult VkDeviceAllocator::allocateMemory(
 
     uint32_t memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
     if (memoryTypeIndex == UINT32_MAX) {
-        AURA_ERROR << "Failed to find suitable memory type";
+        INK_ERROR << "Failed to find suitable memory type";
         return VK_ERROR_FEATURE_NOT_PRESENT;
     }
 
@@ -125,7 +125,7 @@ VkResult VkDeviceAllocator::allocateMemory(
 
     // For large allocations, create a dedicated block directly
     if (memRequirements.size >= dedicatedAllocationThreshold) {
-        AURA_DEBUG << "Using dedicated allocation for large memory request: "
+        INK_DEBUG << "Using dedicated allocation for large memory request: "
                   << (memRequirements.size / (1024 * 1024)) << "MB";
 
         // Allocate a dedicated block
@@ -192,7 +192,7 @@ VkResult VkDeviceAllocator::allocateMemory(
                 if (memRequirements.size > defaultBlockSize / 2) {
                     // For larger allocations, create a custom-sized block
                     blockSize = memRequirements.size * 2; // Some extra space for future allocations
-                    AURA_DEBUG << "Creating larger block of size " << (blockSize / (1024 * 1024))
+                    INK_DEBUG << "Creating larger block of size " << (blockSize / (1024 * 1024))
                               << "MB for allocation of " << (memRequirements.size / (1024 * 1024)) << "MB";
                 } else if (memRequirements.size < smallBlockSize / 2) {
                     // For smaller allocations, use smaller block size
@@ -202,7 +202,7 @@ VkResult VkDeviceAllocator::allocateMemory(
                 result = allocateNewBlock(memoryTypeIndex, blockSize);
 
                 if (result != VK_SUCCESS) {
-                    AURA_ERROR << "Failed to allocate new block, result: " << result;
+                    INK_ERROR << "Failed to allocate new block, result: " << result;
                     releaseLock(memoryTypeIndex, true);
                     return result;
                 }
@@ -279,7 +279,7 @@ VkResult VkDeviceAllocator::allocateUsingBuddyAllocator(
     }
 
     if (!block) {
-        AURA_ERROR << "No memory block found for buddy allocation";
+        INK_ERROR << "No memory block found for buddy allocation";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -303,7 +303,7 @@ VkResult VkDeviceAllocator::allocateMemoryForBuffer(
     VkDeviceAllocation& allocation)
 {
     if (buffer == VK_NULL_HANDLE) {
-        AURA_ERROR << "Cannot allocate memory for null buffer";
+        INK_ERROR << "Cannot allocate memory for null buffer";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -319,7 +319,7 @@ VkResult VkDeviceAllocator::allocateMemoryForImage(
     VkDeviceAllocation& allocation)
 {
     if (image == VK_NULL_HANDLE) {
-        AURA_ERROR << "Cannot allocate memory for null image";
+        INK_ERROR << "Cannot allocate memory for null image";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -337,7 +337,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
 
     auto allocationId = allocation.allocationId;
     if (allocationId == 0) {
-        AURA_WARN << "Attempting to free invalid allocation with ID 0";
+        INK_WARN << "Attempting to free invalid allocation with ID 0";
         return;
     }
 
@@ -367,7 +367,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
 
     auto it = allocationMap.find(allocationId);
     if (it == allocationMap.end()) {
-        AURA_WARN << "Attempting to free unknown allocation: " << allocationId;
+        INK_WARN << "Attempting to free unknown allocation: " << allocationId;
         releaseLock(memoryTypeIndex, true);
         return;
     }
@@ -458,7 +458,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
         }
     }
 
-    AURA_ERROR << "Failed to find memory block for allocation: " << allocation.allocationId;
+    INK_ERROR << "Failed to find memory block for allocation: " << allocation.allocationId;
     releaseLock(memoryTypeIndex, true);
 }
 
@@ -470,12 +470,12 @@ VkResult VkDeviceAllocator::mapMemory(
     void** ppData)
 {
     if (inShutdown) {
-        AURA_WARN << "Attempting to map memory during shutdown";
+        INK_WARN << "Attempting to map memory during shutdown";
         return VK_ERROR_DEVICE_LOST;
     }
 
     if (allocation.memory == VK_NULL_HANDLE) {
-        AURA_ERROR << "Attempting to map invalid allocation";
+        INK_ERROR << "Attempting to map invalid allocation";
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
@@ -493,7 +493,7 @@ VkResult VkDeviceAllocator::mapMemory(
     // Check if memory is host visible
     VkMemoryPropertyFlags memFlags = memoryProperties.memoryTypes[allocation.memoryTypeIndex].propertyFlags;
     if ((memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
-        AURA_ERROR << "Attempting to map memory that is not host visible";
+        INK_ERROR << "Attempting to map memory that is not host visible";
         releaseLock(memoryTypeIndex, true);
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
@@ -509,7 +509,7 @@ VkResult VkDeviceAllocator::mapMemory(
     // Find the memory block
     MemoryBlock* block = nullptr;
     if (!findBlockByMemory(allocation.memory, &block)) {
-        AURA_ERROR << "Failed to find memory block for mapping";
+        INK_ERROR << "Failed to find memory block for mapping";
         releaseLock(memoryTypeIndex, true);
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
@@ -523,7 +523,7 @@ VkResult VkDeviceAllocator::mapMemory(
         // Map the memory if not already mapped
         VkResult result = vkMapMemory(device, allocation.memory, 0, block->size, 0, &block->mappedAddress);
         if (result != VK_SUCCESS) {
-            AURA_ERROR << "Failed to map memory: id=" << allocation.allocationId << ", error=" << result;
+            INK_ERROR << "Failed to map memory: id=" << allocation.allocationId << ", error=" << result;
             releaseLock(memoryTypeIndex, true);
             return result;
         }
@@ -575,7 +575,7 @@ void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation)
     // Find the block for this memory
     MemoryBlock* block = nullptr;
     if (!findBlockByMemory(allocation.memory, &block)) {
-        AURA_ERROR << "Failed to find memory block for unmapping";
+        INK_ERROR << "Failed to find memory block for unmapping";
         releaseLock(memoryTypeIndex, true);
         return;
     }
@@ -618,7 +618,7 @@ void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation)
 // Force unmap all memory - useful during shutdown
 void VkDeviceAllocator::unmapAllMemory()
 {
-    AURA_DEBUG << "Unmapping all memory";
+    INK_DEBUG << "Unmapping all memory";
 
     if (threadSafetyMode != ThreadSafetyMode::NONE) {
         std::lock_guard<std::mutex> lock(globalMutex);
@@ -653,7 +653,7 @@ VkResult VkDeviceAllocator::bindBufferMemory(
     VkDeviceSize offsetInAllocation)
 {
     if (allocation.memory == VK_NULL_HANDLE) {
-        AURA_ERROR << "Attempting to bind to null allocation";
+        INK_ERROR << "Attempting to bind to null allocation";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -668,7 +668,7 @@ VkResult VkDeviceAllocator::bindImageMemory(
     VkDeviceSize offsetInAllocation)
 {
     if (allocation.memory == VK_NULL_HANDLE) {
-        AURA_ERROR << "Attempting to bind to null allocation";
+        INK_ERROR << "Attempting to bind to null allocation";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -794,12 +794,12 @@ uint32_t VkDeviceAllocator::findMemoryType(uint32_t typeFilter, VkMemoryProperty
     for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
         if ((typeFilter & (1 << i)) &&
             (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            AURA_DEBUG << "Using memory type " << i << " as fallback";
+            INK_DEBUG << "Using memory type " << i << " as fallback";
             return i;
         }
     }
 
-    AURA_ERROR << "Failed to find suitable memory type with filter " << typeFilter
+    INK_ERROR << "Failed to find suitable memory type with filter " << typeFilter
                << " and properties " << properties;
     return UINT32_MAX;
 }
@@ -838,10 +838,10 @@ void VkDeviceAllocator::initializeBuddyAllocator(uint32_t memoryTypeIndex, VkDev
             VkDeviceSize minBlockSize = 64 * 1024; // 64KB minimum block size
             pool.buddyAllocator = std::make_unique<BuddyAllocator>(blockSize, minBlockSize);
 
-            AURA_DEBUG << "Created buddy allocator for memory type " << memoryTypeIndex
+            INK_DEBUG << "Created buddy allocator for memory type " << memoryTypeIndex
                       << " with block size " << (blockSize / (1024 * 1024)) << "MB";
         } else {
-            AURA_ERROR << "Failed to allocate memory for buddy allocator, result: " << result;
+            INK_ERROR << "Failed to allocate memory for buddy allocator, result: " << result;
         }
     }
 }
@@ -857,7 +857,7 @@ VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceS
         VkDeviceSize heapSize = memoryProperties.memoryHeaps[heapIndex].size;
 
         if (pool.totalSize + blockSize > heapSize) {
-            AURA_WARN << "Memory allocation may exceed heap size: "
+            INK_WARN << "Memory allocation may exceed heap size: "
                          << "Current: " << (pool.totalSize / (1024 * 1024)) << "MB, "
                          << "Adding: " << (blockSize / (1024 * 1024)) << "MB, "
                          << "Heap: " << (heapSize / (1024 * 1024)) << "MB";
@@ -875,7 +875,7 @@ VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceS
     VkResult result = vkAllocateMemory(device, &allocInfo, nullptr, &memory);
 
     if (result != VK_SUCCESS) {
-        AURA_ERROR << "Failed to allocate device memory block, result: " << result
+        INK_ERROR << "Failed to allocate device memory block, result: " << result
                    << ", size: " << (blockSize / (1024 * 1024)) << "MB, type: " << memoryTypeIndex;
         return result;
     }
@@ -1070,7 +1070,7 @@ VkDeviceAllocation& VkDeviceAllocator::getAllocation(uint32_t allocationId)
 
     auto it = allocationMap.find(allocationId);
     if (it == allocationMap.end()) {
-        AURA_ERROR << "Attempting to access invalid allocation ID: " << allocationId;
+        INK_ERROR << "Attempting to access invalid allocation ID: " << allocationId;
         return invalidAllocation;
     }
 
@@ -1142,7 +1142,7 @@ void VkDeviceAllocator::processDeferredFrees(bool processAll)
 VkResult VkDeviceAllocator::defragment(VkDeviceSize maxBytesToMove)
 {
     if (!defragmentationEnabled) {
-        AURA_WARN << "Defragmentation is disabled";
+        INK_WARN << "Defragmentation is disabled";
         return VK_ERROR_FEATURE_NOT_PRESENT;
     }
 
@@ -1153,7 +1153,7 @@ VkResult VkDeviceAllocator::defragment(VkDeviceSize maxBytesToMove)
     // Process any deferred frees first
     processDeferredFrees(true);
 
-    AURA_DEBUG << "Starting memory defragmentation, max bytes to move: "
+    INK_DEBUG << "Starting memory defragmentation, max bytes to move: "
               << (maxBytesToMove == VK_WHOLE_SIZE ? "unlimited" : std::to_string(maxBytesToMove / (1024 * 1024)) + "MB");
 
     VkDeviceSize bytesMoved = 0;
@@ -1196,7 +1196,7 @@ VkResult VkDeviceAllocator::defragment(VkDeviceSize maxBytesToMove)
 
                     // Check if we've hit the limit
                     if (maxBytesToMove != VK_WHOLE_SIZE && bytesMoved + moveSize > maxBytesToMove) {
-                        AURA_DEBUG << "Defragmentation reached byte limit, stopping";
+                        INK_DEBUG << "Defragmentation reached byte limit, stopping";
                         break;
                     }
 
@@ -1214,7 +1214,7 @@ VkResult VkDeviceAllocator::defragment(VkDeviceSize maxBytesToMove)
 
                     VkResult mapResult = mapMemory(alloc, 0, VK_WHOLE_SIZE, &srcData);
                     if (mapResult != VK_SUCCESS) {
-                        AURA_ERROR << "Failed to map source allocation for defragmentation";
+                        INK_ERROR << "Failed to map source allocation for defragmentation";
                         continue;
                     }
 
@@ -1240,7 +1240,7 @@ VkResult VkDeviceAllocator::defragment(VkDeviceSize maxBytesToMove)
         }
     }
 
-    AURA_DEBUG << "Defragmentation complete, moved " << (bytesMoved / (1024 * 1024)) << "MB of data";
+    INK_DEBUG << "Defragmentation complete, moved " << (bytesMoved / (1024 * 1024)) << "MB of data";
     return VK_SUCCESS;
 }
 
@@ -1251,7 +1251,7 @@ void VkDeviceAllocator::cleanup()
     }
 
     inShutdown = true;
-    AURA_DEBUG << "Starting VkDeviceAllocator cleanup";
+    INK_DEBUG << "Starting VkDeviceAllocator cleanup";
 
     if (threadSafetyMode != ThreadSafetyMode::NONE) {
         std::lock_guard<std::mutex> lock(globalMutex);
@@ -1302,7 +1302,7 @@ void VkDeviceAllocator::cleanup()
     memoryTypePools.clear();
     allocationMap.clear();
 
-    AURA_DEBUG << "VkDeviceAllocator cleanup completed";
+    INK_DEBUG << "VkDeviceAllocator cleanup completed";
 }
 
 } // namespace aura3d

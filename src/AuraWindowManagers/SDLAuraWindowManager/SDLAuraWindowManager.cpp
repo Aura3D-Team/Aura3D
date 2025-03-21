@@ -13,8 +13,7 @@
 #include <CpuAura/CpuFrameBufferManager.h>
 #endif
 
-#include "AuraLogger/AuraLogger.h"
-#include "AuraAssert/AuraAssert.h"
+#include <ink/ink.hpp>
 
 namespace aura3d {
 
@@ -41,17 +40,17 @@ SDLAuraWindowManager::SDLAuraWindowManager(WindowDetails windowDetails) :
     }
 #endif
 
-    AURA_INFO << "SDL2 initialized.";
+    INK_INFO << "SDL2 initialized.";
 }
 
 SDLAuraWindowManager::~SDLAuraWindowManager()
 {
     if (_window) {
         SDL_DestroyWindow(_window);
-        AURA_DEBUG << "SDL2 window destroyed.";
+        INK_DEBUG << "SDL2 window destroyed.";
     }
     SDL_Quit();
-    AURA_DEBUG << "SDL2 terminated.";
+    INK_DEBUG << "SDL2 terminated.";
 }
 
 SDL_Window* SDLAuraWindowManager::getWindowInstance()
@@ -116,7 +115,7 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
 #endif
         );
 
-    AURA_ASSERT_MSG(_window != nullptr, "Failed to create SDL2 Window!");
+    INK_ASSERT_MSG(_window != nullptr, "Failed to create SDL2 Window!");
 
     _windowFlags = {
         .frame_counter = 0,
@@ -133,8 +132,8 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
     ));
 
     _keyboardListener->addKeyAction(SDL_KeyCode::SDLK_m, AuraKeyAction(
-        [this]() { AURA_INFO << "Metatada key m pressed"; }, // onPress
-        [this]() { AURA_INFO << "Metatada key m released"; } // onRelease
+        [this]() { INK_INFO << "Metatada key m pressed"; }, // onPress
+        [this]() { INK_INFO << "Metatada key m released"; } // onRelease
     ));
 
 #ifdef USE_OPENGL_API
@@ -153,10 +152,10 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
         throw aura3d::AuraException("Failed to load OpenGL functions");
     }
 
-    AURA_INFO << "OpenGL context created successfully.";
+    INK_INFO << "OpenGL context created successfully.";
 #endif
 
-    AURA_INFO << "SDL Window created: " << windowName;
+    INK_INFO << "SDL Window created: " << windowName;
 }
 
 void SDLAuraWindowManager::process(std::function<void ()>&& actions)

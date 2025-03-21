@@ -1,6 +1,8 @@
 #ifndef COLOR_DEFINITIONS_H
 #define COLOR_DEFINITIONS_H
 
+#pragma once
+
 #include <cstdint>
 
 namespace aura3d {

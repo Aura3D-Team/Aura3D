@@ -1,6 +1,6 @@
 #include "AuraKeyboardListener.h"
 
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 
 namespace aura3d {
 

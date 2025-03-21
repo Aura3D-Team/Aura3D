@@ -2,7 +2,7 @@
 
 #include "GlfwAuraWindowManager.h"
 
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 #include <AuraException/AuraException.h>
 
 namespace aura3d {
@@ -30,12 +30,12 @@ GlfwAuraWindowManager::GlfwAuraWindowManager(WindowDetails windowDetails) :
 // Initialize GLFW window for Vulkan or OpenGL
 #if defined(USE_VULKAN_API)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    AURA_INFO << "GLFW initialized with Vulkan support.";
+    INK_INFO << "GLFW initialized with Vulkan support.";
 #elif defined(USE_OPENGL_API)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     // glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // Optional, may not be necessary
-    AURA_INFO << "GLFW initialized with OpenGL support.";
+    INK_INFO << "GLFW initialized with OpenGL support.";
 #endif
 }
 
@@ -43,10 +43,10 @@ GlfwAuraWindowManager::~GlfwAuraWindowManager()
 {
     if (_window) {
         glfwDestroyWindow(_window);
-        AURA_DEBUG << "GLFW window destroyed.";
+        INK_DEBUG << "GLFW window destroyed.";
     }
     glfwTerminate();
-    AURA_DEBUG << "GLFW terminated";
+    INK_DEBUG << "GLFW terminated";
 }
 
 GLFWwindow* GlfwAuraWindowManager::getWindowInstance()
@@ -91,11 +91,11 @@ void GlfwAuraWindowManager::createWindow(const char* windowName)
     ));
 
     _keyboardListener->addKeyAction(GLFW_KEY_M, AuraKeyAction(
-        [this]() { AURA_INFO << "Metatada key m pressed"; }, // onPress
-        [this]() { AURA_INFO << "Metatada key m released"; } // onRelease
+        [this]() { INK_INFO << "Metatada key m pressed"; }, // onPress
+        [this]() { INK_INFO << "Metatada key m released"; } // onRelease
     ));
 
-    AURA_INFO << "Created window and listeners: " << windowName;
+    INK_INFO << "Created window and listeners: " << windowName;
 }
 
 void GlfwAuraWindowManager::process(std::function<void()>&& actions)
@@ -116,8 +116,8 @@ void GlfwAuraWindowManager::process(std::function<void()>&& actions)
 #endif
     }
 
-    AURA_INFO << "Window event loop ended.";
-    AURA_INFO << count << " frames processed!";
+    INK_INFO << "Window event loop ended.";
+    INK_INFO << count << " frames processed!";
 }
 
 WindowFlags* GlfwAuraWindowManager::getWindowFlags()

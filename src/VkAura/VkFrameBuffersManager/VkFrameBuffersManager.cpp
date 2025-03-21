@@ -3,7 +3,7 @@
 #include <aura.hpp>
 #include "AuraException/AuraException.h"
 
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 
 namespace aura3d {
 
@@ -19,7 +19,7 @@ VkFrameBuffersManager::~VkFrameBuffersManager()
 
     _device = nullptr;
 
-    AURA_DEBUG << "FrameBuffers destroyed.";
+    INK_DEBUG << "FrameBuffers destroyed.";
 }
 
 void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& imageViews,

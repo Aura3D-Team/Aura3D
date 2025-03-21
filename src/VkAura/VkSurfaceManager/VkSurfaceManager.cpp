@@ -3,7 +3,7 @@
 #include <aura.hpp>
 #include "AuraException/AuraException.h"
 
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 
 namespace aura3d {
 
@@ -25,7 +25,7 @@ VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance*
 VkSurfaceManager::~VkSurfaceManager() {
     if (_vkSurface != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
-        AURA_DEBUG << "VkSurface deleted";
+        INK_DEBUG << "VkSurface deleted";
     }
     _vkInstance = nullptr;
 }

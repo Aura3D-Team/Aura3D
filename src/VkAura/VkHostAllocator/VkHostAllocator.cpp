@@ -1,7 +1,7 @@
 #include "VkHostAllocator.h"
 #include <iostream>
 #include <iomanip>
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 #include <algorithm>
 #include <string.h>  // For memcpy
 
@@ -54,7 +54,7 @@ void MemoryPool::addBlocks(size_t count)
 #endif
 
     if (!memory) {
-        AURA_ERROR << "Failed to allocate memory for pool of block size " << blockSize;
+        INK_ERROR << "Failed to allocate memory for pool of block size " << blockSize;
         return;
     }
 
@@ -142,7 +142,7 @@ VkHostAllocator::VkHostAllocator(const VkHostAllocatorCreateInfo& createInfo)
         }
     }
 
-    AURA_DEBUG << "VkHostAllocator created with "
+    INK_DEBUG << "VkHostAllocator created with "
               << (threadSafetyMode == HostThreadSafetyMode::NONE ? "no thread safety" :
                       (threadSafetyMode == HostThreadSafetyMode::LOCK_FREE ? "lock-free" : "mutex"))
               << ", memory pools " << (enableMemoryPools ? "enabled" : "disabled");
@@ -156,12 +156,12 @@ VkHostAllocator::~VkHostAllocator()
     }
 
     if (trackLeaks && !allocations.empty()) {
-        AURA_WARN << "WARNING: " << allocations.size()
+        INK_WARN << "WARNING: " << allocations.size()
         << " Vulkan allocations still active at VkHostAllocator destruction!";
 
         // Print details of leaked allocations
         for (const auto& [ptr, info] : allocations) {
-            AURA_WARN << "  Leaked: " << ptr << ", size: " << info.size
+            INK_WARN << "  Leaked: " << ptr << ", size: " << info.size
                        << ", scope: " << static_cast<int>(info.scope)
                        << (info.isPooled ? " (pooled)" : "");
         }
@@ -332,7 +332,7 @@ void* VkHostAllocator::reallocateMemory(void* original, size_t size, size_t alig
         isPooled = it->second.isPooled;
         poolIndex = it->second.poolIndex;
     } else {
-        AURA_WARN << "Reallocation called on untracked memory: " << original;
+        INK_WARN << "Reallocation called on untracked memory: " << original;
         // Fall back to regular allocation
         releaseLock();
         void* newMem = allocateMemory(size, alignment, scope);
@@ -441,7 +441,7 @@ void VkHostAllocator::freeMemory(void* memory)
         // Remove from tracking now
         allocations.erase(it);
     } else {
-        // AURA_WARN << "Attempted to free untracked allocation: " << memory;
+        // INK_WARN << "Attempted to free untracked allocation: " << memory;
         releaseLock();
         return;
     }
@@ -465,7 +465,7 @@ void VkHostAllocator::freeToPool(void* memory, size_t poolIndex)
     if (poolIndex < NUM_POOLS) {
         memoryPools[poolIndex]->free(memory);
     } else {
-        AURA_ERROR << "Invalid pool index in freeToPool: " << poolIndex;
+        INK_ERROR << "Invalid pool index in freeToPool: " << poolIndex;
     }
 }
 
@@ -542,7 +542,7 @@ void VkHostAllocator::processDeferredDeallocations(bool processAll)
             }
         } else {
             releaseLock();
-            // AURA_WARN << "Deferred deallocation on untracked memory: " << memory;
+            // INK_WARN << "Deferred deallocation on untracked memory: " << memory;
         }
     }
 }
@@ -566,7 +566,7 @@ void VkHostAllocator::trackDeallocation(void* memory)
         allocations.erase(it);
     } else {
         // This should never happen if Vulkan is behaving correctly
-        // AURA_WARN << "WARNING: Attempted to free untracked Vulkan allocation: " << memory;
+        // INK_WARN << "WARNING: Attempted to free untracked Vulkan allocation: " << memory;
     }
 
     releaseLock();
@@ -631,7 +631,7 @@ void VkHostAllocator::trackInternalDeallocation(size_t size, VkInternalAllocatio
     }
 
     if (oldSize < size) {
-        // AURA_WARN << "Internal deallocation of " << size << " bytes would cause negative total!";
+        // INK_WARN << "Internal deallocation of " << size << " bytes would cause negative total!";
     }
 }
 

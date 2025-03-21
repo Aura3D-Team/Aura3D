@@ -3,7 +3,7 @@
 #include <aura.hpp>
 #include "AuraException/AuraException.h"
 
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 
 namespace aura3d {
 
@@ -19,7 +19,7 @@ VkImageViewsManager::~VkImageViewsManager()
 
     _device = nullptr;
 
-    AURA_DEBUG << "ImageViews destroyed.";
+    INK_DEBUG << "ImageViews destroyed.";
 }
 
 void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChainImages,
@@ -49,7 +49,7 @@ void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChain
         VkResult result = vkCreateImageView(*_device, &createInfo, vkHostAllocator->getCallbacks(), &_swapChainImageViews[i]);
         VK_RESULT_CHECK(result);
 
-        AURA_DEBUG << "ImageView " << i << " created!";
+        INK_DEBUG << "ImageView " << i << " created!";
     }
 }
 

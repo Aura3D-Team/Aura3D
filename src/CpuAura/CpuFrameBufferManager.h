@@ -10,7 +10,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <string>
 
-#include "Utils/AlignedAllocator.h"
+#include "Utils/AlignedVector.h"
 #include "AuraFont/AuraBitmapFont.h"
 
 namespace aura3d {

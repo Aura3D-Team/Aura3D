@@ -1,4 +1,4 @@
-#include "AuraLogger/AuraLogger.h"
+#include <ink/ink.hpp>
 
 // #define VK_USE_PLATFORM_WIN32_KHR
 // #define GLFW_EXPOSE_NATIVE_WIN32
@@ -12,14 +12,14 @@
 #endif
 
 #ifdef NDEBUG
-    const aura3d::LogLevel logSeverity = aura3d::LogLevel::INFO;
+    const ink::LogLevel logSeverity = aura3d::LogLevel::INFO;
 #else
-    const aura3d::LogLevel logSeverity = aura3d::LogLevel::TRACE;
+    const ink::LogLevel logSeverity = ink::LogLevel::TRACE;
 #endif
 
 int main(int argc, char **argv)
 {
-    AURA_CORE_LOGGER;
+    INK_CORE_LOGGER;
 
     aura3d::WindowDetails windowDetails = {
         .width = 1280,
