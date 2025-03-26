@@ -4,8 +4,6 @@
 
 #include <chrono>
 #include <thread>
-#include <glad/gl.h>
-#include <GLFW/glfw3.h>
 #include <SDL2/SDL_vulkan.h>
 
 #include <AuraException/AuraException.h>

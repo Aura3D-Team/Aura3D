@@ -29,7 +29,6 @@ struct VkHostAllocatorCreateInfo {
     size_t batchDeallocLimit = 128;        // Process batch when this many deallocations are queued
 };
 
-// Forward declaration
 class MemoryPool;
 
 /**
@@ -159,15 +158,15 @@ public:
 
 private:
     struct Block {
-        Block* next;
+        std::atomic<Block*> next;
     };
 
     const size_t blockSize;
-    Block* freeList;
+    std::atomic<Block*> freeList;
     std::vector<void*> blocks;
     std::atomic<size_t> allocatedCount{0};
     std::atomic<size_t> totalBlocks{0};
-    std::mutex poolMutex;
+    std::mutex expansionMutex;
 
     void addBlocks(size_t count);
 };

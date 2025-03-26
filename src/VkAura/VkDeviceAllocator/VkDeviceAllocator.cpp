@@ -9,8 +9,9 @@
 namespace aura3d {
 
 // Constructor
-VkDeviceAllocator::VkDeviceAllocator(const VkDeviceAllocatorCreateInfo& createInfo)
-    : physicalDevice(createInfo.physicalDevice),
+VkDeviceAllocator::VkDeviceAllocator(VkHostAllocator* vkHostAllocator, const VkDeviceAllocatorCreateInfo& createInfo)
+    : vkHostAllocator(vkHostAllocator),
+    physicalDevice(createInfo.physicalDevice),
     device(createInfo.device),
     defaultBlockSize(createInfo.blockSize),
     smallBlockSize(createInfo.smallBlockSize),
@@ -135,7 +136,7 @@ VkResult VkDeviceAllocator::allocateMemory(
         allocInfo.memoryTypeIndex = memoryTypeIndex;
 
         VkDeviceMemory memory = VK_NULL_HANDLE;
-        result = vkAllocateMemory(device, &allocInfo, nullptr, &memory);
+        result = vkAllocateMemory(device, &allocInfo, vkHostAllocator->getCallbacks(), &memory);
 
         if (result == VK_SUCCESS) {
             // Create a new block to track this memory
@@ -818,7 +819,7 @@ void VkDeviceAllocator::initializeBuddyAllocator(uint32_t memoryTypeIndex, VkDev
         allocInfo.memoryTypeIndex = memoryTypeIndex;
 
         VkDeviceMemory memory = VK_NULL_HANDLE;
-        VkResult result = vkAllocateMemory(device, &allocInfo, nullptr, &memory);
+        VkResult result = vkAllocateMemory(device, &allocInfo, vkHostAllocator->getCallbacks(), &memory);
 
         if (result == VK_SUCCESS) {
             // Create a new block
@@ -872,7 +873,7 @@ VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceS
     allocInfo.memoryTypeIndex = memoryTypeIndex;
 
     VkDeviceMemory memory = VK_NULL_HANDLE;
-    VkResult result = vkAllocateMemory(device, &allocInfo, nullptr, &memory);
+    VkResult result = vkAllocateMemory(device, &allocInfo, vkHostAllocator->getCallbacks(), &memory);
 
     if (result != VK_SUCCESS) {
         INK_ERROR << "Failed to allocate device memory block, result: " << result

@@ -4,11 +4,11 @@
 // #define GLFW_EXPOSE_NATIVE_WIN32
 
 #ifdef USE_CPU
-#include <Runners/CpuRunner.h>
+#include <Renderers/CPURenderer.h>
 #elif defined(USE_VULKAN_API)
-#include <Runners/VkRunner.h>
+#include <Renderers/VulkanRenderer.h>
 #else
-#include <Runners/GlRunner.h>
+#include <Renderers/OpenGLRenderer.h>
 #endif
 
 #ifdef NDEBUG
@@ -25,12 +25,12 @@ int main(int argc, char **argv)
         .width = 1280,
         .height = 720,
         .resizable = true,
-        .targetFPS = 10
+        .targetFPS = 60
     };
 
 #ifdef USE_CPU
-    aura3d::CpuRunner CpuRunner(windowDetails);
-    CpuRunner.run();
+    aura3d::CPURenderer cpuRenderer(windowDetails);
+    cpuRenderer.run();
 #elif defined(USE_VULKAN_API)
     aura3d::VkInstanceData vkInstanceData = {
         .appName = "Aura3D",
@@ -59,14 +59,14 @@ int main(int argc, char **argv)
         .layerCount = 1
     };
 
-    aura3d::VkRunner vkRunner(windowDetails,
+    aura3d::VulkanRenderer vkRenderer(windowDetails,
                               vkInstanceData,
                               vkDeviceData,
                               vkImageViewData);
-    vkRunner.run();
+    vkRenderer.run();
 #else
-    aura3d::GlRunner glRunner(windowDetails);
-    glRunner.run();
+    aura3d::OpenGLRenderer glRenderer(windowDetails);
+    glRenderer.run();
 #endif
 
     return 0;

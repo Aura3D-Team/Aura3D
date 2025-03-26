@@ -1,42 +1,78 @@
-#include "CpuRunner.h"
-
-#include <nlohmann/json.hpp>
+#include "Renderers/CPURenderer.h"
 #include <ink/ink.hpp>
-
 #include "aura.hpp"
 #include "Utils/ColorsDefinitions.h"
 #include "Utils/AuraUtils.h"
+#include <cmath>
+#include <map>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
 
 namespace aura3d {
 
-CpuRunner::CpuRunner(WindowDetails windowDetails)
+CPURenderer::CPURenderer(const WindowDetails& windowDetails)
+    : Renderer(windowDetails)
 {
+    // Constructor only stores parameters - initialization happens in initialize()
+}
+
+CPURenderer::~CPURenderer()
+{
+    cleanup();
+}
+
+void CPURenderer::initialize()
+{
+    if (_isInitialized) {
+        return;
+    }
+
+    // Create window manager
 #ifdef SDL_WINDOW_MANAGER
-    _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(windowDetails);
+    _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(_windowDetails);
 #else
-    _windowManagerApi = std::make_unique<aura3d::GlfwAuraWindowManager>(windowDetails);
+    _windowManagerApi = std::make_unique<aura3d::GlfwAuraWindowManager>(_windowDetails);
 #endif
 
-    _windowManagerApi->createWindow(APPLICATION_NAME);
+    // Create window and framebuffer
+    createWindow(APPLICATION_NAME);
 
-    aura3d::CpuFrameBufferManager::Config frameBufferSettings = {};
-    frameBufferSettings.width = windowDetails.width;
-    frameBufferSettings.height = windowDetails.height;
-
-    _frameBufferManager = std::make_unique<aura3d::CpuFrameBufferManager>(_windowManagerApi->getWindowInstance(), frameBufferSettings);
+    _isInitialized = true;
 }
 
-CpuRunner::~CpuRunner()
+void CPURenderer::createWindow(const char* title)
 {
-    // Empty
+    _windowManagerApi->createWindow(title);
+
+    // Create framebuffer manager after window creation
+    CpuFrameBufferManager::Config frameBufferSettings = {};
+    frameBufferSettings.width = _windowDetails.width;
+    frameBufferSettings.height = _windowDetails.height;
+
+    _frameBufferManager = std::make_unique<CpuFrameBufferManager>(
+        _windowManagerApi->getWindowInstance(),
+        frameBufferSettings
+    );
+
+    // Store framebuffer in window data for access in SDL event handlers
+    SDL_SetWindowData(
+        _windowManagerApi->getWindowInstance(),
+        "CpuFrameBufferManager",
+        _frameBufferManager.get()
+    );
 }
 
-void CpuRunner::run()
+void CPURenderer::run()
 {
+    if (!_isInitialized) {
+        initialize();
+    }
+
     auto window = _windowManagerApi->getWindowInstance();
     auto windowDetails = _windowManagerApi->getWindowDetails();
     auto windowFLags = _windowManagerApi->getWindowFlags();
-    SDL_SetWindowData(window, "CpuFrameBufferManager", _frameBufferManager.get());
+
     const int centerX = windowDetails->width / 2;
     const int centerY = windowDetails->height / 2;
 
@@ -44,16 +80,18 @@ void CpuRunner::run()
     ink::EnhancedJson rectPoints = ink::EnhancedJsonUtils::loadFromFile("./test.json");
     INK_ASSERT(rectPoints.is_array());
 
-    INK_TRACE << AuraUtils::fast_int_sqrt(121) << " " << AuraUtils::fast_sqrt(256);
-
+    // Main render loop
     _windowManagerApi->process([&]() {
-        if (windowFLags->resized)
-        {
+        auto windowDetails = _windowManagerApi->getWindowDetails();
+        auto windowFlags = _windowManagerApi->getWindowFlags();
+
+        // Handle window resize
+        if (windowFlags->resized) {
             _frameBufferManager->resizeFramebuffer(windowDetails->width, windowDetails->height);
-            windowFLags->resized = false;
+            windowFlags->resized = false;
         }
 
-        // Clear the framebuffer
+        // Clear the framebuffer with a base color
         _frameBufferManager->clear(aura3d::colors::CORNSILK_UINT32);
 
         int width = _frameBufferManager->getWidth();
@@ -190,7 +228,7 @@ void CpuRunner::run()
 
         // 4. Overlay statistical information
         int textY = 20;
-        _frameBufferManager->drawText("ObJect Movement Analysis", 10, textY, aura3d::colors::RED_UINT32);
+        _frameBufferManager->drawText("Object Movement Analysis", 10, textY, aura3d::colors::RED_UINT32);
         textY += 20;
 
         // Total number of tracked positions
@@ -253,4 +291,31 @@ void CpuRunner::run()
     });
 }
 
+
+
+void CPURenderer::handleWindowChanges()
+{
+    if (!_isInitialized || !_frameBufferManager) {
+        return;
+    }
+
+    auto windowDetails = _windowManagerApi->getWindowDetails();
+
+    // Resize the framebuffer to match the window
+    _frameBufferManager->resizeFramebuffer(windowDetails->width, windowDetails->height);
 }
+
+void CPURenderer::cleanup()
+{
+    if (!_isInitialized) {
+        return;
+    }
+
+    // Clean up resources
+    _frameBufferManager.reset();
+    _windowManagerApi.reset();
+
+    _isInitialized = false;
+}
+
+} // namespace aura3d

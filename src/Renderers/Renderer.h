@@ -1,0 +1,70 @@
+#ifndef RENDERER_H
+#define RENDERER_H
+
+#pragma once
+
+#include "AuraWindowManagers/CommonWindow.hpp"
+
+namespace aura3d {
+
+/**
+ * @brief Abstract base class for all renderer implementations
+ *
+ * The Renderer class provides a common interface for different rendering backends
+ * (Vulkan, OpenGL, CPU-based software rendering, etc.)
+ */
+class Renderer {
+public:
+    /**
+     * @brief Constructor with window configuration
+     * @param windowDetails Window configuration parameters
+     */
+    Renderer(const WindowDetails& windowDetails) : _windowDetails(windowDetails) {};
+
+    /**
+     * @brief Virtual destructor
+     */
+    virtual ~Renderer() = default;
+
+    /**
+     * @brief Initialize the renderer
+     * This method should be called before any rendering operations
+     */
+    virtual void initialize() = 0;
+
+    /**
+     * @brief Start the main rendering loop
+     * This method typically doesn't return until the application is closed
+     */
+    virtual void run() = 0;
+
+    /**
+     * @brief Handle window resize and other window-related changes
+     */
+    virtual void handleWindowChanges() = 0;
+
+    /**
+     * @brief Clean up all resources used by the renderer
+     */
+    virtual void cleanup() = 0;
+
+    /**
+     * @brief Get the current window details
+     * @return Current window configuration
+     */
+    const WindowDetails& getWindowDetails() const { return _windowDetails; }
+
+protected:
+    /**
+     * @brief Create and initialize the window
+     * @param title Window title
+     */
+    virtual void createWindow(const char* title) = 0;
+
+    // Window details
+    WindowDetails _windowDetails;
+};
+
+} // namespace aura3d
+
+#endif // RENDERER_H

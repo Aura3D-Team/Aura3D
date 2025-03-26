@@ -9,20 +9,10 @@
 #include <thread>
 
 #include <aura.hpp>
+#include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
-
-/**
- * @brief Stores command pool creation info and Vulkan command pool.
- *
- * This struct holds the necessary information and Vulkan command pool (`VkCommandPool`)
- * for managing command buffers in a Vulkan application.
- */
-struct VkCommandPoolData {
-    VkCommandPoolCreateInfo commandPoolInfo; /**< Information for creating a Vulkan command pool. */
-    VkCommandPool commandPool; /**< Vulkan command pool for submitting command buffers. */
-};
 
 /**
  * @brief Manages Vulkan command pools and command buffers in a multi-threaded environment.

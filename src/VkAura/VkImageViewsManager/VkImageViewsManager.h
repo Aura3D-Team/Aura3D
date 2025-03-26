@@ -5,17 +5,10 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
+#include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
-
-struct ImageViewData {
-    VkImageAspectFlags aspectMask;
-    uint32_t baseMipLevel;
-    uint32_t levelCount;
-    uint32_t baseArrayLayer;
-    uint32_t layerCount;
-};
 
 /**
  * @brief Manages the creation and cleanup of Vulkan image views for swap chain images.

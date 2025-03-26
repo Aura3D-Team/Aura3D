@@ -1,15 +1,15 @@
 #ifndef VK_DEVICE_ALLOCATOR_H
 #define VK_DEVICE_ALLOCATOR_H
 
-#include "VkDeviceAllocatorTypes.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <vector>
 #include <mutex>
-// #include <shared_mutex>
 #include <atomic>
 #include <memory>
-// #include <queue>
+
+#include "VkDeviceAllocatorTypes.h"
+#include "VkAura/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 
@@ -28,7 +28,7 @@ public:
      * @brief Constructor
      * @param createInfo The configuration for the allocator
      */
-    explicit VkDeviceAllocator(const VkDeviceAllocatorCreateInfo& createInfo);
+    explicit VkDeviceAllocator(VkHostAllocator* vkHostAllocator, const VkDeviceAllocatorCreateInfo& createInfo);
 
     /**
      * @brief Destructor - frees all allocated memory
@@ -256,8 +256,11 @@ private:
     void releaseLock(uint32_t memoryTypeIndex, bool forWrite = true);
 
     // Member variables
+    VkHostAllocator* vkHostAllocator;
     VkPhysicalDevice physicalDevice;
     VkDevice device;
+
+
     VkDeviceSize defaultBlockSize;
     VkDeviceSize smallBlockSize;
     bool defragmentationEnabled;

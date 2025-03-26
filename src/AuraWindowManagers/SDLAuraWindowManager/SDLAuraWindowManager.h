@@ -5,8 +5,8 @@
 
 #pragma once
 
-#include <SDL2/SDL.h>
 #include <glad/gl.h>
+#include <SDL2/SDL.h>
 #include <vector>
 #include <functional>
 #include <memory>

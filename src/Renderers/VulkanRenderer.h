@@ -1,15 +1,16 @@
-#ifndef VKRUNNER_H
-#define VKRUNNER_H
+#ifndef VULKAN_RENDERER_H
+#define VULKAN_RENDERER_H
 
 #pragma once
 
 #ifdef SDL_WINDOW_MANAGER
-#include <AuraWindowManagers/SDLAuraWindowManager/SDLAuraWindowManager.h>
+#include "AuraWindowManagers/SDLAuraWindowManager/SDLAuraWindowManager.h"
 #else
-#include <AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h>
+#include "AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h"
 #endif
 
-// #include <aura.hpp>
+#include "Renderers/Renderer.h"
+
 #include <VkAura/VkInstanceManager/VkInstanceManager.h>
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkSurfaceManager/VkSurfaceManager.h>
@@ -27,31 +28,92 @@
 
 namespace aura3d {
 
-class VkRunner
-{
+/**
+ * @brief Vulkan implementation of the Renderer interface
+ */
+class VulkanRenderer : public Renderer {
 public:
-    VkRunner(WindowDetails windowDetails,
-             VkInstanceData vkInstanceData,
-             VkDeviceData vkDeviceData,
-             ImageViewData vkImageViewData);
+    /**
+     * @brief Construct a Vulkan renderer
+     *
+     * @param windowDetails Window configuration
+     * @param vkInstanceData Vulkan instance configuration
+     * @param vkDeviceData Vulkan device configuration
+     * @param vkImageViewData Image view configuration
+     */
+    VulkanRenderer(
+        const WindowDetails& windowDetails,
+        const VkInstanceData& vkInstanceData,
+        const VkDeviceData& vkDeviceData,
+        const ImageViewData& vkImageViewData
+        );
 
-    ~VkRunner();
+    /**
+     * @brief Destroy the Vulkan renderer
+     */
+    virtual ~VulkanRenderer();
 
-    void run();
+    /**
+     * @brief Initialize the Vulkan renderer
+     */
+    void initialize() override;
 
-    void handleWindowChanges();
+    /**
+     * @brief Run the main rendering loop
+     */
+    void run() override;
 
-    void cleanup();
+    /**
+     * @brief Handle window changes (resize, etc.)
+     */
+    void handleWindowChanges() override;
+
+    /**
+     * @brief Clean up Vulkan resources
+     */
+    void cleanup() override;
+
+protected:
+    /**
+     * @brief Create the window with Vulkan support
+     *
+     * @param title Window title
+     */
+    void createWindow(const char* title) override;
+
+    /**
+     * @brief Set up the Vulkan graphics pipeline
+     */
+    void setupGraphicsPipeline();
+
+    /**
+     * @brief Create vertex buffers for rendering
+     */
+    void createVertexBuffers();
+
+    /**
+     * @brief Create uniform buffers for shader parameters
+     */
+    void createUniformBuffers();
+
+    /**
+     * @brief Create descriptor sets for binding resources to shaders
+     */
+    void createDescriptorSets();
+
+    /**
+     * @brief Set up command buffers for rendering
+     */
+    void setupCommandBuffers();
+
 private:
 #ifdef SDL_WINDOW_MANAGER
     std::unique_ptr<aura3d::SDLAuraWindowManager> _windowManagerApi;
 #else
     std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
 #endif
-
     std::unique_ptr<aura3d::VkHostAllocator> _vkHostAllocator;
     std::unique_ptr<aura3d::VkDeviceAllocator> _vkDeviceAllocator;
-
     std::unique_ptr<aura3d::VkInstanceManager> _vkInstance;
     std::unique_ptr<aura3d::VkDeviceManager> _vkDeviceManager;
     std::unique_ptr<aura3d::VkSurfaceManager> _vkSurfaceManager;
@@ -71,10 +133,21 @@ private:
     std::vector<aura3d::QueueData*> _queueDataFromExclusiveFlags;
     uint32_t _graphicsIndexFamily;
 
-    // ImageViews
+    // Configuration data
+    VkInstanceData _vkInstanceData;
+    VkDeviceData _vkDeviceData;
     ImageViewData _vkImageViewData;
+
+    VkFixedArray<VkCommandBuffer> _cmdBuffers;
+
+    std::vector<VkDescriptorSet> _descriptorSets;
+    std::vector<VkDescriptorSet> _textureDescriptorSets;
+
+    // Rendering state
+    uint32_t _currentFrame = 0;
+    bool _isInitialized = false;
 };
 
-}
+} // namespace aura3d
 
-#endif // VKRUNNER_H
+#endif // VULKAN_RENDERER_H

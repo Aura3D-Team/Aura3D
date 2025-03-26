@@ -8,6 +8,7 @@
 #include <vector>
 #include <set>
 #include <cstdint>
+#include "VkAura/VkAuraDefs.h"
 
 // Custom hash function for std::pair<uint32_t, VkQueueFlags>
 // so that it can be used as a key in std::unordered_map.
@@ -21,19 +22,6 @@ namespace std {
 }
 
 namespace aura3d {
-
-/**
- * @brief Holds information about a Vulkan queue.
- *
- * This struct stores data related to a Vulkan queue, including the queues themselves,
- * a map of queue priorities per queue family index, and the corresponding
- * VkDeviceQueueCreateInfo structure.
- */
-struct QueueData {
-    std::vector<VkQueue> queues;
-    std::vector<float> queuePriorities;
-    VkDeviceQueueCreateInfo vkDeviceQueueCreateInfo{};
-};
 
 /**
  * @class VkQueueManager

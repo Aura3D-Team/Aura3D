@@ -37,33 +37,6 @@ public:
                              VkMemoryPropertyFlags properties,
                              VkBuffer& buffer,
                              VkDeviceAllocation& allocation);
-
-    /**
-     * Creates a buffer and returns a legacy-format memory handle and offset
-     * (Transitional API for backward compatibility)
-     *
-     * @param device Vulkan logical device
-     * @param physicalDevice Vulkan physical device
-     * @param size Size of the buffer in bytes
-     * @param usage Buffer usage flags
-     * @param sharingMode Buffer sharing mode (exclusive or concurrent)
-     * @param properties Memory property flags (e.g., HOST_VISIBLE, DEVICE_LOCAL)
-     * @param buffer Output parameter for the created buffer handle
-     * @param bufferMemory Output parameter for the memory handle (legacy format)
-     * @param bufferOffset Output parameter for the memory offset (legacy format)
-     */
-    static void createBufferLegacy(VkHostAllocator* vkHostAllocator,
-                                   VkDeviceAllocator* vkDeviceAllocator,
-                                   VkDevice device,
-                                   VkPhysicalDevice physicalDevice,
-                                   VkDeviceSize size,
-                                   VkBufferUsageFlags usage,
-                                   VkSharingMode sharingMode,
-                                   VkMemoryPropertyFlags properties,
-                                   VkBuffer& buffer,
-                                   VkDeviceMemory& bufferMemory,
-                                   VkDeviceSize& bufferOffset);
-
     /**
      * Copies data between buffers using a command buffer
      *

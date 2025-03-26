@@ -1,7 +1,17 @@
+#ifndef VKDESCRIPTORMANAGER_H
+#define VKDESCRIPTORMANAGER_H
+
+#pragma once
+
+#include <vulkan/vulkan.h>
+#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+
+namespace aura3d {
+
 /**
- * VkDescriptorManager.h
+ * @class VkDescriptorManager
  *
- * This class manages Vulkan descriptor pools and sets.
+ * @brief This class manages Vulkan descriptor pools and sets.
  *
  * Descriptor Sets in Vulkan:
  * - Descriptor sets are objects that connect shader resources (like buffers, images) with the pipeline
@@ -13,16 +23,6 @@
  * - They manage a pool of memory from which descriptor sets can be allocated
  * - They specify the maximum number and types of descriptors that can be allocated
  */
-
-#ifndef VKDESCRIPTORMANAGER_H
-#define VKDESCRIPTORMANAGER_H
-#pragma once
-
-#include <vulkan/vulkan.h>
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
-
-namespace aura3d {
-
 class VkDescriptorManager
 {
 public:

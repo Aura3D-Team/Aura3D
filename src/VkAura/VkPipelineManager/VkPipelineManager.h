@@ -1,6 +1,8 @@
 #ifndef VKPIPELINEMANAGER_H
 #define VKPIPELINEMANAGER_H
 
+#pragma once
+
 #include <vulkan/vulkan.h>
 #include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
 

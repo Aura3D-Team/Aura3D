@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
+#include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
 #include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
@@ -14,20 +15,6 @@
 #include <VkAura/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
-
-struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR capabilities;
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentModes;
-};
-
-// struct VkRenderPassData {
-//     VkAttachmentDescription colorAttachment;
-//     VkAttachmentReference colorAttachmentRef;
-//     VkSubpassDescription subpass;
-//     VkSubpassDependency dependency;
-//     VkRenderPassCreateInfo renderPassInfo;
-// };
 
 class VkSwapChainManager
 {

@@ -8,6 +8,7 @@
 #include <vector>
 #include <unordered_map>
 
+#include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkPipelineManager/VkPipelineManager.h>
 #include <VkAura/VkShaderManager/VkShaderManager.h>
 #include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
@@ -15,27 +16,6 @@
 
 
 namespace aura3d {
-
-// Descriptor binding information for pipeline creation
-struct DescriptorBindingInfo {
-    uint32_t binding;                     // Binding point in shader
-    VkDescriptorType descriptorType;      // Type of descriptor (uniform buffer, sampler, etc.)
-    uint32_t descriptorCount;             // Number of descriptors in this binding
-    VkShaderStageFlags stageFlags;        // Shader stages that use this binding
-    const VkSampler* pImmutableSamplers;  // Optional immutable samplers
-
-    DescriptorBindingInfo() : binding(0), descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-        descriptorCount(1), stageFlags(VK_SHADER_STAGE_VERTEX_BIT),
-        pImmutableSamplers(nullptr) {}
-};
-
-// Set of descriptor bindings for a single descriptor set
-struct DescriptorSetLayoutInfo {
-    uint32_t setIndex;                                // Set index used in the shader
-    std::vector<DescriptorBindingInfo> bindings;      // Bindings in this set
-
-    DescriptorSetLayoutInfo() : setIndex(0) {}
-};
 
 class VkGraphicsPipelineManager : public VkPipelineManager
 {

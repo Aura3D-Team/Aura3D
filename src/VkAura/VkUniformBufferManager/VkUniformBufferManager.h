@@ -4,21 +4,13 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
 #include <vector>
 
+#include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkHostAllocator/VkHostAllocator.h>
 #include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
-
-/**
- * @struct TransformUBO
- * @brief Uniform buffer object structure matching the shader UBO
- */
-struct TransformUBO {
-    glm::mat4 transform; // Transformation matrix for UI elements
-};
 
 /**
  * @class VkUniformBufferManager

@@ -7,24 +7,12 @@
 #include <vector>
 #include <memory>
 
+#include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkDebugger/VkDebugger.h>
 #include <VkAura/VkHostAllocator/VkHostAllocator.h>
 #include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
-
-/**
- * @brief This struct represents Important data for VkInstance creation
- *
- * Obs: for more details, it can have more parameters in the future
- */
-struct VkInstanceData {
-    const char* appName;
-    const char* engineName;
-    std::vector<int> appVersion;
-    std::vector<const char*> vkInstanceExtensions;
-    std::vector<const char*> vkValidationLayers;
-};
 
 /**
  * @class to manage Vulkan instance creation, configuration, and destruction.

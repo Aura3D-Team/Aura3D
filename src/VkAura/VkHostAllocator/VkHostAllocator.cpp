@@ -15,7 +15,7 @@
 namespace aura3d {
 
 //=========================================================================================
-// Memory Pool Implementation
+// Lock-free Memory Pool Implementation
 //=========================================================================================
 
 MemoryPool::MemoryPool(size_t blockSize, size_t initialBlocks)
@@ -38,12 +38,13 @@ MemoryPool::~MemoryPool()
 
 void MemoryPool::addBlocks(size_t count)
 {
+    std::lock_guard<std::mutex> lock(expansionMutex);
+
     // Adjust block size to ensure it can hold at least a pointer
     size_t actualBlockSize = std::max(blockSize, sizeof(Block*));
 
     // Allocate a new large chunk of memory
     size_t totalSize = actualBlockSize * count;
-
 #if defined(_WIN32)
     void* memory = _aligned_malloc(totalSize, std::max(size_t(16), sizeof(void*)));
 #else
@@ -52,7 +53,6 @@ void MemoryPool::addBlocks(size_t count)
         memory = nullptr;
     }
 #endif
-
     if (!memory) {
         INK_ERROR << "Failed to allocate memory for pool of block size " << blockSize;
         return;
@@ -63,10 +63,26 @@ void MemoryPool::addBlocks(size_t count)
 
     // Initialize free list with new blocks
     char* curr = static_cast<char*>(memory);
+
+    // Get current head of the free list
+    Block* oldHead = freeList.load(std::memory_order_relaxed);
+
     for (size_t i = 0; i < count; ++i) {
         Block* block = reinterpret_cast<Block*>(curr);
-        block->next = freeList;
-        freeList = block;
+
+        if (i == count - 1) {
+            // Last block points to the old head
+            block->next.store(oldHead, std::memory_order_relaxed);
+
+            // Atomically update the free list head to the first new block
+            Block* firstBlock = reinterpret_cast<Block*>(static_cast<char*>(memory));
+            freeList.store(firstBlock, std::memory_order_release);
+        } else {
+            // Each block points to the next one
+            Block* nextBlock = reinterpret_cast<Block*>(curr + actualBlockSize);
+            block->next.store(nextBlock, std::memory_order_relaxed);
+        }
+
         curr += actualBlockSize;
     }
 
@@ -75,38 +91,45 @@ void MemoryPool::addBlocks(size_t count)
 
 void* MemoryPool::allocate()
 {
-    std::lock_guard<std::mutex> lock(poolMutex);
+    Block* oldHead = freeList.load(std::memory_order_acquire);
+    Block* newHead;
 
-    // If free list is empty, allocate more blocks
-    if (!freeList) {
-        // Double the pool size with each expansion
-        size_t newBlocks = std::max(size_t(64), totalBlocks.load(std::memory_order_relaxed));
-        addBlocks(newBlocks);
+    do {
+        // If free list is empty, allocate more blocks
+        if (!oldHead) {
+            // Check again after acquiring the lock
+            if (!(oldHead = freeList.load(std::memory_order_acquire))) {
+                // Double the pool size with each expansion
+                size_t newBlocks = std::max(size_t(64), totalBlocks.load(std::memory_order_relaxed));
+                addBlocks(newBlocks);
+                oldHead = freeList.load(std::memory_order_acquire);
 
-        // If still empty after trying to add blocks, fail
-        if (!freeList) {
-            return nullptr;
+                // If still empty after trying to add blocks, fail
+                if (!oldHead) {
+                    return nullptr;
+                }
+            }
         }
-    }
 
-    // Pop a block from the free list
-    Block* block = freeList;
-    freeList = block->next;
+        newHead = oldHead->next.load(std::memory_order_relaxed);
+    } while (!freeList.compare_exchange_weak(oldHead, newHead,
+                                             std::memory_order_release,
+                                             std::memory_order_acquire));
 
     allocatedCount.fetch_add(1, std::memory_order_relaxed);
-
-    // Return the allocated block
-    return block;
+    return oldHead;
 }
 
 void MemoryPool::free(void* ptr)
 {
-    std::lock_guard<std::mutex> lock(poolMutex);
-
-    // Cast to Block* and insert at head of free list
     Block* block = static_cast<Block*>(ptr);
-    block->next = freeList;
-    freeList = block;
+    Block* oldHead = freeList.load(std::memory_order_relaxed);
+
+    do {
+        block->next.store(oldHead, std::memory_order_relaxed);
+    } while (!freeList.compare_exchange_weak(oldHead, block,
+                                             std::memory_order_release,
+                                             std::memory_order_acquire));
 
     allocatedCount.fetch_sub(1, std::memory_order_relaxed);
 }

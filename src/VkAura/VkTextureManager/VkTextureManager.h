@@ -12,10 +12,6 @@
 
 namespace aura3d {
 
-// Forward declaration
-class VkBufferMemoryAllocator;
-struct AllocationInfo;
-
 /**
  * @file VkTextureManager
  * @brief Manages Vulkan texture resources with proper memory allocation

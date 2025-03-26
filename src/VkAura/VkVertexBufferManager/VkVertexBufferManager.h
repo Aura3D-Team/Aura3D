@@ -10,32 +10,11 @@
 #include <vector>
 
 #include <aura.hpp>
+#include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkHostAllocator/VkHostAllocator.h>
 #include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
-
-struct Vertex3d
-{
-    glm::vec3 pos;      // (x, y, z)
-    glm::vec2 texCoord; // (u, v)
-    glm::vec4 color;    // (r, g, b, a)
-};
-
-struct Vertex2d {
-    glm::vec2 pos;      // (x, y)
-    glm::vec2 texCoord; // (u, v)
-    glm::vec4 color;    // (r, g, b, a)
-};
-
-// Simplified structure to hold vertex buffer information
-struct VertexBufferInfo {
-    VkBuffer buffer = VK_NULL_HANDLE;
-    uint32_t allocationId = 0;      // ID for tracking in VkDeviceAllocator
-    size_t vertexCount = 0;
-    bool is2d = true;               // Whether the buffer contains 2D or 3D vertices
-    bool persistent = false;        // Whether the buffer is persistently mapped
-};
 
 class VkVertexBufferManager
 {

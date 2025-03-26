@@ -6,24 +6,12 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
+#include "VkAura/VkAuraDefs.h"
 #include "VkAura/VkQueueManager/VkQueueManager.h"
 #include "VkAura/VkSurfaceManager/VkSurfaceManager.h"
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+#include "VkAura/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
-
-/**
- * @brief This struct represents Important data for VkDevice creation
- *
- * Obs: for more details, it can have more parameters in the future
- */
-struct VkDeviceData {
-    std::vector<const char*> vkDeviceExtensions;
-    std::vector<const char*> vkEnabledLayers;
-
-    std::vector<VkQueueFlags> concurrentQueueFlags;
-    VkQueueFlags exclusiveQueueFlags;
-};
 
 /**
  * @class VkDeviceManager
