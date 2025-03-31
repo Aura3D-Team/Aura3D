@@ -7,6 +7,8 @@
 #include <glm/glm.hpp>
 #include <vector>
 
+#include "aura.hpp"
+
 namespace aura3d {
 
 
@@ -47,7 +49,7 @@ struct VkDeviceData {
  */
 struct QueueData {
     std::vector<VkQueue> queues;
-    std::vector<float> queuePriorities;
+    std::vector<f32> queuePriorities;
     VkDeviceQueueCreateInfo vkDeviceQueueCreateInfo{};
 };
 
@@ -73,9 +75,9 @@ struct VkCommandPoolData {
 
 // Descriptor binding information for pipeline creation
 struct DescriptorBindingInfo {
-    uint32_t binding;                     // Binding point in shader
+    u32 binding;                     // Binding point in shader
     VkDescriptorType descriptorType;      // Type of descriptor (uniform buffer, sampler, etc.)
-    uint32_t descriptorCount;             // Number of descriptors in this binding
+    u32 descriptorCount;             // Number of descriptors in this binding
     VkShaderStageFlags stageFlags;        // Shader stages that use this binding
     const VkSampler* pImmutableSamplers;  // Optional immutable samplers
 
@@ -86,7 +88,7 @@ struct DescriptorBindingInfo {
 
 // Set of descriptor bindings for a single descriptor set
 struct DescriptorSetLayoutInfo {
-    uint32_t setIndex;                                // Set index used in the shader
+    u32 setIndex;                                // Set index used in the shader
     std::vector<DescriptorBindingInfo> bindings;      // Bindings in this set
 
     DescriptorSetLayoutInfo() : setIndex(0) {}
@@ -95,10 +97,10 @@ struct DescriptorSetLayoutInfo {
 
 struct ImageViewData {
     VkImageAspectFlags aspectMask;
-    uint32_t baseMipLevel;
-    uint32_t levelCount;
-    uint32_t baseArrayLayer;
-    uint32_t layerCount;
+    u32 baseMipLevel;
+    u32 levelCount;
+    u32 baseArrayLayer;
+    u32 layerCount;
 };
 
 
@@ -127,7 +129,7 @@ struct Vertex2d {
 // Simplified structure to hold vertex buffer information
 struct VertexBufferInfo {
     VkBuffer buffer = VK_NULL_HANDLE;
-    uint32_t allocationId = 0;      // ID for tracking in VkDeviceAllocator
+    u32 allocationId = 0;      // ID for tracking in VkDeviceAllocator
     size_t vertexCount = 0;
     bool is2d = true;               // Whether the buffer contains 2D or 3D vertices
     bool persistent = false;        // Whether the buffer is persistently mapped

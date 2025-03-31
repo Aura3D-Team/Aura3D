@@ -1,8 +1,10 @@
 #include "VkDeviceManager.h"
 
-#include <aura.hpp>
-#include "AuraException/AuraException.h"
+#include <set>
 #include <ink/ink.hpp>
+
+#include "aura.hpp"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
 
@@ -38,7 +40,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 
     INK_VERBOSE << "Found " << _physicaldeviceCount << " Vulkan physical device(s).";
 
-    uint32_t bestScore = 0;
+    u32 bestScore = 0;
 
     // Select the best physical device
     for (const VkPhysicalDevice& device : devices) {
@@ -59,7 +61,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         INK_VERBOSE << "Device Type: " << deviceProperties.deviceType;
 
         // Scoring the device
-        uint32_t score = 0;
+        u32 score = 0;
 
         // Prefer discrete GPUs (dedicated graphics cards)
         if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
@@ -101,7 +103,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         _vkQueueManager.pushQueueInfo(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags, 1.0f);
     }
 
-    float priority = 0.95f;
+    f32 priority = 0.95f;
     for (const VkQueueFlags& f : _vkDeviceCreationData.concurrentQueueFlags) {
         _vkQueueManager.pushQueueInfo(_physicalDevice, f, priority);
         priority -= 0.05f;
@@ -110,21 +112,21 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     const std::vector<VkDeviceQueueCreateInfo> vkDeviceQueueCreateInfos = _vkQueueManager.getDeviceQueueCreateInfos();
     _deviceInfo.pNext = nullptr;
     _deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    _deviceInfo.queueCreateInfoCount = static_cast<uint32_t>(vkDeviceQueueCreateInfos.size());
+    _deviceInfo.queueCreateInfoCount = static_cast<u32>(vkDeviceQueueCreateInfos.size());
     _deviceInfo.pQueueCreateInfos = vkDeviceQueueCreateInfos.data();
-    _deviceInfo.enabledLayerCount = static_cast<uint32_t>(_vkDeviceCreationData.vkEnabledLayers.size());
+    _deviceInfo.enabledLayerCount = static_cast<u32>(_vkDeviceCreationData.vkEnabledLayers.size());
     _deviceInfo.ppEnabledLayerNames = _vkDeviceCreationData.vkEnabledLayers.data();
-    _deviceInfo.enabledExtensionCount = static_cast<uint32_t>(_vkDeviceCreationData.vkDeviceExtensions.size());
+    _deviceInfo.enabledExtensionCount = static_cast<u32>(_vkDeviceCreationData.vkDeviceExtensions.size());
     _deviceInfo.ppEnabledExtensionNames = _vkDeviceCreationData.vkDeviceExtensions.data();
     _deviceInfo.pEnabledFeatures = &_deviceFeatures;
 
     result = vkCreateDevice(_physicalDevice, &_deviceInfo, vkHostAllocator->getCallbacks(), &_device);
     VK_RESULT_CHECK(result);
 
-    uint32_t familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);
+    u32 familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);
     _vkQueueManager.setupQueue(_device, familyIndex, _vkDeviceCreationData.exclusiveQueueFlags);
     for (const VkQueueFlags& f : _vkDeviceCreationData.concurrentQueueFlags) {
-        uint32_t familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, f);
+        u32 familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, f);
         _vkQueueManager.setupQueue(_device, familyIndex, f);
     }
 
@@ -157,7 +159,7 @@ VkBool32 VkDeviceManager::physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager 
 }
 
 VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> exts) const {
-    uint32_t extensionCount = 0;
+    u32 extensionCount = 0;
     vkEnumerateDeviceExtensionProperties(_physicalDevice, nullptr, &extensionCount, nullptr);
 
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);

@@ -65,7 +65,7 @@ VkDeviceAllocator::~VkDeviceAllocator()
 }
 
 // Helper for thread safety
-void VkDeviceAllocator::acquireLock(uint32_t memoryTypeIndex, bool forWrite) {
+void VkDeviceAllocator::acquireLock(u32 memoryTypeIndex, bool forWrite) {
     if (threadSafetyMode == ThreadSafetyMode::NONE) {
         return;
     } else if (threadSafetyMode == ThreadSafetyMode::COARSE_GRAINED) {
@@ -85,7 +85,7 @@ void VkDeviceAllocator::acquireLock(uint32_t memoryTypeIndex, bool forWrite) {
 }
 
 // Helper for thread safety
-void VkDeviceAllocator::releaseLock(uint32_t memoryTypeIndex, bool forWrite) {
+void VkDeviceAllocator::releaseLock(u32 memoryTypeIndex, bool forWrite) {
     if (threadSafetyMode == ThreadSafetyMode::NONE) {
         return;
     } else if (threadSafetyMode == ThreadSafetyMode::COARSE_GRAINED) {
@@ -109,7 +109,7 @@ VkResult VkDeviceAllocator::allocateMemory(
     // Reset the allocation
     allocation.reset();
 
-    uint32_t memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+    u32 memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
     if (memoryTypeIndex == UINT32_MAX) {
         INK_ERROR << "Failed to find suitable memory type";
         return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -162,6 +162,9 @@ VkResult VkDeviceAllocator::allocateMemory(
             allocationMap[allocation.allocationId] = allocation;
         }
     } else {
+        INK_DEBUG << "Using buddy allocator for small memory request: "
+                  << (memRequirements.size / (1024 * 1024)) << "MB";
+
         // Try buddy allocator for buffer memory if enabled
         if (useBuddyAllocatorForBuffers &&
             (properties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
@@ -172,7 +175,7 @@ VkResult VkDeviceAllocator::allocateMemory(
                 memRequirements.size,
                 memRequirements.alignment,
                 allocation
-                );
+            );
         }
 
         // If buddy allocation failed or not applicable, use standard allocation
@@ -183,7 +186,7 @@ VkResult VkDeviceAllocator::allocateMemory(
                 memRequirements.size,
                 memRequirements.alignment,
                 allocation
-                );
+            );
 
             // If no space in existing blocks, allocate a new block
             if (result != VK_SUCCESS) {
@@ -214,7 +217,7 @@ VkResult VkDeviceAllocator::allocateMemory(
                     memRequirements.size,
                     memRequirements.alignment,
                     allocation
-                    );
+                );
             }
         }
 
@@ -235,7 +238,7 @@ VkResult VkDeviceAllocator::allocateMemory(
 
 // Allocate using buddy allocator
 VkResult VkDeviceAllocator::allocateUsingBuddyAllocator(
-    uint32_t memoryTypeIndex,
+    u32 memoryTypeIndex,
     VkDeviceSize size,
     VkDeviceSize alignment,
     VkDeviceAllocation& allocation)
@@ -344,7 +347,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
 
     // If deferred frees are enabled, just add to the queue
     if (deferFrees && !inShutdown) {
-        uint32_t memoryTypeIndex = allocation.memoryTypeIndex;
+        u32 memoryTypeIndex = allocation.memoryTypeIndex;
         acquireLock(memoryTypeIndex, true);
 
         for (auto& pool : memoryTypePools) {
@@ -363,7 +366,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
         return;
     }
 
-    uint32_t memoryTypeIndex = allocation.memoryTypeIndex;
+    u32 memoryTypeIndex = allocation.memoryTypeIndex;
     acquireLock(memoryTypeIndex, true);
 
     auto it = allocationMap.find(allocationId);
@@ -480,7 +483,7 @@ VkResult VkDeviceAllocator::mapMemory(
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
-    uint32_t memoryTypeIndex = allocation.memoryTypeIndex;
+    u32 memoryTypeIndex = allocation.memoryTypeIndex;
     acquireLock(memoryTypeIndex, true);
 
     // Check if this specific allocation is already mapped
@@ -564,7 +567,7 @@ void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation)
         return;
     }
 
-    uint32_t memoryTypeIndex = allocation.memoryTypeIndex;
+    u32 memoryTypeIndex = allocation.memoryTypeIndex;
     acquireLock(memoryTypeIndex, true);
 
     // For persistently mapped memory during normal operation, don't unmap
@@ -687,7 +690,7 @@ MemoryStats VkDeviceAllocator::getMemoryStats() const
     MemoryStats stats = {};
     stats.totalSize = 0;
     stats.usedSize = 0;
-    stats.allocationCount = static_cast<uint32_t>(allocationMap.size());
+    stats.allocationCount = static_cast<u32>(allocationMap.size());
     stats.blockCount = 0;
     stats.fragmentationIndex = 0.0f;
     stats.largestFreeBlock = 0;
@@ -697,11 +700,11 @@ MemoryStats VkDeviceAllocator::getMemoryStats() const
     for (const auto& pool : memoryTypePools) {
         stats.totalSize += pool.totalSize;
         stats.usedSize += pool.usedSize;
-        stats.blockCount += static_cast<uint32_t>(pool.blocks.size());
+        stats.blockCount += static_cast<u32>(pool.blocks.size());
         stats.sizeByMemoryType.push_back(std::make_pair(pool.memoryTypeIndex, pool.usedSize));
 
         // Calculate fragmentation stats
-        uint32_t totalChunks = 0;
+        u32 totalChunks = 0;
         VkDeviceSize largestChunk = 0;
 
         for (const auto& block : pool.blocks) {
@@ -734,7 +737,7 @@ MemoryStats VkDeviceAllocator::getMemoryStats() const
             // Ratio of largest free block to total free space (0.0-1.0)
             // 1.0 means no fragmentation (one large free block)
             // 0.0 means complete fragmentation (lots of tiny blocks)
-            stats.fragmentationIndex = 1.0f - (static_cast<float>(stats.largestFreeBlock) / freeSize);
+            stats.fragmentationIndex = 1.0f - (static_cast<f32>(stats.largestFreeBlock) / freeSize);
         }
     }
 
@@ -759,7 +762,7 @@ void VkDeviceAllocator::printMemoryStats() const
     // Memory type breakdown
     std::cout << "Memory by type:" << std::endl;
     for (const auto& typeStat : stats.sizeByMemoryType) {
-        uint32_t memoryTypeIndex = typeStat.first;
+        u32 memoryTypeIndex = typeStat.first;
         VkDeviceSize memorySize = typeStat.second;
 
         if (memoryTypeIndex < memoryProperties.memoryTypeCount) {
@@ -781,10 +784,10 @@ void VkDeviceAllocator::printMemoryStats() const
 }
 
 // Find memory type
-uint32_t VkDeviceAllocator::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+u32 VkDeviceAllocator::findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties)
 {
     // First, try to find an exact match
-    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+    for (u32 i = 0; i < memoryProperties.memoryTypeCount; i++) {
         if ((typeFilter & (1 << i)) &&
             (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
             return i;
@@ -792,7 +795,7 @@ uint32_t VkDeviceAllocator::findMemoryType(uint32_t typeFilter, VkMemoryProperty
     }
 
     // If no exact match, try to find a superset (memory with more capabilities)
-    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+    for (u32 i = 0; i < memoryProperties.memoryTypeCount; i++) {
         if ((typeFilter & (1 << i)) &&
             (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
             INK_DEBUG << "Using memory type " << i << " as fallback";
@@ -806,7 +809,7 @@ uint32_t VkDeviceAllocator::findMemoryType(uint32_t typeFilter, VkMemoryProperty
 }
 
 // Initialize buddy allocator for a memory type
-void VkDeviceAllocator::initializeBuddyAllocator(uint32_t memoryTypeIndex, VkDeviceSize blockSize)
+void VkDeviceAllocator::initializeBuddyAllocator(u32 memoryTypeIndex, VkDeviceSize blockSize)
 {
     MemoryTypePool& pool = getOrCreateMemoryTypePool(memoryTypeIndex);
 
@@ -848,13 +851,13 @@ void VkDeviceAllocator::initializeBuddyAllocator(uint32_t memoryTypeIndex, VkDev
 }
 
 // Allocate a new memory block
-VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceSize blockSize)
+VkResult VkDeviceAllocator::allocateNewBlock(u32 memoryTypeIndex, VkDeviceSize blockSize)
 {
     MemoryTypePool& pool = getOrCreateMemoryTypePool(memoryTypeIndex);
 
     // Check device memory limits
     if (memoryTypeIndex < memoryProperties.memoryTypeCount) {
-        uint32_t heapIndex = memoryProperties.memoryTypes[memoryTypeIndex].heapIndex;
+        u32 heapIndex = memoryProperties.memoryTypes[memoryTypeIndex].heapIndex;
         VkDeviceSize heapSize = memoryProperties.memoryHeaps[heapIndex].size;
 
         if (pool.totalSize + blockSize > heapSize) {
@@ -904,7 +907,7 @@ VkResult VkDeviceAllocator::allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceS
 
 // Find space in a block and allocate from it
 VkResult VkDeviceAllocator::findAndAllocateInBlock(
-    uint32_t memoryTypeIndex,
+    u32 memoryTypeIndex,
     VkDeviceSize size,
     VkDeviceSize alignment,
     VkDeviceAllocation& allocation)
@@ -1017,7 +1020,7 @@ bool VkDeviceAllocator::findFreeRange(
 }
 
 // Get or create a memory type pool
-MemoryTypePool& VkDeviceAllocator::getOrCreateMemoryTypePool(uint32_t memoryTypeIndex)
+MemoryTypePool& VkDeviceAllocator::getOrCreateMemoryTypePool(u32 memoryTypeIndex)
 {
     // Look for existing pool
     for (auto& pool : memoryTypePools) {
@@ -1061,7 +1064,7 @@ bool VkDeviceAllocator::findBlockByMemory(VkDeviceMemory memory, MemoryBlock** o
 }
 
 // Get allocation by ID
-VkDeviceAllocation& VkDeviceAllocator::getAllocation(uint32_t allocationId)
+VkDeviceAllocation& VkDeviceAllocator::getAllocation(u32 allocationId)
 {
     static VkDeviceAllocation invalidAllocation;
 
@@ -1096,7 +1099,7 @@ void VkDeviceAllocator::processDeferredFrees(bool processAll)
 
         if (processAll || pool.deferredFrees.size() >= deferredFreeLimit) {
             // Process all deferred frees for this pool
-            for (uint32_t allocationId : pool.deferredFrees) {
+            for (u32 allocationId : pool.deferredFrees) {
                 auto it = allocationMap.find(allocationId);
                 if (it != allocationMap.end()) {
                     VkDeviceAllocation allocation = it->second;
@@ -1173,7 +1176,7 @@ VkResult VkDeviceAllocator::defragment(VkDeviceSize maxBytesToMove)
             }
 
             // Get all allocations in this block
-            std::vector<std::pair<VkDeviceSize, uint32_t>> blockAllocations;
+            std::vector<std::pair<VkDeviceSize, u32>> blockAllocations;
             for (const auto& pair : allocationMap) {
                 const auto& alloc = pair.second;
                 if (alloc.memory == block.memory) {
@@ -1188,7 +1191,7 @@ VkResult VkDeviceAllocator::defragment(VkDeviceSize maxBytesToMove)
             VkDeviceSize currentOffset = 0;
 
             for (const auto& pair : blockAllocations) {
-                uint32_t allocationId = pair.second;
+                u32 allocationId = pair.second;
                 auto& alloc = allocationMap[allocationId];
 
                 if (alloc.offset > currentOffset) {
@@ -1265,13 +1268,13 @@ void VkDeviceAllocator::cleanup()
     unmapAllMemory();
 
     // Create a copy of all allocations to avoid iterator invalidation
-    std::vector<uint32_t> allocationIds;
+    std::vector<u32> allocationIds;
     for (const auto& pair : allocationMap) {
         allocationIds.push_back(pair.first);
     }
 
     // Free all allocations
-    for (uint32_t id : allocationIds) {
+    for (u32 id : allocationIds) {
         if (allocationMap.count(id) > 0) {
             auto allocation = allocationMap[id];
 

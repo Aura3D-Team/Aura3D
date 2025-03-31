@@ -131,7 +131,7 @@ private:
 
     // Queues
     std::vector<aura3d::QueueData*> _queueDataFromExclusiveFlags;
-    uint32_t _graphicsIndexFamily;
+    u32 _graphicsIndexFamily;
 
     // Configuration data
     VkInstanceData _vkInstanceData;
@@ -144,7 +144,7 @@ private:
     std::vector<VkDescriptorSet> _textureDescriptorSets;
 
     // Rendering state
-    uint32_t _currentFrame = 0;
+    u32 _currentFrame = 0;
     bool _isInitialized = false;
 };
 

@@ -58,13 +58,13 @@ VkExtent2D* VkSwapChainManager::getExtent2D()
     return &_choosedExtent;
 }
 
-void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount)
+void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount)
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
     _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes);
     _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, window);
 
-    uint32_t imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
+    u32 imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
 
     if (_swapChainSupportDetails.capabilities.maxImageCount > 0
         && imageCount > _swapChainSupportDetails.capabilities.maxImageCount) {
@@ -89,7 +89,7 @@ void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface
     VkQueueFlags& exclusiveQueueFlag = vkDeviceCreationData->exclusiveQueueFlags;
     std::vector<VkQueueFlags>& concurrentQueueFlags = vkDeviceCreationData->concurrentQueueFlags;
 
-    std::vector<uint32_t> queueFamilyIndices;
+    std::vector<u32> queueFamilyIndices;
 
     if (exclusiveQueueFlag != 0) {
         queueFamilyIndices.push_back(VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), exclusiveQueueFlag));
@@ -98,18 +98,18 @@ void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface
     if (!concurrentQueueFlags.empty()) {
         _swapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
 
-        for (const uint32_t& concurrentFlag : concurrentQueueFlags) {
+        for (const u32& concurrentFlag : concurrentQueueFlags) {
             queueFamilyIndices.push_back(VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), concurrentFlag));
         }
 
-        _swapChainCreateInfo.queueFamilyIndexCount = static_cast<uint32_t>(queueFamilyIndices.size());
+        _swapChainCreateInfo.queueFamilyIndexCount = static_cast<u32>(queueFamilyIndices.size());
         _swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices.data();
 
         INK_DEBUG << "VK_SHARING_MODE_CONCURRENT";
     }
     else {
         _swapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        _swapChainCreateInfo.queueFamilyIndexCount = static_cast<uint32_t>(queueFamilyIndices.size());
+        _swapChainCreateInfo.queueFamilyIndexCount = static_cast<u32>(queueFamilyIndices.size());
         _swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices.data();
 
         INK_DEBUG << "VK_SHARING_MODE_EXCLUSIVE";
@@ -133,9 +133,9 @@ void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
 }
 
-const uint32_t VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags)
+const u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags)
 {
-    uint32_t imageIndex = UINT32_MAX;
+    u32 imageIndex = UINT32_MAX;
     VkResult result = vkAcquireNextImageKHR(*_device, _swapChain, UINT64_MAX, imageSemaphore, VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR ||
@@ -149,7 +149,7 @@ const uint32_t VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, 
     return imageIndex;
 }
 
-void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const uint32_t& imageIndex)
+void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex)
 {
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -165,7 +165,7 @@ void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* rend
 
 void VkSwapChainManager::transitionImageLayout(
     VkCommandBuffer commandBuffer,
-    const uint32_t& imageIndex,
+    const u32& imageIndex,
     VkImageLayout oldLayout,
     VkImageLayout newLayout,
     VkFixedArray<VkPipelineStageFlags> stages,
@@ -236,7 +236,7 @@ void VkSwapChainManager::initSwapChainSupportDetails(VkPhysicalDevice physicalDe
     VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, vkSurface, &_swapChainSupportDetails.capabilities);
     VK_RESULT_CHECK(result);
 
-    uint32_t formatCount = 0;
+    u32 formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vkSurface, &formatCount, nullptr);
 
     if (formatCount != 0) {
@@ -245,7 +245,7 @@ void VkSwapChainManager::initSwapChainSupportDetails(VkPhysicalDevice physicalDe
         VK_RESULT_CHECK(result);
     }
 
-    uint32_t presentModeCount = 0;
+    u32 presentModeCount = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, vkSurface, &presentModeCount, nullptr);
 
     if (presentModeCount != 0) {
@@ -265,8 +265,8 @@ VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& 
 #endif
 
     VkExtent2D actualExtent = {
-        static_cast<uint32_t>(width),
-        static_cast<uint32_t>(height)
+        static_cast<u32>(width),
+        static_cast<u32>(height)
     };
 
     actualExtent.width = std::clamp(

@@ -8,11 +8,11 @@
 #include <vector>
 #include <unordered_map>
 
+#include "aura.hpp"
 #include "VkAura/VkAuraDefs.h"
-#include <VkAura/VkPipelineManager/VkPipelineManager.h>
-#include <VkAura/VkShaderManager/VkShaderManager.h>
-#include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+#include "VkAura/VkPipelineManager/VkPipelineManager.h"
+#include "VkAura/VkShaderManager/VkShaderManager.h"
+#include "VkAura/VkHostAllocator/VkHostAllocator.h"
 
 
 namespace aura3d {
@@ -27,7 +27,7 @@ public:
     ~VkGraphicsPipelineManager();
 
     // Add a descriptor binding to a specific set
-    void addDescriptorBinding(uint32_t setIndex,
+    void addDescriptorBinding(u32 setIndex,
                               const DescriptorBindingInfo& bindingInfo);
 
     // Create descriptor set layouts from the specified bindings
@@ -45,25 +45,25 @@ public:
     // Bind specific descriptor sets to the command buffer
     void cmdBindDescriptorSets(VkCommandBuffer commandBuffer,
                                VkPipelineBindPoint bindPoint,
-                               uint32_t firstSet,
-                               uint32_t descriptorSetCount,
+                               u32 firstSet,
+                               u32 descriptorSetCount,
                                const VkDescriptorSet* pDescriptorSets,
-                               uint32_t dynamicOffsetCount = 0,
-                               const uint32_t* pDynamicOffsets = nullptr);
+                               u32 dynamicOffsetCount = 0,
+                               const u32* pDynamicOffsets = nullptr);
 
     // Draw vertices
     void cmdDraw(VkCommandBuffer commandBuffer,
                  VkExtent2D extent,
-                 uint32_t vertexCount,
-                 uint32_t instanceCount = 1,
-                 uint32_t firstVertex = 0,
-                 uint32_t firstInstance = 0);
+                 u32 vertexCount,
+                 u32 instanceCount = 1,
+                 u32 firstVertex = 0,
+                 u32 firstInstance = 0);
 
     // Get pipeline layout (needed for descriptor set binding)
     VkPipelineLayout getPipelineLayout() const { return _pipelineLayout; }
 
     // Get descriptor set layout for a specific set
-    VkDescriptorSetLayout getDescriptorSetLayout(uint32_t setIndex) const;
+    VkDescriptorSetLayout getDescriptorSetLayout(u32 setIndex) const;
 
 private:
     VkHostAllocator* vkHostAllocator;
@@ -72,8 +72,8 @@ private:
     std::array<VkDynamicState, 2> _dynamicStates;
 
     // Storage for descriptor set layouts
-    std::unordered_map<uint32_t, DescriptorSetLayoutInfo> _descriptorSetLayoutInfos;
-    std::unordered_map<uint32_t, VkDescriptorSetLayout> _descriptorSetLayouts;
+    std::unordered_map<u32, DescriptorSetLayoutInfo> _descriptorSetLayoutInfos;
+    std::unordered_map<u32, VkDescriptorSetLayout> _descriptorSetLayouts;
 
     // Initialize default dynamic states
     void initializeDynamicStates();

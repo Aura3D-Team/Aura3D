@@ -40,12 +40,12 @@ VkRenderSyncManager::~VkRenderSyncManager()
     _device = nullptr;
 }
 
-void VkRenderSyncManager::waitForFences(const uint32_t& fenceIndex)
+void VkRenderSyncManager::waitForFences(const u32& fenceIndex)
 {
     vkWaitForFences(*_device, 1, &_inFlightFences[fenceIndex], VK_TRUE, UINT64_MAX);
 }
 
-void VkRenderSyncManager::resetFences(const uint32_t& fenceIndex)
+void VkRenderSyncManager::resetFences(const u32& fenceIndex)
 {
     vkResetFences(*_device, 1, &_inFlightFences[fenceIndex]);
 }

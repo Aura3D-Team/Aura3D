@@ -8,8 +8,7 @@
 #include <mutex>
 #include <thread>
 
-#include <aura.hpp>
-#include "VkAura/VkAuraDefs.h"
+#include "aura.hpp"
 #include <VkAura/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
@@ -34,7 +33,7 @@ public:
      * @param device Pointer to a Vulkan logical device.
      * @param queueFamilyIndex Queue family index used for creating command pools.
      */
-    VkCommandManager(VkHostAllocator* vkHostAllocator, VkDevice* device, uint32_t queueFamilyIndex);
+    VkCommandManager(VkHostAllocator* vkHostAllocator, VkDevice* device, u32 queueFamilyIndex);
 
     /**
      * @brief Destroys the `VkCommandManager` and releases resources.
@@ -85,7 +84,7 @@ private:
     VkHostAllocator* vkHostAllocator;
 
     VkDevice* _device;
-    uint32_t _queueFamilyIndex; /**< The queue family index for command pool allocation. */
+    u32 _queueFamilyIndex; /**< The queue family index for command pool allocation. */
 
     // Map of command pools by thread ID
     static std::unordered_map<std::thread::id, VkCommandPool> _threadCommandPools;

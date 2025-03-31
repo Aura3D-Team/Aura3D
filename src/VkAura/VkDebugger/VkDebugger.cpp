@@ -1,8 +1,11 @@
 // VkDebugger.cpp
 #include "VkDebugger.h"
+
 #include <ink/ink.hpp>
 #include <sstream>
 #include <iomanip>
+
+#include "aura.hpp"
 
 namespace aura3d {
 
@@ -95,7 +98,7 @@ std::string VkDebugger::formatObjectInfo(const VkDebugUtilsMessengerCallbackData
     std::stringstream ss;
     ss << "Objects:";
 
-    for (uint32_t i = 0; i < pCallbackData->objectCount; i++) {
+    for (u32 i = 0; i < pCallbackData->objectCount; i++) {
         const auto& obj = pCallbackData->pObjects[i];
         ss << "\n  - Type: " << getVkObjectTypeName(obj.objectType)
            << ", Handle: 0x" << std::hex << std::setw(16) << std::setfill('0') << obj.objectHandle;
@@ -114,7 +117,7 @@ std::string VkDebugger::formatLabelInfo(const VkDebugUtilsMessengerCallbackDataE
     // Queue labels
     if (pCallbackData->queueLabelCount > 0) {
         ss << "\nQueue Labels:";
-        for (uint32_t i = 0; i < pCallbackData->queueLabelCount; i++) {
+        for (u32 i = 0; i < pCallbackData->queueLabelCount; i++) {
             const auto& label = pCallbackData->pQueueLabels[i];
             ss << "\n  - " << label.pLabelName;
         }
@@ -123,7 +126,7 @@ std::string VkDebugger::formatLabelInfo(const VkDebugUtilsMessengerCallbackDataE
     // Command buffer labels
     if (pCallbackData->cmdBufLabelCount > 0) {
         ss << "\nCommand Buffer Labels:";
-        for (uint32_t i = 0; i < pCallbackData->cmdBufLabelCount; i++) {
+        for (u32 i = 0; i < pCallbackData->cmdBufLabelCount; i++) {
             const auto& label = pCallbackData->pCmdBufLabels[i];
             ss << "\n  - " << label.pLabelName;
         }

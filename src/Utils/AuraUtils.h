@@ -5,6 +5,8 @@
 
 #include <string>
 
+#include "aura.hpp"
+
 namespace aura3d {
 
 class AuraUtils
@@ -12,7 +14,7 @@ class AuraUtils
 public:
     AuraUtils();
 
-    static float fast_sqrt(float x);
+    static f32 fast_sqrt(f32 x);
     static unsigned int fast_int_sqrt(unsigned int x);
 };
 

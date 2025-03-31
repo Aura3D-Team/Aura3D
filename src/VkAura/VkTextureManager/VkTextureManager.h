@@ -7,8 +7,9 @@
 #include <string>
 #include <unordered_map>
 
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
-#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
+#include "aura.hpp"
+#include "VkAura/VkHostAllocator/VkHostAllocator.h"
+#include "VkAura/VkDeviceAllocator/VkDeviceAllocator.h"
 
 namespace aura3d {
 
@@ -33,8 +34,8 @@ public:
         VkDeviceAllocation* allocation = nullptr;     // Memory allocation information
         VkImageView view = VK_NULL_HANDLE;        // Image view for shader access
         VkSampler sampler = VK_NULL_HANDLE;       // Sampler for texture filtering
-        uint32_t width = 0;                       // Texture width in pixels
-        uint32_t height = 0;                      // Texture height in pixels
+        u32 width = 0;                       // Texture width in pixels
+        u32 height = 0;                      // Texture height in pixels
     };
 
     /**
@@ -69,8 +70,8 @@ public:
      * @return TextureData containing the created texture resources
      */
     TextureData createSolidColorTexture(const std::string& name,
-                                        uint8_t r, uint8_t g, uint8_t b,
-                                        uint8_t a = 255);
+                                        u8 r, u8 g, u8 b,
+                                        u8 a = 255);
 
     /**
      * @brief Retrieves a texture by name
@@ -107,7 +108,7 @@ private:
      * @param format Vulkan format of the image
      * @param image Output parameter for the created image handle
      */
-    void createImage(uint32_t width, uint32_t height, VkFormat format, VkImage& image);
+    void createImage(u32 width, u32 height, VkFormat format, VkImage& image);
 
     /**
      * @brief Creates an image view for a texture
@@ -156,7 +157,7 @@ private:
      * @param width Width of the region to copy
      * @param height Height of the region to copy
      */
-    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+    void copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height);
 };
 
 } // namespace aura3d

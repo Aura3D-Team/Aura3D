@@ -8,6 +8,7 @@
 #include <atomic>
 #include <memory>
 
+#include "aura.hpp"
 #include "VkDeviceAllocatorTypes.h"
 #include "VkAura/VkHostAllocator/VkHostAllocator.h"
 
@@ -141,7 +142,7 @@ public:
      * @param allocationId The ID of the allocation to get
      * @return Reference to the allocation, or a default allocation if not found
      */
-    VkDeviceAllocation& getAllocation(uint32_t allocationId);
+    VkDeviceAllocation& getAllocation(u32 allocationId);
 
     /**
      * @brief Process any deferred free operations
@@ -168,7 +169,7 @@ private:
      * @param properties The desired memory properties
      * @return The memory type index, or UINT32_MAX if not found
      */
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
 
     /**
      * @brief Allocate a new memory block
@@ -176,7 +177,7 @@ private:
      * @param blockSize The size of the block to allocate
      * @return VK_SUCCESS on success, other VkResult values on failure
      */
-    VkResult allocateNewBlock(uint32_t memoryTypeIndex, VkDeviceSize blockSize);
+    VkResult allocateNewBlock(u32 memoryTypeIndex, VkDeviceSize blockSize);
 
     /**
      * @brief Find space in a block and allocate from it
@@ -186,7 +187,7 @@ private:
      * @param allocation Output parameter to receive the allocation details
      * @return VK_SUCCESS on success, other VkResult values on failure
      */
-    VkResult findAndAllocateInBlock(uint32_t memoryTypeIndex,
+    VkResult findAndAllocateInBlock(u32 memoryTypeIndex,
                                     VkDeviceSize size,
                                     VkDeviceSize alignment,
                                     VkDeviceAllocation& allocation);
@@ -199,7 +200,7 @@ private:
      * @param allocation Output parameter to receive the allocation details
      * @return VK_SUCCESS on success, other VkResult values on failure
      */
-    VkResult allocateUsingBuddyAllocator(uint32_t memoryTypeIndex,
+    VkResult allocateUsingBuddyAllocator(u32 memoryTypeIndex,
                                          VkDeviceSize size,
                                          VkDeviceSize alignment,
                                          VkDeviceAllocation& allocation);
@@ -209,7 +210,7 @@ private:
      * @param memoryTypeIndex The memory type index
      * @return Reference to the memory type pool
      */
-    MemoryTypePool& getOrCreateMemoryTypePool(uint32_t memoryTypeIndex);
+    MemoryTypePool& getOrCreateMemoryTypePool(u32 memoryTypeIndex);
 
     /**
      * @brief Find a block by memory handle
@@ -224,7 +225,7 @@ private:
      * @param memoryTypeIndex The memory type index
      * @param blockSize The size of the block for the buddy allocator
      */
-    void initializeBuddyAllocator(uint32_t memoryTypeIndex, VkDeviceSize blockSize);
+    void initializeBuddyAllocator(u32 memoryTypeIndex, VkDeviceSize blockSize);
 
     /**
      * @brief Find a free range using the specified allocation strategy
@@ -246,14 +247,14 @@ private:
      * @param memoryTypeIndex The memory type index involved in the operation
      * @param forWrite True if the operation will modify the pool
      */
-    void acquireLock(uint32_t memoryTypeIndex, bool forWrite = true);
+    void acquireLock(u32 memoryTypeIndex, bool forWrite = true);
 
     /**
      * @brief Release the proper lock
      * @param memoryTypeIndex The memory type index for which the lock was acquired
      * @param forWrite True if the lock was acquired for writing
      */
-    void releaseLock(uint32_t memoryTypeIndex, bool forWrite = true);
+    void releaseLock(u32 memoryTypeIndex, bool forWrite = true);
 
     // Member variables
     VkHostAllocator* vkHostAllocator;
@@ -267,10 +268,10 @@ private:
     bool trackLeaks;
     ThreadSafetyMode threadSafetyMode;
     AllocationStrategy allocationStrategy;
-    uint32_t dedicatedAllocationThreshold;
+    u32 dedicatedAllocationThreshold;
     bool useBuddyAllocatorForBuffers;
     bool deferFrees;
-    uint32_t deferredFreeLimit;
+    u32 deferredFreeLimit;
 
     // Memory pools by memory type
     std::vector<MemoryTypePool> memoryTypePools;
@@ -279,8 +280,8 @@ private:
     VkPhysicalDeviceMemoryProperties memoryProperties;
 
     // Tracking info
-    std::atomic<uint32_t> nextAllocationId;
-    std::unordered_map<uint32_t, VkDeviceAllocation> allocationMap;
+    std::atomic<u32> nextAllocationId;
+    std::unordered_map<u32, VkDeviceAllocation> allocationMap;
 
     // Thread safety
     mutable std::mutex globalMutex;                                           // Global mutex for coarse-grained locking

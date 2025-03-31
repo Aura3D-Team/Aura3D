@@ -5,6 +5,8 @@
 
 #include <GL/gl.h>
 
+#include "aura.hpp"
+
 namespace aura3d {
 
 class GlBuffersManager
@@ -15,7 +17,7 @@ public:
 
 
 private:
-    uint32_t _vbo;
+    u32 _vbo;
 };
 
 }

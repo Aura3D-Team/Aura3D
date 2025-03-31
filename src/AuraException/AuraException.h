@@ -7,6 +7,8 @@
 #include <vulkan/vulkan.h>
 #include <string>
 
+#include "aura.hpp"
+
 namespace aura3d {
 
 /**
@@ -114,7 +116,7 @@ private:
  * It is used in the `AuraException` constructor that takes a `VkResult` as input to convert
  * the result code into a meaningful error message.
  */
-static const std::unordered_map<int64_t, const char*> vkResultToString = {
+static const std::unordered_map<i64, const char*> vkResultToString = {
     { VK_NOT_READY, "A fence or query has not yet completed" },
     { VK_TIMEOUT, "A wait operation has not completed in the specified time" },
     { VK_EVENT_SET, "An event is signaled" },

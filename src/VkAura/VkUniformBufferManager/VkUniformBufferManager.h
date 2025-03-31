@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
+#include "aura.hpp"
 #include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkHostAllocator/VkHostAllocator.h>
 #include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
@@ -45,7 +46,7 @@ public:
     void createUniformBuffers(
         VkPhysicalDevice physicalDevice,
         VkSharingMode sharingMode,
-        uint32_t count);
+        u32 count);
 
     /**
      * @brief Updates a uniform buffer with new transform data
@@ -53,7 +54,7 @@ public:
      * @param currentImage Index of the current swapchain image
      * @param ubo Transform UBO data to upload
      */
-    void updateUniformBuffer(uint32_t currentImage, const TransformUBO& ubo);
+    void updateUniformBuffer(u32 currentImage, const TransformUBO& ubo);
 
     /**
      * @brief Gets a uniform buffer handle
@@ -61,7 +62,7 @@ public:
      * @param index Buffer index (typically the current swapchain image index)
      * @return VkBuffer handle
      */
-    VkBuffer getUniformBuffer(uint32_t index) const;
+    VkBuffer getUniformBuffer(u32 index) const;
 
     /**
      * @brief Gets the size of the uniform buffer
@@ -76,7 +77,7 @@ public:
      * @param binding Shader binding point
      * @return VkDescriptorSetLayoutBinding structure
      */
-    VkDescriptorSetLayoutBinding getDescriptorSetLayoutBinding(uint32_t binding = 0) const;
+    VkDescriptorSetLayoutBinding getDescriptorSetLayoutBinding(u32 binding = 0) const;
 
     /**
      * @brief Gets descriptor buffer info for a specific uniform buffer
@@ -84,7 +85,7 @@ public:
      * @param index Buffer index
      * @return VkDescriptorBufferInfo structure
      */
-    VkDescriptorBufferInfo getDescriptorBufferInfo(uint32_t index) const;
+    VkDescriptorBufferInfo getDescriptorBufferInfo(u32 index) const;
 
     /**
      * @brief Cleans up resources

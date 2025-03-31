@@ -103,8 +103,8 @@ void CPURenderer::run()
         std::map<std::string, std::vector<Rectangle>> objectsByTime;
 
         // 2. Track movement metrics
-        float totalDistance = 0.0f;
-        float maxSpeed = 0.0f;
+        f32 totalDistance = 0.0f;
+        f32 maxSpeed = 0.0f;
         std::string fastestMovementTime;
 
         // 3. Calculate area coverage
@@ -122,10 +122,10 @@ void CPURenderer::run()
         for (size_t i = 0; i < rectPoints.size(); i++) {
             auto position = static_cast<ink::EnhancedJson>(rectPoints[i]).get("position");
             std::string timestamp = position.get<std::string>("timestamp", "");
-            float fx = position.get<float>("x", 0.0f);
-            float fy = position.get<float>("y", 0.0f);
-            float fw = position.get<float>("w", 0.0f);
-            float fh = position.get<float>("h", 0.0f);
+            f32 fx = position.get<f32>("x", 0.0f);
+            f32 fy = position.get<f32>("y", 0.0f);
+            f32 fw = position.get<f32>("w", 0.0f);
+            f32 fh = position.get<f32>("h", 0.0f);
 
             // Convert to pixel coordinates
             int x = std::floor(fx * width);
@@ -150,7 +150,7 @@ void CPURenderer::run()
 
             // Calculate distance for all consecutive positions (regardless of timestamp)
             if (!isFirstPoint) {
-                float distance = std::sqrt(
+                f32 distance = std::sqrt(
                     std::pow(center.x - prevCenter.x, 2) +
                     std::pow(center.y - prevCenter.y, 2)
                     );
@@ -172,10 +172,10 @@ void CPURenderer::run()
         // 1. Draw base rectangles (with transparency for layering)
         for (const ink::EnhancedJson& box : rectPoints) {
             auto positions = box.get("position");
-            float fx = positions.get<float>("x", 0.0f);
-            float fy = positions.get<float>("y", 0.0f);
-            float fw = positions.get<float>("w", 0.0f);
-            float fh = positions.get<float>("h", 0.0f);
+            f32 fx = positions.get<f32>("x", 0.0f);
+            f32 fy = positions.get<f32>("y", 0.0f);
+            f32 fw = positions.get<f32>("w", 0.0f);
+            f32 fh = positions.get<f32>("h", 0.0f);
 
             int x = std::floor(fx * width);
             int y = std::floor(fy * height);
@@ -183,7 +183,7 @@ void CPURenderer::run()
             int h = std::floor(fh * height);
 
             // Use semi-transparent blue (if your implementation supports alpha)
-            uint32_t semitransparentBlue = aura3d::colors::BLUE_UINT32 * 0.7;
+            u32 semitransparentBlue = aura3d::colors::BLUE_UINT32 * 0.7;
             _frameBufferManager->drawRect(x, y, w, h, semitransparentBlue);
         }
 
@@ -215,10 +215,10 @@ void CPURenderer::run()
         //     int count = pair.second;
 
         //     // Normalize intensity (0.0 to 1.0)
-        //     float intensity = static_cast<float>(count) / maxCount;
+        //     f32 intensity = static_cast<f32>(count) / maxCount;
 
         //     // Create heat color (red for hotspots)
-        //     uint32_t heatColor = static_cast<uint32_t>(intensity * 255) << 16; // Red channel
+        //     u32 heatColor = static_cast<u32>(intensity * 255) << 16; // Red channel
 
         //     // Draw pixel only if sufficient intensity
         //     if (intensity > 0.3) {
@@ -229,17 +229,18 @@ void CPURenderer::run()
         // 4. Overlay statistical information
         int textY = 20;
         _frameBufferManager->drawText("Object Movement Analysis", 10, textY, aura3d::colors::RED_UINT32);
-        textY += 20;
+        int textHeight = _frameBufferManager->getTextHeight("Object Movement Analysis");
+        textY += 10 + textHeight;
 
         // Total number of tracked positions
         std::string posCountText = "Total de posicoes: " + std::to_string(rectPoints.size());
         _frameBufferManager->drawText(posCountText, 10, textY, aura3d::colors::RED_UINT32);
-        textY += 20;
+        textY += 10 + textHeight;
 
         // Total movement distance
         std::string distanceText = "Distancia total percorrida: " + std::to_string(static_cast<int>(totalDistance)) + " pixels";
         _frameBufferManager->drawText(distanceText, 10, textY, aura3d::colors::RED_UINT32);
-        textY += 20;
+        textY += 10 + textHeight;
 
         // Time period
         if (!rectPoints.empty()) {
@@ -253,14 +254,14 @@ void CPURenderer::run()
             ssCurrent >> std::get_time(&tmCurrent, "%d/%m/%Y %H:%M:%S");
             std::time_t timePrev = std::mktime(&tmPrev);
             std::time_t timeCurrent = std::mktime(&tmCurrent);
-            double seconds = std::difftime(timeCurrent, timePrev);
+            f64 seconds = std::difftime(timeCurrent, timePrev);
 
             // Maximum speed
             std::ostringstream stream;
-            stream << "Velocidade media: " << std::fixed << std::setprecision(2) << static_cast<double>(totalDistance / seconds) << " px/s at ";
+            stream << "Velocidade media: " << std::fixed << std::setprecision(2) << static_cast<f64>(totalDistance / seconds) << " px/s at ";
             std::string speedText = stream.str();
             _frameBufferManager->drawText(speedText, 10, textY, aura3d::colors::RED_UINT32);
-            textY += 20;
+            textY += 10 + textHeight;
 
             std::string timeRangeText = "Intervalo: " + startTime + " to " + endTime;
             _frameBufferManager->drawText(timeRangeText, 10, textY, aura3d::colors::RED_UINT32);

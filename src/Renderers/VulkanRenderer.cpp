@@ -181,7 +181,7 @@ void VulkanRenderer::run()
     auto& imageAvailableSemaphores = _vkRenderSyncManager->getImageAvailableSemaphores();
     auto& renderFinishedSemaphores = _vkRenderSyncManager->getRenderFinishedSemaphores();
     auto& fences = _vkRenderSyncManager->getInFlightFences();
-    uint32_t imagesCount = _vkSwapChainManager->getSwapChainImages().size();
+    u32 imagesCount = _vkSwapChainManager->getSwapChainImages().size();
 
     // Main render loop
     _windowManagerApi->process([&]() {
@@ -189,7 +189,7 @@ void VulkanRenderer::run()
         _vkRenderSyncManager->waitForFences(_currentFrame);
 
         // Acquire the next image from the swap chain
-        const uint32_t imageIndex = _vkSwapChainManager->acquireNextImage(
+        const u32 imageIndex = _vkSwapChainManager->acquireNextImage(
             imageAvailableSemaphores[_currentFrame],
             windowFlags
             );
@@ -314,12 +314,20 @@ void VulkanRenderer::setupGraphicsPipeline()
 
 void VulkanRenderer::createVertexBuffers()
 {
-    // Define a triangle with non-overlapping vertices
+    // Define a rect with non-overlapping vertices
     std::vector<Vertex2d> vertices = {
-        {{-0.5f, -0.5f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},  // Bottom-left, red
-        {{ 0.5f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},  // Bottom-right, green
-        {{ 0.0f,  0.5f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}   // Top-center, blue
+        {{-0.5f, -0.5f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{ 0.5f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+        {{ 0.5f,  0.5f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+        {{-0.5f,  0.5f}, {0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}}
     };
+
+    // // Define a triangle with non-overlapping vertices
+    // std::vector<Vertex2d> vertices = {
+    //     {{-0.5f, -0.5f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},  // Bottom-left, red
+    //     {{ 0.5f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},  // Bottom-right, green
+    //     {{ 0.0f,  0.5f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}   // Top-center, blue
+    // };
 
     VkQueue queueToDraw = _queueDataFromExclusiveFlags.front()->queues.front();
 
@@ -338,7 +346,7 @@ void VulkanRenderer::createVertexBuffers()
 void VulkanRenderer::createUniformBuffers()
 {
     // Get swapchain image count for multiple descriptor sets
-    uint32_t swapChainImageCount = _vkSwapChainManager->getSwapChainImages().size();
+    u32 swapChainImageCount = _vkSwapChainManager->getSwapChainImages().size();
 
     // Set up UBO for transformation
     _vkUniformBufferManager->createUniformBuffers(
@@ -350,14 +358,14 @@ void VulkanRenderer::createUniformBuffers()
     // Update uniform buffer with identity matrix
     TransformUBO ubo{};
     ubo.transform = glm::mat4(1.0f);
-    for (uint32_t i = 0; i < swapChainImageCount; i++) {
+    for (u32 i = 0; i < swapChainImageCount; i++) {
         _vkUniformBufferManager->updateUniformBuffer(i, ubo);
     }
 }
 
 void VulkanRenderer::createDescriptorSets()
 {
-    uint32_t swapChainImageCount = _vkSwapChainManager->getSwapChainImages().size();
+    u32 swapChainImageCount = _vkSwapChainManager->getSwapChainImages().size();
 
     // Create descriptor set layouts in the pipeline manager
     _vkGraphicsPipelineManager->createDescriptorSetLayouts();

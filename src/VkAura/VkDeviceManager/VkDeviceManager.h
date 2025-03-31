@@ -85,7 +85,7 @@ private:
     VkPhysicalDevice _physicalDevice;  ///< Handle to the selected Vulkan physical device
     VkPhysicalDeviceProperties _deviceProperties; ///< Store best physical device properties
     VkPhysicalDeviceFeatures _deviceFeatures; ///< Store best physical device features
-    uint32_t _physicaldeviceCount;  ///< Number of available physical devices
+    u32 _physicaldeviceCount;  ///< Number of available physical devices
 
     VkQueueManager _vkQueueManager; ///< Queue manager to create queues in a organized way.
 

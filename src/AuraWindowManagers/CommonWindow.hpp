@@ -5,7 +5,7 @@
 
 #include <SDL2/SDL.h>
 #include <GLFW/glfw3.h>
-#include <cstdint>
+#include "aura.hpp"
 
 namespace aura3d {
     struct WindowDetails {
@@ -16,7 +16,7 @@ namespace aura3d {
     };
 
     struct WindowFlags {
-        uint64_t frame_counter;
+        u64 frame_counter;
         bool resized;
     };
 

@@ -6,17 +6,17 @@
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <vector>
-#include <set>
-#include <cstdint>
+
+#include "aura.hpp"
 #include "VkAura/VkAuraDefs.h"
 
-// Custom hash function for std::pair<uint32_t, VkQueueFlags>
+// Custom hash function for std::pair<u32, VkQueueFlags>
 // so that it can be used as a key in std::unordered_map.
 namespace std {
     template <>
-    struct hash<std::pair<uint32_t, VkQueueFlags>> {
-        std::size_t operator()(const std::pair<uint32_t, VkQueueFlags>& p) const noexcept {
-            return std::hash<uint32_t>{}(p.first) ^ (std::hash<VkQueueFlags>{}(p.second) << 1);
+    struct hash<std::pair<u32, VkQueueFlags>> {
+        std::size_t operator()(const std::pair<u32, VkQueueFlags>& p) const noexcept {
+            return std::hash<u32>{}(p.first) ^ (std::hash<VkQueueFlags>{}(p.second) << 1);
         }
     };
 }
@@ -62,7 +62,7 @@ public:
      *
      * @throws AuraException if no QueueData is registered for the specified key.
      */
-    void setupQueue(VkDevice device, uint32_t queueFamilyIndex, const VkQueueFlags flags);
+    void setupQueue(VkDevice device, u32 queueFamilyIndex, const VkQueueFlags flags);
 
     /**
      * @brief Registers a queue requirement.
@@ -76,11 +76,11 @@ public:
      * @param flags The Vulkan queue capability flags (e.g. VK_QUEUE_GRAPHICS_BIT).
      * @param queuePriority The priority value for the queue (between 0.0 and 1.0).
      *
-     * @return uint32_t The queue family index selected for the requested capabilities.
+     * @return u32 The queue family index selected for the requested capabilities.
      *
      * @throws AuraException if no suitable queue family is found.
      */
-    uint32_t pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueueFlags flags, const float queuePriority);
+    u32 pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueueFlags flags, const f32 queuePriority);
 
     /**
      * @brief Finds a queue family index that supports the specified queue operations.
@@ -93,9 +93,9 @@ public:
      * @param flags The required queue capabilities (e.g. VK_QUEUE_GRAPHICS_BIT).
      * @param surface (Optional) A Vulkan surface. If not VK_NULL_HANDLE, the queue family must support presentation.
      *
-     * @return uint32_t The index of a suitable queue family, or UINT32_MAX if none is found.
+     * @return u32 The index of a suitable queue family, or UINT32_MAX if none is found.
      */
-    static uint32_t findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface = VK_NULL_HANDLE);
+    static u32 findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface = VK_NULL_HANDLE);
 
     /**
      * @brief Finds all queue family indices that support the specified operations.
@@ -108,9 +108,9 @@ public:
      * @param flags The required queue capabilities.
      * @param surface (Optional) A Vulkan surface.
      *
-     * @return std::vector<uint32_t> A vector of matching queue family indices.
+     * @return std::vector<u32> A vector of matching queue family indices.
      */
-    static std::vector<uint32_t> findQueueFamilyIndices(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface = VK_NULL_HANDLE);
+    static std::vector<u32> findQueueFamilyIndices(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface = VK_NULL_HANDLE);
 
     /**
      * @brief Retrieves the properties of all queue families for a physical device.
@@ -134,7 +134,7 @@ public:
      *
      * @return true if presentation is supported; false otherwise.
      */
-    static bool isPresentQueueSupported(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, VkSurfaceKHR surface);
+    static bool isPresentQueueSupported(VkPhysicalDevice physicalDevice, u32 queueFamilyIndex, VkSurfaceKHR surface);
 
     /**
      * @brief Retrieves the registered QueueData pointers that match the specified queue flags.
@@ -150,9 +150,9 @@ public:
     /**
      * @brief Gets the number of registered queue groups.
      *
-     * @return uint32_t The number of entries in the queue map.
+     * @return u32 The number of entries in the queue map.
      */
-    uint32_t getQueueMapSize() const;
+    u32 getQueueMapSize() const;
 
     /**
      * @brief Retrieves the vector of VkDeviceQueueCreateInfo structures.
@@ -172,7 +172,7 @@ public:
 private:
     // The key is a pair consisting of (queueFamilyIndex, VkQueueFlags).
     // This allows multiple queue families (with different indices) that satisfy the same flag requirement.
-    std::unordered_map<std::pair<uint32_t, VkQueueFlags>, QueueData> _mapVkQueues;
+    std::unordered_map<std::pair<u32, VkQueueFlags>, QueueData> _mapVkQueues;
 };
 
 }

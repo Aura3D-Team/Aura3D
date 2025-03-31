@@ -3,7 +3,9 @@
 #include "GlfwAuraWindowManager.h"
 
 #include <ink/ink.hpp>
-#include <AuraException/AuraException.h>
+
+#include "aura.hpp"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
 
@@ -128,7 +130,7 @@ WindowFlags* GlfwAuraWindowManager::getWindowFlags()
 std::vector<const char*> GlfwAuraWindowManager::getVulkanExtensions() const
 {
     std::vector<const char*> glfwExtensions;
-    uint32_t glfwExtensionCount = 0;
+    u32 glfwExtensionCount = 0;
 
     // Get required Vulkan extensions for GLFW
     const char** exts = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);

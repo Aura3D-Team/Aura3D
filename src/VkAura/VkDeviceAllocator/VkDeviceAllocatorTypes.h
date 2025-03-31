@@ -4,12 +4,12 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <cstdint>
 #include <vector>
 #include <unordered_map>
 #include <map>
 #include <memory>
-// #include <set>
+
+#include "aura.hpp"
 
 namespace aura3d {
 
@@ -39,9 +39,9 @@ struct VkDeviceAllocation {
     VkDeviceMemory memory = VK_NULL_HANDLE;    // The Vulkan memory object
     VkDeviceSize offset = 0;                   // Offset within the memory object
     VkDeviceSize size = 0;                     // Size of the allocation
-    uint32_t memoryTypeIndex = 0;              // Memory type index
+    u32 memoryTypeIndex = 0;              // Memory type index
     void* mappedData = nullptr;                // Pointer to mapped memory (nullptr if not mapped)
-    uint32_t allocationId = 0;                 // Unique ID for this allocation
+    u32 allocationId = 0;                 // Unique ID for this allocation
     AllocationMappingState mappingState = AllocationMappingState::UNMAPPED; // Current mapping state
 
     // Reset the allocation to default state
@@ -67,22 +67,22 @@ struct VkDeviceAllocatorCreateInfo {
     bool trackLeaks = true;                     // Track memory leaks in debug mode
     ThreadSafetyMode threadSafetyMode = ThreadSafetyMode::COARSE_GRAINED;  // Thread safety option
     AllocationStrategy strategy = AllocationStrategy::BEST_FIT;  // Default allocation strategy
-    uint32_t dedicatedAllocationThreshold = 32 * 1024 * 1024;    // 32MB threshold for dedicated allocation
+    u32 dedicatedAllocationThreshold = 32 * 1024 * 1024;    // 32MB threshold for dedicated allocation
     bool useBuddyAllocatorForBuffers = true;    // Use buddy allocator for buffer memory
     bool deferFrees = true;                     // Defer free operations to batch them
-    uint32_t deferredFreeLimit = 128;           // Maximum number of deferred frees before processing
+    u32 deferredFreeLimit = 128;           // Maximum number of deferred frees before processing
 };
 
 // Memory usage statistics
 struct MemoryStats {
     VkDeviceSize totalSize;
     VkDeviceSize usedSize;
-    uint32_t allocationCount;
-    uint32_t blockCount;
-    std::vector<std::pair<uint32_t, VkDeviceSize>> sizeByMemoryType;
-    float fragmentationIndex;  // 0.0 (no fragmentation) to 1.0 (fully fragmented)
+    u32 allocationCount;
+    u32 blockCount;
+    std::vector<std::pair<u32, VkDeviceSize>> sizeByMemoryType;
+    f32 fragmentationIndex;  // 0.0 (no fragmentation) to 1.0 (fully fragmented)
     VkDeviceSize largestFreeBlock;
-    uint32_t totalFreeChunks;
+    u32 totalFreeChunks;
 };
 
 // Internal types below - not part of the public API
@@ -241,7 +241,7 @@ struct MemoryBlock {
     bool canBeMapped;
     bool isMapped;
     void* mappedAddress;
-    std::unordered_map<VkDeviceSize, uint32_t> mappedRegions;  // Track active mappings by offset->allocationId
+    std::unordered_map<VkDeviceSize, u32> mappedRegions;  // Track active mappings by offset->allocationId
 
     MemoryBlock()
         : memory(VK_NULL_HANDLE), size(0), canBeMapped(false), isMapped(false), mappedAddress(nullptr) {}
@@ -252,17 +252,17 @@ class BuddyAllocator {
 private:
     struct BuddyBlock {
         VkDeviceSize offset;
-        uint32_t level;      // Power of 2 size: blockSize / (2^level)
+        u32 level;      // Power of 2 size: blockSize / (2^level)
         bool allocated;
 
-        BuddyBlock(VkDeviceSize offset, uint32_t level, bool allocated)
+        BuddyBlock(VkDeviceSize offset, u32 level, bool allocated)
             : offset(offset), level(level), allocated(allocated) {}
     };
 
     std::vector<std::vector<BuddyBlock>> levels;  // Blocks at each level
     VkDeviceSize totalSize;
     VkDeviceSize minBlockSize;
-    uint32_t maxLevels;
+    u32 maxLevels;
 
 public:
     BuddyAllocator(VkDeviceSize totalSize, VkDeviceSize minBlockSize)
@@ -284,7 +284,7 @@ public:
     // Allocate a block of the given size (rounded up to next power of 2)
     bool allocate(VkDeviceSize size, VkDeviceSize& outOffset) {
         // Find the level that can fit this size
-        uint32_t level = 0;
+        u32 level = 0;
         VkDeviceSize levelSize = totalSize;
 
         while (levelSize / 2 >= size && level + 1 < maxLevels) {
@@ -293,7 +293,7 @@ public:
         }
 
         // Try to find a free block at this level
-        for (uint32_t l = level; l < maxLevels; l++) {
+        for (u32 l = level; l < maxLevels; l++) {
             for (size_t i = 0; i < levels[l].size(); i++) {
                 if (!levels[l][i].allocated) {
                     // Found a free block
@@ -316,7 +316,7 @@ public:
     // Free a block at the given offset
     void free(VkDeviceSize offset) {
         // Find the allocated block
-        for (uint32_t l = 0; l < maxLevels; l++) {
+        for (u32 l = 0; l < maxLevels; l++) {
             for (size_t i = 0; i < levels[l].size(); i++) {
                 if (levels[l][i].offset == offset && levels[l][i].allocated) {
                     // Mark as free
@@ -332,7 +332,7 @@ public:
 
 private:
     // Split a block until we reach the target level
-    void splitUntilLevel(uint32_t fromLevel, size_t blockIndex, uint32_t targetLevel) {
+    void splitUntilLevel(u32 fromLevel, size_t blockIndex, u32 targetLevel) {
         if (fromLevel <= targetLevel) return;
 
         BuddyBlock& block = levels[fromLevel][blockIndex];
@@ -343,7 +343,7 @@ private:
         block.allocated = true;
 
         // Create two child blocks at the next level down
-        uint32_t nextLevel = fromLevel - 1;
+        u32 nextLevel = fromLevel - 1;
         BuddyBlock left(offset, nextLevel, false);
         BuddyBlock right(offset + (size/2), nextLevel, false);
 
@@ -357,7 +357,7 @@ private:
     }
 
     // Find the index of a block at a target level
-    size_t findBlockIndexAtLevel(VkDeviceSize offset, uint32_t fromLevel, uint32_t targetLevel) {
+    size_t findBlockIndexAtLevel(VkDeviceSize offset, u32 fromLevel, u32 targetLevel) {
         if (fromLevel == targetLevel) {
             // Find the block at this level
             for (size_t i = 0; i < levels[targetLevel].size(); i++) {
@@ -384,7 +384,7 @@ private:
     }
 
     // Merge a block with its buddy if possible
-    void mergeBuddies(uint32_t level, size_t blockIndex) {
+    void mergeBuddies(u32 level, size_t blockIndex) {
         if (level == 0) return;  // Can't merge the root
 
         BuddyBlock& block = levels[level][blockIndex];
@@ -439,13 +439,13 @@ private:
 
 // Pool of memory blocks for a specific memory type
 struct MemoryTypePool {
-    uint32_t memoryTypeIndex;
+    u32 memoryTypeIndex;
     VkMemoryPropertyFlags properties;
     std::vector<MemoryBlock> blocks;
     std::unique_ptr<BuddyAllocator> buddyAllocator;  // Optional buddy allocator for this pool
     VkDeviceSize totalSize;
     VkDeviceSize usedSize;
-    std::vector<uint32_t> deferredFrees;  // IDs of allocations pending free
+    std::vector<u32> deferredFrees;  // IDs of allocations pending free
 
     MemoryTypePool()
         : memoryTypeIndex(0), properties(0), totalSize(0), usedSize(0) {}

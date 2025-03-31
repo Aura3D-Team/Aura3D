@@ -30,7 +30,7 @@ SDLAuraWindowManager::SDLAuraWindowManager(WindowDetails windowDetails) :
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_f64BUFFER, 1);
 #elif defined(USE_VULKAN_API)
     // Not needed if you have a VkInstanceManager
     if (SDL_Vulkan_LoadLibrary(nullptr) != VK_SUCCESS) {

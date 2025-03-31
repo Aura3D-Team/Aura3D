@@ -4,8 +4,9 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <aura.hpp>
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+
+#include "aura.hpp"
+#include "VkAura/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 
@@ -17,8 +18,8 @@ public:
 
     void create();
 
-    void waitForFences(const uint32_t& fenceIndex);
-    void resetFences(const uint32_t& fenceIndex);
+    void waitForFences(const u32& fenceIndex);
+    void resetFences(const u32& fenceIndex);
 
     VkFixedArray<VkSemaphore>& getImageAvailableSemaphores();
     VkFixedArray<VkSemaphore>& getRenderFinishedSemaphores();

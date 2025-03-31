@@ -72,11 +72,11 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
     // Create Render Pass
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.attachmentCount = static_cast<u32>(attachments.size());
     renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+    renderPassInfo.dependencyCount = static_cast<u32>(dependencies.size());
     renderPassInfo.pDependencies = dependencies.data();
 
     VK_RESULT_CHECK(vkCreateRenderPass(*_device, &renderPassInfo, vkHostAllocator->getCallbacks(), &_renderPass));

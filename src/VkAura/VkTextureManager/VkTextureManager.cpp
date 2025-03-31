@@ -34,10 +34,10 @@ VkTextureManager::~VkTextureManager() {
  * Uses staging buffer for data transfer to GPU-local memory
  */
 VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
-    const std::string& name, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    const std::string& name, u8 r, u8 g, u8 b, u8 a) {
     // Create a 1x1 texture with the given color
-    uint32_t width = 1;
-    uint32_t height = 1;
+    u32 width = 1;
+    u32 height = 1;
     auto vkCallbacks = vkHostAllocator->getCallbacks();
 
     // Check if texture already exists and clean it up if so
@@ -87,7 +87,7 @@ VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
         );
 
     // Copy pixel data to the staging buffer
-    uint8_t pixelData[4] = { r, g, b, a };
+    u8 pixelData[4] = { r, g, b, a };
     void* data = nullptr;
     VK_RESULT_CHECK(vkDeviceAllocator->mapMemory(
         stagingAllocation, 0, 4, &data
@@ -194,7 +194,7 @@ void VkTextureManager::cleanup() {
 /**
  * Creates a Vulkan image with specified dimensions and format
  */
-void VkTextureManager::createImage(uint32_t width, uint32_t height, VkFormat format, VkImage& image) {
+void VkTextureManager::createImage(u32 width, u32 height, VkFormat format, VkImage& image) {
     // Configure image creation parameters
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -376,7 +376,7 @@ void VkTextureManager::transitionImageLayout(VkImage image, VkImageLayout oldLay
 /**
  * Copies buffer data to an image using a command buffer
  */
-void VkTextureManager::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
+void VkTextureManager::copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height) {
     // Start a command buffer for the copy
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 

@@ -9,7 +9,7 @@ namespace aura3d {
 std::unordered_map<std::thread::id, VkCommandPool> VkCommandManager::_threadCommandPools;
 std::mutex VkCommandManager::_poolMutex;
 
-VkCommandManager::VkCommandManager(VkHostAllocator* vkHostAllocator, VkDevice* device, uint32_t queueFamilyIndex)
+VkCommandManager::VkCommandManager(VkHostAllocator* vkHostAllocator, VkDevice* device, u32 queueFamilyIndex)
     : vkHostAllocator(vkHostAllocator), _device(device), _queueFamilyIndex(queueFamilyIndex) {
     // Command pools will now be created on demand for each thread
 }
@@ -63,7 +63,7 @@ VkFixedArray<VkCommandBuffer> VkCommandManager::createCommandBuffer()
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandPool = commandPool;
-    allocInfo.commandBufferCount = (uint32_t) MAX_FRAMES_IN_FLIGHT;
+    allocInfo.commandBufferCount = (u32) MAX_FRAMES_IN_FLIGHT;
 
     VkFixedArray<VkCommandBuffer> commandBuffers = {};
     VK_RESULT_CHECK(vkAllocateCommandBuffers(*_device, &allocInfo, commandBuffers.data()));

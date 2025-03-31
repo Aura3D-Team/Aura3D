@@ -4,6 +4,7 @@
 #pragma once
 
 #include "Utils/AlignedVector.h"
+#include "aura.hpp"
 
 namespace aura3d {
 
@@ -11,7 +12,7 @@ struct AuraBitmapFont {
     int charWidth = 5;
     int charHeight = 7;
     int charSpacing = 1;
-    AlignedVector<uint8_t> data[128]; // ASCII characters
+    AlignedVector<u8> data[128]; // ASCII characters
 
     AuraBitmapFont() {
         // Initialize all characters
@@ -825,10 +826,9 @@ struct AuraBitmapFont {
         data['y'][1] = 0b00000;
         data['y'][2] = 0b10001;
         data['y'][3] = 0b10001;
-        data['y'][4] = 0b10001;
-        data['y'][5] = 0b01111;
-        data['y'][6] = 0b00001;
-        data['y'][7] = 0b01110;
+        data['y'][4] = 0b01111;
+        data['y'][5] = 0b00001;
+        data['y'][6] = 0b01110;
 
         // z (122)
         data['z'][0] = 0b00000;

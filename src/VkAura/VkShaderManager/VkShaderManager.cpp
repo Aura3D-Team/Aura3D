@@ -59,7 +59,7 @@ VkShaderModule VkShaderManager::_createShaderModule(VkDevice device, const std::
     createInfo.pNext = nullptr;
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+    createInfo.pCode = reinterpret_cast<const u32*>(code.data());
 
     VkShaderModule shaderModule;
     VkResult result = vkCreateShaderModule(device, &createInfo, vkHostAllocator->getCallbacks(), &shaderModule);

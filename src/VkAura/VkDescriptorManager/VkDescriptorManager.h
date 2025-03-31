@@ -4,7 +4,9 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+
+#include "aura.hpp"
+#include "VkAura/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 
@@ -53,12 +55,12 @@ public:
      * @param size Size of the data in the buffer
      * @param offset Offset into the buffer
      */
-    void updateDescriptorSet(VkDescriptorSet descriptorSet, uint32_t binding,
+    void updateDescriptorSet(VkDescriptorSet descriptorSet, u32 binding,
                              VkBuffer buffer, VkDeviceSize size,
                              VkDeviceSize offset = 0);
 
     void updateCombinedImageSamplerDescriptorSet(VkDescriptorSet descriptorSet,
-                                                 uint32_t binding,
+                                                 u32 binding,
                                                  VkImageView imageView,
                                                  VkSampler sampler);
 

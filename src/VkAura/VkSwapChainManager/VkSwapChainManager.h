@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
+#include "aura.hpp"
 #include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
@@ -72,7 +73,7 @@ public:
      * @param vkDeviceManager A pointer to the VkDeviceManager responsible for managing the logical device and queue families.
      * @param layerCount Optional parameter specifying the number of image layers in the swap chain; defaults to 2.
      */
-    void createSwapChain(WindowAPI* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, uint32_t layerCount = 2);
+    void createSwapChain(WindowAPI* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount = 2);
 
     /**
      * @brief Retrieves swap chain support details.
@@ -114,13 +115,13 @@ public:
 
     const std::vector<VkImage>& getSwapChainImages();
 
-    const uint32_t acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags);
+    const u32 acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags);
 
-    void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const uint32_t& imageIndex);
+    void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex);
 
     void transitionImageLayout(
         VkCommandBuffer commandBuffer,
-        const uint32_t& imageIndex,
+        const u32& imageIndex,
         VkImageLayout oldLayout,
         VkImageLayout newLayout,
         VkFixedArray<VkPipelineStageFlags> stages,

@@ -70,7 +70,7 @@ void VkGraphicsPipelineManager::initializeDynamicStates()
     _dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 }
 
-void VkGraphicsPipelineManager::addDescriptorBinding(uint32_t setIndex, const DescriptorBindingInfo& bindingInfo)
+void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const DescriptorBindingInfo& bindingInfo)
 {
     // If this set doesn't exist yet, create it
     if (_descriptorSetLayoutInfos.find(setIndex) == _descriptorSetLayoutInfos.end()) {
@@ -110,7 +110,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         // Create descriptor set layout
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(layoutBindings.size());
+        layoutInfo.bindingCount = static_cast<u32>(layoutBindings.size());
         layoutInfo.pBindings = layoutBindings.data();
 
         VkDescriptorSetLayout layout;
@@ -125,7 +125,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
 
     // Create pipeline layout with all descriptor set layouts
     std::vector<VkDescriptorSetLayout> layouts;
-    uint32_t maxSetIndex = 0;
+    u32 maxSetIndex = 0;
 
     // Find the maximum set index to ensure we create a properly sized array
     for (const auto& pair : _descriptorSetLayouts) {
@@ -143,7 +143,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(layouts.size());
+    pipelineLayoutInfo.setLayoutCount = static_cast<u32>(layouts.size());
     pipelineLayoutInfo.pSetLayouts = layouts.data();
 
     // Create the pipeline layout
@@ -152,7 +152,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     INK_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts";
 }
 
-VkDescriptorSetLayout VkGraphicsPipelineManager::getDescriptorSetLayout(uint32_t setIndex) const
+VkDescriptorSetLayout VkGraphicsPipelineManager::getDescriptorSetLayout(u32 setIndex) const
 {
     auto it = _descriptorSetLayouts.find(setIndex);
     if (it != _descriptorSetLayouts.end()) {
@@ -173,15 +173,15 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
 
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = static_cast<uint32_t>(_shaderStages.size());
+    pipelineInfo.stageCount = static_cast<u32>(_shaderStages.size());
     pipelineInfo.pStages = _shaderStages.data();
 
     // Vertex input state
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexBindingDescArray.size());
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<u32>(vertexBindingDescArray.size());
     vertexInputInfo.pVertexBindingDescriptions = vertexBindingDescArray.data();
-    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttributeDescArray.size());
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(vertexAttributeDescArray.size());
     vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDescArray.data();
 
     // Input assembly state
@@ -194,8 +194,8 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(extent.width);
-    viewport.height = static_cast<float>(extent.height);
+    viewport.width = static_cast<f32>(extent.width);
+    viewport.height = static_cast<f32>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
@@ -206,7 +206,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     // Dynamic state
     VkPipelineDynamicStateCreateInfo dynamicState = {};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(_dynamicStates.size());
+    dynamicState.dynamicStateCount = static_cast<u32>(_dynamicStates.size());
     dynamicState.pDynamicStates = _dynamicStates.data();
 
     // Viewport state
@@ -294,11 +294,11 @@ void VkGraphicsPipelineManager::cmdBindPipeline(VkCommandBuffer commandBuffer, V
 
 void VkGraphicsPipelineManager::cmdBindDescriptorSets(VkCommandBuffer commandBuffer,
                                                       VkPipelineBindPoint bindPoint,
-                                                      uint32_t firstSet,
-                                                      uint32_t descriptorSetCount,
+                                                      u32 firstSet,
+                                                      u32 descriptorSetCount,
                                                       const VkDescriptorSet* pDescriptorSets,
-                                                      uint32_t dynamicOffsetCount,
-                                                      const uint32_t* pDynamicOffsets)
+                                                      u32 dynamicOffsetCount,
+                                                      const u32* pDynamicOffsets)
 {
     vkCmdBindDescriptorSets(commandBuffer,
                             bindPoint,
@@ -312,17 +312,17 @@ void VkGraphicsPipelineManager::cmdBindDescriptorSets(VkCommandBuffer commandBuf
 
 void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer,
                                         VkExtent2D extent,
-                                        uint32_t vertexCount,
-                                        uint32_t instanceCount,
-                                        uint32_t firstVertex,
-                                        uint32_t firstInstance)
+                                        u32 vertexCount,
+                                        u32 instanceCount,
+                                        u32 firstVertex,
+                                        u32 firstInstance)
 {
     // Set dynamic viewport and scissor
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(extent.width);
-    viewport.height = static_cast<float>(extent.height);
+    viewport.width = static_cast<f32>(extent.width);
+    viewport.height = static_cast<f32>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);

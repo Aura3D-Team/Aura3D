@@ -11,12 +11,12 @@ namespace aura3d {
 
 AuraUtils::AuraUtils() {}
 
-float AuraUtils::fast_sqrt(float x) {
+f32 AuraUtils::fast_sqrt(f32 x) {
     if (x <= 0.0f) return 0.0f;  // Handle edge case
-    float approx = x * 0.5f;
+    f32 approx = x * 0.5f;
     int i = *(int*)&x;  // Interpret bits as integer
     i = 0x5f3759df - (i >> 1);  // Magic number initial guess
-    float y = *(float*)&i;  // Convert back to float
+    f32 y = *(f32*)&i;  // Convert back to f32
 
     // Two Newton-Raphson iterations
     y = y * (1.5f - approx * y * y);

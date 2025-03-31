@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #endif
 
+#include "aura.hpp"
+
 namespace aura3d {
 
 //=========================================================================================
@@ -99,7 +101,7 @@ void* MemoryPool::allocate()
         if (!oldHead) {
             // Check again after acquiring the lock
             if (!(oldHead = freeList.load(std::memory_order_acquire))) {
-                // Double the pool size with each expansion
+                // f64 the pool size with each expansion
                 size_t newBlocks = std::max(size_t(64), totalBlocks.load(std::memory_order_relaxed));
                 addBlocks(newBlocks);
                 oldHead = freeList.load(std::memory_order_acquire);
@@ -161,7 +163,7 @@ VkHostAllocator::VkHostAllocator(const VkHostAllocatorCreateInfo& createInfo)
         size_t poolSize = MIN_POOL_SIZE;
         for (size_t i = 0; i < NUM_POOLS; ++i) {
             memoryPools[i] = std::make_unique<MemoryPool>(poolSize);
-            poolSize *= 2;  // Double for each pool (16, 32, 64, 128, etc.)
+            poolSize *= 2;  // f64 for each pool (16, 32, 64, 128, etc.)
         }
     }
 
@@ -740,7 +742,7 @@ void VkHostAllocator::printMemoryStats() const
             if (memoryPools[i]) {
                 size_t used = memoryPools[i]->getAllocatedCount();
                 size_t total = memoryPools[i]->getTotalCount();
-                float usagePercent = (total > 0) ? (100.0f * used / total) : 0.0f;
+                f32 usagePercent = (total > 0) ? (100.0f * used / total) : 0.0f;
 
                 std::cout << "  " << std::setw(4) << poolSize << " bytes: "
                           << std::setw(8) << used << "/" << total

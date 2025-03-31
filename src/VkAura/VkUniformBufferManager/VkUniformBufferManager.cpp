@@ -23,7 +23,7 @@ VkUniformBufferManager::~VkUniformBufferManager()
 void VkUniformBufferManager::createUniformBuffers(
     VkPhysicalDevice physicalDevice,
     VkSharingMode sharingMode,
-    uint32_t count)
+    u32 count)
 {
     // Clean up existing buffers if any
     cleanup();
@@ -58,7 +58,7 @@ void VkUniformBufferManager::createUniformBuffers(
     }
 }
 
-void VkUniformBufferManager::updateUniformBuffer(uint32_t currentImage, const TransformUBO& ubo)
+void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, const TransformUBO& ubo)
 {
     // Check if the index is valid
     if (currentImage >= _allocations.size() || _allocations[currentImage].mappedData == nullptr) {
@@ -72,7 +72,7 @@ void VkUniformBufferManager::updateUniformBuffer(uint32_t currentImage, const Tr
     // (which we specified when creating the buffer)
 }
 
-VkBuffer VkUniformBufferManager::getUniformBuffer(uint32_t index) const
+VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const
 {
     if (index < _uniformBuffers.size()) {
         return _uniformBuffers[index];
@@ -85,7 +85,7 @@ VkDeviceSize VkUniformBufferManager::getUniformBufferSize() const
     return sizeof(TransformUBO);
 }
 
-VkDescriptorSetLayoutBinding VkUniformBufferManager::getDescriptorSetLayoutBinding(uint32_t binding) const
+VkDescriptorSetLayoutBinding VkUniformBufferManager::getDescriptorSetLayoutBinding(u32 binding) const
 {
     // Create a descriptor set layout binding for the uniform buffer
     VkDescriptorSetLayoutBinding layoutBinding{};
@@ -97,7 +97,7 @@ VkDescriptorSetLayoutBinding VkUniformBufferManager::getDescriptorSetLayoutBindi
     return layoutBinding;
 }
 
-VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(uint32_t index) const
+VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(u32 index) const
 {
     // Create a descriptor buffer info for the uniform buffer
     VkDescriptorBufferInfo bufferInfo{};
