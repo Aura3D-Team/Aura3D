@@ -110,7 +110,10 @@ struct ImageViewData {
  * @brief Uniform buffer object structure matching the shader UBO
  */
 struct TransformUBO {
-    glm::mat4 transform; // Transformation matrix for UI elements
+    // glm::mat4 model;
+    // glm::mat4 view;
+    // glm::mat4 proj;
+    glm::mat4 transform;
 };
 
 struct Vertex3d
@@ -126,14 +129,23 @@ struct Vertex2d {
     glm::vec4 color;    // (r, g, b, a)
 };
 
-// Simplified structure to hold vertex buffer information
-struct VertexBufferInfo {
+// Base class for buffer information
+struct AuraBufferInfo {
     VkBuffer buffer = VK_NULL_HANDLE;
     u32 allocationId = 0;      // ID for tracking in VkDeviceAllocator
-    size_t vertexCount = 0;
-    bool is2d = true;               // Whether the buffer contains 2D or 3D vertices
-    bool persistent = false;        // Whether the buffer is persistently mapped
+    bool persistent = false;   // Whether the buffer is persistently mapped
 };
+
+// Vertex buffer information
+struct VertexBufferInfo : public AuraBufferInfo {
+    size_t vertexCount = 0;
+    bool is2d = true;          // Whether the buffer contains 2D or 3D vertices
+};
+
+struct IndexBufferInfo : public AuraBufferInfo {
+    u32 indexCount = 0;
+};
+
 
 }
 

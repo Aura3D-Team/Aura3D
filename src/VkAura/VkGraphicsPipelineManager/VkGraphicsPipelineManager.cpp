@@ -310,6 +310,33 @@ void VkGraphicsPipelineManager::cmdBindDescriptorSets(VkCommandBuffer commandBuf
                             pDynamicOffsets);
 }
 
+void VkGraphicsPipelineManager::cmdIndexedDraw(VkCommandBuffer commandBuffer,
+                                               VkExtent2D extent,
+                                               u32 indexCount,
+                                               u32 instanceCount,
+                                               u32 firstIndex,
+                                               i32 vertexOffset,
+                                               u32 firstInstance)
+{
+    // Set dynamic viewport and scissor
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(extent.width);
+    viewport.height = static_cast<f32>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Draw vertices
+    vkCmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+}
+
 void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer,
                                         VkExtent2D extent,
                                         u32 vertexCount,

@@ -51,6 +51,14 @@ public:
                                u32 dynamicOffsetCount = 0,
                                const u32* pDynamicOffsets = nullptr);
 
+    void cmdIndexedDraw(VkCommandBuffer commandBuffer,
+                        VkExtent2D extent,
+                        u32 indexCount,
+                        u32 instanceCount,
+                        u32 firstIndex,
+                        i32 vertexOffset,
+                        u32 firstInstance);
+
     // Draw vertices
     void cmdDraw(VkCommandBuffer commandBuffer,
                  VkExtent2D extent,

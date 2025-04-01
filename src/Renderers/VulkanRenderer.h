@@ -22,6 +22,7 @@
 #include <VkAura/VkDescriptorManager/VkDescriptorManager.h>
 #include <VkAura/VkTextureManager/VkTextureManager.h>
 #include <VkAura/VkVertexBufferManager/VkVertexBufferManager.h>
+#include <VkAura/VkIndexBufferManager/VkIndexBufferManager.h>
 #include <VkAura/VkUniformBufferManager/VkUniformBufferManager.h>
 #include <VkAura/VkCommandManager/VkCommandManager.h>
 #include <VkAura/VkRenderSyncManager/VkRenderSyncManager.h>
@@ -125,6 +126,7 @@ private:
     std::unique_ptr<aura3d::VkTextureManager> _vkTextureManager;
     std::unique_ptr<aura3d::VkDescriptorManager> _vkDescriptorManager;
     std::unique_ptr<aura3d::VkVertexBufferManager> _vkVertexBufferManager;
+    std::unique_ptr<aura3d::VkIndexBufferManager> _vkIndexBufferManager;
     std::unique_ptr<aura3d::VkUniformBufferManager> _vkUniformBufferManager;
     std::unique_ptr<aura3d::VkCommandManager> _vkCommandManager;
     std::unique_ptr<aura3d::VkRenderSyncManager> _vkRenderSyncManager;

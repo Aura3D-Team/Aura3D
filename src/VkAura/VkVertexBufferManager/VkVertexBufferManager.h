@@ -9,10 +9,10 @@
 #include <string>
 #include <vector>
 
-#include <aura.hpp>
+#include "aura.hpp"
 #include "VkAura/VkAuraDefs.h"
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
-#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
+#include "VkAura/VkHostAllocator/VkHostAllocator.h"
+#include "VkAura/VkDeviceAllocator/VkDeviceAllocator.h"
 
 namespace aura3d {
 

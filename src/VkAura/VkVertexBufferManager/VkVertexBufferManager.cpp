@@ -37,7 +37,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
     VertexBufferInfo bufferInfo{};
     bufferInfo.buffer = VK_NULL_HANDLE;
     bufferInfo.allocationId = 0;
-    bufferInfo.vertexCount = vertices2d.size();
+    bufferInfo.vertexCount = static_cast<u32>(vertices2d.size());
     bufferInfo.is2d = true;
     bufferInfo.persistent = persistentMapping;
 
@@ -156,7 +156,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
     VertexBufferInfo bufferInfo{};
     bufferInfo.buffer = VK_NULL_HANDLE;
     bufferInfo.allocationId = 0;
-    bufferInfo.vertexCount = vertices3d.size();
+    bufferInfo.vertexCount = static_cast<u32>(vertices3d.size());
     bufferInfo.is2d = false;
     bufferInfo.persistent = persistentMapping;
 
@@ -418,19 +418,19 @@ AttributeDescriptionArray<VkVertexInputAttributeDescription> VkVertexBufferManag
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = is2d ? VK_FORMAT_R32G32_SFLOAT : VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[0].offset = 0;  // Will be updated below
+    attributeDescriptions[0].offset = 0;
 
     // Texture Coordinate (vec2)
     attributeDescriptions[1].binding = 0;
     attributeDescriptions[1].location = 1;
     attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
-    attributeDescriptions[1].offset = 0;  // Will be updated below
+    attributeDescriptions[1].offset = 0;
 
     // Color (vec4)
     attributeDescriptions[2].binding = 0;
     attributeDescriptions[2].location = 2;
     attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributeDescriptions[2].offset = 0;  // Will be updated below
+    attributeDescriptions[2].offset = 0;
 
     if (is2d) {
         attributeDescriptions[0].offset = offsetof(Vertex2d, pos);

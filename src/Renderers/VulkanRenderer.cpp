@@ -127,23 +127,28 @@ void VulkanRenderer::initialize()
         "./shaders/vert/test_shader2d_vert.spv",
         "./shaders/frag/test_shader2d_frag.spv",
         _vkDeviceManager->getDevice()
-        );
+    );
     _vkDescriptorManager = std::make_unique<aura3d::VkDescriptorManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
     _vkVertexBufferManager = std::make_unique<aura3d::VkVertexBufferManager>(
         _vkHostAllocator.get(),
         _vkDeviceAllocator.get(),
         _vkDeviceManager->getDevice()
-        );
+    );
+    _vkIndexBufferManager = std::make_unique<aura3d::VkIndexBufferManager>(
+        _vkHostAllocator.get(),
+        _vkDeviceAllocator.get(),
+        _vkDeviceManager->getDevice()
+    );
     _vkUniformBufferManager = std::make_unique<aura3d::VkUniformBufferManager>(
         _vkHostAllocator.get(),
         _vkDeviceAllocator.get(),
         _vkDeviceManager->getDevice()
-        );
+    );
     _vkCommandManager = std::make_unique<aura3d::VkCommandManager>(
         _vkHostAllocator.get(),
         _vkDeviceManager->getDevice(),
         _graphicsIndexFamily
-        );
+    );
     _vkTextureManager = std::make_unique<VkTextureManager>(
         _vkHostAllocator.get(),
         _vkDeviceAllocator.get(),
@@ -151,7 +156,7 @@ void VulkanRenderer::initialize()
         _vkDeviceManager->getPhysicalDevice(),
         _vkCommandManager->getThreadCommandPool(),
         _queueDataFromExclusiveFlags.front()->queues.front()
-        );
+    );
     _vkRenderSyncManager = std::make_unique<aura3d::VkRenderSyncManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
 
     _isInitialized = true;
@@ -182,6 +187,11 @@ void VulkanRenderer::run()
     auto& renderFinishedSemaphores = _vkRenderSyncManager->getRenderFinishedSemaphores();
     auto& fences = _vkRenderSyncManager->getInFlightFences();
     u32 imagesCount = _vkSwapChainManager->getSwapChainImages().size();
+
+    auto vertexBuffer = _vkVertexBufferManager->getVertexBuffer("mainRect");
+    auto& vertexAllocationInfo = _vkDeviceAllocator->getAllocation(vertexBuffer.allocationId);
+    auto indexBuffer = _vkIndexBufferManager->getIndexBuffer("rectIndices");
+    auto& indexAllocationInfo = _vkDeviceAllocator->getAllocation(indexBuffer.allocationId);
 
     // Main render loop
     _windowManagerApi->process([&]() {
@@ -219,15 +229,14 @@ void VulkanRenderer::run()
             frameBuffers[imageIndex],  // Use imageIndex, not currentFrame!
             *extent,
             &clearColor
-            );
+        );
 
         // Record drawing commands
         _vkGraphicsPipelineManager->cmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS);
 
         // Bind vertex buffer
-        auto vertexBuffer = _vkVertexBufferManager->getVertexBuffer("mainTriangle");
-        auto& vertexAllocationInfo = _vkDeviceAllocator->getAllocation(vertexBuffer.allocationId);
         vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &vertexBuffer.buffer, &vertexAllocationInfo.offset);
+        vkCmdBindIndexBuffer(cmdBuffer, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
         // Bind the UBO descriptor set (set 0)
         _vkGraphicsPipelineManager->cmdBindDescriptorSets(
@@ -238,7 +247,7 @@ void VulkanRenderer::run()
             &_descriptorSets[imageIndex],
             0,
             nullptr
-            );
+        );
 
         // Bind the texture descriptor set (set 1)
         _vkGraphicsPipelineManager->cmdBindDescriptorSets(
@@ -249,10 +258,10 @@ void VulkanRenderer::run()
             &_textureDescriptorSets[imageIndex],
             0,
             nullptr
-            );
+        );
 
         // Draw the triangle
-        _vkGraphicsPipelineManager->cmdDraw(cmdBuffer, *extent, 3);  // 3 vertices
+        _vkGraphicsPipelineManager->cmdIndexedDraw(cmdBuffer, *extent, indexBuffer.indexCount, 1, 0, vertexAllocationInfo.offset, 0);
 
         // End render pass
         aura3d::VkRenderPassManager::endRenderPass(cmdBuffer);
@@ -292,14 +301,14 @@ void VulkanRenderer::setupGraphicsPipeline()
         _windowManagerApi->getWindowInstance(),
         *_vkSurfaceManager->getSurface(),
         _vkDeviceManager.get()
-        );
+    );
 
     // Create image views
     _vkImageViewsManager->createImageViews(
         _vkSwapChainManager->getSwapChainImages(),
         _vkSwapChainManager->getChoosedSurfaceFormat()->format,
         _vkImageViewData
-        );
+    );
 
     // Create render pass
     _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format);
@@ -309,13 +318,13 @@ void VulkanRenderer::setupGraphicsPipeline()
         _vkImageViewsManager->getImageViews(),
         *_vkRenderPassManager->getRenderPass(),
         *_vkSwapChainManager->getExtent2D()
-        );
+    );
 }
 
 void VulkanRenderer::createVertexBuffers()
 {
     // Define a rect with non-overlapping vertices
-    std::vector<Vertex2d> vertices = {
+    const std::vector<Vertex2d> vertices = {
         {{-0.5f, -0.5f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
         {{ 0.5f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
         {{ 0.5f,  0.5f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
@@ -333,14 +342,29 @@ void VulkanRenderer::createVertexBuffers()
 
     // Create vertex buffer with named buffer for easier management
     _vkVertexBufferManager->createVertexBuffer(
-        "mainTriangle",
+        "mainRect",
         *_vkDeviceManager->getPhysicalDevice(),
         _vkCommandManager->getThreadCommandPool(),
         _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
         queueToDraw,
         vertices,
         false  // No need for persistent mapping for static geometry
-        );
+    );
+
+    // DEfine index buffer data for rendering optimizations
+    const std::vector<u16> indices = {
+        0, 1, 2, 2, 3, 0
+    };
+
+    _vkIndexBufferManager->createIndexBuffer(
+        "rectIndices",
+        *_vkDeviceManager->getPhysicalDevice(),
+        _vkCommandManager->getThreadCommandPool(),
+        _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
+        queueToDraw,
+        indices,
+        false
+    );
 }
 
 void VulkanRenderer::createUniformBuffers()
@@ -520,6 +544,10 @@ void VulkanRenderer::cleanup()
     // 1. First explicitly destroy all buffers and resources
     if (_vkVertexBufferManager) {
         _vkVertexBufferManager->cleanup();  // Explicitly destroy vertex buffers
+    }
+
+    if (_vkIndexBufferManager) {
+        _vkIndexBufferManager->cleanup();  // Explicitly destroy index buffers
     }
 
     if (_vkUniformBufferManager) {
