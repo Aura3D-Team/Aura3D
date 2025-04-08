@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "aura.hpp"
 
 namespace aura3d {

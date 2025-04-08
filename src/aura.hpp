@@ -13,13 +13,14 @@
 #define ENGINE_VERSION VK_MAKE_API_VERSION(1, 0, 0)
 #define API_VERSION VK_API_VERSION_1_3
 
+#define DEFAULT_WINDOW_WIDTH 1280
+#define DEFAULT_WINDOW_HEIGHT 720
+
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_ATTRIBUTE_DESCRIPTION 3
 #define MAX_SHADER_MODULES 8
 #define MAX_DESCRIPTOR_SETS 4
 #define MAX_BINDING_COUNT 16
-#define DEFAULT_WINDOW_WIDTH 1280
-#define DEFAULT_WINDOW_HEIGHT 720
 
 using i8 = int8_t;
 using i16 = int16_t;
@@ -52,6 +53,7 @@ using BindingArray = std::array<T, MAX_BINDING_COUNT>;
 
 namespace aura3d {
 
+// Some defs below to facilitate learning, but, they are not being used kk.
 enum class ShaderType {
     VERTEX,
     FRAGMENT,

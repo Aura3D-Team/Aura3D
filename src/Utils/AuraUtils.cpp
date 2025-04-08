@@ -1,11 +1,7 @@
 #include "AuraUtils.h"
 
 #include <math.h>
-#include <memory>
 #include <cstdio>
-#include <vector>
-
-#include "AuraException/AuraException.h"
 
 namespace aura3d {
 
