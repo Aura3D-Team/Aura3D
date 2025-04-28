@@ -381,7 +381,9 @@ void VulkanRenderer::createUniformBuffers()
 
     // Update uniform buffer with identity matrix
     TransformUBO ubo{};
-    ubo.transform = glm::mat4(1.0f);
+    ubo.model = glm::mat4(1.0f);
+    ubo.view = glm::mat4(1.0f);
+    ubo.proj = glm::mat4(1.0f);
     for (u32 i = 0; i < swapChainImageCount; i++) {
         _vkUniformBufferManager->updateUniformBuffer(i, ubo);
     }
@@ -394,13 +396,17 @@ void VulkanRenderer::createDescriptorSets()
     // Create descriptor set layouts in the pipeline manager
     _vkGraphicsPipelineManager->createDescriptorSetLayouts();
 
+    // Create a white texture for our triangle
+    auto whiteTexture = _vkTextureManager->createSolidColorTexture("white", 255, 255, 255);
+
     // Allocate and update descriptor sets using VkDescriptorManager
     _descriptorSets.resize(swapChainImageCount);
+    _textureDescriptorSets.resize(swapChainImageCount);
     for (size_t i = 0; i < swapChainImageCount; i++) {
         // Allocate a descriptor set
         _descriptorSets[i] = _vkDescriptorManager->allocateDescriptorSet(
             _vkGraphicsPipelineManager->getDescriptorSetLayout(0)
-            );
+        );
 
         // Update the descriptor set with uniform buffer
         _vkDescriptorManager->updateDescriptorSet(
@@ -408,19 +414,13 @@ void VulkanRenderer::createDescriptorSets()
             0,                             // Binding point in shader
             _vkUniformBufferManager->getUniformBuffer(i),   // Uniform buffer
             _vkUniformBufferManager->getUniformBufferSize() // Size of the data
-            );
-    }
+        );
 
-    // Create a white texture for our triangle
-    auto whiteTexture = _vkTextureManager->createSolidColorTexture("white", 255, 255, 255);
 
-    // Allocate and update descriptor sets for the texture (set 1)
-    _textureDescriptorSets.resize(swapChainImageCount);
-    for (size_t i = 0; i < swapChainImageCount; i++) {
         // Allocate descriptor set for texture
         _textureDescriptorSets[i] = _vkDescriptorManager->allocateDescriptorSet(
             _vkGraphicsPipelineManager->getDescriptorSetLayout(1)
-            );
+        );
 
         // Get the texture data
         const auto* texture = _vkTextureManager->getTexture("white");
@@ -431,7 +431,7 @@ void VulkanRenderer::createDescriptorSets()
             0,
             texture->view,
             texture->sampler
-            );
+        );
     }
 
     // Create the pipeline
@@ -506,29 +506,29 @@ void VulkanRenderer::handleWindowChanges()
     _vkSwapChainManager->initSwapChainSupportDetails(
         *_vkDeviceManager->getPhysicalDevice(),
         *_vkSurfaceManager->getSurface()
-        );
+    );
 
     _vkSwapChainManager->createSwapChain(
         window,
         *_vkSurfaceManager->getSurface(),
         _vkDeviceManager.get()
-        );
+    );
 
     _vkImageViewsManager->createImageViews(
         _vkSwapChainManager->getSwapChainImages(),
         _vkSwapChainManager->getChoosedSurfaceFormat()->format,
         _vkImageViewData
-        );
+    );
 
     _vkRenderPassManager->createRenderPass(
         _vkSwapChainManager->getChoosedSurfaceFormat()->format
-        );
+    );
 
     _vkFrameBuffersManager->createFrameBuffers(
         _vkImageViewsManager->getImageViews(),
         *_vkRenderPassManager->getRenderPass(),
         *_vkSwapChainManager->getExtent2D()
-        );
+    );
 
     // Recreate synchronization objects
     _vkRenderSyncManager->create();

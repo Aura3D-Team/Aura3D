@@ -58,13 +58,22 @@ void VkUniformBufferManager::createUniformBuffers(
     }
 }
 
-void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, const TransformUBO& ubo)
+void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, TransformUBO& ubo)
 {
     // Check if the index is valid
     if (currentImage >= _allocations.size() || _allocations[currentImage].mappedData == nullptr) {
         // Index out of range or buffer not mapped
         return;
     }
+
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    f32 time = std::chrono::duration<f32, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f,0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
 
     // Copy the new UBO data directly to the mapped memory
     std::memcpy(_allocations[currentImage].mappedData, &ubo, sizeof(ubo));

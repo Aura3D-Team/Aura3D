@@ -9,7 +9,7 @@
 #include "VkAura/VkAuraDefs.h"
 #include "VkAura/VkQueueManager/VkQueueManager.h"
 #include "VkAura/VkSurfaceManager/VkSurfaceManager.h"
-#include "VkAura/VkHostAllocator/VkHostAllocator.h"
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 

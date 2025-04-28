@@ -11,9 +11,8 @@
 #include "aura.hpp"
 #include "VkAura/VkAuraDefs.h"
 #include "VkAura/VkPipelineManager/VkPipelineManager.h"
-#include "VkAura/VkShaderManager/VkShaderManager.h"
-#include "VkAura/VkHostAllocator/VkHostAllocator.h"
-
+#include "Common/ShaderManager.h"
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 

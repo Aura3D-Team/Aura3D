@@ -9,7 +9,7 @@
 #include <thread>
 
 #include "aura.hpp"
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
 

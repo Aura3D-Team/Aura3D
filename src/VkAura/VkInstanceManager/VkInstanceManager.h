@@ -9,8 +9,8 @@
 
 #include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkDebugger/VkDebugger.h>
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
-#include <VkAura/VkDeviceAllocator/VkDeviceAllocator.h>
+#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
+#include <VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
 

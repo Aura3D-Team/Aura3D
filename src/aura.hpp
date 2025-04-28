@@ -7,6 +7,10 @@
 #include <array>
 #include <cstdint>
 
+// GLM config import
+#include <glm/gtc/matrix_transform.hpp>
+#define GLM_FORCE_RADIANS
+
 #define APPLICATION_NAME "Aura3D"
 #define ENGINE_NAME "Aura3D Engine"
 #define APPLICATION_VERSION VK_MAKE_API_VERSION(1, 0, 0)

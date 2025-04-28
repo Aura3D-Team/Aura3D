@@ -20,6 +20,7 @@
 int main(int argc, char **argv)
 {
     INK_CORE_LOGGER;
+    ink::LogManager::getInstance().setGlobalLevel(logSeverity);
 
     aura3d::WindowDetails windowDetails = {
         .width = 1280,

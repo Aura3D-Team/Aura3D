@@ -111,7 +111,7 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
 #elif defined(USE_VULKAN_API)
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN
 #endif
-        );
+    );
 
     INK_ASSERT_MSG(_window != nullptr, "Failed to create SDL2 Window!");
 

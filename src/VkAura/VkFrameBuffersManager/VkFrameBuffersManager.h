@@ -5,7 +5,7 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
 

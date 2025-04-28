@@ -1,13 +1,13 @@
-#ifndef VKSHADERMANAGER_H
-#define VKSHADERMANAGER_H
+#ifndef SHADERMANAGER_H
+#define SHADERMANAGER_H
 
 #pragma once
 
 #include <vulkan/vulkan.h>
 #include <vector>
 
-#include "Utils/ShaderSpirvExtractor.h"
-#include <VkAura/VkHostAllocator/VkHostAllocator.h>
+#include "ShaderSpirvExtractor.h"
+#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
 
@@ -15,6 +15,7 @@ class VkShaderManager
 {
 public:
     VkShaderManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
+
     ~VkShaderManager();
 
     void createVertShaderModule(const std::string& filename);

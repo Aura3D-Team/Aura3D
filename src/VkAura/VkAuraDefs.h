@@ -107,13 +107,12 @@ struct ImageViewData {
 // VERTEX stuff
 /**
  * @struct TransformUBO
- * @brief Uniform buffer object structure matching the shader UBO
+ * @brief Uniform buffer object structure matching the shader UniformBufferObject
  */
 struct TransformUBO {
-    // glm::mat4 model;
-    // glm::mat4 view;
-    // glm::mat4 proj;
-    glm::mat4 transform;
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
 };
 
 struct Vertex3d
