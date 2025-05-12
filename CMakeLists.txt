@@ -5,8 +5,8 @@ project(Aura3D LANGUAGES CXX VERSION 1.0.0)
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -mtune=native -flto -funroll-loops -fno-plt") # for multithread flags -fopenmp -pthread
-# set(CMAKE_CXX_FLAGS_DEBUG "-g")
 
 message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
 
