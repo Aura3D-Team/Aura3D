@@ -6,35 +6,23 @@
 
 namespace aura3d {
 
-/**
- * Constructor - Creates a descriptor pool
- *
- * A descriptor pool is like a memory manager for descriptor sets.
- * It pre-allocates memory for a certain number and type of descriptors.
- * This allows efficient allocation/deallocation of descriptor sets.
- */
 VkDescriptorManager::VkDescriptorManager(VkHostAllocator* vkHostAllocator,VkDevice* vkDevice, int pool_size) :
-    vkHostAllocator(vkHostAllocator), _pool_size(pool_size), _vkDevice(vkDevice)
+    vkHostAllocator(vkHostAllocator), _vkDevice(vkDevice), _pool_size(pool_size)
 {
-    // Configure the pool sizes - for both uniform buffers and combined image samplers
     VkFixedArray<VkDescriptorPoolSize> poolSizes = {};
 
-    // Uniform buffer pool size
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = _pool_size;
 
-    // Combined image sampler pool size
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = _pool_size;
 
-    // Configure the descriptor pool creation info
     _poolCreateInfo = {};
     _poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     _poolCreateInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
     _poolCreateInfo.pPoolSizes = poolSizes.data();
-    _poolCreateInfo.maxSets = _pool_size * 2;  // Maximum number of descriptor sets (for both types)
+    _poolCreateInfo.maxSets = _pool_size * 2;
 
-    // Create the descriptor pool
     VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, vkHostAllocator->getCallbacks(), &_descriptorPool));
 }
 
@@ -67,14 +55,12 @@ void VkDescriptorManager::cleanup()
  */
 VkDescriptorSet VkDescriptorManager::allocateDescriptorSet(VkDescriptorSetLayout dSetLayout)
 {
-    // Configure the allocation info
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = _descriptorPool;
-    allocInfo.descriptorSetCount = 1;  // Number of sets to allocate
-    allocInfo.pSetLayouts = &dSetLayout;  // The descriptor set layout to use
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &dSetLayout;
 
-    // Allocate the descriptor set
     VkDescriptorSet descriptorSet;
     VK_RESULT_CHECK(vkAllocateDescriptorSets(*_vkDevice, &allocInfo, &descriptorSet));
 
@@ -90,23 +76,20 @@ VkDescriptorSet VkDescriptorManager::allocateDescriptorSet(VkDescriptorSetLayout
 void VkDescriptorManager::updateDescriptorSet(VkDescriptorSet descriptorSet, u32 binding,
                                               VkBuffer buffer, VkDeviceSize size, VkDeviceSize offset)
 {
-    // Configure buffer info
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = buffer;
     bufferInfo.offset = offset;
     bufferInfo.range = size;
 
-    // Configure write descriptor info
     VkWriteDescriptorSet writeDescriptorSet = {};
     writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writeDescriptorSet.dstSet = descriptorSet;
-    writeDescriptorSet.dstBinding = binding;  // Binding index for the descriptor
+    writeDescriptorSet.dstBinding = binding;
     writeDescriptorSet.dstArrayElement = 0;
     writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writeDescriptorSet.descriptorCount = 1;
     writeDescriptorSet.pBufferInfo = &bufferInfo;
 
-    // Update the descriptor set
     vkUpdateDescriptorSets(*_vkDevice, 1, &writeDescriptorSet, 0, nullptr);
 }
 
@@ -127,17 +110,15 @@ void VkDescriptorManager::updateCombinedImageSamplerDescriptorSet(VkDescriptorSe
     imageInfo.imageView = imageView;
     imageInfo.sampler = sampler;
 
-    // Configure write descriptor info
     VkWriteDescriptorSet writeDescriptorSet = {};
     writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writeDescriptorSet.dstSet = descriptorSet;
-    writeDescriptorSet.dstBinding = binding;  // Binding index for the descriptor
+    writeDescriptorSet.dstBinding = binding;
     writeDescriptorSet.dstArrayElement = 0;
     writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writeDescriptorSet.descriptorCount = 1;
     writeDescriptorSet.pImageInfo = &imageInfo;
 
-    // Update the descriptor set
     vkUpdateDescriptorSets(*_vkDevice, 1, &writeDescriptorSet, 0, nullptr);
 }
 

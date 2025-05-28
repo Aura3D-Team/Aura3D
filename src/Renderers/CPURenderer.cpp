@@ -1,13 +1,11 @@
 #include "Renderers/CPURenderer.h"
 #include <ink/ink.hpp>
+#include <cmath>
+#include <ctime>
+
 #include "aura.hpp"
 #include "Utils/ColorsDefinitions.h"
 #include "Utils/AuraUtils.h"
-#include <cmath>
-#include <map>
-#include <sstream>
-#include <iomanip>
-#include <ctime>
 
 namespace aura3d {
 
@@ -94,16 +92,16 @@ void CPURenderer::run()
         int height = _frameBufferManager->getHeight();
 
         int textY = 20;
-        _frameBufferManager->drawText("Testando texto: ~çã", 10, textY, aura3d::colors::RED_UINT32);
+        _frameBufferManager->drawText("Testando texto: .", {10, textY}, aura3d::colors::RED_UINT32);
         int textHeight = _frameBufferManager->getTextHeight("Testando texto: ~çã");
         textY += 10 + textHeight;
 
         // Total number of tracked positions
         std::string posCountText = "Tamanho da fonte";
-        _frameBufferManager->drawText(posCountText, 10, textY, aura3d::colors::RED_UINT32);
+        _frameBufferManager->drawText(posCountText, {10, textY}, aura3d::colors::RED_UINT32);
         textY += 10 + textHeight;
 
-        _frameBufferManager->drawAALine(300, 300, 500, 200, aura3d::colors::BLUE_UINT32);
+        _frameBufferManager->drawLine({250, 250}, {400, 400}, aura3d::colors::BLACK_UINT32);
 
         // Render the final framebuffer
         _frameBufferManager->renderFramebuffer();

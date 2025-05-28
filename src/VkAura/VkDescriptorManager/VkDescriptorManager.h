@@ -83,12 +83,12 @@ public:
 
 private:
     VkHostAllocator* vkHostAllocator;
+    VkDevice* _vkDevice;                  // Pointer to the Vulkan device
 
     VkDescriptorPool _descriptorPool;      // The descriptor pool handle
     VkDescriptorPoolSize _poolSize;        // Size configuration for the pool
     VkDescriptorPoolCreateInfo _poolCreateInfo; // Creation info for the pool
     int _pool_size;                       // Number of sets in the pool
-    VkDevice* _vkDevice;                  // Pointer to the Vulkan device
 };
 
 } // namespace aura3d

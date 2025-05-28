@@ -1150,7 +1150,7 @@ VkResult VkDeviceAllocator::defragment(VkDeviceSize maxBytesToMove)
                     newAlloc.allocationId = alloc.allocationId;
 
                     void* srcData = nullptr;
-                    void* dstData = nullptr;
+                    // void* dstData = nullptr;
 
                     VkResult mapResult = mapMemory(alloc, 0, VK_WHOLE_SIZE, &srcData);
                     if (mapResult != VK_SUCCESS) {

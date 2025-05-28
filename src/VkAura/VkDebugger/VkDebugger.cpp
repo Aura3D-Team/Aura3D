@@ -139,37 +139,30 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VkDebugger::debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-    void* pUserData
+    void* /*pUserData*/
 )
 {
-    // Format the debug message with detailed information
     std::stringstream ss;
     ss << "[Vulkan] " << severityToString(messageSeverity) << " [" << messageTypeToString(messageType) << "] ";
 
-    // Add message ID if available
     if (pCallbackData->pMessageIdName) {
         ss << "[ " << pCallbackData->pMessageIdName << " ] ";
     }
 
-    // Add object information
     std::string objectInfo = formatObjectInfo(pCallbackData);
     if (!objectInfo.empty()) {
         ss << objectInfo << " | ";
     }
 
-    // Add message ID number
     ss << "MessageID = 0x" << std::hex << pCallbackData->messageIdNumber << " | ";
 
-    // Add the main message
     ss << pCallbackData->pMessage;
 
-    // Add label information
     std::string labelInfo = formatLabelInfo(pCallbackData);
     if (!labelInfo.empty()) {
         ss << labelInfo;
     }
 
-    // Log the message with appropriate severity
     switch (messageSeverity) {
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
             INK_VERBOSE << ss.str();
@@ -195,7 +188,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VkDebugger::debugCallback(
         // or provide hints on how to fix common validation errors
     }
 
-    return VK_FALSE;  // Tell Vulkan not to abort
+    return VK_FALSE;
 }
 
 VkDebugUtilsMessengerCreateInfoEXT VkDebugger::setupDebugMessenger()

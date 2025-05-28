@@ -28,7 +28,6 @@ VkDeviceManager::~VkDeviceManager() {
 
 void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 {
-    // Enumerate physical devices
     VkResult result = vkEnumeratePhysicalDevices(vkInstance, &_physicaldeviceCount, nullptr);
     if (result != VK_SUCCESS || _physicaldeviceCount == 0) {
         throw AuraException(result != VK_SUCCESS ? result : VK_ERROR_INITIALIZATION_FAILED);
@@ -42,7 +41,6 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 
     u32 bestScore = 0;
 
-    // Select the best physical device
     for (const VkPhysicalDevice& device : devices) {
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(device, &deviceProperties);

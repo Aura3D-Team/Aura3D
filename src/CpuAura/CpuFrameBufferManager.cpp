@@ -1,12 +1,12 @@
 #include "CpuFrameBufferManager.h"
 
 #include <cstring>
-// #include <sstream>
-// #include <iomanip>
 #include <cmath>
+#include <ink/ink.hpp>
 
 #include "AuraException/AuraException.h"
-#include <ink/ink.hpp>
+#include "Utils/AuraUtils.h"
+
 
 namespace aura3d {
 
@@ -179,9 +179,9 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height)
  * @param y Y-coordinate to check
  * @return true if coordinates are valid, false otherwise
  */
-bool CpuFrameBufferManager::isInsideBounds(int x, int y) const
+bool CpuFrameBufferManager::isInsideBounds(Point p) const
 {
-    return x >= 0 && x < settings.width && y >= 0 && y < settings.height;
+    return p.x >= 0 && p.x < settings.width && p.y >= 0 && p.y < settings.height;
 }
 
 /**
@@ -190,10 +190,10 @@ bool CpuFrameBufferManager::isInsideBounds(int x, int y) const
  * @param y Y-coordinate
  * @param color 32-bit color value (0xRRGGBB format)
  */
-void CpuFrameBufferManager::setPixel(int x, int y, u32 color)
+void CpuFrameBufferManager::setPixel(Point p, u32 color)
 {
-    if (isInsideBounds(x, y)) {
-        framebuffer[y * settings.width + x] = color;
+    if (isInsideBounds({p.x, p.y})) {
+        framebuffer[p.y * settings.width + p.x] = color;
     }
 }
 
@@ -204,10 +204,10 @@ void CpuFrameBufferManager::setPixel(int x, int y, u32 color)
  * @param z Depth value (smaller values are closer to camera)
  * @param color 32-bit color value (0xRRGGBB format)
  */
-void CpuFrameBufferManager::setPixelWithDepth(int x, int y, f32 z, u32 color)
+void CpuFrameBufferManager::setPixelWithDepth(Point p, f32 z, u32 color)
 {
-    if (!isInsideBounds(x, y)) return;
-    const int index = y * settings.width + x;
+    if (!isInsideBounds({p.x, p.y})) return;
+    const int index = p.y * settings.width + p.x;
 
     framebuffer[index] = color;
 
@@ -217,505 +217,191 @@ void CpuFrameBufferManager::setPixelWithDepth(int x, int y, f32 z, u32 color)
 }
 
 /**
+ * Helper function for anti-aliased line drawing
+ * @param x, y Coordinates
+ * @param intensity Alpha value (0.0 to 1.0)
+ * @param color Line color
+ */
+void CpuFrameBufferManager::plotPixel(Point p, f32 intensity, u32 color)
+{
+    if (!isInsideBounds({p.x, p.y})) return;
+    // Get existing color and blend with new color
+    u32 bg = getPixel({p.x, p.y});
+    u32 blended = blendColors(bg, color, intensity);
+    setPixel({p.x, p.y}, blended);
+}
+
+/**
  * Gets the color of a pixel at the specified coordinates
  * @param x X-coordinate
  * @param y Y-coordinate
  * @return 32-bit color value, or 0 if coordinates are invalid
  */
-u32 CpuFrameBufferManager::getPixel(int x, int y) const
+u32 CpuFrameBufferManager::getPixel(Point p) const
 {
-    if (isInsideBounds(x, y)) {
-        return framebuffer[y * settings.width + x];
+    if (isInsideBounds({p.x, p.y})) {
+        return framebuffer[p.y * settings.width + p.x];
     }
     return 0;
 }
 
-f32 CpuFrameBufferManager::getDepthPixel(int x, int y) const
+f32 CpuFrameBufferManager::getDepthPixel(Point p) const
 {
-    if (isInsideBounds(x, y)) {
-        return depthBuffer[y * settings.width + x];
+    if (isInsideBounds({p.x, p.y})) {
+        return depthBuffer[p.y * settings.width + p.x];
     }
     return 1.0f;
 }
 
 /**
  * Draws a line using Bresenham's algorithm
- * @param x0, y0 Starting point coordinates
- * @param x1, y1 Ending point coordinates
+ * @param p0 Starting point coordinates
+ * @param p1 Ending point coordinates
  * @param color Line color
  *
  * This algorithm uses integer-only arithmetic for speed.
  * It works by determining which pixels to color based on the error accumulation.
  */
-void CpuFrameBufferManager::drawLine(int x0, int y0, int x1, int y1, u32 color)
+void CpuFrameBufferManager::drawLine(Point p0, Point p1, u32 color)
 {
-    int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy, e2;
+    i32 x0 = p0.x, y0 = p0.y;
+    i32 x1 = p1.x, y1 = p1.y;
 
-    while (true) {
-        setPixel(x0, y0, color);
+    i32 dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    i32 dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    i32 err = dx + dy; // error value
+
+    while (true)
+    {
+        setPixel({x0, y0}, color);
         if (x0 == x1 && y0 == y1) break;
-
-        e2 = 2 * err;
-        // Update x if we're moving horizontally
+        i32 e2 = 2 * err;
         if (e2 >= dy) { err += dy; x0 += sx; }
-        // Update y if we're moving vertically
         if (e2 <= dx) { err += dx; y0 += sy; }
     }
 }
 
-/**
- * Helper function for anti-aliased line drawing
- * @param x, y Coordinates
- * @param intensity Alpha value (0.0 to 1.0)
- * @param color Line color
- */
-void CpuFrameBufferManager::plotPixel(int x, int y, f32 intensity, u32 color)
+float CpuFrameBufferManager::get_eased_time(float t_param, InterpolationMethod method)
 {
-    if (!isInsideBounds(x, y)) return;
-    // Get existing color and blend with new color
-    u32 bg = getPixel(x, y);
-    u32 blended = blendColors(bg, color, intensity);
-    setPixel(x, y, blended);
-}
-
-/**
- * Draws an anti-aliased line using Xiaolin Wu's algorithm
- * @param x0, y0 Starting point coordinates
- * @param x1, y1 Ending point coordinates
- * @param color Line color
- *
- * This algorithm creates smoother lines by using alpha blending on
- * edge pixels, resulting in reduced jaggedness compared to Bresenham.
- */
-void CpuFrameBufferManager::drawAALine(int x0, int y0, int x1, int y1, u32 color) {
-    // Ensure line is always drawn from left to right
-    bool steep = std::abs(y1 - y0) > std::abs(x1 - x0);
-    if (steep) {
-        // If line is steep (more vertical than horizontal), swap x and y
-        std::swap(x0, y0);
-        std::swap(x1, y1);
-    }
-    if (x0 > x1) {
-        // Always draw from left to right
-        std::swap(x0, x1);
-        std::swap(y0, y1);
-    }
-
-    int dx = x1 - x0;
-    int dy = y1 - y0;
-    f32 gradient = (dx == 0) ? 1.0f : static_cast<f32>(dy) / dx;
-
-    // Handle first endpoint
-    int xend = x0;
-    f32 yend = y0 + gradient * (xend - x0);
-    f32 xgap = 1.0f - std::fmod(x0 + 0.5f, 1.0f);
-    int xpxl1 = xend;
-    int ypxl1 = static_cast<int>(yend);
-
-    // Draw first endpoint pixels with partial coverage
-    if (steep) {
-        plotPixel(ypxl1, xpxl1, (1.0f - std::fmod(yend, 1.0f)) * xgap, color);
-        plotPixel(ypxl1 + 1, xpxl1, std::fmod(yend, 1.0f) * xgap, color);
-    } else {
-        plotPixel(xpxl1, ypxl1, (1.0f - std::fmod(yend, 1.0f)) * xgap, color);
-        plotPixel(xpxl1, ypxl1 + 1, std::fmod(yend, 1.0f) * xgap, color);
-    }
-
-    f32 intery = yend + gradient; // First y-intersection for the main loop
-
-    // Handle second endpoint
-    xend = x1;
-    yend = y1 + gradient * (xend - x1);
-    xgap = std::fmod(x1 + 0.5f, 1.0f);
-    int xpxl2 = xend;
-    int ypxl2 = static_cast<int>(yend);
-
-    // Draw second endpoint pixels with partial coverage
-    if (steep) {
-        plotPixel(ypxl2, xpxl2, (1.0f - std::fmod(yend, 1.0f)) * xgap, color);
-        plotPixel(ypxl2 + 1, xpxl2, std::fmod(yend, 1.0f) * xgap, color);
-    } else {
-        plotPixel(xpxl2, ypxl2, (1.0f - std::fmod(yend, 1.0f)) * xgap, color);
-        plotPixel(xpxl2, ypxl2 + 1, std::fmod(yend, 1.0f) * xgap, color);
-    }
-
-    // Main loop - draw the interior of the line
-    if (steep) {
-        for (int x = xpxl1 + 1; x < xpxl2; x++) {
-            // For steep lines, y and x coordinates are swapped
-            plotPixel(static_cast<int>(intery), x, 1.0f - std::fmod(intery, 1.0f), color);
-            plotPixel(static_cast<int>(intery) + 1, x, std::fmod(intery, 1.0f), color);
-            intery += gradient;
-        }
-    } else {
-        for (int x = xpxl1 + 1; x < xpxl2; x++) {
-            plotPixel(x, static_cast<int>(intery), 1.0f - std::fmod(intery, 1.0f), color);
-            plotPixel(x, static_cast<int>(intery) + 1, std::fmod(intery, 1.0f), color);
-            intery += gradient;
-        }
+    float t = INK_CLAMP(t_param, 0.0f, 1.0f);
+    switch (method) {
+    case InterpolationMethod::Linear:
+        return t;
+    case InterpolationMethod::Smoothstep:
+        return t * t * (3.0f - 2.0f * t);
+    case InterpolationMethod::Accelerate:
+        return t * t;
+    case InterpolationMethod::Decelerate:
+        return 1.0f - (1.0f - t) * (1.0f - t);
+    case InterpolationMethod::Sine:
+        return std::sin(t * PI_FLOAT * 0.5f);
+    case InterpolationMethod::Cosine:
+        return (1.0f - std::cos(t * PI_FLOAT)) * 0.5f;
+    default:
+        // This case should ideally not be reached if all enum values are handled.
+        // A good compiler with warnings enabled might flag unhandled enum values.
+        return t; // Fallback to linear
     }
 }
 
-/**
- * Calculates the edge function value for barycentric coordinates
- * @param ax, ay First point of edge
- * @param bx, by Second point of edge
- * @param px, py Point to test
- * @return Signed distance value - positive if point is on the right side of the edge
- *
- * The edge function is a fundamental part of barycentric coordinate calculation.
- * It determines which side of a line a point is on and by how much.
- */
-f32 CpuFrameBufferManager::edgeFunction(f32 ax, f32 ay, f32 bx, f32 by, f32 px, f32 py) const {
-    return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+// Generic interpolate function
+template<typename T>
+T CpuFrameBufferManager::interpolate(const T& a, const T& b, float t_param, InterpolationMethod method)
+{
+    float t_eased = get_eased_time(t_param, method);
+    return a + (b - a) * t_eased;
 }
 
-/**
- * Draws a filled triangle using a scanline approach
- * @param x0, y0 First vertex coordinates
- * @param x1, y1 Second vertex coordinates
- * @param x2, y2 Third vertex coordinates
- * @param color Triangle color
- *
- * This implementation uses a top-down scanline approach, dividing the
- * triangle into top and bottom halves for efficient rasterization.
- */
-void CpuFrameBufferManager::drawTriangle(int x0, int y0, int x1, int y1, int x2, int y2, u32 color) {
-    // Sort vertices by y-coordinate (y0 <= y1 <= y2)
-    // This simplifies the scanline algorithm by ensuring consistent ordering
-    if (y0 > y1) { std::swap(x0, x1); std::swap(y0, y1); }
-    if (y1 > y2) { std::swap(x1, x2); std::swap(y1, y2); }
-    if (y0 > y1) { std::swap(x0, x1); std::swap(y0, y1); }
+// Polygon outline drawer function
+void CpuFrameBufferManager::drawPolygon(const std::vector<Point>& points, u32 color, bool closed)
+{
+    if (points.size() < 2) return;
 
-    // Compute bounding box with clipping to screen bounds
-    int minY = std::max(0, y0);
-    int maxY = std::min(settings.height - 1, y2);
+    for (size_t i = 0; i < points.size() - 1; ++i) {
+        drawLine(points[i], points[i + 1], color);
+    }
 
-    // Skip if triangle is completely off-screen
-    if (minY > maxY) return;
+    if (closed && points.size() > 2) {
+        drawLine(points.back(), points.front(), color);
+    }
+}
 
-    // Calculate edge slopes for interpolation
-    f32 dx01 = x1 - x0, dy01 = y1 - y0;
-    f32 dx12 = x2 - x1, dy12 = y2 - y1;
-    f32 dx20 = x0 - x2, dy20 = y0 - y2;
+void CpuFrameBufferManager::drawPolygon(const std::vector<Point>& points, const std::vector<u32>& colors, bool closed) {
+    if (points.size() < 2) return;
 
-    // Skip degenerate triangles (lines or points)
-    if ((y1 == y0 && y2 == y1) || (x1 == x0 && x2 == x1)) return;
+    // Ensure colors vector has at least enough entries for all line segments
+    if (colors.size() < (closed ? points.size() : points.size() - 1)) {
+        // Fall back to single color if not enough colors provided
+        drawPolygon(points, colors.empty() ? 0xFFFFFFFF : colors[0], closed);
+        return;
+    }
 
-    // Calculate edge slopes for x-coordinate interpolation
-    f32 slope01 = (dy01 != 0) ? dx01 / dy01 : 0;
-    f32 slope12 = (dy12 != 0) ? dx12 / dy12 : 0;
-    f32 slope20 = (dy20 != 0) ? dx20 / dy20 : 0;
+    for (size_t i = 0; i < points.size() - 1; ++i) {
+        drawLine(points[i], points[i + 1], colors[i]);
+    }
 
-    // For each scanline from top to bottom of the triangle
+    if (closed && points.size() > 2) {
+        drawLine(points.back(), points.front(), colors[points.size() - 1]);
+    }
+}
+
+void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point>& points, u32 color) {
+    if (points.size() < 3) return; // Need at least 3 points for a polygon
+
+    // Find the bounding box of the polygon
+    int minY = getHeight();
+    int maxY = 0;
+
+    for (const auto& p : points) {
+        minY = std::min(minY, p.y);
+        maxY = std::max(maxY, p.y);
+    }
+
+    // Clip to screen bounds
+    minY = std::max(minY, 0);
+    maxY = std::min(maxY, getHeight() - 1);
+
+    // Allocate array for edge intersections
+    std::vector<int> intersections;
+    intersections.reserve(points.size());
+
+    // Scanline algorithm
     for (int y = minY; y <= maxY; y++) {
-        // Determine if we're in the top or bottom half of the triangle
-        bool isTopHalf = y < y1;
+        intersections.clear();
 
-        // Calculate x-coordinates where scanline intersects edges
-        f32 leftX, rightX;
+        // Find intersections with all edges
+        for (size_t i = 0; i < points.size(); i++) {
+            // Get edge vertices
+            const Point& p1 = points[i];
+            const Point& p2 = points[(i + 1) % points.size()];
 
-        if (isTopHalf) {
-            // Top half: Use edges 0-1 and 0-2
-            if (dy01 != 0) leftX = x0 + slope01 * (y - y0);
-            else leftX = x0;
+            // Skip horizontal edges and vertices outside current scanline
+            if ((p1.y == p2.y) || (p1.y > y && p2.y > y) || (p1.y < y && p2.y < y))
+                continue;
 
-            if (dy20 != 0) rightX = x2 + slope20 * (y - y2);
-            else rightX = x2;
-        } else {
-            // Bottom half: Use edges 1-2 and 0-2
-            if (dy12 != 0) leftX = x1 + slope12 * (y - y1);
-            else leftX = x1;
+            // Calculate intersection
+            float t = static_cast<float>(y - p1.y) / static_cast<float>(p2.y - p1.y);
+            int x = p1.x + static_cast<int>(t * (p2.x - p1.x));
 
-            if (dy20 != 0) rightX = x2 + slope20 * (y - y2);
-            else rightX = x2;
+            intersections.push_back(x);
         }
 
-        // Make sure left <= right for consistent drawing
-        if (leftX > rightX) std::swap(leftX, rightX);
+        // Sort intersections from left to right
+        std::sort(intersections.begin(), intersections.end());
 
-        // Convert to integer and clip to screen boundaries
-        int startX = std::max(0, static_cast<int>(leftX + 0.5f));
-        int endX = std::min(settings.width - 1, static_cast<int>(rightX + 0.5f));
+        // Fill between pairs of intersections
+        for (size_t i = 0; i < intersections.size(); i += 2) {
+            if (i + 1 >= intersections.size()) break;
 
-        // Draw horizontal line for this scanline
-        for (int x = startX; x <= endX; x++) {
-            setPixel(x, y, color);
-        }
-    }
-}
+            int startX = std::max(intersections[i], 0);
+            int endX = std::min(intersections[i + 1], getWidth() - 1);
 
-/**
- * Interpolates attributes (texture coordinates, depth) across a triangle
- * @param v0, v1, v2 The three vertices of the triangle
- * @param x, y The point at which to interpolate
- * @param u, v, w Output parameters for interpolated texture coordinates and depth
- *
- * This implements perspective-correct interpolation for 3D rendering.
- * Without this correction, textures would appear distorted in 3D space.
- */
-void CpuFrameBufferManager::interpolateAttributes(const Vertex& v0, const Vertex& v1, const Vertex& v2,
-                                                  f32 x, f32 y, f32& u, f32& v, f32& w) const {
-    // Calculate barycentric coordinates
-    f32 area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-    f32 w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
-    f32 w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
-    f32 w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
-
-    // Interpolate depth (Z) for depth testing
-    // The division by Z before interpolation and multiplication after
-    // is what makes this perspective-correct
-    w = 1.0f / (w0 * (1.0f / v0.z) + w1 * (1.0f / v1.z) + w2 * (1.0f / v2.z));
-
-    // Perspective-correct texture coordinate interpolation
-    u = w * (w0 * (v0.u / v0.z) + w1 * (v1.u / v1.z) + w2 * (v2.u / v2.z));
-    v = w * (w0 * (v0.v / v0.z) + w1 * (v1.v / v1.z) + w2 * (v2.v / v2.z));
-}
-
-/**
- * Draws a textured triangle with perspective correction
- * @param v0, v1, v2 The three vertices with position, texture coords, and color
- * @param texture The texture to sample from
- *
- * This function rasterizes a triangle and samples a texture for each pixel,
- * with proper perspective correction for 3D rendering.
- */
-void CpuFrameBufferManager::drawTriangleTextured(const Vertex& v0, const Vertex& v1, const Vertex& v2, const Texture& texture) {
-    // Compute bounding box with clipping to screen bounds
-    int minX = std::max(0, static_cast<int>(std::min({v0.x, v1.x, v2.x})));
-    int minY = std::max(0, static_cast<int>(std::min({v0.y, v1.y, v2.y})));
-    int maxX = std::min(settings.width - 1, static_cast<int>(std::max({v0.x, v1.x, v2.x})));
-    int maxY = std::min(settings.height - 1, static_cast<int>(std::max({v0.y, v1.y, v2.y})));
-
-    // Early rejection for off-screen triangles
-    if (maxX < minX || maxY < minY) return;
-
-    // For each pixel in the triangle's bounding box
-    for (int y = minY; y <= maxY; ++y) {
-        for (int x = minX; x <= maxX; ++x) {
-            // Calculate barycentric coordinates to determine if pixel is inside triangle
-            f32 area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-            f32 w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
-            f32 w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
-            f32 w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
-
-            // Check if point is inside triangle
-            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                f32 u, v, w;
-                // Interpolate texture coordinates and depth
-                interpolateAttributes(v0, v1, v2, x, y, u, v, w);
-
-                // Sample texture at the interpolated coordinates
-                u32 color = texture.sample(u, v);
-
-                // Set pixel with optional depth testing
-                if (settings.useDepthBuffer) {
-                    setPixelWithDepth(x, y, w, color);
-                } else {
-                    setPixel(x, y, color);
-                }
+            // Draw horizontal line between intersections
+            for (int x = startX; x <= endX; x++) {
+                setPixel(Point(x, y), color);
             }
         }
     }
-}
-
-/**
- * Draws a triangle with a custom fragment shader
- * @param v0, v1, v2 The three vertices
- * @param fragmentShader Function that computes color for each pixel
- *
- * This allows for custom effects by providing a function that determines
- * pixel color based on interpolated attributes.
- */
-void CpuFrameBufferManager::drawTriangleWithShader(const Vertex& v0,
-                                                   const Vertex& v1,
-                                                   const Vertex& v2,
-                                                   std::function<u32(f32 u, f32 v, f32 w)> fragmentShader)
-{
-    // Compute bounding box
-    int minX = std::max(0, static_cast<int>(std::min({v0.x, v1.x, v2.x})));
-    int minY = std::max(0, static_cast<int>(std::min({v0.y, v1.y, v2.y})));
-    int maxX = std::min(settings.width - 1, static_cast<int>(std::max({v0.x, v1.x, v2.x})));
-    int maxY = std::min(settings.height - 1, static_cast<int>(std::max({v0.y, v1.y, v2.y})));
-
-    // Early rejection
-    if (maxX < minX || maxY < minY) return;
-
-    // For each pixel in the triangle's bounding box
-    for (int y = minY; y <= maxY; ++y) {
-        for (int x = minX; x <= maxX; ++x) {
-            // Calculate barycentric coordinates
-            f32 area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-            f32 w0 = edgeFunction(v1.x, v1.y, v2.x, v2.y, x, y) / area;
-            f32 w1 = edgeFunction(v2.x, v2.y, v0.x, v0.y, x, y) / area;
-            f32 w2 = edgeFunction(v0.x, v0.y, v1.x, v1.y, x, y) / area;
-
-            // Check if point is inside triangle
-            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                f32 u, v, w;
-                // Interpolate attributes
-                interpolateAttributes(v0, v1, v2, x, y, u, v, w);
-
-                // Execute fragment shader to determine pixel color
-                u32 color = fragmentShader(u, v, w);
-
-                // Set pixel with optional depth testing
-                if (settings.useDepthBuffer) {
-                    setPixelWithDepth(x, y, w, color);
-                } else {
-                    setPixel(x, y, color);
-                }
-            }
-        }
-    }
-}
-
-/**
- * Draws a circle using the Midpoint Circle Algorithm
- * @param centerX, centerY Center coordinates of the circle
- * @param radius Circle radius in pixels
- * @param color Circle color
- *
- * This draws the outline of a circle efficiently by exploiting 8-way symmetry.
- */
-void CpuFrameBufferManager::drawCircle(int centerX, int centerY, int radius, u32 color) {
-    int x = radius;
-    int y = 0;
-    int err = 0;
-
-    // The algorithm takes advantage of circle symmetry
-    // by calculating points in one octant and mirroring them
-    while (x >= y) {
-        // Draw 8 symmetric points
-        setPixel(centerX + x, centerY + y, color);
-        setPixel(centerX + y, centerY + x, color);
-        setPixel(centerX - y, centerY + x, color);
-        setPixel(centerX - x, centerY + y, color);
-        setPixel(centerX - x, centerY - y, color);
-        setPixel(centerX - y, centerY - x, color);
-        setPixel(centerX + y, centerY - x, color);
-        setPixel(centerX + x, centerY - y, color);
-
-        // Update using midpoint decision criterion
-        if (err <= 0) {
-            y += 1;
-            err += 2 * y + 1;
-        }
-
-        if (err > 0) {
-            x -= 1;
-            err -= 2 * x + 1;
-        }
-    }
-}
-
-/**
- * Draws a filled rectangle
- * @param x, y Top-left corner coordinates
- * @param width, height Dimensions of the rectangle
- * @param color Rectangle color
- */
-void CpuFrameBufferManager::drawFillRect(int x, int y, int width, int height, u32 color) {
-    // Clip rectangle to screen bounds
-    int x1 = std::max(0, x);
-    int y1 = std::max(0, y);
-    int x2 = std::min(settings.width - 1, x + width - 1);
-    int y2 = std::min(settings.height - 1, y + height - 1);
-
-    // Skip if rectangle is completely off-screen
-    if (x2 < x1 || y2 < y1) return;
-
-    // Draw rectangle row by row - direct buffer access for speed
-    for (int cy = y1; cy <= y2; ++cy) {
-        for (int cx = x1; cx <= x2; ++cx) {
-            framebuffer[cy * settings.width + cx] = color;
-        }
-    }
-}
-
-/**
- * Draws a rectangle outline
- * @param x, y Top-left corner coordinates
- * @param width, height Dimensions of the rectangle
- * @param color Rectangle color
- */
-void CpuFrameBufferManager::drawRect(int x, int y, int width, int height, u32 color)
-{
-    int xmin = std::max(0, x);;
-    int xmax = xmin + std::min(settings.width-1, width);
-    int ymin = std::max(0, y);
-    int ymax = ymin + std::min(settings.height-1, height);
-
-    drawLine(xmin, ymin, xmax, ymin, color);
-    drawLine(xmax, ymin, xmax, ymax, color);
-    drawLine(xmax, ymax, xmin, ymax, color);
-    drawLine(xmin, ymax, xmin, ymin, color);
-}
-
-/**
- * Draws a rectangle with rounded corners
- * @param x, y Top-left corner coordinates
- * @param width, height Dimensions of the rectangle
- * @param radius Corner radius in pixels
- * @param color Rectangle color
- *
- * This is implemented by drawing a main rectangle and four corner arcs.
- */
-void CpuFrameBufferManager::drawRoundedRect(int x, int y, int width, int height, int radius, u32 color) {
-    // Center rectangle (full width minus corners, full height)
-    drawRect(x + radius, y, width - 2 * radius, height, color);
-
-    // Left and right rectangles (to fill the sides)
-    drawRect(x, y + radius, radius, height - 2 * radius, color);
-    drawRect(x + width - radius, y + radius, radius, height - 2 * radius, color);
-
-    // Draw four corner arcs as partial circles
-    auto drawArc = [this, color](int cx, int cy, int r, int quadrant) {
-        int x = r;
-        int y = 0;
-        int err = 0;
-
-        while (x >= y) {
-            // Draw only the points in the specified quadrant
-            switch (quadrant) {
-            case 0: // Top-right
-                setPixel(cx + x, cy - y, color);
-                setPixel(cx + y, cy - x, color);
-                break;
-            case 1: // Top-left
-                setPixel(cx - x, cy - y, color);
-                setPixel(cx - y, cy - x, color);
-                break;
-            case 2: // Bottom-left
-                setPixel(cx - x, cy + y, color);
-                setPixel(cx - y, cy + x, color);
-                break;
-            case 3: // Bottom-right
-                setPixel(cx + x, cy + y, color);
-                setPixel(cx + y, cy + x, color);
-                break;
-            }
-
-            // Midpoint circle algorithm steps
-            if (err <= 0) {
-                y += 1;
-                err += 2 * y + 1;
-            }
-
-            if (err > 0) {
-                x -= 1;
-                err -= 2 * x + 1;
-            }
-        }
-    };
-
-    // Draw four corners
-    drawArc(x + width - radius, y + radius, radius, 0); // Top-right
-    drawArc(x + radius, y + radius, radius, 1); // Top-left
-    drawArc(x + radius, y + height - radius, radius, 2); // Bottom-left
-    drawArc(x + width - radius, y + height - radius, radius, 3); // Bottom-right
 }
 
 /**
@@ -730,23 +416,23 @@ void CpuFrameBufferManager::drawRoundedRect(int x, int y, int width, int height,
 u32 CpuFrameBufferManager::blendColors(u32 c1, u32 c2, f32 alpha) {
     if (alpha <= 0.0f) return c1;
     if (alpha >= 1.0f) return c2;
-    // Extract color components (R, G, B)
+
     u8 r1 = (c1 >> 16) & 0xFF;
     u8 g1 = (c1 >> 8) & 0xFF;
     u8 b1 = c1 & 0xFF;
     u8 r2 = (c2 >> 16) & 0xFF;
     u8 g2 = (c2 >> 8) & 0xFF;
     u8 b2 = c2 & 0xFF;
-    // Linear interpolation for each component
+
     u8 r = static_cast<u8>(r1 * (1.0f - alpha) + r2 * alpha);
     u8 g = static_cast<u8>(g1 * (1.0f - alpha) + g2 * alpha);
     u8 b = static_cast<u8>(b1 * (1.0f - alpha) + b2 * alpha);
-    // Combine components back into a single color value
+
     return (r << 16) | (g << 8) | b;
 }
 
-void CpuFrameBufferManager::drawText(const std::string& text, int x, int y, u32 color, f32 fontSize) {
-    int cursorX = x;
+void CpuFrameBufferManager::drawText(const std::string& text, Point p, u32 color, f32 fontSize) {
+    int cursorX = p.x;
     // Calculate scaled dimensions
     int scaledWidth = std::floor(_font.charWidth * fontSize);
     int scaledHeight = std::floor(_font.charHeight * fontSize);
@@ -755,8 +441,8 @@ void CpuFrameBufferManager::drawText(const std::string& text, int x, int y, u32 
     for (char c : text) {
         // Handle newline
         if (c == '\n') {
-            cursorX = x;
-            y += scaledHeight + scaledSpacing;
+            cursorX = p.x;
+            p.y += scaledHeight + scaledSpacing;
             continue;
         }
 
@@ -764,7 +450,7 @@ void CpuFrameBufferManager::drawText(const std::string& text, int x, int y, u32 
         if (c < 0 || c > 127) c = '?';
 
         // Skip if completely out of bounds
-        if (cursorX >= settings.width || y >= settings.height || cursorX + scaledWidth <= 0 || y + scaledHeight <= 0) {
+        if (cursorX >= settings.width || p.y >= settings.height || cursorX + scaledWidth <= 0 || p.y + scaledHeight <= 0) {
             cursorX += scaledWidth + scaledSpacing;
             continue;
         }
@@ -778,7 +464,7 @@ void CpuFrameBufferManager::drawText(const std::string& text, int x, int y, u32 
 
             // Scale each row vertically
             for (int scaleY = 0; scaleY < fontSize; scaleY++) {
-                int pixelY = y + (int)(row * fontSize) + scaleY;
+                int pixelY = p.y + (int)(row * fontSize) + scaleY;
                 if (pixelY < 0 || pixelY >= settings.height) continue;
 
                 // Process each bit in the row
@@ -791,7 +477,7 @@ void CpuFrameBufferManager::drawText(const std::string& text, int x, int y, u32 
                             int pixelX = cursorX + (int)(col * fontSize) + scaleX;
                             if (pixelX < 0 || pixelX >= settings.width) continue;
 
-                            setPixel(pixelX, pixelY, color);
+                            setPixel({ pixelX, pixelY }, color);
                         }
                     }
                 }
@@ -805,11 +491,11 @@ void CpuFrameBufferManager::drawText(const std::string& text, int x, int y, u32 
 
 int CpuFrameBufferManager::getTextWidth(const std::string& text, f32 fontSize)
 {
-    int scaledWidth = std::floor(_font.charWidth * fontSize);
-    int scaledSpacing = std::ceil(_font.charSpacing * fontSize);
+    i32 scaledWidth = std::floor(_font.charWidth * fontSize);
+    i32 scaledSpacing = std::ceil(_font.charSpacing * fontSize);
 
-    int width = 0;
-    int maxWidth = 0;
+    i32 width = 0;
+    i32 maxWidth = 0;
 
     for (char c : text) {
         if (c == '\n') {
