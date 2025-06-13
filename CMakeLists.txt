@@ -117,6 +117,13 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 
     # Set debug compile definitions or flags if needed
     target_compile_definitions(${PROJECT_NAME} PRIVATE DEBUG_MODE)
+    # Compiler flags
+    target_compile_options(${PROJECT_NAME} PRIVATE -g -O0)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE -O3 -DNDEBUG)
 endif()
 
 add_definitions(-DCMAKE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\")
