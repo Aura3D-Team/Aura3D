@@ -115,7 +115,7 @@ public:
 
     const std::vector<VkImage>& getSwapChainImages();
 
-    const u32 acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags);
+    u32 acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags);
 
     void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex);
 

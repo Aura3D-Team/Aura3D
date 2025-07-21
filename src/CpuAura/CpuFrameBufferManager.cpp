@@ -5,8 +5,6 @@
 #include <ink/ink.hpp>
 
 #include "AuraException/AuraException.h"
-#include "Utils/AuraUtils.h"
-
 
 namespace aura3d {
 

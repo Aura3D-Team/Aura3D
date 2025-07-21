@@ -8,10 +8,10 @@
 namespace aura3d {
 
 VkSwapChainManager::VkSwapChainManager(VkHostAllocator* vkHostAllocator, VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
-    : vkHostAllocator(vkHostAllocator), _swapChain(VK_NULL_HANDLE), _swapChainSupportDetails({}),
-    _device(device), _swapChainCreateInfo({}),
-    _swapChainImages({}), _choosedSurfaceFormat(),
-    _choosedPresentMode(), _choosedExtent()
+    : vkHostAllocator(vkHostAllocator), _swapChainSupportDetails({}), _swapChainCreateInfo({}),
+    _swapChain(VK_NULL_HANDLE), _device(device),
+    _choosedSurfaceFormat(), _choosedPresentMode(),
+    _choosedExtent(), _swapChainImages({})
 {
     initSwapChainSupportDetails(physicalDevice, vkSurface);
 }
@@ -133,7 +133,7 @@ void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
 }
 
-const u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags)
+u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags)
 {
     u32 imageIndex = UINT32_MAX;
     VkResult result = vkAcquireNextImageKHR(*_device, _swapChain, UINT64_MAX, imageSemaphore, VK_NULL_HANDLE, &imageIndex);

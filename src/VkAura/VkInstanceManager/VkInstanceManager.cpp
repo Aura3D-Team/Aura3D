@@ -11,9 +11,9 @@ VkInstanceManager::VkInstanceManager(VkHostAllocator* vkHostAllocator,
                                      VkInstanceData vkInstanceData,
                                      bool enableValidationLayers)
     : vkHosAllocator(vkHostAllocator),
-    _appInfo({}), _instanceInfo({}),
-    _vkInstance(VK_NULL_HANDLE), _vkInstanceExtensions(std::move(vkInstanceData.vkInstanceExtensions)),
-    _vkValidationLayers(std::move(vkInstanceData.vkValidationLayers)), _vkDebugger(nullptr)
+    _vkInstance(VK_NULL_HANDLE), _appInfo({}),
+    _instanceInfo({}), _vkDebugger(nullptr),
+    _vkValidationLayers(std::move(vkInstanceData.vkValidationLayers)), _vkInstanceExtensions(std::move(vkInstanceData.vkInstanceExtensions))
 {
     initializeAppInfo(vkInstanceData);
     initializeInstanceInfo();

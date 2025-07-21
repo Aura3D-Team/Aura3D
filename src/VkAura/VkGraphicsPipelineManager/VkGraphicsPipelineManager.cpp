@@ -10,7 +10,7 @@ VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllo
                                                      std::string shader_vert_spv,
                                                      std::string shader_frag_spv,
                                                      VkDevice* device)
-    : vkHostAllocator(vkHostAllocator), VkPipelineManager(vkHostAllocator, device), _shaderManager(VkShaderManager(vkHostAllocator, device))
+    : VkPipelineManager(vkHostAllocator, device), vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
 {
     // Load shader modules
     _shaderManager.createVertShaderModule(shader_vert_spv);

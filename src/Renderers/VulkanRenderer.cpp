@@ -39,17 +39,17 @@ void VulkanRenderer::initialize()
 #endif
 
     // Create host allocator
-    VkHostAllocatorCreateInfo vkHostAllocatorConfig = {
-        .threadSafetyMode = HostThreadSafetyMode::NONE,
-        .enableMemoryPools = true,
+    VkHostAllocatorCreateInfo vkHostAllocatorConfig = {};
+    vkHostAllocatorConfig.threadSafetyMode = HostThreadSafetyMode::NONE;
+    vkHostAllocatorConfig.enableMemoryPools = true;
 #ifdef NDEBUG
-        .trackLeaks = false,  // Disable in release builds
+    vkHostAllocatorConfig.trackLeaks = false;  // Disable in release builds
 #else
-        .trackLeaks = true,
+    vkHostAllocatorConfig.trackLeaks = true;
 #endif
-        .enableBatchProcessing = true,
-        .batchDeallocLimit = 256  // Higher batch threshold
-    };
+    vkHostAllocatorConfig.enableBatchProcessing = true;
+    vkHostAllocatorConfig.batchDeallocLimit = 256;  // Higher batch threshold
+
     _vkHostAllocator = std::make_unique<aura3d::VkHostAllocator>(vkHostAllocatorConfig);
 
 // Create window manager
@@ -72,24 +72,24 @@ void VulkanRenderer::initialize()
     _vkDeviceManager = std::make_unique<aura3d::VkDeviceManager>(_vkHostAllocator.get(), _vkInstance->getVkInstance(), _vkDeviceData);
 
     // Create device allocator
-    aura3d::VkDeviceAllocatorCreateInfo vkDeviceAllocatorCreateInfo = {
-        .physicalDevice = *_vkDeviceManager->getPhysicalDevice(),
-        .device = *_vkDeviceManager->getDevice(),
-        .blockSize = 128 * 1024 * 1024,  // 128MB for fewer reallocations
-        .smallBlockSize = 8 * 1024 * 1024, // 8MB for small allocations
-        .enableDefragmentation = false, // Disable unless needed
+    aura3d::VkDeviceAllocatorCreateInfo vkDeviceAllocatorCreateInfo = {};
+    vkDeviceAllocatorCreateInfo.physicalDevice = *_vkDeviceManager->getPhysicalDevice();
+    vkDeviceAllocatorCreateInfo.device = *_vkDeviceManager->getDevice();
+    vkDeviceAllocatorCreateInfo.blockSize = 128 * 1024 * 1024;  // 128MB for fewer reallocations
+    vkDeviceAllocatorCreateInfo.smallBlockSize = 8 * 1024 * 1024; // 8MB for small allocations
+    vkDeviceAllocatorCreateInfo.enableDefragmentation = false; // Disable unless needed
 #ifdef NDEBUG
-        .trackLeaks = false,  // Disable in release builds
+    vkDeviceAllocatorCreateInfo.trackLeaks = false;  // Disable in release builds
 #else
-        .trackLeaks = true,
+    vkDeviceAllocatorCreateInfo.trackLeaks = true;
 #endif
-        .threadSafetyMode = ThreadSafetyMode::NONE,
-        .strategy = AllocationStrategy::FIRST_FIT, // Fastest allocation strategy
-        .dedicatedAllocationThreshold = 64 * 1024 * 1024, // 64MB threshold
-        .useBuddyAllocatorForBuffers = true,
-        .deferFrees = true,
-        .deferredFreeLimit = 256, // Larger batch for complex scenes
-    };
+    vkDeviceAllocatorCreateInfo.threadSafetyMode = ThreadSafetyMode::NONE;
+    vkDeviceAllocatorCreateInfo.strategy = AllocationStrategy::FIRST_FIT; // Fastest allocation strategy
+    vkDeviceAllocatorCreateInfo.dedicatedAllocationThreshold = 64 * 1024 * 1024; // 64MB threshold
+    vkDeviceAllocatorCreateInfo.useBuddyAllocatorForBuffers = true;
+    vkDeviceAllocatorCreateInfo.deferFrees = true;
+    vkDeviceAllocatorCreateInfo.deferredFreeLimit = 256; // Larger batch for complex scenes
+
     _vkDeviceAllocator = std::make_unique<aura3d::VkDeviceAllocator>(_vkHostAllocator.get(), vkDeviceAllocatorCreateInfo);
 
     // Create the window
@@ -100,7 +100,7 @@ void VulkanRenderer::initialize()
         _vkHostAllocator.get(),
         _vkInstance->getVkInstance(),
         _windowManagerApi->getWindowInstance()
-        );
+    );
 
     // Set up queue management
     _queueDataFromExclusiveFlags = _vkDeviceManager->getQueueManager()->getQueues(_vkDeviceData.exclusiveQueueFlags);
@@ -108,7 +108,7 @@ void VulkanRenderer::initialize()
         *_vkDeviceManager->getPhysicalDevice(),
         _vkDeviceData.exclusiveQueueFlags,
         *_vkSurfaceManager->getSurface()
-        );
+    );
 
     // Create swap chain manager
     _vkSwapChainManager = std::make_unique<aura3d::VkSwapChainManager>(
@@ -116,39 +116,49 @@ void VulkanRenderer::initialize()
         *_vkDeviceManager->getPhysicalDevice(),
         _vkDeviceManager->getDevice(),
         *_vkSurfaceManager->getSurface()
-        );
+    );
 
     // Create other managers
+
     _vkImageViewsManager = std::make_unique<aura3d::VkImageViewsManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
+
     _vkRenderPassManager = std::make_unique<aura3d::VkRenderPassManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
+
     _vkFrameBuffersManager = std::make_unique<aura3d::VkFrameBuffersManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
+
     _vkGraphicsPipelineManager = std::make_unique<aura3d::VkGraphicsPipelineManager>(
         _vkHostAllocator.get(),
         "./shaders/vert/test_shader2d_vert.spv",
         "./shaders/frag/test_shader2d_frag.spv",
         _vkDeviceManager->getDevice()
     );
+
     _vkDescriptorManager = std::make_unique<aura3d::VkDescriptorManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
+
     _vkVertexBufferManager = std::make_unique<aura3d::VkVertexBufferManager>(
         _vkHostAllocator.get(),
         _vkDeviceAllocator.get(),
         _vkDeviceManager->getDevice()
     );
+
     _vkIndexBufferManager = std::make_unique<aura3d::VkIndexBufferManager>(
         _vkHostAllocator.get(),
         _vkDeviceAllocator.get(),
         _vkDeviceManager->getDevice()
     );
+
     _vkUniformBufferManager = std::make_unique<aura3d::VkUniformBufferManager>(
         _vkHostAllocator.get(),
         _vkDeviceAllocator.get(),
         _vkDeviceManager->getDevice()
     );
+
     _vkCommandManager = std::make_unique<aura3d::VkCommandManager>(
         _vkHostAllocator.get(),
         _vkDeviceManager->getDevice(),
         _graphicsIndexFamily
     );
+
     _vkTextureManager = std::make_unique<VkTextureManager>(
         _vkHostAllocator.get(),
         _vkDeviceAllocator.get(),
@@ -157,6 +167,7 @@ void VulkanRenderer::initialize()
         _vkCommandManager->getThreadCommandPool(),
         _queueDataFromExclusiveFlags.front()->queues.front()
     );
+
     _vkRenderSyncManager = std::make_unique<aura3d::VkRenderSyncManager>(_vkHostAllocator.get(), _vkDeviceManager->getDevice());
 
     _isInitialized = true;
@@ -191,7 +202,7 @@ void VulkanRenderer::run()
     auto vertexBuffer = _vkVertexBufferManager->getVertexBuffer("mainRect");
     auto& vertexAllocationInfo = _vkDeviceAllocator->getAllocation(vertexBuffer.allocationId);
     auto indexBuffer = _vkIndexBufferManager->getIndexBuffer("rectIndices");
-    auto& indexAllocationInfo = _vkDeviceAllocator->getAllocation(indexBuffer.allocationId);
+    // auto& indexAllocationInfo = _vkDeviceAllocator->getAllocation(indexBuffer.allocationId);
 
     // Main render loop
     _windowManagerApi->process([&]() {
@@ -396,7 +407,6 @@ void VulkanRenderer::createDescriptorSets()
     // Create descriptor set layouts in the pipeline manager
     _vkGraphicsPipelineManager->createDescriptorSetLayouts();
 
-    // Create a white texture for our triangle
     auto whiteTexture = _vkTextureManager->createSolidColorTexture("white", 255, 255, 255);
 
     // Allocate and update descriptor sets using VkDescriptorManager

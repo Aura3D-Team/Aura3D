@@ -9,9 +9,9 @@
 namespace aura3d {
 
 VkDeviceManager::VkDeviceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, VkDeviceData vkDeviceData)
-    : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance), _physicaldeviceCount(0), _deviceInfo(),
-    _physicalDevice(VK_NULL_HANDLE), _device(VK_NULL_HANDLE),
-    _vkQueueManager(VkQueueManager()), _vkDeviceCreationData(std::move(vkDeviceData))
+    : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance), _vkDeviceCreationData(std::move(vkDeviceData)), _deviceInfo(),
+    _device(VK_NULL_HANDLE), _physicalDevice(VK_NULL_HANDLE),
+    _physicaldeviceCount(0), _vkQueueManager(VkQueueManager())
 {
     _setBestDevice(*_vkInstance);
 }

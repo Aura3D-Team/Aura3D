@@ -115,10 +115,9 @@ void SDLAuraWindowManager::createWindow(const char* windowName)
 
     INK_ASSERT_MSG(_window != nullptr, "Failed to create SDL2 Window!");
 
-    _windowFlags = {
-        .frame_counter = 0,
-        .resized = false
-    };
+    _windowFlags = {};
+    _windowFlags.frame_counter = 0;
+    _windowFlags.resized = false;
 
     SDL_SetWindowData(_window, "WindowFlags", &_windowFlags);
 

@@ -75,7 +75,7 @@ inline VkShaderStageFlagBits shaderTypeToVkShaderStage(ShaderType type) {
     case ShaderType::COMPUTE: return VK_SHADER_STAGE_COMPUTE_BIT;
     case ShaderType::TESSELLATION_CONTROL: return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
     case ShaderType::TESSELLATION_EVALUATION: return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-    default: -1;
+    // default: -1;
     }
 }
 

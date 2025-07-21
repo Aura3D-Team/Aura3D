@@ -6,8 +6,8 @@
 namespace aura3d {
 
 VkShaderManager::VkShaderManager(VkHostAllocator* vkHostAllocator, VkDevice* device) :
-    vkHostAllocator(vkHostAllocator), _vertShaderModule(VK_NULL_HANDLE), _fragShaderModule(VK_NULL_HANDLE),
-    _shaderFileExtractor(ShaderSpirvExtractor()), _device(device)
+    vkHostAllocator(vkHostAllocator), _device(device), _vertShaderModule(VK_NULL_HANDLE),
+    _fragShaderModule(VK_NULL_HANDLE), _shaderFileExtractor(ShaderSpirvExtractor())
 {
     // Empty
 }
