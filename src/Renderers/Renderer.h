@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "AuraWindowManagers/CommonWindow.hpp"
+#include <wma/wma.hpp>
 
 namespace aura3d {
 
@@ -19,7 +19,7 @@ public:
      * @brief Constructor with window configuration
      * @param windowDetails Window configuration parameters
      */
-    Renderer(const WindowDetails& windowDetails) : _windowDetails(windowDetails) {};
+    Renderer(const wma::WindowDetails& windowDetails) : _windowDetails(windowDetails) {};
 
     /**
      * @brief Virtual destructor
@@ -52,7 +52,7 @@ public:
      * @brief Get the current window details
      * @return Current window configuration
      */
-    const WindowDetails& getWindowDetails() const { return _windowDetails; }
+    const wma::WindowDetails& getWindowDetails() const { return _windowDetails; }
 
 protected:
     /**
@@ -62,7 +62,7 @@ protected:
     virtual void createWindow(const char* title) = 0;
 
     // Window details
-    WindowDetails _windowDetails;
+    wma::WindowDetails _windowDetails;
 };
 
 } // namespace aura3d

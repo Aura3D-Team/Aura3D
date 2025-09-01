@@ -25,7 +25,7 @@ int main(int argc, char **argv)
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
     ink::LogManager::getInstance().setGlobalLevel(logSeverity);
 
-    aura3d::WindowDetails windowDetails = {};
+    wma::WindowDetails windowDetails = {};
     windowDetails.width = 1280;
     windowDetails.height = 720;
     windowDetails.resizable = true;

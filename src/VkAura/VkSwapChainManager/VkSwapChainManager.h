@@ -6,13 +6,14 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
+#include <wma/wma.hpp>
+
 #include "aura.hpp"
 #include "VkAura/VkAuraDefs.h"
 #include <VkAura/VkDeviceManager/VkDeviceManager.h>
 #include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
 #include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
 #include <aura.hpp>
-#include <AuraWindowManagers/CommonWindow.hpp>
 #include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
@@ -68,12 +69,12 @@ public:
      * The created swap chain is essential for presenting rendered images to the screen,
      * and its configuration directly affects the visual output and performance.
      *
-     * @param window The GLFW window associated with the rendering surface.
+     * @param windowDetails The windowDetails associated with the rendering surface.
      * @param surface The Vulkan surface corresponding to the window where images will be presented.
      * @param vkDeviceManager A pointer to the VkDeviceManager responsible for managing the logical device and queue families.
      * @param layerCount Optional parameter specifying the number of image layers in the swap chain; defaults to 2.
      */
-    void createSwapChain(WindowAPI* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount = 2);
+    void createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount = 2);
 
     /**
      * @brief Retrieves swap chain support details.
@@ -99,11 +100,11 @@ public:
      * extent, clamping it within the bounds of minImageExtent and maxImageExtent.
      *
      * @param capabilities The capabilities of the surface, including possible extent bounds.
-     * @param window The GLFW window for which to determine the framebuffer size.
+     * @param windowDetails The windowDetails for which to determine the framebuffer size.
      *
      * @return VkExtent2D The chosen extent (resolution) for the swap chain images.
      */
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, WindowAPI* window);
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, wma::WindowDetails* windowDetails);
 
     VkExtent2D* getExtent2D();
 
@@ -115,7 +116,7 @@ public:
 
     const std::vector<VkImage>& getSwapChainImages();
 
-    u32 acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags);
+    u32 acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags* windowFlags);
 
     void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex);
 

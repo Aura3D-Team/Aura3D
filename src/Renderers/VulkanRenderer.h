@@ -3,12 +3,6 @@
 
 #pragma once
 
-#ifdef SDL_WINDOW_MANAGER
-#include "AuraWindowManagers/SDLAuraWindowManager/SDLAuraWindowManager.h"
-#else
-#include "AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h"
-#endif
-
 #include "Renderers/Renderer.h"
 
 #include <VkAura/VkInstanceManager/VkInstanceManager.h>
@@ -43,11 +37,11 @@ public:
      * @param vkImageViewData Image view configuration
      */
     VulkanRenderer(
-        const WindowDetails& windowDetails,
+        const wma::WindowDetails& windowDetails,
         const VkInstanceData& vkInstanceData,
         const VkDeviceData& vkDeviceData,
         const ImageViewData& vkImageViewData
-        );
+    );
 
     /**
      * @brief Destroy the Vulkan renderer
@@ -108,11 +102,8 @@ protected:
     void setupCommandBuffers();
 
 private:
-#ifdef SDL_WINDOW_MANAGER
-    std::unique_ptr<aura3d::SDLAuraWindowManager> _windowManagerApi;
-#else
-    std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
-#endif
+    std::unique_ptr<wma::IWindowManager> _windowManagerApi;
+
     std::unique_ptr<aura3d::VkHostAllocator> _vkHostAllocator;
     std::unique_ptr<aura3d::VkDeviceAllocator> _vkDeviceAllocator;
     std::unique_ptr<aura3d::VkInstanceManager> _vkInstance;

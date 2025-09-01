@@ -1,10 +1,14 @@
 #include "Renderers/OpenGLRenderer.h"
+
+#include <GL/gl.h>
+#include <wma/wma.hpp>
 #include <ink/ink.hpp>
-#include <aura.hpp>
+
+#include "aura.hpp"
 
 namespace aura3d {
 
-OpenGLRenderer::OpenGLRenderer(const WindowDetails& windowDetails)
+OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails& windowDetails)
     : Renderer(windowDetails)
 {
     // Constructor only stores parameters - initialization happens in initialize()
@@ -22,11 +26,11 @@ void OpenGLRenderer::initialize()
     }
 
     // Create window manager
-#ifdef SDL_WINDOW_MANAGER
-    _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(_windowDetails);
-#else
-    _windowManagerApi = std::make_unique<aura3d::GlfwAuraWindowManager>(_windowDetails);
-#endif
+    _windowManagerApi = wma::createWindowManager(
+        wma::getDefaultBackend(),
+        _windowDetails,
+        wma::GraphicsAPI::OpenGL
+    );
 
     _isInitialized = true;
 }
@@ -59,7 +63,6 @@ void OpenGLRenderer::run()
     _windowManagerApi->process([&]() {
         // Clear the color buffer
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // In a more complete implementation, you would:
         // 1. Bind the shader program

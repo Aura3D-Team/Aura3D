@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <wma/wma.hpp>
+
 #include <vulkan/vulkan.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
@@ -32,8 +34,7 @@ public:
      * @param vkInstance A pointer to the Vulkan instance, used to create the surface.
      * @param window A pointer to the GLFW window for which the surface will be created.
      */
-    VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, GLFWwindow* window);
-    VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, SDL_Window* window);
+    VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window);
 
     /**
      * @brief Destroys the Vulkan surface and cleans up resources.

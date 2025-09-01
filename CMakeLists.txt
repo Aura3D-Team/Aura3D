@@ -7,18 +7,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -mtune=native -flto -funroll-loops -fno-plt") # for multithread flags -fopenmp -pthread
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++ -static-libgcc")
 
 message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
-
-# Opção para escolher o gerenciador de janelas
-option(SDL_WINDOW_MANAGER "Use SDL" ON)
-
-if(SDL_WINDOW_MANAGER)
-    add_definitions(-DSDL_WINDOW_MANAGER)
-else()
-    add_definitions(-DGLFW_WINDOW_MANAGER)
-    message(STATUS "Using GLFW Window Manager.")
-endif()
 
 # Opções para escolher a API de renderização
 option(USE_CPU "Use CPU rendering" OFF)
@@ -36,22 +27,16 @@ else()
     message(STATUS "Using OpenGL API for rendering.")
 endif()
 
-# Ensure Vulkan SDK is found
-include_directories("$ENV{VULKAN_SDK}/include")
-
-# All libs
-set(ALL_LIBRARY_PATH "$ENV{LIBRARY_PATH}/lib")
-
-# Find required packages
+# =================================================================
+# Find required packages (No ENV vars or HINTS)
+# =================================================================
 find_package(Threads REQUIRED)
-find_library(VULKAN_LIB vulkan HINTS "$ENV{VULKAN_SDK}/lib")
-find_library(GLFW_LIB glfw3 HINTS ${ALL_LIBRARY_PATH})
-find_library(GLAD_LIB glad HINTS ${ALL_LIBRARY_PATH})
-find_library(SDL2_LIB SDL2 HINTS ${ALL_LIBRARY_PATH})
-find_library(INK_LIB ink HINTS ${ALL_LIBRARY_PATH})
-
-# Define General library path
-set(LIBRARY_INCLUDE "$ENV{LIBRARY_PATH}/include")
+find_package(OpenGL REQUIRED)
+find_package(Vulkan REQUIRED)
+find_package(wma REQUIRED)
+find_package(ink REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(SDL2 REQUIRED)
 
 # Shader compiler
 set(GLSLC_EXECUTABLE "$ENV{VULKAN_SDK}/bin/glslc")
@@ -100,6 +85,12 @@ file(GLOB_RECURSE SOURCES
 add_executable(${PROJECT_NAME} ${SOURCES})
 add_dependencies(${PROJECT_NAME} CompileShaders)
 
+target_include_directories(Aura3D PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_compile_definitions(Aura3D PRIVATE GLFW_INCLUDE_VULKAN)
+
 # Handle Debug mode specific settings
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     message("Configuring Debug build")
@@ -128,20 +119,22 @@ endif()
 
 add_definitions(-DCMAKE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\")
 
-# Include directories
-target_include_directories(${PROJECT_NAME} PUBLIC
-    ${CMAKE_SOURCE_DIR}/src
-    ${LIBRARY_INCLUDE}
-)
+# =================================================================
+# Link libraries using their IMPORTED TARGETS
+# =================================================================
+target_link_libraries(Aura3D PRIVATE
+    # Your custom libraries
+    wma::wma
+    ink::ink
 
-# Link libraries
-target_link_libraries(${PROJECT_NAME} PUBLIC
-    ${VULKAN_LIB}
+    # Windowing & Graphics
+    SDL2::SDL2
+    glfw3
+    Vulkan::Vulkan
+    OpenGL::GL
+
+    # System
     Threads::Threads
-    ${GLFW_LIB}
-    ${GLAD_LIB}
-    ${SDL2_LIB}
-    ${INK_LIB}
     dl
 )
 

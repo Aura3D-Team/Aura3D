@@ -1,10 +1,12 @@
 #include "Renderers/VulkanRenderer.h"
 #include <ink/ink.hpp>
 
+#include <wma/wma.hpp>
+
 namespace aura3d {
 
 VulkanRenderer::VulkanRenderer(
-    const WindowDetails& windowDetails,
+    const wma::WindowDetails& windowDetails,
     const VkInstanceData& vkInstanceData,
     const VkDeviceData& vkDeviceData,
     const ImageViewData& vkImageViewData
@@ -52,12 +54,12 @@ void VulkanRenderer::initialize()
 
     _vkHostAllocator = std::make_unique<aura3d::VkHostAllocator>(vkHostAllocatorConfig);
 
-// Create window manager
-#ifdef SDL_WINDOW_MANAGER
-    _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(_windowDetails);
-#else
-    _windowManagerApi = std::make_unique<aura3d::GlfwAuraWindowManager>(_windowDetails);
-#endif
+    // Create window manager
+    _windowManagerApi = wma::createWindowManager(
+        wma::getDefaultBackend(),
+        _windowDetails,
+        wma::GraphicsAPI::Vulkan
+    );
 
     // Add window-specific Vulkan extensions
     const std::vector<const char*> windowApiExts = _windowManagerApi->getVulkanExtensions();
@@ -99,6 +101,7 @@ void VulkanRenderer::initialize()
     _vkSurfaceManager = std::make_unique<aura3d::VkSurfaceManager>(
         _vkHostAllocator.get(),
         _vkInstance->getVkInstance(),
+        _windowManagerApi->getBackendType(),
         _windowManagerApi->getWindowInstance()
     );
 
@@ -309,7 +312,7 @@ void VulkanRenderer::setupGraphicsPipeline()
 {
     // Create swap chain
     _vkSwapChainManager->createSwapChain(
-        _windowManagerApi->getWindowInstance(),
+        &_windowDetails,
         *_vkSurfaceManager->getSurface(),
         _vkDeviceManager.get()
     );
@@ -471,36 +474,36 @@ void VulkanRenderer::handleWindowChanges()
 {
     auto device = *_vkDeviceManager->getDevice();
 
-#ifdef SDL_WINDOW_MANAGER
-    SDL_Window* window = _windowManagerApi->getWindowInstance();
-    int width = 0, height = 0;
-    SDL_GetWindowSize(window, &width, &height);
+// #ifdef SDL_WINDOW_MANAGER
+//     SDL_Window* window = _windowManagerApi->getWindowInstance();
+//     int width = 0, height = 0;
+//     SDL_GetWindowSize(window, &width, &height);
 
-    // Wait for window to be restored
-    while (width == 0 || height == 0) {
-        SDL_Event event;
-        while (SDL_WaitEvent(&event)) {
-            if (event.type == SDL_WINDOWEVENT &&
-                (event.window.event == SDL_WINDOWEVENT_RESIZED ||
-                 event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
-                 event.window.event == SDL_WINDOWEVENT_RESTORED)) {
-                SDL_GetWindowSize(window, &width, &height);
-                if (width > 0 && height > 0)
-                    break;
-            }
-        }
-    }
-#else
-    GLFWwindow* window = _windowManagerApi->getWindowInstance();
-    int width = 0, height = 0;
-    glfwGetFramebufferSize(window, &width, &height);
+//     // Wait for window to be restored
+//     while (width == 0 || height == 0) {
+//         SDL_Event event;
+//         while (SDL_WaitEvent(&event)) {
+//             if (event.type == SDL_WINDOWEVENT &&
+//                 (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+//                  event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+//                  event.window.event == SDL_WINDOWEVENT_RESTORED)) {
+//                 SDL_GetWindowSize(window, &width, &height);
+//                 if (width > 0 && height > 0)
+//                     break;
+//             }
+//         }
+//     }
+// #else
+//     GLFWwindow* window = _windowManagerApi->getWindowInstance();
+//     int width = 0, height = 0;
+//     glfwGetFramebufferSize(window, &width, &height);
 
-    // Wait for window to be restored
-    while (width == 0 || height == 0) {
-        glfwGetFramebufferSize(window, &width, &height);
-        glfwWaitEvents();
-    }
-#endif
+//     // Wait for window to be restored
+//     while (width == 0 || height == 0) {
+//         glfwGetFramebufferSize(window, &width, &height);
+//         glfwWaitEvents();
+//     }
+// #endif
 
     // Wait for device to be idle
     vkDeviceWaitIdle(device);
@@ -519,7 +522,7 @@ void VulkanRenderer::handleWindowChanges()
     );
 
     _vkSwapChainManager->createSwapChain(
-        window,
+        &_windowDetails,
         *_vkSurfaceManager->getSurface(),
         _vkDeviceManager.get()
     );

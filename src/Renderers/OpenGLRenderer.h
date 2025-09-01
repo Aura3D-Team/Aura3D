@@ -3,12 +3,6 @@
 
 #pragma once
 
-#ifdef SDL_WINDOW_MANAGER
-#include <AuraWindowManagers/SDLAuraWindowManager/SDLAuraWindowManager.h>
-#else
-#include <AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h>
-#endif
-
 #include "Renderers/Renderer.h"
 
 namespace aura3d {
@@ -23,7 +17,7 @@ public:
      *
      * @param windowDetails Window configuration
      */
-    OpenGLRenderer(const WindowDetails& windowDetails);
+    OpenGLRenderer(const wma::WindowDetails& windowDetails);
 
     /**
      * @brief Destroy the OpenGL renderer
@@ -69,11 +63,7 @@ protected:
     void createVertexBuffers();
 
 private:
-#ifdef SDL_WINDOW_MANAGER
-    std::unique_ptr<aura3d::SDLAuraWindowManager> _windowManagerApi;
-#else
-    std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
-#endif
+    std::unique_ptr<wma::IWindowManager> _windowManagerApi;
 
     // OpenGL context and resource handles would go here
     bool _isInitialized = false;

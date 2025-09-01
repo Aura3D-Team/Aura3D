@@ -7,18 +7,19 @@
 
 namespace aura3d {
 
-VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, GLFWwindow* window)
+VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window)
     : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance)
 {
-    VkResult result = glfwCreateWindowSurface(*_vkInstance, window, nullptr, &_vkSurface);
-    VK_RESULT_CHECK(result);
-}
-
-VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, SDL_Window* window)
-    : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance)
-{
-    if (!SDL_Vulkan_CreateSurface(window, *_vkInstance, &_vkSurface)) {
-        throw AuraException("Fail to create SDL Window surface! SDL Error: " + std::string(SDL_GetError()));
+    switch (windowBackend) {
+    case wma::WindowBackend::GLFW:
+        VK_RESULT_CHECK(glfwCreateWindowSurface(*_vkInstance, (GLFWwindow*)window, vkHostAllocator->getCallbacks(), &_vkSurface));
+        break;
+    case wma::WindowBackend::SDL2:
+        if (!SDL_Vulkan_CreateSurface((SDL_Window*)window, *_vkInstance, &_vkSurface)) {
+            throw AuraException("Fail to create SDL Window surface! SDL Error: " + std::string(SDL_GetError()));
+        }
+    default:
+        break;
     }
 }
 

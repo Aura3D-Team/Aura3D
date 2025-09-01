@@ -3,17 +3,10 @@
 
 #pragma once
 
-#ifdef SDL_WINDOW_MANAGER
-#include <AuraWindowManagers/SDLAuraWindowManager/SDLAuraWindowManager.h>
-#else
-#include <AuraWindowManagers/GlfwWindowManager/GlfwAuraWindowManager.h>
-#endif
-
 #include <memory>
-#include <nlohmann/json.hpp>
 
 #include "Renderers/Renderer.h"
-#include <CpuAura/CpuFrameBufferManager.h>
+#include "CpuAura/CpuFrameBufferManager.h"
 
 namespace aura3d {
 
@@ -27,7 +20,7 @@ public:
      *
      * @param windowDetails Window configuration
      */
-    CPURenderer(const WindowDetails& windowDetails);
+    CPURenderer(const wma::WindowDetails& windowDetails);
 
     /**
      * @brief Destroy the CPU renderer
@@ -63,11 +56,8 @@ protected:
     void createWindow(const char* title) override;
 
 private:
-#ifdef SDL_WINDOW_MANAGER
-    std::unique_ptr<aura3d::SDLAuraWindowManager> _windowManagerApi;
-#else
-    std::unique_ptr<aura3d::GlfwAuraWindowManager> _windowManagerApi;
-#endif
+    std::unique_ptr<wma::IWindowManager> _windowManagerApi;
+
     std::unique_ptr<CpuFrameBufferManager> _frameBufferManager;
 
     bool _isInitialized = false;

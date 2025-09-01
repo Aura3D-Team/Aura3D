@@ -1,7 +1,10 @@
 #include "Renderers/CPURenderer.h"
+
 #include <ink/ink.hpp>
 #include <cmath>
 #include <ctime>
+
+#include <wma/wma.hpp>
 
 #include "aura.hpp"
 #include "Utils/ColorsDefinitions.h"
@@ -9,7 +12,7 @@
 
 namespace aura3d {
 
-CPURenderer::CPURenderer(const WindowDetails& windowDetails)
+CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails)
     : Renderer(windowDetails)
 {
     // Constructor only stores parameters - initialization happens in initialize()
@@ -26,12 +29,13 @@ void CPURenderer::initialize()
         return;
     }
 
-    // Create window manager
-#ifdef SDL_WINDOW_MANAGER
-    _windowManagerApi = std::make_unique<aura3d::SDLAuraWindowManager>(_windowDetails);
-#else
-    _windowManagerApi = std::make_unique<aura3d::GlfwAuraWindowManager>(_windowDetails);
-#endif
+    INK_ASSERT_MSG(wma::getDefaultBackend() == wma::WindowBackend::SDL2, "CPURenderer needs WindowBackend to be SDL2");
+
+    _windowManagerApi = wma::createWindowManager(
+        wma::getDefaultBackend(),
+        _windowDetails,
+        wma::GraphicsAPI::CPU
+    );
 
     // Create window and framebuffer
     createWindow(APPLICATION_NAME);
@@ -48,14 +52,14 @@ void CPURenderer::createWindow(const char* title)
     frameBufferSettings.width = _windowDetails.width;
     frameBufferSettings.height = _windowDetails.height;
 
-    _frameBufferManager = std::make_unique<CpuFrameBufferManager>(
-        _windowManagerApi->getWindowInstance(),
+    _frameBufferManager = std::make_unique<aura3d::CpuFrameBufferManager>(
+        (SDL_Window*)_windowManagerApi->getWindowInstance(),
         frameBufferSettings
     );
 
     // Store framebuffer in window data for access in SDL event handlers
     SDL_SetWindowData(
-        _windowManagerApi->getWindowInstance(),
+        (SDL_Window*)_windowManagerApi->getWindowInstance(),
         "CpuFrameBufferManager",
         _frameBufferManager.get()
     );

@@ -58,11 +58,11 @@ VkExtent2D* VkSwapChainManager::getExtent2D()
     return &_choosedExtent;
 }
 
-void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount)
+void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount)
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
     _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes);
-    _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, window);
+    _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, windowDetails);
 
     u32 imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
 
@@ -133,7 +133,7 @@ void VkSwapChainManager::createSwapChain(WindowAPI* window, VkSurfaceKHR surface
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
 }
 
-u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, WindowFlags* windowFlags)
+u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags* windowFlags)
 {
     u32 imageIndex = UINT32_MAX;
     VkResult result = vkAcquireNextImageKHR(*_device, _swapChain, UINT64_MAX, imageSemaphore, VK_NULL_HANDLE, &imageIndex);
@@ -255,14 +255,10 @@ void VkSwapChainManager::initSwapChainSupportDetails(VkPhysicalDevice physicalDe
     }
 }
 
-VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, WindowAPI* window)
+VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, wma::WindowDetails* windowDetails)
 {
-    int width=0, height=0;
-#ifdef SDL_WINDOW_MANAGER
-    SDL_GetWindowSize(window, &width, &height);
-#else
-    glfwGetFramebufferSize(window, &width, &height);
-#endif
+    int width=windowDetails->width;
+    int height=windowDetails->height;
 
     VkExtent2D actualExtent = {
         static_cast<u32>(width),
