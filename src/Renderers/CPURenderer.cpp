@@ -29,10 +29,12 @@ void CPURenderer::initialize()
         return;
     }
 
-    INK_ASSERT_MSG(wma::getDefaultBackend() == wma::WindowBackend::SDL2, "CPURenderer needs WindowBackend to be SDL2");
+    wma::WindowBackend windowBackend = wma::WindowBackend::SDL2;
+
+    INK_ASSERT_MSG(windowBackend == wma::WindowBackend::SDL2, "CPURenderer needs WindowBackend to be SDL2");
 
     _windowManagerApi = wma::createWindowManager(
-        wma::getDefaultBackend(),
+        windowBackend,
         _windowDetails,
         wma::GraphicsAPI::CPU
     );
