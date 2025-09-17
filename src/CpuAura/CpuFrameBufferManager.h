@@ -68,8 +68,8 @@ struct Texture {
     i32 height;
 
     u32 sample(f32 u, f32 v) const {
-        int x = std::clamp(static_cast<int>(u * width), 0, width - 1);
-        int y = std::clamp(static_cast<int>(v * height), 0, height - 1);
+        int x = INK_CLAMP(static_cast<int>(u * width), 0, width - 1);
+        int y = INK_CLAMP(static_cast<int>(v * height), 0, height - 1);
         return data[y * width + x];
     }
 };

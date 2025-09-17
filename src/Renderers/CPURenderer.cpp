@@ -65,6 +65,11 @@ void CPURenderer::createWindow(const char* title)
         "CpuFrameBufferManager",
         _frameBufferManager.get()
     );
+
+    _windowManagerApi->getKeyboardListener().addKeyAction(wma::Key::KEY_ESCAPE, wma::KeyAction{
+        [this](){ cleanup(); },
+        nullptr
+    });
 }
 
 void CPURenderer::run()

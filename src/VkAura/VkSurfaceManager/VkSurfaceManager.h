@@ -66,9 +66,10 @@ public:
     VkBool32 getQueuePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, const int familyIndex);
 
 private:
-    VkHostAllocator* vkHostAllocator;
+    VkHostAllocator* _vkHostAllocator;
     VkInstance* _vkInstance; ///< Pointer to the Vulkan instance used to bind the surface.
-    VkSurfaceKHR _vkSurface; ///< Vulkan surface for rendering on cross-platform windowing systems (GLFW/SDL2).
+    VkSurfaceKHR _vkSurface; ///< Vulkan surface for rendering on cross-platform windowing systems (GLFW/SDL2).]
+    wma::WindowBackend _windowBackend;
 };
 
 }

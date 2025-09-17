@@ -56,10 +56,15 @@ void VulkanRenderer::initialize()
 
     // Create window manager
     _windowManagerApi = wma::createWindowManager(
-        wma::getDefaultBackend(),
+        wma::WindowBackend::SDL2,
         _windowDetails,
         wma::GraphicsAPI::Vulkan
     );
+
+    _windowManagerApi->getKeyboardListener().addKeyAction(wma::Key::KEY_ESCAPE, wma::KeyAction{
+        [this](){ cleanup(); },
+       nullptr
+    });
 
     // Add window-specific Vulkan extensions
     const std::vector<const char*> windowApiExts = _windowManagerApi->getVulkanExtensions();
