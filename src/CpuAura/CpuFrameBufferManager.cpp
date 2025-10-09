@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <cmath>
+#include <algorithm> // For std::fill and std::transform
+#include <vector>    // For the temporary pixel buffer
 #include <ink/ink.hpp>
 
 #include "AuraException/AuraException.h"
@@ -9,21 +11,19 @@
 namespace aura3d {
 
 /**
- * Constructor - Initializes the framebuffer and optional depth buffer
+ * Constructor - Initializes the framebuffer using the Pixel struct
  * @param config Configuration settings for width, height, and depth buffer usage
  */
 CpuFrameBufferManager::CpuFrameBufferManager(SDL_Window* window, Config config) :
     settings(config),
-    framebuffer(config.width * config.height, 0), // Initialize with black pixels
+    // Initialize framebuffer with Pixel objects: black color (0) and max depth (1.0f)
+    framebuffer(config.width* config.height, Pixel{0, 1.0f}),
     _window(window),
     _renderer(nullptr),
     _texture(nullptr),
     _font(GetDefaultBitmapFont())
 {
-    // Create depth buffer if enabled in settings
-    if (settings.useDepthBuffer) {
-        depthBuffer.resize(config.width * config.height, 1.0f); // Initialize with max depth
-    }
+    // NOTE: The separate depthBuffer has been removed. Depth is now part of the Pixel struct.
 
     _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED);
     INK_ASSERT_MSG(_renderer != nullptr, "Renderer could not be created! SDL_Error: " + std::string(SDL_GetError()));
@@ -56,58 +56,38 @@ CpuFrameBufferManager::~CpuFrameBufferManager()
 }
 
 /**
- * Clears the framebuffer to a specific color
+ * Clears the framebuffer to a specific color and resets depth
  * @param color 32-bit color value (0xRRGGBB format, alpha is ignored)
  */
 void CpuFrameBufferManager::clear(u32 color)
 {
-    u32* framebufferPtr = framebuffer.data();
-    size_t pixelCount = settings.width * settings.height;
+    // Create a pixel with the specified color and maximum depth (1.0f)
+    const Pixel clearPixel(color, 1.0f);
 
-    // Optimization for solid black (common case)
-    if (color == 0) {
-        std::memset(framebufferPtr, 0, pixelCount * sizeof(u32));
-    }
-    // Optimization for solid white (another common case)
-    else if (color == 0xFFFFFFFF) {
-        std::memset(framebufferPtr, 0xFF, pixelCount * sizeof(u32));
-    }
-    // Process framebuffer in chunks for better cache utilization
-    else {
-        // Process in blocks of 64 pixels (better aligned for cache lines and SIMD)
-        size_t i = 0;
-        for (; i + 63 < pixelCount; i += 64) {
-            for (size_t j = 0; j < 64; ++j) {
-                framebufferPtr[i + j] = color;
-            }
-        }
-
-        // Handle remaining pixels
-        for (; i < pixelCount; i++) {
-            framebufferPtr[i] = color;
-        }
-    }
-
-    // Reset depth buffer if enabled
-    if (settings.useDepthBuffer) {
-        std::fill(depthBuffer.begin(), depthBuffer.end(), 1.0f);
-    }
+    // Use std::fill for a clean and efficient way to clear the entire framebuffer
+    std::fill(framebuffer.begin(), framebuffer.end(), clearPixel);
 }
 
 /**
  * Renders the framebuffer to the screen using SDL
- * @param renderer SDL renderer to use
- * @param texture SDL texture to update with framebuffer content
  *
  * Process:
- * 1. Copy framebuffer data to SDL texture
- * 2. Clear the renderer
- * 3. Copy texture to renderer
- * 4. Present the renderer (display the result)
+ * 1. Extract just the RGB color data into a temporary, contiguous buffer.
+ * 2. Copy that temporary buffer to the SDL texture.
+ * 3. Clear the renderer.
+ * 4. Copy texture to renderer.
+ * 5. Present the renderer (display the result).
  */
 void CpuFrameBufferManager::renderFramebuffer()
 {
-    SDL_UpdateTexture(_texture, nullptr, framebuffer.data(), settings.width * sizeof(u32));
+    // SDL_UpdateTexture expects a contiguous array of u32 colors, but our
+    // framebuffer is an array of Pixel structs (u32 rgb, f32 z).
+    // We must first copy the color data into a temporary buffer.
+    std::vector<u32> pixel_data(settings.width * settings.height);
+    std::transform(framebuffer.begin(), framebuffer.end(), pixel_data.begin(),
+                   [](const Pixel& p) { return p.rgb; });
+
+    SDL_UpdateTexture(_texture, nullptr, pixel_data.data(), settings.width * sizeof(u32));
     SDL_RenderClear(_renderer);
     SDL_RenderCopy(_renderer, _texture, nullptr, nullptr);
     SDL_RenderPresent(_renderer);
@@ -148,33 +128,17 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height)
         throw aura3d::AuraException("Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
     }
 
-    // Reserve capacity to avoid multiple reallocations
-    AlignedVector<u32> newFramebuffer;
-    newFramebuffer.reserve(width * height);
-    newFramebuffer.resize(width * height, 0);
-
-    AlignedVector<f32> newDepthBuffer;
-    if (settings.useDepthBuffer) {
-        newDepthBuffer.reserve(width * height);
-        newDepthBuffer.resize(width * height, 1.0f);
-    }
-
-    // Update settings
+    // Update settings first
     settings.width = width;
     settings.height = height;
 
-    // Swap buffers (safer than move)
-    framebuffer = std::move(newFramebuffer);
-
-    if (settings.useDepthBuffer) {
-        depthBuffer = std::move(newDepthBuffer);
-    }
+    // Resize the framebuffer vector, initializing new pixels to black with max depth
+    framebuffer.assign(width * height, Pixel{0, 1.0f});
 }
 
 /**
  * Checks if coordinates are within the framebuffer bounds
- * @param x X-coordinate to check
- * @param y Y-coordinate to check
+ * @param p Point to check
  * @return true if coordinates are valid, false otherwise
  */
 bool CpuFrameBufferManager::isInsideBounds(Point p) const
@@ -183,72 +147,62 @@ bool CpuFrameBufferManager::isInsideBounds(Point p) const
 }
 
 /**
- * Sets a pixel color at the specified coordinates
- * @param x X-coordinate
- * @param y Y-coordinate
+ * Sets a pixel color at the specified coordinates, leaving depth unchanged.
+ * @param p Point coordinates
  * @param color 32-bit color value (0xRRGGBB format)
  */
 void CpuFrameBufferManager::setPixel(Point p, u32 color)
 {
-    if (isInsideBounds({p.x, p.y})) {
-        framebuffer[p.y * settings.width + p.x] = color;
+    if (isInsideBounds(p)) {
+        framebuffer[p.y * settings.width + p.x].rgb = color;
     }
 }
 
 /**
- * Sets a pixel color with depth testing
- * @param x X-coordinate
- * @param y Y-coordinate
+ * Sets a pixel color and its depth value.
+ * @param p Point coordinates
  * @param z Depth value (smaller values are closer to camera)
  * @param color 32-bit color value (0xRRGGBB format)
  */
 void CpuFrameBufferManager::setPixelWithDepth(Point p, f32 z, u32 color)
 {
-    if (!isInsideBounds({p.x, p.y})) return;
-    const int index = p.y * settings.width + p.x;
-
-    framebuffer[index] = color;
-
-    if (settings.useDepthBuffer) {
-        depthBuffer[index] = z; // Update depth buffer
+    if (isInsideBounds(p)) {
+        const int index = p.y * settings.width + p.x;
+        // NOTE: A proper depth test would be `if (z < framebuffer[index].z)`
+        // This function just sets the values unconditionally.
+        framebuffer[index].rgb = color;
+        if (settings.useDepthBuffer) {
+            framebuffer[index].z = z; // Update depth buffer value
+        }
     }
 }
 
 /**
  * Helper function for anti-aliased line drawing
- * @param x, y Coordinates
+ * @param p Coordinates
  * @param intensity Alpha value (0.0 to 1.0)
  * @param color Line color
  */
 void CpuFrameBufferManager::plotPixel(Point p, f32 intensity, u32 color)
 {
-    if (!isInsideBounds({p.x, p.y})) return;
-    // Get existing color and blend with new color
-    u32 bg = getPixel({p.x, p.y});
+    if (!isInsideBounds(p)) return;
+    // Get existing color from the Pixel struct and blend with new color
+    u32 bg = getPixel(p).rgb;
     u32 blended = blendColors(bg, color, intensity);
-    setPixel({p.x, p.y}, blended);
+    setPixel(p, blended);
 }
 
 /**
- * Gets the color of a pixel at the specified coordinates
- * @param x X-coordinate
- * @param y Y-coordinate
- * @return 32-bit color value, or 0 if coordinates are invalid
+ * Gets the Pixel object (color and depth) at the specified coordinates
+ * @param p Point coordinate
+ * @return Pixel object, or a default black pixel if coordinates are invalid
  */
-u32 CpuFrameBufferManager::getPixel(Point p) const
+Pixel CpuFrameBufferManager::getPixel(Point p) const
 {
-    if (isInsideBounds({p.x, p.y})) {
+    if (isInsideBounds(p)) {
         return framebuffer[p.y * settings.width + p.x];
     }
-    return 0;
-}
-
-f32 CpuFrameBufferManager::getDepthPixel(Point p) const
-{
-    if (isInsideBounds({p.x, p.y})) {
-        return depthBuffer[p.y * settings.width + p.x];
-    }
-    return 1.0f;
+    return Pixel{0, 1.0f}; // Return black, max-depth pixel
 }
 
 /**
@@ -256,9 +210,6 @@ f32 CpuFrameBufferManager::getDepthPixel(Point p) const
  * @param p0 Starting point coordinates
  * @param p1 Ending point coordinates
  * @param color Line color
- *
- * This algorithm uses integer-only arithmetic for speed.
- * It works by determining which pixels to color based on the error accumulation.
  */
 void CpuFrameBufferManager::drawLine(Point p0, Point p1, u32 color)
 {
@@ -296,8 +247,6 @@ float CpuFrameBufferManager::get_eased_time(float t_param, InterpolationMethod m
     case InterpolationMethod::Cosine:
         return (1.0f - std::cos(t * PI_FLOAT)) * 0.5f;
     default:
-        // This case should ideally not be reached if all enum values are handled.
-        // A good compiler with warnings enabled might flag unhandled enum values.
         return t; // Fallback to linear
     }
 }
@@ -327,9 +276,7 @@ void CpuFrameBufferManager::drawPolygon(const std::vector<Point>& points, u32 co
 void CpuFrameBufferManager::drawPolygon(const std::vector<Point>& points, const std::vector<u32>& colors, bool closed) {
     if (points.size() < 2) return;
 
-    // Ensure colors vector has at least enough entries for all line segments
     if (colors.size() < (closed ? points.size() : points.size() - 1)) {
-        // Fall back to single color if not enough colors provided
         drawPolygon(points, colors.empty() ? 0xFFFFFFFF : colors[0], closed);
         return;
     }
@@ -344,9 +291,8 @@ void CpuFrameBufferManager::drawPolygon(const std::vector<Point>& points, const 
 }
 
 void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point>& points, u32 color) {
-    if (points.size() < 3) return; // Need at least 3 points for a polygon
+    if (points.size() < 3) return;
 
-    // Find the bounding box of the polygon
     int minY = getHeight();
     int maxY = 0;
 
@@ -355,46 +301,36 @@ void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point>& points, 
         maxY = std::max(maxY, p.y);
     }
 
-    // Clip to screen bounds
     minY = std::max(minY, 0);
     maxY = std::min(maxY, getHeight() - 1);
 
-    // Allocate array for edge intersections
     std::vector<int> intersections;
     intersections.reserve(points.size());
 
-    // Scanline algorithm
     for (int y = minY; y <= maxY; y++) {
         intersections.clear();
 
-        // Find intersections with all edges
         for (size_t i = 0; i < points.size(); i++) {
-            // Get edge vertices
             const Point& p1 = points[i];
             const Point& p2 = points[(i + 1) % points.size()];
 
-            // Skip horizontal edges and vertices outside current scanline
-            if ((p1.y == p2.y) || (p1.y > y && p2.y > y) || (p1.y < y && p2.y < y))
+            if ((p1.y == p2.y) || (y < std::min(p1.y, p2.y)) || (y >= std::max(p1.y, p2.y)))
                 continue;
 
-            // Calculate intersection
             float t = static_cast<float>(y - p1.y) / static_cast<float>(p2.y - p1.y);
             int x = p1.x + static_cast<int>(t * (p2.x - p1.x));
 
             intersections.push_back(x);
         }
 
-        // Sort intersections from left to right
         std::sort(intersections.begin(), intersections.end());
 
-        // Fill between pairs of intersections
         for (size_t i = 0; i < intersections.size(); i += 2) {
             if (i + 1 >= intersections.size()) break;
 
             int startX = std::max(intersections[i], 0);
             int endX = std::min(intersections[i + 1], getWidth() - 1);
 
-            // Draw horizontal line between intersections
             for (int x = startX; x <= endX; x++) {
                 setPixel(Point(x, y), color);
             }
@@ -402,14 +338,13 @@ void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point>& points, 
     }
 }
 
+
 /**
  * Blends two colors according to an alpha value
  * @param c1 Background color
  * @param c2 Foreground color
  * @param alpha Blend factor (0.0 = all c1, 1.0 = all c2)
  * @return Blended color
- *
- * Colors are in 0xRRGGBB format with no alpha component.
  */
 u32 CpuFrameBufferManager::blendColors(u32 c1, u32 c2, f32 alpha) {
     if (alpha <= 0.0f) return c1;
@@ -431,58 +366,46 @@ u32 CpuFrameBufferManager::blendColors(u32 c1, u32 c2, f32 alpha) {
 
 void CpuFrameBufferManager::drawText(const std::string& text, Point p, u32 color, f32 fontSize) {
     int cursorX = p.x;
-    // Calculate scaled dimensions
-    int scaledWidth = std::floor(_font.charWidth * fontSize);
-    int scaledHeight = std::floor(_font.charHeight * fontSize);
-    int scaledSpacing = std::ceil(_font.charSpacing * fontSize);
+    int fontSizeCeiled = std::ceil(fontSize);
+    int scaledWidth = _font.charWidth * fontSizeCeiled;
+    int scaledHeight = _font.charHeight * fontSizeCeiled;
+    int scaledSpacing = _font.charSpacing * fontSizeCeiled;
 
     for (char c : text) {
-        // Handle newline
         if (c == '\n') {
             cursorX = p.x;
             p.y += scaledHeight + scaledSpacing;
             continue;
         }
 
-        // Replace non-ASCII with ?
         if (c < 0 || c > 127) c = '?';
 
-        // Skip if completely out of bounds
         if (cursorX >= settings.width || p.y >= settings.height || cursorX + scaledWidth <= 0 || p.y + scaledHeight <= 0) {
             cursorX += scaledWidth + scaledSpacing;
             continue;
         }
 
-        // Fix cast syntax
         const auto& charData = _font.data[static_cast<unsigned char>(c)];
 
-        // Draw character with scaling
         for (int row = 0; row < _font.charHeight; row++) {
             u8 rowBits = charData[row];
-
-            // Scale each row vertically
-            for (int scaleY = 0; scaleY < fontSize; scaleY++) {
-                int pixelY = p.y + (int)(row * fontSize) + scaleY;
+            for (int scaleY = 0; scaleY < fontSizeCeiled; scaleY++) {
+                int pixelY = p.y + static_cast<int>(row * fontSize) + scaleY;
                 if (pixelY < 0 || pixelY >= settings.height) continue;
 
-                // Process each bit in the row
                 for (int col = 0; col < _font.charWidth; col++) {
                     bool isPixelOn = (rowBits & (1 << (_font.charWidth - 1 - col))) != 0;
-                    if (isPixelOn)
-                    {
-                        // Scale each pixel horizontally
-                        for (int scaleX = 0; scaleX < fontSize; scaleX++) {
-                            int pixelX = cursorX + (int)(col * fontSize) + scaleX;
-                            if (pixelX < 0 || pixelX >= settings.width) continue;
-
-                            setPixel({ pixelX, pixelY }, color);
+                    if (isPixelOn) {
+                        for (int scaleX = 0; scaleX < fontSizeCeiled; scaleX++) {
+                            int pixelX = cursorX + static_cast<int>(col * fontSize) + scaleX;
+                            if (pixelX >= 0 && pixelX < settings.width) {
+                                setPixel({ pixelX, pixelY }, color);
+                            }
                         }
                     }
                 }
             }
         }
-
-        // Move cursor to next character position
         cursorX += scaledWidth + scaledSpacing;
     }
 }
@@ -510,7 +433,8 @@ int CpuFrameBufferManager::getTextWidth(const std::string& text, f32 fontSize)
 
 int CpuFrameBufferManager::getTextHeight(const std::string& text, f32 fontSize)
 {
-    int scaledHeight = std::floor(_font.charHeight * fontSize);
+    int fontSizeCeiled = std::ceil(fontSize);
+    int scaledHeight = _font.charHeight * fontSizeCeiled;
     int lines = 1;
 
     for (char c : text) {

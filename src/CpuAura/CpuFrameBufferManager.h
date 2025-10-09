@@ -25,6 +25,14 @@ static const float PI_FLOAT = std::acos(-1.0f);
 
 namespace aura3d {
 
+struct Pixel {
+    Pixel(u32 _rgb = 0, f32 _z = 1.0f) :
+        rgb(_rgb), z(_z) {}
+
+    u32 rgb;
+    f32 z;
+};
+
 struct Point {
     Point(i32 _x, i32 _y) :
         x(_x), y(_y) {}
@@ -55,8 +63,8 @@ struct Vertex {
     Vertex(f32 _x, f32 _y, f32 _z = 0, f32 _u = 0, f32 _v = 0, u32 _color = 0xFFFFFFFF) :
         x(_x), y(_y), z(_z), u(_u), v(_v), color(_color) {}
 
-    f32 x, y, z;   // Position
-    f32 u, v;      // Texture coordinates
+    f32 x, y, z;    // Position
+    f32 u, v;       // Texture coordinates
     u32 color;  // Vertex color
 };
 
@@ -108,10 +116,9 @@ public:
     void resizeFramebuffer(int width, int height);
 
     // Basic drawing functions
-    u32 getPixel(Point p) const;
+    Pixel getPixel(Point p) const;
     void setPixel(Point p, u32 color);
     void setPixelWithDepth(Point p, f32 z, u32 color);
-    f32 getDepthPixel(Point p) const;
 
     void drawLine(Point p0, Point p1, u32 color);
 
@@ -142,8 +149,7 @@ private:
 private:
 
     Config settings;
-    AlignedVector<u32> framebuffer;
-    AlignedVector<f32> depthBuffer;
+    AlignedVector<Pixel> framebuffer;
     SDL_Window* _window;
     SDL_Renderer* _renderer;
     SDL_Texture* _texture;
