@@ -364,12 +364,11 @@ u32 CpuFrameBufferManager::blendColors(u32 c1, u32 c2, f32 alpha) {
     return (r << 16) | (g << 8) | b;
 }
 
-void CpuFrameBufferManager::drawText(const std::string& text, Point p, u32 color, f32 fontSize) {
+void CpuFrameBufferManager::drawText(const std::string& text, Point p, u32 color, u32 fontSize) {
     int cursorX = p.x;
-    int fontSizeCeiled = std::ceil(fontSize);
-    int scaledWidth = _font.charWidth * fontSizeCeiled;
-    int scaledHeight = _font.charHeight * fontSizeCeiled;
-    int scaledSpacing = _font.charSpacing * fontSizeCeiled;
+    int scaledWidth = _font.charWidth * fontSize;
+    int scaledHeight = _font.charHeight * fontSize;
+    int scaledSpacing = _font.charSpacing * fontSize;
 
     for (char c : text) {
         if (c == '\n') {
@@ -387,17 +386,17 @@ void CpuFrameBufferManager::drawText(const std::string& text, Point p, u32 color
 
         const auto& charData = _font.data[static_cast<unsigned char>(c)];
 
-        for (int row = 0; row < _font.charHeight; row++) {
+        for (i32 row = 0; row < _font.charHeight; row++) {
             u8 rowBits = charData[row];
-            for (int scaleY = 0; scaleY < fontSizeCeiled; scaleY++) {
-                int pixelY = p.y + static_cast<int>(row * fontSize) + scaleY;
+            for (u32 scaleY = 0; scaleY < fontSize; scaleY++) {
+                i32 pixelY = p.y + static_cast<int>(row * fontSize) + scaleY;
                 if (pixelY < 0 || pixelY >= settings.height) continue;
 
-                for (int col = 0; col < _font.charWidth; col++) {
+                for (i32 col = 0; col < _font.charWidth; col++) {
                     bool isPixelOn = (rowBits & (1 << (_font.charWidth - 1 - col))) != 0;
                     if (isPixelOn) {
-                        for (int scaleX = 0; scaleX < fontSizeCeiled; scaleX++) {
-                            int pixelX = cursorX + static_cast<int>(col * fontSize) + scaleX;
+                        for (u32 scaleX = 0; scaleX < fontSize; scaleX++) {
+                            i32 pixelX = cursorX + static_cast<int>(col * fontSize) + scaleX;
                             if (pixelX >= 0 && pixelX < settings.width) {
                                 setPixel({ pixelX, pixelY }, color);
                             }
@@ -410,10 +409,10 @@ void CpuFrameBufferManager::drawText(const std::string& text, Point p, u32 color
     }
 }
 
-int CpuFrameBufferManager::getTextWidth(const std::string& text, f32 fontSize)
+int CpuFrameBufferManager::getTextWidth(const std::string& text, u32 fontSize)
 {
-    i32 scaledWidth = std::floor(_font.charWidth * fontSize);
-    i32 scaledSpacing = std::ceil(_font.charSpacing * fontSize);
+    i32 scaledWidth = _font.charWidth * fontSize;
+    i32 scaledSpacing = _font.charSpacing * fontSize;
 
     i32 width = 0;
     i32 maxWidth = 0;
@@ -431,10 +430,9 @@ int CpuFrameBufferManager::getTextWidth(const std::string& text, f32 fontSize)
     return std::max(maxWidth, width);
 }
 
-int CpuFrameBufferManager::getTextHeight(const std::string& text, f32 fontSize)
+int CpuFrameBufferManager::getTextHeight(const std::string& text, u32 fontSize)
 {
-    int fontSizeCeiled = std::ceil(fontSize);
-    int scaledHeight = _font.charHeight * fontSizeCeiled;
+    int scaledHeight = _font.charHeight * fontSize;
     int lines = 1;
 
     for (char c : text) {

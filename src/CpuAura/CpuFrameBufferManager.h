@@ -127,13 +127,13 @@ public:
     void drawFilledPolygon(const std::vector<Point>& points, u32 color);
 
     // Text rendering
-    void drawText(const std::string& text, Point p, u32 color, f32 fontSize = 1.45);
+    void drawText(const std::string& text, Point p, u32 color, u32 fontSize = 2);
 
     // Getters
     i32 getWidth() const { return settings.width; }
     i32 getHeight() const { return settings.height; }
-    i32 getTextWidth(const std::string& text, f32 fontSize = 1.45);
-    i32 getTextHeight(const std::string& text, f32 fontSize = 1.45);
+    i32 getTextWidth(const std::string& text, u32 fontSize = 2);
+    i32 getTextHeight(const std::string& text, u32 fontSize = 2);
 
     // Helper methods
     void plotPixel(Point p, f32 intensity, u32 color);

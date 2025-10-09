@@ -108,11 +108,12 @@ void CPURenderer::run()
         textY += 10 + textHeight;
 
         // Total number of tracked positions
-        std::string posCountText = "Tamanho da fonte";
+        std::string posCountText = "Renanzolo";
         _frameBufferManager->drawText(posCountText, {10, textY}, aura3d::colors::RED_UINT32);
         textY += 10 + textHeight;
 
         _frameBufferManager->drawLine({250, 250}, {400, 400}, aura3d::colors::BLACK_UINT32);
+        _frameBufferManager->drawLine({400, 400}, {150, 600}, aura3d::colors::BLACK_UINT32);
 
         // Render the final framebuffer
         _frameBufferManager->renderFramebuffer();

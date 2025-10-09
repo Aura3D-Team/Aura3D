@@ -9,14 +9,14 @@
 namespace aura3d {
 
 struct AuraBitmapFont {
-    int charWidth = 5;
-    int charHeight = 7;
-    int charSpacing = 1;
+    i32 charWidth = 5;
+    i32 charHeight = 7;
+    i32 charSpacing = 1;
     AlignedVector<u8> data[128]; // ASCII characters
 
     AuraBitmapFont() {
         // Initialize all characters
-        for (int i = 0; i < 128; i++) {
+        for (i32 i = 0; i < 128; i++) {
             data[i].resize(charHeight, 0);
         }
 
