@@ -1,16 +1,39 @@
-#ifndef VKAURADEFS_H
-#define VKAURADEFS_H
+#ifndef VKAURACORE_H
+#define VKAURACORE_H
 
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <array>
 #include <vector>
 
-#include "aura.hpp"
+#include "AuraCore.h"
+
+#define MAX_FRAMES_IN_FLIGHT 2
+#define MAX_ATTRIBUTE_DESCRIPTION 3
+#define MAX_SHADER_MODULES 8
+#define MAX_DESCRIPTOR_SETS 4
+#define MAX_BINDING_COUNT 16
+
+// Template array definitions
+template <typename T>
+using VkFixedArray = std::array<T, MAX_FRAMES_IN_FLIGHT>;
+
+template <typename T>
+using AttributeDescriptionArray = std::array<T, MAX_ATTRIBUTE_DESCRIPTION>;
+
+template <typename T>
+using ShaderModuleArray = std::array<T, MAX_SHADER_MODULES>;
+
+template <typename T>
+using DescriptorSetArray = std::array<T, MAX_DESCRIPTOR_SETS>;
+
+template <typename T>
+using BindingArray = std::array<T, MAX_BINDING_COUNT>;
 
 namespace aura3d {
 
+namespace vk {
 
 /**
  * @brief This struct represents Important data for VkInstance creation
@@ -38,7 +61,6 @@ struct VkDeviceData {
     std::vector<VkQueueFlags> concurrentQueueFlags;
     VkQueueFlags exclusiveQueueFlags;
 };
-
 
 /**
  * @brief Holds information about a Vulkan queue.
@@ -103,31 +125,6 @@ struct ImageViewData {
     u32 layerCount;
 };
 
-
-// VERTEX stuff
-/**
- * @struct TransformUBO
- * @brief Uniform buffer object structure matching the shader UniformBufferObject
- */
-struct TransformUBO {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-};
-
-struct Vertex3d
-{
-    glm::vec3 pos;      // (x, y, z)
-    glm::vec2 texCoord; // (u, v)
-    glm::vec4 color;    // (r, g, b, a)
-};
-
-struct Vertex2d {
-    glm::vec2 pos;      // (x, y)
-    glm::vec2 texCoord; // (u, v)
-    glm::vec4 color;    // (r, g, b, a)
-};
-
 // Base class for buffer information
 struct AuraBufferInfo {
     VkBuffer buffer = VK_NULL_HANDLE;
@@ -145,7 +142,8 @@ struct IndexBufferInfo : public AuraBufferInfo {
     u32 indexCount = 0;
 };
 
+}
 
 }
 
-#endif // VKAURADEFS_H
+#endif

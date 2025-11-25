@@ -4,9 +4,9 @@
 #include <iostream>
 #include <sstream>
 #include <cassert>
-#include <ink/ink.hpp>
 
 namespace aura3d {
+namespace vk {
 
 VkDeviceAllocator::VkDeviceAllocator(VkHostAllocator* vkHostAllocator, const VkDeviceAllocatorCreateInfo& createInfo)
     : vkHostAllocator(vkHostAllocator),
@@ -1235,4 +1235,5 @@ void VkDeviceAllocator::cleanup()
     allocationMap.clear();
 }
 
+}
 } // namespace aura3d

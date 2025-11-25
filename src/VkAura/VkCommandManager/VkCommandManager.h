@@ -8,10 +8,11 @@
 #include <mutex>
 #include <thread>
 
-#include "aura.hpp"
-#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
+#include "VkAura/VkAuraCore.h"
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @brief Manages Vulkan command pools and command buffers in a multi-threaded environment.
@@ -91,6 +92,7 @@ private:
     static std::mutex _poolMutex; /**< Mutex to protect access to the command pool map. */
 };
 
+}
 }
 
 #endif // VKCOMMANDMANAGER_H

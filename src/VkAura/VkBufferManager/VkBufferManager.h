@@ -5,10 +5,11 @@
 
 #include <vulkan/vulkan.h>
 
-#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
-#include <VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h>
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
+#include "VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 class VkBufferManager {
 public:
@@ -86,6 +87,7 @@ public:
                                         void (*command)(VkCommandBuffer commandBuffer));
 };
 
+}
 } // namespace aura3d
 
 #endif // VKBUFFERMANAGER_H

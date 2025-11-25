@@ -4,6 +4,7 @@
 #include "AuraException/AuraException.h"
 
 namespace aura3d {
+namespace vk {
 
 VkShaderManager::VkShaderManager(VkHostAllocator* vkHostAllocator, VkDevice* device) :
     vkHostAllocator(vkHostAllocator), _device(device), _vertShaderModule(VK_NULL_HANDLE),
@@ -68,4 +69,5 @@ VkShaderModule VkShaderManager::_createShaderModule(VkDevice device, const std::
     return shaderModule;
 }
 
+}
 }

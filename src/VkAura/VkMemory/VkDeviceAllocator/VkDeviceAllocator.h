@@ -13,6 +13,7 @@
 #include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @class VkDeviceAllocator
@@ -291,6 +292,7 @@ private:
     bool inShutdown;
 };
 
+}
 } // namespace aura3d
 
 #endif // VK_DEVICE_ALLOCATOR_H

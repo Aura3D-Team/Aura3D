@@ -9,6 +9,7 @@
 #include "CpuAura/CpuFrameBufferManager.h"
 
 namespace aura3d {
+namespace cpu {
 
 /**
  * @brief CPU-based software implementation of the Renderer interface
@@ -63,6 +64,7 @@ private:
     bool _isInitialized = false;
 };
 
+}
 } // namespace aura3d
 
 #endif // CPU_RENDERER_H

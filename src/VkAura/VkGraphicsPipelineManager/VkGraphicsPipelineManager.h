@@ -8,13 +8,13 @@
 #include <vector>
 #include <unordered_map>
 
-#include "aura.hpp"
-#include "VkAura/VkAuraDefs.h"
+#include "VkAura/VkAuraCore.h"
 #include "VkAura/VkPipelineManager/VkPipelineManager.h"
-#include "Common/ShaderManager.h"
+#include "VkAura/VkShader/ShaderManager.h"
 #include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 class VkGraphicsPipelineManager : public VkPipelineManager
 {
@@ -86,5 +86,6 @@ private:
     void initializeDynamicStates();
 };
 
+}
 }
 #endif // VKGRAPHICSPIPELINEMANAGER_H

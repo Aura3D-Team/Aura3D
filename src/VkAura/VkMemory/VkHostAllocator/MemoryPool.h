@@ -8,6 +8,7 @@
 #include <vector>
 
 namespace aura3d {
+namespace vk {
 
 class MemoryPool {
 public:
@@ -70,6 +71,7 @@ private:
     void addBlocks(size_t count);
 };
 
+}
 }
 
 #endif // MEMORYPOOL_H

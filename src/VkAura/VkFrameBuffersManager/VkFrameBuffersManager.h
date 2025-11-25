@@ -5,9 +5,11 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
+
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 class VkFrameBuffersManager
 {
@@ -29,6 +31,7 @@ private:
     std::vector<VkFramebuffer> _framebuffers;
 };
 
+}
 }
 
 #endif // VKFRAMEBUFFERSMANAGER_H

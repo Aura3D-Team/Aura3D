@@ -13,6 +13,7 @@
 #include "BuddyAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 // Thread safety options for the allocator
 enum class ThreadSafetyMode {
@@ -289,6 +290,7 @@ struct MemoryTypePool {
     }
 };
 
+}
 } // namespace aura3d
 
 #endif // VK_DEVICE_ALLOCATOR_TYPES_H

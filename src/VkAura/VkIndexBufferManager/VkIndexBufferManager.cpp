@@ -1,12 +1,12 @@
 #include "VkIndexBufferManager.h"
 
-#include "VkAura/VkBufferManager/VkBufferManager.h"
-#include "AuraException/AuraException.h"
-#include <ink/ink.hpp>
 #include <cstring>
 
+#include "VkAura/VkBufferManager/VkBufferManager.h"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
+namespace vk {
 
 VkIndexBufferManager::VkIndexBufferManager(VkHostAllocator* vkHostAllocator,
                                              VkDeviceAllocator* vkDeviceAllocator,
@@ -232,4 +232,5 @@ void VkIndexBufferManager::cleanup()
     INK_INFO << "Cleaned up all vertex buffers";
 }
 
+}
 } // namespace aura3d

@@ -11,6 +11,7 @@
 #include "MemoryPool.h"
 
 namespace aura3d {
+namespace vk {
 
 // Thread safety options for the allocator
 enum class HostThreadSafetyMode {
@@ -298,6 +299,7 @@ private:
     bool shouldUseLock() const { return threadSafetyMode == HostThreadSafetyMode::MUTEX; }
 };
 
+}
 }  // namespace aura3d
 
 #endif // VKHOSTALLOCATOR_H

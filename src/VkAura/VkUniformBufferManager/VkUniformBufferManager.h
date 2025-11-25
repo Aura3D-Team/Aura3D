@@ -7,11 +7,12 @@
 #include <vector>
 
 #include "aura.hpp"
-#include "VkAura/VkAuraDefs.h"
+#include "VkAura/VkAuraCore.h"
 #include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
 #include <VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h>
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @class VkUniformBufferManager
@@ -101,5 +102,6 @@ private:
     std::vector<VkDeviceAllocation> _allocations; ///< Memory allocations with mapping info
 };
 
+}
 } // namespace aura3d
 #endif // VKUNIFORMBUFFERMANAGER_H

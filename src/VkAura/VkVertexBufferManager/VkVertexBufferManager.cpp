@@ -5,6 +5,7 @@
 #include <cstring>
 
 namespace aura3d {
+namespace vk {
 
 VkVertexBufferManager::VkVertexBufferManager(VkHostAllocator* vkHostAllocator,
                                              VkDeviceAllocator* vkDeviceAllocator,
@@ -445,4 +446,5 @@ AttributeDescriptionArray<VkVertexInputAttributeDescription> VkVertexBufferManag
     return attributeDescriptions;
 }
 
+}
 } // namespace aura3d

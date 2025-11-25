@@ -10,11 +10,11 @@
 #else
 #include <stdlib.h>
 #endif
-#include <ink/Inkogger.h>
 
 #include "aura.hpp"
 
 namespace aura3d {
+namespace vk {
 
 VkHostAllocator::VkHostAllocator(const VkHostAllocatorCreateInfo& createInfo)
     : threadSafetyMode(createInfo.threadSafetyMode),
@@ -574,4 +574,5 @@ void VkHostAllocator::printMemoryStats() const
     INK_LOG << "===================================";
 }
 
+}
 }  // namespace aura3d

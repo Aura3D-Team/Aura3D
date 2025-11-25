@@ -12,6 +12,7 @@
 #include "VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @file VkTextureManager
@@ -160,5 +161,6 @@ private:
     void copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height);
 };
 
+}
 } // namespace aura3d
 #endif // VKTEXTUREMANAGER_H

@@ -3,9 +3,9 @@
 #include <AuraException/AuraException.h>
 
 #include <algorithm>
-#include <ink/ink.hpp>
 
 namespace aura3d {
+namespace vk {
 
 VkSwapChainManager::VkSwapChainManager(VkHostAllocator* vkHostAllocator, VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
     : vkHostAllocator(vkHostAllocator), _swapChainSupportDetails({}), _swapChainCreateInfo({}),
@@ -311,4 +311,5 @@ VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<Vk
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
+}
 }

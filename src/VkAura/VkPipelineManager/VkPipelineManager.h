@@ -4,9 +4,10 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
+#include "VkAura/VkSwapChainManager/VkSwapChainManager.h"
 
 namespace aura3d {
+namespace vk {
 
 class VkPipelineManager
 {
@@ -28,6 +29,7 @@ protected:
     virtual void createPipelineLayout();
 };
 
+}
 }
 
 #endif // VKPIPELINEMANAGER_H

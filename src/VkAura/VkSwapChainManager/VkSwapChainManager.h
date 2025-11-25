@@ -8,15 +8,15 @@
 
 #include <wma/wma.hpp>
 
+#include "VkAura/VkAuraCore.h"
+#include "VkAura/VkDeviceManager/VkDeviceManager.h"
+#include "VkAura/VkImageViewsManager/VkImageViewsManager.h"
+#include "VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h"
 #include "aura.hpp"
-#include "VkAura/VkAuraDefs.h"
-#include <VkAura/VkDeviceManager/VkDeviceManager.h>
-#include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
-#include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
-#include <aura.hpp>
-#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 class VkSwapChainManager
 {
@@ -202,6 +202,7 @@ private:
     VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VkPresentModeKHR vkPresentMode = VK_PRESENT_MODE_MAILBOX_KHR);
 };
 
+}
 }
 
 #endif // VKSWAPCHAINMANAGER_H

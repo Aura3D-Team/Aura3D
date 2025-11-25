@@ -1,6 +1,7 @@
 #include "BuddyAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @brief Constructs a new Buddy Allocator
@@ -223,4 +224,5 @@ void BuddyAllocator::mergeBuddies(u32 level, size_t blockIndex) {
     }
 }
 
+}
 }

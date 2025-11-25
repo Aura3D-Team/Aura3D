@@ -7,12 +7,13 @@
 #include <vector>
 #include <memory>
 
-#include "VkAura/VkAuraDefs.h"
-#include <VkAura/VkDebugger/VkDebugger.h>
-#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
-#include <VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h>
+#include "VkAura/VkAuraCore.h"
+#include "VkAura/VkDebugger/VkDebugger.h"
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
+#include "VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @class to manage Vulkan instance creation, configuration, and destruction.
@@ -259,6 +260,7 @@ private:
     VkResult _checkValidationLayerSupport(const std::vector<const char*>& validationLayers) const;
 };
 
+}
 }
 
 #endif // VKINSTANCEMANAGER_H

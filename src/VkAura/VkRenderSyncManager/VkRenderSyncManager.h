@@ -5,10 +5,11 @@
 
 #include <vulkan/vulkan.h>
 
-#include "aura.hpp"
+#include "VkAura/VkAuraCore.h"
 #include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 class VkRenderSyncManager
 {
@@ -36,6 +37,7 @@ private:
     VkFixedArray<VkFence> _inFlightFences;
 };
 
+}
 }
 
 #endif // VKRENDERSYNCMANAGER_H

@@ -8,6 +8,7 @@
 #include "aura.hpp"
 
 namespace aura3d {
+namespace gl {
 
 class GlBuffersManager
 {
@@ -20,6 +21,7 @@ private:
     u32 _vbo;
 };
 
+}
 }
 
 #endif // GLBUFFERSMANAGER_H

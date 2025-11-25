@@ -10,6 +10,7 @@
 #include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
+namespace vk {
 
 class VkShaderManager
 {
@@ -38,6 +39,7 @@ private:
     VkShaderModule _createShaderModule(VkDevice device, const std::vector<char>& code);
 };
 
+}
 }
 
 #endif // VKSHADERMANAGER_H

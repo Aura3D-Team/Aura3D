@@ -6,6 +6,7 @@
 #include <ink/ink.hpp>
 
 namespace aura3d {
+namespace vk {
 
 VkQueueManager::VkQueueManager()
     : _mapVkQueues()
@@ -179,4 +180,5 @@ void VkQueueManager::submitCmdIntoQueue(VkQueue queue,
     VK_RESULT_CHECK(vkQueueWaitIdle(queue));
 }
 
+}
 }

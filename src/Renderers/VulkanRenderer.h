@@ -5,23 +5,24 @@
 
 #include "Renderers/Renderer.h"
 
-#include <VkAura/VkInstanceManager/VkInstanceManager.h>
-#include <VkAura/VkDeviceManager/VkDeviceManager.h>
-#include <VkAura/VkSurfaceManager/VkSurfaceManager.h>
-#include <VkAura/VkSwapChainManager/VkSwapChainManager.h>
-#include <VkAura/VkGraphicsPipelineManager/VkGraphicsPipelineManager.h>
-#include <VkAura/VkImageViewsManager/VkImageViewsManager.h>
-#include <VkAura/VkRenderPassManager/VkRenderPassManager.h>
-#include <VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h>
-#include <VkAura/VkDescriptorManager/VkDescriptorManager.h>
-#include <VkAura/VkTextureManager/VkTextureManager.h>
-#include <VkAura/VkVertexBufferManager/VkVertexBufferManager.h>
-#include <VkAura/VkIndexBufferManager/VkIndexBufferManager.h>
-#include <VkAura/VkUniformBufferManager/VkUniformBufferManager.h>
-#include <VkAura/VkCommandManager/VkCommandManager.h>
-#include <VkAura/VkRenderSyncManager/VkRenderSyncManager.h>
+#include "VkAura/VkInstanceManager/VkInstanceManager.h"
+#include "VkAura/VkDeviceManager/VkDeviceManager.h"
+#include "VkAura/VkSurfaceManager/VkSurfaceManager.h"
+#include "VkAura/VkSwapChainManager/VkSwapChainManager.h"
+#include "VkAura/VkGraphicsPipelineManager/VkGraphicsPipelineManager.h"
+#include "VkAura/VkImageViewsManager/VkImageViewsManager.h"
+#include "VkAura/VkRenderPassManager/VkRenderPassManager.h"
+#include "VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h"
+#include "VkAura/VkDescriptorManager/VkDescriptorManager.h"
+#include "VkAura/VkTextureManager/VkTextureManager.h"
+#include "VkAura/VkVertexBufferManager/VkVertexBufferManager.h"
+#include "VkAura/VkIndexBufferManager/VkIndexBufferManager.h"
+#include "VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
+#include "VkAura/VkCommandManager/VkCommandManager.h"
+#include "VkAura/VkRenderSyncManager/VkRenderSyncManager.h"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @brief Vulkan implementation of the Renderer interface
@@ -104,26 +105,26 @@ protected:
 private:
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
 
-    std::unique_ptr<aura3d::VkHostAllocator> _vkHostAllocator;
-    std::unique_ptr<aura3d::VkDeviceAllocator> _vkDeviceAllocator;
-    std::unique_ptr<aura3d::VkInstanceManager> _vkInstance;
-    std::unique_ptr<aura3d::VkDeviceManager> _vkDeviceManager;
-    std::unique_ptr<aura3d::VkSurfaceManager> _vkSurfaceManager;
-    std::unique_ptr<aura3d::VkSwapChainManager> _vkSwapChainManager;
-    std::unique_ptr<aura3d::VkImageViewsManager> _vkImageViewsManager;
-    std::unique_ptr<aura3d::VkRenderPassManager> _vkRenderPassManager;
-    std::unique_ptr<aura3d::VkFrameBuffersManager> _vkFrameBuffersManager;
-    std::unique_ptr<aura3d::VkGraphicsPipelineManager> _vkGraphicsPipelineManager;
-    std::unique_ptr<aura3d::VkTextureManager> _vkTextureManager;
-    std::unique_ptr<aura3d::VkDescriptorManager> _vkDescriptorManager;
-    std::unique_ptr<aura3d::VkVertexBufferManager> _vkVertexBufferManager;
-    std::unique_ptr<aura3d::VkIndexBufferManager> _vkIndexBufferManager;
-    std::unique_ptr<aura3d::VkUniformBufferManager> _vkUniformBufferManager;
-    std::unique_ptr<aura3d::VkCommandManager> _vkCommandManager;
-    std::unique_ptr<aura3d::VkRenderSyncManager> _vkRenderSyncManager;
+    std::unique_ptr<aura3d::vk::VkHostAllocator> _vkHostAllocator;
+    std::unique_ptr<aura3d::vk::VkDeviceAllocator> _vkDeviceAllocator;
+    std::unique_ptr<aura3d::vk::VkInstanceManager> _vkInstance;
+    std::unique_ptr<aura3d::vk::VkDeviceManager> _vkDeviceManager;
+    std::unique_ptr<aura3d::vk::VkSurfaceManager> _vkSurfaceManager;
+    std::unique_ptr<aura3d::vk::VkSwapChainManager> _vkSwapChainManager;
+    std::unique_ptr<aura3d::vk::VkImageViewsManager> _vkImageViewsManager;
+    std::unique_ptr<aura3d::vk::VkRenderPassManager> _vkRenderPassManager;
+    std::unique_ptr<aura3d::vk::VkFrameBuffersManager> _vkFrameBuffersManager;
+    std::unique_ptr<aura3d::vk::VkGraphicsPipelineManager> _vkGraphicsPipelineManager;
+    std::unique_ptr<aura3d::vk::VkTextureManager> _vkTextureManager;
+    std::unique_ptr<aura3d::vk::VkDescriptorManager> _vkDescriptorManager;
+    std::unique_ptr<aura3d::vk::VkVertexBufferManager> _vkVertexBufferManager;
+    std::unique_ptr<aura3d::vk::VkIndexBufferManager> _vkIndexBufferManager;
+    std::unique_ptr<aura3d::vk::VkUniformBufferManager> _vkUniformBufferManager;
+    std::unique_ptr<aura3d::vk::VkCommandManager> _vkCommandManager;
+    std::unique_ptr<aura3d::vk::VkRenderSyncManager> _vkRenderSyncManager;
 
     // Queues
-    std::vector<aura3d::QueueData*> _queueDataFromExclusiveFlags;
+    std::vector<aura3d::vk::QueueData*> _queueDataFromExclusiveFlags;
     u32 _graphicsIndexFamily;
 
     // Configuration data
@@ -141,6 +142,7 @@ private:
     bool _isInitialized = false;
 };
 
+}
 } // namespace aura3d
 
 #endif // VULKAN_RENDERER_H

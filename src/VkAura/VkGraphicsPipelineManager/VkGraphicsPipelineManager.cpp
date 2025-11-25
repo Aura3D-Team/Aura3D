@@ -1,10 +1,10 @@
 #include "VkGraphicsPipelineManager.h"
 
-#include <aura.hpp>
-#include <AuraException/AuraException.h>
-#include <ink/ink.hpp>
+#include "aura.hpp"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
+namespace vk {
 
 VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
                                                      std::string shader_vert_spv,
@@ -363,4 +363,5 @@ void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer,
     vkCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
+}
 }

@@ -9,12 +9,12 @@
 #include <string>
 #include <vector>
 
-#include "aura.hpp"
-#include "VkAura/VkAuraDefs.h"
+#include "VkAura/VkAuraCore.h"
 #include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 #include "VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 class VkVertexBufferManager
 {
@@ -68,5 +68,6 @@ private:
     std::unordered_map<std::string, VertexBufferInfo> _vertexBuffers;
 };
 
+}
 } // namespace aura3d
 #endif // VKVERTEXBUFFERMANAGER_H

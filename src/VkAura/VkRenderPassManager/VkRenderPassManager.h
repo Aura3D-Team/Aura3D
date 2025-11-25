@@ -4,9 +4,10 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 class VkRenderPassManager
 {
@@ -34,6 +35,7 @@ private:
     VkRenderPass _renderPass;
 };
 
+}
 }
 
 #endif // VKRENDERPASSMANAGER_H

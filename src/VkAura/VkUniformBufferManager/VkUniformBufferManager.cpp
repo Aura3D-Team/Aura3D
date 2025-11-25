@@ -6,6 +6,7 @@
 #include <AuraException/AuraException.h>
 
 namespace aura3d {
+namespace vk {
 
 VkUniformBufferManager::VkUniformBufferManager(VkHostAllocator* vkHostAllocator,
                                                VkDeviceAllocator* vkDeviceAllocator,
@@ -141,4 +142,5 @@ void VkUniformBufferManager::cleanup()
     _allocations.clear();
 }
 
+}
 } // namespace aura3d

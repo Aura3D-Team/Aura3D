@@ -6,6 +6,7 @@
 #include "Renderers/Renderer.h"
 
 namespace aura3d {
+namespace gl {
 
 /**
  * @brief OpenGL implementation of the Renderer interface
@@ -62,13 +63,37 @@ protected:
      */
     void createVertexBuffers();
 
+    /**
+     * @brief Create uniform buffers for shader parameters
+     */
+    void createUniformBuffers();
+
+    /**
+     * @brief Create a texture for fragment shader
+     */
+    void createDefaultTexture();
+
+    /**
+     * @brief Update matrices for perspective view
+     */
+    void updateGlobalMatrices();
+
 private:
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
 
     // OpenGL context and resource handles would go here
     bool _isInitialized = false;
+    // OpenGL Object IDs
+    u32 _shaderProgram;
+    u32 _VAO; // Vertex Array Object
+    u32 _VBO; // Vertex Buffer Object
+    u32 _EBO; // Element Buffer Object
+    u32 _UBO;
+
+    u32 _whiteTexture;
 };
 
+}
 } // namespace aura3d
 
 #endif // OPENGL_RENDERER_H

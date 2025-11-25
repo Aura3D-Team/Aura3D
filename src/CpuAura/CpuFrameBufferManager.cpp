@@ -4,11 +4,11 @@
 #include <cmath>
 #include <algorithm> // For std::fill and std::transform
 #include <vector>    // For the temporary pixel buffer
-#include <ink/ink.hpp>
 
 #include "AuraException/AuraException.h"
 
 namespace aura3d {
+namespace cpu {
 
 /**
  * Constructor - Initializes the framebuffer using the Pixel struct
@@ -444,4 +444,5 @@ int CpuFrameBufferManager::getTextHeight(const std::string& text, u32 fontSize)
     return lines * (scaledHeight + 1) - 1;
 }
 
+}
 }  // namespace aura3d

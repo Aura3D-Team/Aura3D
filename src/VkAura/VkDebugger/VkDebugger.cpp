@@ -1,13 +1,14 @@
 // VkDebugger.cpp
 #include "VkDebugger.h"
 
-#include <ink/ink.hpp>
 #include <sstream>
 #include <iomanip>
+#include <vector>
 
 #include "aura.hpp"
 
 namespace aura3d {
+namespace vk {
 
 // Helper function to get a string name for VkObjectType
 std::string getVkObjectTypeName(VkObjectType type) {
@@ -220,4 +221,5 @@ VkDebugUtilsMessengerEXT* VkDebugger::getVkDebugMessenger()
     return &_debugMessenger;
 }
 
+}
 } // namespace aura3d

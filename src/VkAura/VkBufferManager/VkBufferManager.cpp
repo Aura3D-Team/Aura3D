@@ -1,9 +1,12 @@
 #include "VkBufferManager.h"
-#include <aura.hpp>
-#include "AuraException/AuraException.h"
+
 #include <cstring>
 
+#include "aura.hpp"
+#include "AuraException/AuraException.h"
+
 namespace aura3d {
+namespace vk {
 
 VkBufferManager::VkBufferManager()
 {
@@ -199,4 +202,5 @@ void VkBufferManager::executeImmediateCommand(VkDevice device,
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
+}
 } // namespace aura3d

@@ -9,6 +9,7 @@
 #include "aura.hpp"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @brief Efficient memory allocator for power-of-2 sized blocks
@@ -90,6 +91,7 @@ private:
     void mergeBuddies(u32 level, size_t blockIndex);
 };
 
+}
 }
 
 #endif // BUDDYALLOCATOR_H

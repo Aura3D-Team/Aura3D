@@ -1,12 +1,13 @@
-// VkDebugger.h
 #ifndef VKDEBUGGER_H
 #define VKDEBUGGER_H
+
 #pragma once
+
 #include <vulkan/vulkan.h>
 #include <string>
-#include <vector>
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @brief The VkDebugger class
@@ -127,5 +128,7 @@ private:
     VkDebugUtilsMessengerEXT _debugMessenger; ///< The Vulkan debug messenger handle.
 };
 
+}
 } // namespace aura3d
+
 #endif // VKDEBUGGER_H

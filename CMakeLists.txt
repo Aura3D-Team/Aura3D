@@ -35,32 +35,36 @@ find_package(OpenGL REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(wma REQUIRED)
 find_package(ink REQUIRED)
-find_package(glfw3 REQUIRED)
-find_package(SDL2 REQUIRED)
 
 # Shader compiler
 set(GLSLC_EXECUTABLE "$ENV{VULKAN_SDK}/bin/glslc")
-set(SPIRV_OUTPUT_DIR ${CMAKE_BINARY_DIR}/shaders)
+set(SHADERS_OUTPUT_DIR ${CMAKE_BINARY_DIR}/shaders)
 
-# Shader compilation
-file(GLOB_RECURSE SHADERS
-    ${CMAKE_SOURCE_DIR}/shaders/*.frag
-    ${CMAKE_SOURCE_DIR}/shaders/*.vert
+# Vulkan Shader compilation
+file(GLOB_RECURSE VULKAN_SHADERS
+    ${CMAKE_SOURCE_DIR}/shaders/vulkan/*.frag
+    ${CMAKE_SOURCE_DIR}/shaders/vulkan/*.vert
+)
+
+file(GLOB_RECURSE OPENGL_SHADERS
+    ${CMAKE_SOURCE_DIR}/shaders/opengl/*.frag
+    ${CMAKE_SOURCE_DIR}/shaders/opengl/*.vert
 )
 
 add_custom_target(shaders
     SOURCES
-    ${SHADERS}
+    ${VULKAN_SHADERS}
+    ${OPENGL_SHADERS}
 )
 
-foreach(SHADER_FILE ${SHADERS})
+foreach(SHADER_FILE ${VULKAN_SHADERS})
     get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
     get_filename_component(SHADER_EXT ${SHADER_FILE} EXT)
 
     string(SUBSTRING ${SHADER_EXT} 1 -1 SHADER_EXT_STRIPPED)
-    set(SPIRV_FILE ${SPIRV_OUTPUT_DIR}/${SHADER_EXT_STRIPPED}/${SHADER_NAME}_${SHADER_EXT_STRIPPED}.spv)
+    set(SPIRV_FILE ${SHADERS_OUTPUT_DIR}/${SHADER_EXT_STRIPPED}/${SHADER_NAME}_${SHADER_EXT_STRIPPED}.spv)
 
-    file(MAKE_DIRECTORY ${SPIRV_OUTPUT_DIR}/${SHADER_EXT_STRIPPED})
+    file(MAKE_DIRECTORY ${SHADERS_OUTPUT_DIR}/${SHADER_EXT_STRIPPED})
 
     add_custom_command(
         OUTPUT ${SPIRV_FILE}
@@ -72,7 +76,28 @@ foreach(SHADER_FILE ${SHADERS})
     list(APPEND SPIRV_FILES ${SPIRV_FILE})
 endforeach()
 
+foreach(SHADER_FILE ${OPENGL_SHADERS})
+    get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
+    get_filename_component(SHADER_EXT ${SHADER_FILE} EXT)
+
+    string(SUBSTRING ${SHADER_EXT} 1 -1 SHADER_EXT_STRIPPED)
+    file(RELATIVE_PATH SHADER_REL_PATH ${CMAKE_SOURCE_DIR}/shaders/opengl ${SHADER_FILE})
+    set(GLSL_DEST_FILE ${SHADERS_OUTPUT_DIR}/${SHADER_EXT_STRIPPED}/${SHADER_REL_PATH})
+
+    get_filename_component(GLSL_DEST_DIR ${GLSL_DEST_FILE} DIRECTORY)
+
+    add_custom_command(
+        OUTPUT ${GLSL_DEST_FILE}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_FILE} ${GLSL_DEST_FILE}
+        DEPENDS ${SHADER_FILE}
+        COMMENT "Copiando ${SHADER_FILE} (para OpenGL)"
+    )
+
+    list(APPEND GLSL_COPIED_FILES ${GLSL_DEST_FILE})
+endforeach()
+
 add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_FILES})
+add_custom_target(CopyGLSL ALL DEPENDS ${GLSL_COPIED_FILES})
 
 # Collect sources
 file(GLOB_RECURSE SOURCES
@@ -81,9 +106,26 @@ file(GLOB_RECURSE SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.hpp
 )
 
+file(GLOB_RECURSE MICROUI
+    ${CMAKE_SOURCE_DIR}/portables/microui/*.c
+    ${CMAKE_SOURCE_DIR}/portables/microui/*.h
+)
+
+set(APP_CONFIGS "${CMAKE_SOURCE_DIR}/config.json")
+set(APP_CONFIGS_DEST "${CMAKE_BINARY_DIR}")
+
+add_custom_target(copy_app_configs ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${APP_CONFIGS_DEST}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${APP_CONFIGS}"
+        "${APP_CONFIGS_DEST}/config.json"
+)
+
 # Add executable target
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCES} ${MICROUI})
+add_dependencies(${PROJECT_NAME} copy_app_configs)
 add_dependencies(${PROJECT_NAME} CompileShaders)
+add_dependencies(${PROJECT_NAME} CopyGLSL)
 
 target_include_directories(Aura3D PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -128,8 +170,6 @@ target_link_libraries(Aura3D PRIVATE
     ink::ink
 
     # Windowing & Graphics
-    SDL2::SDL2
-    glfw3
     Vulkan::Vulkan
     OpenGL::GL
 

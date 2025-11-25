@@ -1,11 +1,10 @@
 #include "VkRenderPassManager.h"
 
-#include <aura.hpp>
+#include "aura.hpp"
 #include "AuraException/AuraException.h"
 
-#include <ink/ink.hpp>
-
 namespace aura3d {
+namespace vk {
 
 VkRenderPassManager::VkRenderPassManager(VkHostAllocator* vkHostAllocator, VkDevice* device) :
     vkHostAllocator(vkHostAllocator), _device(device)
@@ -119,4 +118,5 @@ void VkRenderPassManager::cleanup()
     }
 }
 
+}
 }

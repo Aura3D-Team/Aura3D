@@ -2,9 +2,8 @@
 
 #include "AuraException/AuraException.h"
 
-#include <ink/ink.hpp>
-
 namespace aura3d {
+namespace vk {
 
 VkRenderSyncManager::VkRenderSyncManager(VkHostAllocator* vkHostAllocator, VkDevice* device) :
     vkHostAllocator(vkHostAllocator), _device(device)
@@ -76,4 +75,5 @@ void VkRenderSyncManager::cleanup()
     }
 }
 
+}
 }

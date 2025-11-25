@@ -24,6 +24,7 @@ static const float PI_FLOAT = std::acos(-1.0f);
 #include "AuraFont/AuraBitmapFont.h"
 
 namespace aura3d {
+namespace cpu {
 
 struct Pixel {
     Pixel(u32 _rgb = 0, f32 _z = 1.0f) :
@@ -158,6 +159,7 @@ private:
     const AuraBitmapFont& _font;
 };
 
+}
 } // namespace aura3d
 
 #endif // CPUFRAMEBUFFERMANAGER_H

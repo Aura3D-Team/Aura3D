@@ -2,6 +2,7 @@
 /build/
 /bin/
 /out/
+.qtcreator
 
 # Ignore compiled object files
 *.o

@@ -1,7 +1,7 @@
-#include <ink/ink.hpp>
-
 // #define VK_USE_PLATFORM_WIN32_KHR
 // #define GLFW_EXPOSE_NATIVE_WIN32
+
+#include <ink/EnhancedJson.h>
 
 #include "aura.hpp"
 
@@ -25,6 +25,12 @@ int main(int argc, char **argv)
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
     ink::LogManager::getInstance().setGlobalLevel(logSeverity);
 
+    ink::EnhancedJson appConfig = ink::EnhancedJson::loadFromFile("./config.json");
+    // if (appConfig.empty()) {
+    //     INK_ERROR << "Failed to load config.json";
+    //     std::exit(EXIT_FAILURE);
+    // }
+
     wma::WindowDetails windowDetails = {};
     windowDetails.width = 1280;
     windowDetails.height = 720;
@@ -32,10 +38,10 @@ int main(int argc, char **argv)
     windowDetails.targetFPS = 60;
 
 #ifdef USE_CPU
-    aura3d::CPURenderer cpuRenderer(windowDetails);
+    aura3d::cpu::CPURenderer cpuRenderer(windowDetails);
     cpuRenderer.run();
 #elif defined(USE_VULKAN_API)
-    aura3d::VkInstanceData vkInstanceData = {};
+    aura3d::vk::VkInstanceData vkInstanceData = {};
     vkInstanceData.appName = "Aura3D";
     vkInstanceData.engineName = "Aura3DEngine";
     vkInstanceData.appVersion = {1, 0, 0};
@@ -44,7 +50,7 @@ int main(int argc, char **argv)
         "VK_LAYER_KHRONOS_validation",
     };
 
-    aura3d::VkDeviceData vkDeviceData = {};
+    aura3d::vk::VkDeviceData vkDeviceData = {};
     vkDeviceData.vkDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
@@ -52,14 +58,14 @@ int main(int argc, char **argv)
         vkDeviceData.concurrentQueueFlags = {};
     vkDeviceData.exclusiveQueueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
 
-    aura3d::ImageViewData vkImageViewData = {};
+    aura3d::vk::ImageViewData vkImageViewData = {};
     vkImageViewData.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     vkImageViewData.baseMipLevel = 0;
     vkImageViewData.levelCount = 1;
     vkImageViewData.baseArrayLayer = 0;
     vkImageViewData.layerCount = 1;
 
-    aura3d::VulkanRenderer vkRenderer(
+    aura3d::vk::VulkanRenderer vkRenderer(
         windowDetails,
         vkInstanceData,
         vkDeviceData,
@@ -67,7 +73,7 @@ int main(int argc, char **argv)
     );
     vkRenderer.run();
 #else
-    aura3d::OpenGLRenderer glRenderer(windowDetails);
+    aura3d::gl::OpenGLRenderer glRenderer(windowDetails);
     glRenderer.run();
 #endif
 

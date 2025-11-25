@@ -7,8 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "aura.hpp"
-#include "VkAura/VkAuraDefs.h"
+#include "VkAura/VkAuraCore.h"
 
 // Custom hash function for std::pair<u32, VkQueueFlags>
 // so that it can be used as a key in std::unordered_map.
@@ -22,6 +21,7 @@ namespace std {
 }
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @class VkQueueManager
@@ -175,6 +175,7 @@ private:
     std::unordered_map<std::pair<u32, VkQueueFlags>, QueueData> _mapVkQueues;
 };
 
+}
 }
 
 #endif // VKQUEUEMANAGER_H

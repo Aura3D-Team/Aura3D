@@ -13,6 +13,7 @@
 #include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @brief Manages the creation and destruction of a Vulkan surface for rendering.
@@ -72,6 +73,7 @@ private:
     wma::WindowBackend _windowBackend;
 };
 
+}
 }
 
 #endif // VKSURFACEMANAGER_H

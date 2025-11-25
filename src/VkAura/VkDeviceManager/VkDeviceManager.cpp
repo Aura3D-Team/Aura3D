@@ -1,12 +1,11 @@
 #include "VkDeviceManager.h"
 
 #include <set>
-#include <ink/ink.hpp>
 
-#include "aura.hpp"
 #include "AuraException/AuraException.h"
 
 namespace aura3d {
+namespace vk {
 
 VkDeviceManager::VkDeviceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, VkDeviceData vkDeviceData)
     : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance), _vkDeviceCreationData(std::move(vkDeviceData)), _deviceInfo(),
@@ -172,4 +171,5 @@ VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> 
     return requiredExtensions.empty() ? VK_SUCCESS : VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
+}
 }

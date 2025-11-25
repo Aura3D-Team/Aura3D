@@ -1,11 +1,10 @@
 #include "VkImageViewsManager.h"
 
-#include <aura.hpp>
+#include "aura.hpp"
 #include "AuraException/AuraException.h"
 
-#include <ink/ink.hpp>
-
 namespace aura3d {
+namespace vk {
 
 VkImageViewsManager::VkImageViewsManager(VkHostAllocator* vkHostAllocator, VkDevice* device)
     : vkHostAllocator(vkHostAllocator), _device(device)
@@ -66,4 +65,5 @@ void VkImageViewsManager::cleanup()
     _swapChainImageViews.clear();
 }
 
+}
 }

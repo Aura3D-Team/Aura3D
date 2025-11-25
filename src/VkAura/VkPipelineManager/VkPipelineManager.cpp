@@ -1,9 +1,10 @@
 #include "VkPipelineManager.h"
 
-#include <aura.hpp>
-#include <AuraException/AuraException.h>
+#include "aura.hpp"
+#include "AuraException/AuraException.h"
 
 namespace aura3d {
+namespace vk {
 
 VkPipelineManager::VkPipelineManager(VkHostAllocator* vkHostAllocator, VkDevice* device)
     : vkHostAllocator(vkHostAllocator), _device(device)
@@ -40,4 +41,5 @@ void VkPipelineManager::cleanup()
     }
 }
 
+}
 }

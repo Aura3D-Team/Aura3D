@@ -3,7 +3,8 @@
 
 #pragma once
 
-#include "aura.hpp"
+#include <array>
+#include <ink/ink_base.hpp>
 
 namespace aura3d {
 namespace colors {

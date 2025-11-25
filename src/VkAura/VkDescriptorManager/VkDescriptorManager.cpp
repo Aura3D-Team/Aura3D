@@ -1,12 +1,12 @@
 #include "VkDescriptorManager.h"
 
-#include <aura.hpp>
-#include <AuraException/AuraException.h>
-#include <aura.hpp>
+#include "AuraException/AuraException.h"
+#include "VkAura/VkAuraCore.h"
 
 namespace aura3d {
+namespace vk {
 
-VkDescriptorManager::VkDescriptorManager(VkHostAllocator* vkHostAllocator,VkDevice* vkDevice, int pool_size) :
+VkDescriptorManager::VkDescriptorManager(VkHostAllocator* vkHostAllocator,VkDevice* vkDevice, i32 pool_size) :
     vkHostAllocator(vkHostAllocator), _vkDevice(vkDevice), _pool_size(pool_size)
 {
     VkFixedArray<VkDescriptorPoolSize> poolSizes = {};
@@ -136,4 +136,5 @@ void VkDescriptorManager::bindDescriptorSet(VkCommandBuffer commandBuffer,
     vkCmdBindDescriptorSets(commandBuffer, bindPoint, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 }
 
+}
 } // namespace aura3d

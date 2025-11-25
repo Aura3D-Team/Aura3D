@@ -2,9 +2,8 @@
 
 #include "AuraException/AuraException.h"
 
-#include <ink/ink.hpp>
-
 namespace aura3d {
+namespace vk {
 
 std::unordered_map<std::thread::id, VkCommandPool> VkCommandManager::_threadCommandPools;
 std::mutex VkCommandManager::_poolMutex;
@@ -96,4 +95,5 @@ void VkCommandManager::freeCmdBuffer(VkCommandBuffer* commandBuffer)
     vkFreeCommandBuffers(*_device, commandPool, 1, commandBuffer);
 }
 
+}
 }

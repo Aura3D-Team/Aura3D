@@ -5,6 +5,7 @@
 #include "VkAura/VkBufferManager/VkBufferManager.h"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * Constructor - initializes the texture manager with required Vulkan resources
@@ -406,4 +407,5 @@ void VkTextureManager::copyBufferToImage(VkBuffer buffer, VkImage image, u32 wid
     endSingleTimeCommands(commandBuffer);
 }
 
+}
 } // namespace aura3d

@@ -1,21 +1,19 @@
 #include "Renderers/CPURenderer.h"
 
-#include <ink/ink.hpp>
 #include <cmath>
 #include <ctime>
-
-#include <wma/wma.hpp>
 
 #include "aura.hpp"
 #include "Utils/ColorsDefinitions.h"
 #include "Utils/AuraUtils.h"
 
 namespace aura3d {
+namespace cpu {
 
 CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails)
     : Renderer(windowDetails)
 {
-    // Constructor only stores parameters - initialization happens in initialize()
+    INK_INFO << "Renderer - SOFTWARE";
 }
 
 CPURenderer::~CPURenderer()
@@ -54,7 +52,7 @@ void CPURenderer::createWindow(const char* title)
     frameBufferSettings.width = _windowDetails.width;
     frameBufferSettings.height = _windowDetails.height;
 
-    _frameBufferManager = std::make_unique<aura3d::CpuFrameBufferManager>(
+    _frameBufferManager = std::make_unique<aura3d::cpu::CpuFrameBufferManager>(
         (SDL_Window*)_windowManagerApi->getWindowInstance(),
         frameBufferSettings
     );
@@ -155,4 +153,5 @@ void CPURenderer::cleanup()
     _isInitialized = false;
 }
 
+}
 } // namespace aura3d

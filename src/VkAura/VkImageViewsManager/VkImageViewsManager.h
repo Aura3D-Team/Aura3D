@@ -5,10 +5,12 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include "VkAura/VkAuraDefs.h"
-#include <VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h>
+
+#include "VkAura/VkAuraCore.h"
+#include "VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
+namespace vk {
 
 /**
  * @brief Manages the creation and cleanup of Vulkan image views for swap chain images.
@@ -78,6 +80,7 @@ private:
     std::vector<VkImageView> _swapChainImageViews; ///< Vector storing the created VkImageView objects.
 };
 
+}
 }
 
 #endif // VKIMAGEVIEWSMANAGER_H

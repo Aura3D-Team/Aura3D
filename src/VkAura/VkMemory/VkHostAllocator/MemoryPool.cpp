@@ -4,6 +4,7 @@
 #include <ink/Inkogger.h>
 
 namespace aura3d {
+namespace vk {
 
 MemoryPool::MemoryPool(size_t blockSize, size_t initialBlocks)
     : blockSize(blockSize), freeList(nullptr)
@@ -115,4 +116,5 @@ void MemoryPool::free(void* ptr)
     allocatedCount.fetch_sub(1, std::memory_order_relaxed);
 }
 
+}
 }
