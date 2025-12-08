@@ -11,22 +11,6 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++ -static-
 
 message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
 
-# Opções para escolher a API de renderização
-option(USE_CPU "Use CPU rendering" OFF)
-option(USE_VULKAN_API "Use Vulkan API" ON)
-
-# Lógica para definir a API de renderização
-if(USE_CPU)
-    add_definitions(-DUSE_CPU)
-    message(STATUS "Using CPU for rendering.")
-elseif(USE_VULKAN_API)
-    add_definitions(-DUSE_VULKAN_API)
-    message(STATUS "Using Vulkan API for rendering.")
-else()
-    add_definitions(-DUSE_OPENGL_API)
-    message(STATUS "Using OpenGL API for rendering.")
-endif()
-
 # =================================================================
 # Find required packages (No ENV vars or HINTS)
 # =================================================================

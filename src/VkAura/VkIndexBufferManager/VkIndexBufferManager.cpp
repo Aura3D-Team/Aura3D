@@ -13,7 +13,7 @@ VkIndexBufferManager::VkIndexBufferManager(VkHostAllocator* vkHostAllocator,
                                              VkDevice* vkDevice) :
     vkHostAllocator(vkHostAllocator), vkDeviceAllocator(vkDeviceAllocator), _vkDevice(vkDevice)
 {
-    INK_INFO << "VkIndexBufferManager created";
+    // Empty
 }
 
 VkIndexBufferManager::~VkIndexBufferManager()

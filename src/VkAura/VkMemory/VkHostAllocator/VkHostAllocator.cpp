@@ -367,13 +367,6 @@ void VkHostAllocator::freeToPool(void* memory, size_t poolIndex)
 
 void VkHostAllocator::trackAllocation(void* memory, size_t size, VkSystemAllocationScope scope, bool isPooled, size_t poolIndex)
 {
-    if (!trackLeaks && threadSafetyMode == HostThreadSafetyMode::NONE) {
-
-        totalAllocatedSize.fetch_add(size, std::memory_order_relaxed);
-        totalAllocationCount.fetch_add(1, std::memory_order_relaxed);
-        return;
-    }
-
     acquireLock();
     allocations[memory] = {size, scope, isPooled, poolIndex};
     releaseLock();
@@ -431,26 +424,18 @@ void VkHostAllocator::processDeferredDeallocations(bool processAll)
 
 void VkHostAllocator::trackDeallocation(void* memory)
 {
-    if (!trackLeaks && threadSafetyMode == HostThreadSafetyMode::NONE)
-        return;
-
     acquireLock();
     auto it = allocations.find(memory);
     if (it != allocations.end())
     {
         totalAllocatedSize.fetch_sub(it->second.size, std::memory_order_relaxed);
         allocations.erase(it);
-    } else {
-
     }
     releaseLock();
 }
 
 void VkHostAllocator::updateAllocationOnRealloc(void* oldMemory, void* newMemory, size_t newSize, VkSystemAllocationScope scope)
 {
-    if (!trackLeaks && threadSafetyMode == HostThreadSafetyMode::NONE)
-        return;
-
     size_t oldSize = 0;
     acquireLock();
 

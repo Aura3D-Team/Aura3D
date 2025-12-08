@@ -90,8 +90,12 @@ void CPURenderer::run()
 
         // Handle window resize
         if (windowFlags->resized) {
+            while (windowFlags->resized)
+            {
+                windowFlags->resized = false;
+                std::this_thread::sleep_for(std::chrono::duration<f64, std::milli>(100));
+            }
             _frameBufferManager->resizeFramebuffer(windowDetails->width, windowDetails->height);
-            windowFlags->resized = false;
         }
 
         // Clear the framebuffer with a base color
@@ -101,17 +105,20 @@ void CPURenderer::run()
         int height = _frameBufferManager->getHeight();
 
         int textY = 20;
-        _frameBufferManager->drawText("Testando texto: .", {10, textY}, aura3d::colors::RED_UINT32);
+        int fps = _windowManagerApi->getWindowFlags()->fps;
+        _frameBufferManager->drawText("Testando texto: "+std::to_string(fps), {10, textY}, aura3d::colors::RED_UINT32);
         int textHeight = _frameBufferManager->getTextHeight("Testando texto: ~çã");
         textY += 10 + textHeight;
 
         // Total number of tracked positions
-        std::string posCountText = "Renanzolo";
+        std::string posCountText = "test";
         _frameBufferManager->drawText(posCountText, {10, textY}, aura3d::colors::RED_UINT32);
         textY += 10 + textHeight;
 
         _frameBufferManager->drawLine({250, 250}, {400, 400}, aura3d::colors::BLACK_UINT32);
         _frameBufferManager->drawLine({400, 400}, {150, 600}, aura3d::colors::BLACK_UINT32);
+
+        _frameBufferManager->drawFilledPolygon({{250, 250}, {150, 600}, {600, 250}}, aura3d::colors::BLUE_UINT32);
 
         // Render the final framebuffer
         _frameBufferManager->renderFramebuffer();

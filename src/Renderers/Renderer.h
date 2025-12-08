@@ -5,7 +5,33 @@
 
 #include <wma/wma.hpp>
 
+#define RENDERER_LIST   \
+    X(SOFTWARE)         \
+    X(OPENGL)           \
+    X(VULKAN)           \
+
 namespace aura3d {
+
+enum class RendererChoice
+{
+
+#define X(name) name,
+    RENDERER_LIST
+#undef X
+};
+
+inline bool RendererChoiceFromString(const std::string& s, RendererChoice& out)
+{
+    std::string up;
+    up.reserve(s.size());
+    for (const char c : s) up += std::toupper(c);
+
+#define X(name) if (up == #name) { out = RendererChoice::name; return true; }
+    RENDERER_LIST
+#undef X
+
+        return false;
+}
 
 /**
  * @brief Abstract base class for all renderer implementations

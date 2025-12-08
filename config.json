@@ -1,3 +1,9 @@
 {
-
+    "window": {
+    	"width": 1280,
+    	"height": 720,
+	"resizable": true, 
+	"fps": 0
+    },
+    "renderer_backend": "vulkan"
 }

@@ -10,15 +10,23 @@
 namespace aura3d {
 namespace gl {
 
+struct GLBuffers {
+    u32 _VAO = 0; // Vertex Array Object
+    u32 _VBO = 0; // Vertex Buffer Object
+    u32 _EBO = 0; // Element Buffer Object
+    u32 _UBO = 0; // Uniform Buffer Object
+};
+
 class GlBuffersManager
 {
 public:
     GlBuffersManager();
     ~GlBuffersManager();
 
+    // createGlBuffer();
 
 private:
-    u32 _vbo;
+    std::vector<GLBuffers> _glBuffers;
 };
 
 }

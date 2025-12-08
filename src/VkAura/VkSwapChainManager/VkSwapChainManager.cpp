@@ -19,8 +19,8 @@ VkSwapChainManager::VkSwapChainManager(VkHostAllocator* vkHostAllocator, VkPhysi
 VkSwapChainManager::~VkSwapChainManager()
 {
     cleanup();
-
     _device = nullptr;
+    INK_INFO << "SwapChain cleaned";
 }
 
 VkSwapchainCreateInfoKHR* VkSwapChainManager::getSwapchainCreateInfoKHR()
@@ -123,7 +123,7 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
 
     VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, vkHostAllocator->getCallbacks(), &_swapChain));
 
-    INK_INFO << "SwapChain successfuly created!";
+    INK_DEBUG << "SwapChain successfuly created!";
     INK_DEBUG << "ImageCount: " << imageCount;
     INK_DEBUG << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
 

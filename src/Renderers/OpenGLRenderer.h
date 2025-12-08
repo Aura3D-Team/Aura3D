@@ -88,7 +88,7 @@ private:
     u32 _VAO; // Vertex Array Object
     u32 _VBO; // Vertex Buffer Object
     u32 _EBO; // Element Buffer Object
-    u32 _UBO;
+    u32 _UBO; // Uniform Buffer Object
 
     u32 _whiteTexture;
 };

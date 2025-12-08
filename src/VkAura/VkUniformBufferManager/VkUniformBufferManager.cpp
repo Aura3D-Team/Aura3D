@@ -67,17 +67,18 @@ void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, TransformUBO&
         return;
     }
 
-    static auto startTime = std::chrono::high_resolution_clock::now();
+    // PUT CAMERA VIEW IN OTHER FUNCTION OR CLASS SOON
+    // static auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    f32 time = std::chrono::duration<f32, std::chrono::seconds::period>(currentTime - startTime).count();
+    // auto currentTime = std::chrono::high_resolution_clock::now();
+    // f32 time = std::chrono::duration<f32, std::chrono::seconds::period>(currentTime - startTime).count();
 
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f,0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f,0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     // glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
 
     // Copy the new UBO data directly to the mapped memory
-    std::memcpy(_allocations[currentImage].mappedData, &ubo, sizeof(ubo));
+    memcpy(_allocations[currentImage].mappedData, &ubo, sizeof(ubo));
     // No need to call vkFlushMappedMemoryRanges if the memory is coherent
     // (which we specified when creating the buffer)
 }

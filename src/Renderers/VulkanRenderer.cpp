@@ -1,5 +1,7 @@
 #include "Renderers/VulkanRenderer.h"
 
+#include <chrono>
+
 namespace aura3d {
 namespace vk {
 
@@ -219,12 +221,17 @@ void VulkanRenderer::run()
         const u32 imageIndex = _vkSwapChainManager->acquireNextImage(
             imageAvailableSemaphores[_currentFrame],
             windowFlags
-            );
+        );
 
         // Check if swap chain needs recreation
         if (imageIndex >= imagesCount) {
-            INK_WARN << "Swap chain needs recreation!";
-            windowFlags->resized = false;
+            INK_TRACE << "Swap chain needs recreation!";
+            while (windowFlags->resized)
+            {
+                windowFlags->resized = false;
+                std::this_thread::sleep_for(std::chrono::duration<f64, std::milli>(100));
+            }
+
             handleWindowChanges();
             return;
         }
@@ -370,7 +377,8 @@ void VulkanRenderer::createVertexBuffers()
 
     // DEfine index buffer data for rendering optimizations
     const std::vector<u16> indices = {
-        0, 1, 2, 2, 3, 0
+        0, 1, 2,
+        2, 3, 0
     };
 
     _vkIndexBufferManager->createIndexBuffer(

@@ -1,7 +1,9 @@
 #include "Renderers/OpenGLRenderer.h"
 #include <glad/glad.h>
 #include <cstring> // For memset
-#include <iostream>
+
+#include <thread>
+#include <chrono>
 
 #include "AuraCore.h"
 #include "GlAura/GlShaderManager/GlShaderManager.h"
@@ -28,7 +30,7 @@ void OpenGLRenderer::initialize()
 
     // Create window manager
     _windowManagerApi = wma::createWindowManager(
-        wma::getDefaultBackend(),
+        wma::WindowBackend::SDL2,
         _windowDetails,
         wma::GraphicsAPI::OpenGL
     );
@@ -63,11 +65,23 @@ void OpenGLRenderer::run()
     createUniformBuffers(); // Setup UBO
     createDefaultTexture(); // Setup simple texture
 
+    wma::WindowFlags* windowFlags = _windowManagerApi->getWindowFlags();
+
     // Main render loop
     _windowManagerApi->process([&]() {
         // Clear the color buffer
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+
+        if (windowFlags->resized)
+        {
+            while (windowFlags->resized)
+            {
+                windowFlags->resized = false;
+                std::this_thread::sleep_for(std::chrono::duration<f64, std::milli>(100));
+            }
+            handleWindowChanges();
+        }
 
         // Update Matrices (every frame or when camera moves)
         updateGlobalMatrices();
@@ -80,7 +94,6 @@ void OpenGLRenderer::run()
         glBindTexture(GL_TEXTURE_2D, _whiteTexture);
         // Set sampler to texture unit 0
         glUniform1i(glGetUniformLocation(_shaderProgram, "textureSampler"), 0);
-
 
         // Bind the VAO (containing VBO and EBO config)
         glBindVertexArray(_VAO);
@@ -260,7 +273,7 @@ void OpenGLRenderer::createDefaultTexture()
 
 void OpenGLRenderer::handleWindowChanges()
 {
-    auto windowDetails = _windowManagerApi->getWindowDetails();
+    const wma::WindowDetails* windowDetails = _windowManagerApi->getWindowDetails();
     glViewport(0, 0, windowDetails->width, windowDetails->height);
 }
 

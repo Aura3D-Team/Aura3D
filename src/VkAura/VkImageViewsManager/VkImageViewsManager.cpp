@@ -17,8 +17,6 @@ VkImageViewsManager::~VkImageViewsManager()
     cleanup();
 
     _device = nullptr;
-
-    INK_DEBUG << "ImageViews destroyed.";
 }
 
 void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChainImages,
@@ -47,8 +45,6 @@ void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChain
 
         VkResult result = vkCreateImageView(*_device, &createInfo, vkHostAllocator->getCallbacks(), &_swapChainImageViews[i]);
         VK_RESULT_CHECK(result);
-
-        INK_DEBUG << "ImageView " << i << " created!";
     }
 }
 
