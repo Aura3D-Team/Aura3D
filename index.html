@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aura3D</title>
+
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="aura3d-canvas"></canvas>
+    <script type="module">
+      import init from './pkg/Aura3D.js';
+
+      async function run() {
+        try {
+          await init();
+          console.info('WASM initialized successfully!');
+        } catch (e) {
+          console.error('WASM initialization failed', e);
+        }
+      }
+
+      run();
+    </script>
+  </body>
+</html>

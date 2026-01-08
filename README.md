@@ -66,6 +66,54 @@ This means:
 
 ---
 
+### Folder Structure
+
+Aura3D/
+├── apps/                   # The actual executable(s) / The Game
+│   └── Sandbox/            # Your "Start doing the game" code
+│       ├── main.cpp
+│       └── settings.json
+│
+├── resources/              # Runtime resources
+│   ├── shaders/
+│   │   ├── gl/
+│   │   └── vk/
+│   └── textures/
+│
+├── engine/                 # The Engine Library
+│   ├── include/            # PUBLIC HEADERS (The Game includes these)
+│   │   └── aura/           # Namespace folder
+│   │       ├── Core/       # Logger, Assertions, Config, Math
+│   │       ├── Window/     # WindowManager abstract classes
+│   │       ├── Renderer/   # Renderer abstract base class, Vertex structs
+│   │       ├── Utils/      # Generic utilities
+│   │       └── aura.h      # The main include file
+│   │
+│   └── src/                # PRIVATE SOURCE (Hidden logic)
+│       ├── Core/           # Config loader implementation
+│       ├── Window/         # SDL2 Window implementation
+│       │
+│       ├── Renderer/       # The Render Logic
+│       │   ├── Common/     # Shared internal helpers
+│       │   ├── CPU/        # Was "CpuAura" (CpuFrameBuffer, etc.)
+│       │   ├── OpenGL/     # Was "GlAura" (GLShader, GLBuffers)
+│       │   └── Vulkan/     # Was "VkAura" (VkDevice, VkSwapchain)
+│       │
+│       └── Utils/          # Implementation of utils
+│
+├── vendor/                 # Third-party libraries (Don't touch these)
+│   ├── glad/
+│   ├── glm/
+│   ├── microui/            # Moved from "portables"
+│   └── json/
+│
+└── CMakeLists.txt          # Root CMake
+
+- **Public vs. Private** (include vs src): When you build your game, you will tell CMake to target_include_directories(MyGame PRIVATE engine/include). This prevents your game code from accidentally including internal headers like VkDeviceManager.h. Your game should rely on the Engine, not the Vulkan API.
+- **Scalability**: If you decide later to add Audio, you just add an Audio/ folder in src and include. The structure grows horizontally without becoming a mess.
+- **Backend Isolation**: If you are working on the OpenGL renderer, you only look inside src/Renderer/OpenGL. You don't have to see Vulkan files or CPU files.
+- **Vendor Isolation**: It makes compiling easier. You can set specific compiler warnings for engine/src (strict) and different ones for vendor/ (permissive), so third-party warnings don't clutter your build log.
+
 ### Future Expansion Roadmap
 
 * Implement unified **math library** (vectors, matrices, transforms).
