@@ -7,6 +7,7 @@ namespace aura3d {
 
 AuraUtils::AuraUtils() {}
 
+// PROVIDED BY QUAKE
 f32 AuraUtils::fast_sqrt(f32 x) {
     if (x <= 0.0f) return 0.0f;  // Handle edge case
     f32 approx = x * 0.5f;

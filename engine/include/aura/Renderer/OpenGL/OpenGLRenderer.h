@@ -9,88 +9,40 @@ namespace aura3d {
 namespace gl {
 
 /**
- * @brief OpenGL implementation of the Renderer interface
+ * @brief OpenGL implementation of the Renderer interface.
+ *
+ * initialize() creates the SDL2 window, establishes the OpenGL context and
+ * loads GLAD.  All geometry, shaders and the per-frame draw loop are the
+ * responsibility of the consuming application (Sandbox).
  */
 class OpenGLRenderer : public IRenderer {
 public:
-    /**
-     * @brief Construct an OpenGL renderer
-     *
-     * @param windowDetails Window configuration
-     */
     OpenGLRenderer(const wma::WindowDetails& windowDetails);
-
-    /**
-     * @brief Destroy the OpenGL renderer
-     */
     virtual ~OpenGLRenderer();
 
     /**
-     * @brief Initialize the OpenGL renderer
+     * @brief Create the window and initialise the OpenGL context.
+     * After this call GLAD is loaded and GL calls are valid.
      */
     void initialize() override;
 
     /**
-     * @brief Run the main rendering loop
-     */
-    void run() override;
-
-    /**
-     * @brief Handle window changes (resize, etc.)
+     * @brief Update the GL viewport after a window resize.
      */
     void handleWindowChanges() override;
 
     /**
-     * @brief Clean up OpenGL resources
+     * @brief Release window and GL context resources.
      */
     void cleanup() override;
 
+    wma::IWindowManager* getWindowManager() override { return _windowManagerApi.get(); }
+
 protected:
-    /**
-     * @brief Create the window with OpenGL support
-     *
-     * @param title Window title
-     */
     void createWindow(const char* title) override;
-
-    /**
-     * @brief Set up the OpenGL shaders
-     */
-    void setupShaders();
-
-    /**
-     * @brief Create vertex buffers for rendering
-     */
-    void createVertexBuffers();
-
-    /**
-     * @brief Create uniform buffers for shader parameters
-     */
-    void createUniformBuffers();
-
-    /**
-     * @brief Create a texture for fragment shader
-     */
-    void createDefaultTexture();
-
-    /**
-     * @brief Update matrices for perspective view
-     */
-    void updateGlobalMatrices();
 
 private:
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
-
-    // OpenGL context and resource handles would go here
-    bool _isInitialized = false;
-    // OpenGL Object IDs
-    u32 _shaderProgram;
-    u32 _VAO; // Vertex Array Object
-    u32 _VBO; // Vertex Buffer Object
-    u32 _EBO; // Element Buffer Object
-    u32 _UBO; // Uniform Buffer Object
-
-    u32 _whiteTexture;
 };
 
 }

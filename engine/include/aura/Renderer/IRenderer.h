@@ -59,12 +59,6 @@ public:
     virtual void initialize() = 0;
 
     /**
-     * @brief Start the main rendering loop
-     * This method typically doesn't return until the application is closed
-     */
-    virtual void run() = 0;
-
-    /**
      * @brief Handle window resize and other window-related changes
      */
     virtual void handleWindowChanges() = 0;
@@ -79,6 +73,12 @@ public:
      * @return Current window configuration
      */
     const wma::WindowDetails& getWindowDetails() const { return _windowDetails; }
+
+    /**
+     * @brief Get the underlying window manager
+     * @return Pointer to the window manager (valid after initialize())
+     */
+    virtual wma::IWindowManager* getWindowManager() = 0;
 
 protected:
     /**

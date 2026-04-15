@@ -12,56 +12,41 @@ namespace aura3d {
 namespace cpu {
 
 /**
- * @brief CPU-based software implementation of the Renderer interface
+ * @brief CPU-based software renderer.
+ *
+ * initialize() creates the SDL2 window and the CpuFrameBufferManager.
+ * All drawing calls and the per-frame loop are the responsibility of the
+ * consuming application (Sandbox).
  */
 class CPURenderer : public IRenderer {
 public:
-    /**
-     * @brief Construct a CPU-based renderer
-     *
-     * @param windowDetails Window configuration
-     */
     CPURenderer(const wma::WindowDetails& windowDetails);
-
-    /**
-     * @brief Destroy the CPU renderer
-     */
     virtual ~CPURenderer();
 
     /**
-     * @brief Initialize the CPU renderer
+     * @brief Create the window and framebuffer.
      */
     void initialize() override;
 
     /**
-     * @brief Run the main rendering loop
-     */
-    void run() override;
-
-    /**
-     * @brief Handle window changes (resize, etc.)
+     * @brief Resize the framebuffer after a window resize.
      */
     void handleWindowChanges() override;
 
     /**
-     * @brief Clean up renderer resources
+     * @brief Release all resources.
      */
     void cleanup() override;
 
+    wma::IWindowManager*    getWindowManager()    override { return _windowManagerApi.get(); }
+    CpuFrameBufferManager*  getFrameBufferManager()        { return _frameBufferManager.get(); }
+
 protected:
-    /**
-     * @brief Create the window
-     *
-     * @param title Window title
-     */
     void createWindow(const char* title) override;
 
 private:
-    std::unique_ptr<wma::IWindowManager> _windowManagerApi;
-
+    std::unique_ptr<wma::IWindowManager>   _windowManagerApi;
     std::unique_ptr<CpuFrameBufferManager> _frameBufferManager;
-
-    bool _isInitialized = false;
 };
 
 }

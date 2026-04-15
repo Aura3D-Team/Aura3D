@@ -3,6 +3,7 @@
 
 #include "aura/aura.h"
 
+#include "aura/Renderer/IRenderer.h"
 #include "aura/Renderer/Software/CPURenderer.h"
 #include "aura/Renderer/Vulkan/VulkanRenderer.h"
 #include "aura/Renderer/OpenGL/OpenGLRenderer.h"
@@ -13,14 +14,10 @@ public:
     Engine(const std::string& configPath);
     ~Engine();
 
-    // The main entry point to start the game loop
-    void run();
+    aura3d::IRenderer* getRenderer() const { return _renderer.get(); }
 
 private:
-    // Helper to read window settings from config
     void configureWindow();
-
-    // Instantiate the renderer
     void createRenderer();
 
 private:
