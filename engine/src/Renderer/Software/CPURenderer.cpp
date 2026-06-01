@@ -5,10 +5,10 @@
 namespace aura3d {
 namespace cpu {
 
-CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails)
-    : IRenderer(windowDetails)
+CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
+    : IRenderer(windowDetails, mode)
 {
-    INK_INFO << "Renderer - SOFTWARE";
+    INK_INFO << "Renderer - SOFTWARE (" << RendererModeToString(mode) << ")";
 }
 
 CPURenderer::~CPURenderer()
@@ -23,10 +23,8 @@ void CPURenderer::initialize()
 
 void CPURenderer::createWindow(const char* title)
 {
-
     _windowManagerApi = wma::createWindowManager(
         wma::WindowBackend::SDL2, _windowDetails, wma::GraphicsAPI::CPU);
-
 
     _windowManagerApi->createWindow(title);
 

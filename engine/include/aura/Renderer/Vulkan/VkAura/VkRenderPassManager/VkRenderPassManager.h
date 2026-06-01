@@ -15,12 +15,16 @@ public:
     VkRenderPassManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
     ~VkRenderPassManager();
 
-    void createRenderPass(VkFormat swapchainImageFormat);
+    void createRenderPass(VkFormat swapchainImageFormat,
+                          bool enableDepth = false,
+                          VkFormat depthFormat = VK_FORMAT_D32_SFLOAT);
 
     void beginRenderPass(VkCommandBuffer commandBuffer,
                          VkFramebuffer framebuffer,
                          VkExtent2D swapChainExtent,
                          const VkClearValue* clearColorValue = nullptr);
+
+    bool hasDepth() const { return _hasDepth; }
 
     static void endRenderPass(VkCommandBuffer commandBuffer);
 
@@ -32,7 +36,8 @@ private:
     VkHostAllocator* vkHostAllocator;
     VkDevice* _device;
 
-    VkRenderPass _renderPass;
+    VkRenderPass _renderPass = VK_NULL_HANDLE;
+    bool _hasDepth = false;
 };
 
 }

@@ -8,9 +8,12 @@
 #include <vector>
 
 #include "aura/Core/AuraCore.h"
+#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
-#define MAX_ATTRIBUTE_DESCRIPTION 3
+#define MAX_ATTRIBUTE_DESCRIPTION_2D 3
+#define MAX_ATTRIBUTE_DESCRIPTION_3D 4
+#define MAX_ATTRIBUTE_DESCRIPTION MAX_ATTRIBUTE_DESCRIPTION_3D
 #define MAX_SHADER_MODULES 8
 #define MAX_DESCRIPTOR_SETS 4
 #define MAX_BINDING_COUNT 16
@@ -76,10 +79,16 @@ struct QueueData {
 };
 
 
+/**
+ * @brief Cached swapchain support information queried from the physical device.
+ *
+ * Populated once per surface and used to select the optimal swapchain format,
+ * present mode, and extent during swapchain creation.
+ */
 struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR capabilities;
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentModes;
+    VkSurfaceCapabilitiesKHR        capabilities; ///< Surface capabilities (min/max image count, extent, etc.).
+    std::vector<VkSurfaceFormatKHR> formats;      ///< Supported surface formats.
+    std::vector<VkPresentModeKHR>   presentModes; ///< Supported presentation modes.
 };
 
 
@@ -95,51 +104,97 @@ struct VkCommandPoolData {
 };
 
 
-// Descriptor binding information for pipeline creation
+/**
+ * @brief Describes a single descriptor binding within a descriptor set layout.
+ *
+ * Used when building VkDescriptorSetLayoutBinding entries for pipeline creation.
+ */
 struct DescriptorBindingInfo {
-    u32 binding;                     // Binding point in shader
-    VkDescriptorType descriptorType;      // Type of descriptor (uniform buffer, sampler, etc.)
-    u32 descriptorCount;             // Number of descriptors in this binding
-    VkShaderStageFlags stageFlags;        // Shader stages that use this binding
-    const VkSampler* pImmutableSamplers;  // Optional immutable samplers
+    u32                binding;             ///< Binding point in the shader.
+    VkDescriptorType   descriptorType;      ///< Type of descriptor (uniform buffer, sampler, etc.).
+    u32                descriptorCount;     ///< Number of descriptors at this binding.
+    VkShaderStageFlags stageFlags;          ///< Shader stages that access this binding.
+    const VkSampler*   pImmutableSamplers;  ///< Optional immutable samplers (may be nullptr).
 
     DescriptorBindingInfo() : binding(0), descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
         descriptorCount(1), stageFlags(VK_SHADER_STAGE_VERTEX_BIT),
         pImmutableSamplers(nullptr) {}
 };
 
-// Set of descriptor bindings for a single descriptor set
+/**
+ * @brief Groups all bindings for a single descriptor set.
+ *
+ * Passed to VkDescriptorManager to create a VkDescriptorSetLayout for the
+ * set identified by @c setIndex.
+ */
 struct DescriptorSetLayoutInfo {
-    u32 setIndex;                                // Set index used in the shader
-    std::vector<DescriptorBindingInfo> bindings;      // Bindings in this set
+    u32                                setIndex; ///< Set number used in the shader (layout(set = N)).
+    std::vector<DescriptorBindingInfo> bindings; ///< All bindings belonging to this set.
 
     DescriptorSetLayoutInfo() : setIndex(0) {}
 };
 
 
+/**
+ * @brief Subresource range parameters used when creating a VkImageView.
+ *
+ * Passed to VkImageViewsManager::createImageViews() to configure the
+ * aspect mask, mip levels, and array layers for each swapchain image view.
+ */
 struct ImageViewData {
-    VkImageAspectFlags aspectMask;
-    u32 baseMipLevel;
-    u32 levelCount;
-    u32 baseArrayLayer;
-    u32 layerCount;
+    VkImageAspectFlags aspectMask;    ///< Aspect to expose (e.g. VK_IMAGE_ASPECT_COLOR_BIT).
+    u32 baseMipLevel;                 ///< First mip level accessible to the view.
+    u32 levelCount;                   ///< Number of mip levels accessible.
+    u32 baseArrayLayer;               ///< First array layer accessible.
+    u32 layerCount;                   ///< Number of array layers accessible.
 };
 
-// Base class for buffer information
+/**
+ * @brief Base metadata shared by all GPU buffer types.
+ *
+ * Stores the raw VkBuffer handle, its allocation ID inside VkDeviceAllocator,
+ * and whether the underlying memory is persistently mapped for CPU writes.
+ */
 struct AuraBufferInfo {
-    VkBuffer buffer = VK_NULL_HANDLE;
-    u32 allocationId = 0;      // ID for tracking in VkDeviceAllocator
-    bool persistent = false;   // Whether the buffer is persistently mapped
+    VkBuffer buffer      = VK_NULL_HANDLE; ///< Underlying Vulkan buffer handle.
+    u32 allocationId     = 0;              ///< Allocation ID registered in VkDeviceAllocator.
+    bool persistent      = false;          ///< True if the buffer memory is kept permanently mapped.
 };
 
-// Vertex buffer information
+/**
+ * @brief Metadata for a vertex buffer, extending AuraBufferInfo.
+ */
 struct VertexBufferInfo : public AuraBufferInfo {
-    size_t vertexCount = 0;
-    bool is2d = true;          // Whether the buffer contains 2D or 3D vertices
+    size_t vertexCount = 0;  ///< Number of vertices stored in the buffer.
+    bool   is2d        = true; ///< True for Vertex2d layout; false for Vertex3d layout.
 };
 
+/**
+ * @brief Metadata for an index buffer, extending AuraBufferInfo.
+ */
 struct IndexBufferInfo : public AuraBufferInfo {
-    u32 indexCount = 0;
+    u32 indexCount = 0; ///< Number of indices stored in the buffer.
+};
+
+/**
+ * @brief Aggregates the depth buffer image and its GPU memory allocation.
+ *
+ * Keeps the VkImage handle and the VkDeviceAllocator allocation together so
+ * they are always created, destroyed, and tested as a unit. The associated
+ * VkImageView is owned separately by VkImageViewsManager.
+ *
+ * Defaults to VK_FORMAT_D32_SFLOAT; only valid in 3D rendering mode.
+ */
+struct DepthResources {
+    VkImage            image      = VK_NULL_HANDLE;    ///< Depth image handle.
+    VkDeviceAllocation allocation = {};                ///< Device memory backing the image.
+    VkFormat           format     = VK_FORMAT_D32_SFLOAT; ///< Depth format used for image and view creation.
+
+    /** @brief Returns true when the depth image has been allocated. */
+    bool isValid() const { return image != VK_NULL_HANDLE; }
+
+    /** @brief Resets all fields to their null/empty defaults without freeing resources. */
+    void reset() { image = VK_NULL_HANDLE; allocation = {}; }
 };
 
 }

@@ -7,10 +7,10 @@
 namespace aura3d {
 namespace gl {
 
-OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails& windowDetails)
-    : IRenderer(windowDetails)
+OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
+    : IRenderer(windowDetails, mode)
 {
-    INK_INFO << "Renderer - OPENGL";
+    INK_INFO << "Renderer - OPENGL (" << RendererModeToString(mode) << ")";
 }
 
 OpenGLRenderer::~OpenGLRenderer()
@@ -20,7 +20,14 @@ OpenGLRenderer::~OpenGLRenderer()
 
 void OpenGLRenderer::initialize()
 {
-    // Empty
+    if (_isInitialized) return;
+
+    createWindow(APPLICATION_NAME);
+
+    _windowManagerApi->getKeyboardListener().addKeyAction(wma::Key::KEY_ESCAPE, wma::KeyAction{
+        [this](){ cleanup(); }, nullptr });
+
+    _isInitialized = true;
 }
 
 void OpenGLRenderer::createWindow(const char* title)
@@ -28,9 +35,6 @@ void OpenGLRenderer::createWindow(const char* title)
     _windowManagerApi = wma::createWindowManager(
         wma::WindowBackend::SDL2, _windowDetails, wma::GraphicsAPI::OpenGL
     );
-
-    // _windowManagerApi->getKeyboardListener().addKeyAction(wma::Key::KEY_ESCAPE, wma::KeyAction{
-    //     [this](){ cleanup(); }, nullptr });
 
     _windowManagerApi->createWindow(title);
 }
@@ -43,7 +47,10 @@ void OpenGLRenderer::handleWindowChanges()
 
 void OpenGLRenderer::cleanup()
 {
+    if (!_isInitialized) return;
+
     _windowManagerApi.reset();
+    _isInitialized = false;
 }
 
 }

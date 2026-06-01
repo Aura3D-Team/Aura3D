@@ -1,130 +1,183 @@
 # Aura3D
 
-High performance 3D engine.
-
-### Project Overview
-
-This project is the foundation of a future **cross-platform, configurable game engine**.
-Currently, it implements an **incomplete rendering backend** that supports **Vulkan**, **OpenGL**, and **CPU-based (software) rendering**. The long-term goal is to unify these rendering paths under a **single backend abstraction layer**, enabling the same rendering logic to run on either the CPU or GPU.
+High-performance configurable 2D/3D rendering engine. Pure code, no UI — the root of programming.
 
 ---
 
-### Core Design Goal
+### What Is Aura3D
 
-Create a **unified rendering interface** where high-level drawing functions (e.g., `drawPolygon()`, `drawMesh()`, `drawTexture()`) can operate independently of the underlying graphics API or hardware.
-This means:
+Aura3D is a **modular C++ rendering engine** that supports multiple graphics backends through a single unified interface. Switch between **Vulkan**, **OpenGL**, or **CPU software rendering** — and between **2D** and **3D** mode — by editing a single JSON config file. No code changes required.
 
-* The same code path should work whether the engine is using Vulkan, OpenGL, or a software rasterizer.
-* The backend will determine *how* to execute the draw call (GPU command buffers, OpenGL draw calls, or CPU rasterization).
+The engine builds as a **static library** that you link into your game or application. It handles all rendering infrastructure; you write the game logic.
 
 ---
 
-### Functional Objectives
+### Configuration
 
-1. **Abstraction Layer**
+All runtime behavior is controlled by `settings.json`:
 
-   * Define a unified rendering interface (`IRenderer`, `IDeviceContext`, etc.).
-   * Implement backend-specific modules for:
+```json
+{
+    "renderer": {
+        "backend": "vulkan",
+        "mode": "2d"
+    }
+}
+```
 
-     * Vulkan (GPU)
-     * OpenGL (GPU)
-     * CPU (software rasterizer)
-   * Each backend must implement the same interface methods for initialization, buffer management, and rendering primitives.
-
-2. **Cross-Backend Resource Model**
-
-   * Create unified structures for:
-
-     * Vertex/Index buffers
-     * Textures and framebuffers
-     * Shaders (or CPU equivalent functions)
-   * Handle memory management consistently across backends.
-
-3. **Render Pipeline Architecture**
-
-   * Abstract pipeline states (blend, depth, rasterization, shader stages) to allow shared configuration between APIs.
-   * On CPU backend, simulate these states in software.
-
-4. **Scene Management**
-
-   * Design a lightweight render graph or scene graph system that feeds unified draw calls into the backend.
-   * Ensure all entities are independent from the rendering API.
-
-5. **Configuration System**
-
-   * Implement a JSON-based or script-based configuration file to define:
-
-     * Rendering backend (`vulkan`, `opengl`, or `cpu`)
-     * Mode (`2D` or `3D`)
-     * Resolution, VSync, and runtime parameters
-   * Make backend and dimensionality fully switchable through configuration.
-
-6. **Platform Independence**
-
-   * Use **SDL2** or **GLFW** for window and input handling (already partially implemented).
-   * Ensure the engine builds and runs on Windows, Linux, and Android (macOS optional).
+| Field               | Values                          | Description                           |
+|---------------------|---------------------------------|---------------------------------------|
+| `renderer.backend`  | `"vulkan"`, `"opengl"`, `"cpu"` | Which rendering backend to use        |
+| `renderer.mode`     | `"2d"`, `"3d"`                  | Orthographic (2D) or perspective (3D) |
+| `window.width`      | integer                         | Window width in pixels                |
+| `window.height`     | integer                         | Window height in pixels               |
+| `window.vsync`      | `true` / `false`                | Enable vertical sync                  |
+| `window.fullscreen` | `true` / `false`                | Start in fullscreen mode              |
+| `window.fps_limit`  | integer                         | Target FPS (ignored when vsync is on) |
 
 ---
 
-### Folder Structure
+### Building
 
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j$(nproc)
+```
+
+#### CMake Options
+
+| Option               | Default | Description                          |
+|----------------------|---------|--------------------------------------|
+| `AURA_ENABLE_VULKAN` | `ON`    | Compile with Vulkan backend support  |
+| `AURA_ENABLE_OPENGL` | `ON`    | Compile with OpenGL backend support  |
+| `AURA_ENABLE_CPU`    | `ON`    | Compile with CPU renderer support    |
+| `AURA_BUILD_SANDBOX` | `ON`    | Build the Sandbox test application   |
+
+Build with only the CPU renderer (no GPU dependencies):
+
+```bash
+cmake .. -DAURA_ENABLE_VULKAN=OFF -DAURA_ENABLE_OPENGL=OFF
+```
+
+---
+
+### Using Aura3D as a Library
+
+After installing Aura3D, external projects can consume it with `find_package`:
+
+```bash
+cmake --install build --prefix /usr/local
+```
+
+In your game's `CMakeLists.txt`:
+
+```cmake
+find_package(Aura3D REQUIRED)
+add_executable(MyGame main.cpp)
+target_link_libraries(MyGame PRIVATE Aura3D::Aura3D)
+```
+
+Minimal game code:
+
+```cpp
+#include "aura/Core/Engine.h"
+#include "aura/Renderer/IRenderer.h"
+
+int main() {
+    Engine engine("settings.json");
+    aura3d::IRenderer* renderer = engine.getRenderer();
+
+    // renderer->is2D() / renderer->is3D() — query mode
+    // renderer->getBackendType() — query active backend
+    // renderer->getWindowManager()->process([&]() { ... }) — render loop
+
+    return 0;
+}
+```
+
+---
+
+### Architecture
+
+```
 Aura3D/
-├── apps/                   # The actual executable(s) / The Game
-│   └── Sandbox/            # Your "Start doing the game" code
+├── apps/                     # Executables (games, tests)
+│   └── Sandbox/              # Example application
 │       ├── main.cpp
-│       └── settings.json
+│       └── settings.json     # Runtime configuration
 │
-├── resources/              # Runtime resources
-│   ├── shaders/
-│   │   ├── gl/
-│   │   └── vk/
-│   └── textures/
-│
-├── engine/                 # The Engine Library
-│   ├── include/            # PUBLIC HEADERS (The Game includes these)
-│   │   └── aura/           # Namespace folder
-│   │       ├── Core/       # Logger, Assertions, Config, Math
-│   │       ├── Window/     # WindowManager abstract classes
-│   │       ├── Renderer/   # Renderer abstract base class, Vertex structs
-│   │       ├── Utils/      # Generic utilities
-│   │       └── aura.h      # The main include file
+├── engine/                   # The Engine Library
+│   ├── include/aura/         # PUBLIC HEADERS
+│   │   ├── aura.h            # Main version/name defines
+│   │   ├── Core/             # Engine, AuraCore, Settings, Font, Exception
+│   │   ├── Renderer/
+│   │   │   ├── IRenderer.h   # Abstract interface + RendererChoice/RendererMode enums
+│   │   │   ├── Software/     # CPU renderer + framebuffer manager
+│   │   │   ├── OpenGL/       # OpenGL renderer + GL shader/buffer managers
+│   │   │   └── Vulkan/       # Vulkan renderer + full VkAura subsystem
+│   │   └── Utils/            # Colors, math utilities, aligned allocator
 │   │
-│   └── src/                # PRIVATE SOURCE (Hidden logic)
-│       ├── Core/           # Config loader implementation
-│       ├── Window/         # SDL2 Window implementation
-│       │
-│       ├── Renderer/       # The Render Logic
-│       │   ├── Common/     # Shared internal helpers
-│       │   ├── CPU/        # Was "CpuAura" (CpuFrameBuffer, etc.)
-│       │   ├── OpenGL/     # Was "GlAura" (GLShader, GLBuffers)
-│       │   └── Vulkan/     # Was "VkAura" (VkDevice, VkSwapchain)
-│       │
-│       └── Utils/          # Implementation of utils
+│   └── src/                  # PRIVATE SOURCE (hidden from consumers)
+│       ├── Core/             # Config loader, settings implementation
+│       ├── Renderer/
+│       │   ├── Software/     # CPU rasterizer implementation
+│       │   ├── OpenGL/       # GL context + shader management
+│       │   └── Vulkan/       # Instance, device, swapchain, pipeline, memory, etc.
+│       └── Utils/            # Utility implementations
 │
-├── vendor/                 # Third-party libraries (Don't touch these)
-│   ├── glad/
-│   ├── glm/
-│   ├── microui/            # Moved from "portables"
-│   └── json/
+├── resources/                # Runtime assets
+│   └── shaders/
+│       ├── opengl/           # GLSL shaders
+│       └── vulkan/           # GLSL shaders (compiled to SPIR-V by CMake)
 │
-└── CMakeLists.txt          # Root CMake
+├── vendor/                   # Third-party (glad, microui)
+├── cmake/                    # CMake package config templates
+├── config.json               # Engine default config template
+└── CMakeLists.txt
+```
 
-- **Public vs. Private** (include vs src): When you build your game, you will tell CMake to target_include_directories(MyGame PRIVATE engine/include). This prevents your game code from accidentally including internal headers like VkDeviceManager.h. Your game should rely on the Engine, not the Vulkan API.
-- **Scalability**: If you decide later to add Audio, you just add an Audio/ folder in src and include. The structure grows horizontally without becoming a mess.
-- **Backend Isolation**: If you are working on the OpenGL renderer, you only look inside src/Renderer/OpenGL. You don't have to see Vulkan files or CPU files.
-- **Vendor Isolation**: It makes compiling easier. You can set specific compiler warnings for engine/src (strict) and different ones for vendor/ (permissive), so third-party warnings don't clutter your build log.
-
-### Future Expansion Roadmap
-
-* Implement unified **math library** (vectors, matrices, transforms).
-* Introduce **entity/component system** decoupled from the renderer.
-* Add **physics** and **scripting** layers (optional for now).
-* Create **debug visualization tools** for CPU/GPU backend comparison.
-* Develop a **resource compiler** for converting assets into engine-ready formats.
+**Key design principles:**
+- **Public vs. Private**: Your game includes `engine/include` only. Internal headers (VkDeviceManager, etc.) stay hidden.
+- **Backend isolation**: Each renderer lives in its own directory. Working on OpenGL never touches Vulkan files.
+- **Conditional compilation**: Backends are guarded by `AURA_HAS_VULKAN`, `AURA_HAS_OPENGL`, `AURA_HAS_CPU` defines, set automatically by CMake options.
 
 ---
 
-### Vision Summary
+### Renderer Interface
 
-The ultimate objective is a **modular, configurable game engine** capable of running the same rendering logic on both software and GPU pipelines, adaptable between 2D and 3D with simple configuration changes.
-All rendering, resource management, and engine logic will share a common interface, making the system extensible, testable, and maintainable.
+All renderers implement `aura3d::IRenderer`:
+
+```cpp
+class IRenderer {
+public:
+    virtual void initialize() = 0;
+    virtual void handleWindowChanges() = 0;
+    virtual void cleanup() = 0;
+    virtual wma::IWindowManager* getWindowManager() = 0;
+    virtual RendererChoice getBackendType() const = 0;
+
+    RendererMode getMode() const;
+    bool is2D() const;
+    bool is3D() const;
+};
+```
+
+The `Engine` class reads `settings.json`, creates the correct renderer, and exposes it. Your application code queries `engine.getBackend()` and `engine.getMode()` to adapt behavior.
+
+---
+
+### Roadmap
+
+- Unified math library (vectors, matrices, transforms)
+- Entity/component system decoupled from the renderer
+- Physics and scripting layers
+- Debug visualization tools for CPU/GPU backend comparison
+- Resource compiler for converting assets into engine-ready formats
+- 3D shader variants alongside existing 2D shaders
+
+---
+
+### License
+
+See [LICENSE](LICENSE).

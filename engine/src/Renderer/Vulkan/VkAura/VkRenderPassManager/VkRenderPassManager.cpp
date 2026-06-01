@@ -1,5 +1,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkRenderPassManager/VkRenderPassManager.h"
 
+#include <array>
+
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
 
@@ -26,8 +28,13 @@ VkRenderPass* VkRenderPassManager::getRenderPass()
     return &_renderPass;
 }
 
-void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
-    // Color Attachment
+void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
+                                           bool enableDepth,
+                                           VkFormat depthFormat)
+{
+    _hasDepth = enableDepth;
+
+    // Color Attachment (index 0)
     VkAttachmentDescription colorAttachment = {};
     colorAttachment.format = swapchainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -42,11 +49,34 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    std::vector<VkAttachmentDescription> attachments = { colorAttachment };
+
+    // Depth Attachment (index 1, optional)
+    VkAttachmentDescription depthAttachment = {};
+    VkAttachmentReference depthAttachmentRef = {};
+
+    if (enableDepth) {
+        depthAttachment.format = depthFormat;
+        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        depthAttachmentRef.attachment = 1;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        attachments.push_back(depthAttachment);
+    }
+
     // Subpass
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = enableDepth ? &depthAttachmentRef : nullptr;
 
     // Dependencies
     VkSubpassDependency attachmentDependencyBegin = {};
@@ -57,6 +87,11 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
     attachmentDependencyBegin.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     attachmentDependencyBegin.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
+    if (enableDepth) {
+        attachmentDependencyBegin.dstStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        attachmentDependencyBegin.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    }
+
     VkSubpassDependency attachmentDependencyEnd = {};
     attachmentDependencyEnd.srcSubpass = 0;
     attachmentDependencyEnd.dstSubpass = VK_SUBPASS_EXTERNAL;
@@ -65,10 +100,13 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat) {
     attachmentDependencyEnd.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
     attachmentDependencyEnd.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 
-    std::vector<VkSubpassDependency> dependencies = {attachmentDependencyBegin, attachmentDependencyEnd};
-    std::vector<VkAttachmentDescription> attachments = {colorAttachment};
+    if (enableDepth) {
+        attachmentDependencyEnd.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        attachmentDependencyEnd.srcAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    }
 
-    // Create Render Pass
+    std::vector<VkSubpassDependency> dependencies = { attachmentDependencyBegin, attachmentDependencyEnd };
+
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = static_cast<u32>(attachments.size());
@@ -99,12 +137,21 @@ void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer,
     if (clearColorValue) {
         clearColor = *clearColorValue;
     } else {
-        clearColor.color = {{0.0f, 0.0f, 0.0f, 1.0f}}; // Default to black
+        clearColor.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
     }
 
-    renderPassBeginInfo.clearValueCount = 1;
-    renderPassBeginInfo.pClearValues = &clearColor;
-    vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    if (_hasDepth) {
+        std::array<VkClearValue, 2> clearValues = {};
+        clearValues[0] = clearColor;
+        clearValues[1].depthStencil = {1.0f, 0};
+        renderPassBeginInfo.clearValueCount = static_cast<u32>(clearValues.size());
+        renderPassBeginInfo.pClearValues = clearValues.data();
+        vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    } else {
+        renderPassBeginInfo.clearValueCount = 1;
+        renderPassBeginInfo.pClearValues = &clearColor;
+        vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    }
 }
 
 void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer) {

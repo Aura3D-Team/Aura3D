@@ -13,71 +13,107 @@ namespace aura3d {
 namespace vk {
 
 /**
- * @brief Manages the creation and cleanup of Vulkan image views for swap chain images.
+ * @brief Manages Vulkan image views for swapchain color images and the depth attachment.
  *
- * The VkImageViewsManager class encapsulates the setup and destruction of VkImageView objects for each
- * image in the Vulkan swap chain. It creates image views that allow swap chain images to be used as
- * color attachments in the rendering pipeline. This manager simplifies the process of image view
- * management and ensures proper cleanup when the image views are no longer needed.
+ * Owns two categories of views:
+ *  - **Color views**: one VkImageView per swapchain image, created via createImageViews().
+ *  - **Depth view**: a single VkImageView for the depth buffer, created via
+ *    createDepthImageView() and valid only in 3D mode.
+ *
+ * All views are destroyed on cleanup(). The depth view can also be destroyed
+ * independently with cleanupDepthImageView(), which is useful during swapchain
+ * recreation without touching the color views.
  */
 class VkImageViewsManager {
 public:
     /**
-     * @brief Constructs a VkImageViewsManager with a Vulkan device, swap chain images, and format.
-     *
-     * Initializes the VkImageViewsManager with the specified Vulkan logical device, a list of swap chain
-     * images, and the image format. These inputs are required for creating image views compatible with
-     * the swap chain.
-     *
-     * @param device The Vulkan logical device used to create image views.
-     * @param swapChainImages A reference to a vector of VkImage objects representing swap chain images.
-     * @param swapChainImageFormat The format of the swap chain images.
+     * @brief Constructs the manager.
+     * @param hostAllocator Host-side allocator whose callbacks are forwarded to Vulkan.
+     * @param device        Logical device used to create and destroy image views.
      */
-    VkImageViewsManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
+    VkImageViewsManager(VkHostAllocator* hostAllocator, VkDevice* device);
 
     /**
-     * @brief Destroys all created image views and releases resources.
-     *
-     * Destructor that ensures all VkImageView objects managed by this class are destroyed
-     * using vkDestroyImageView, freeing associated resources. This prevents memory leaks
-     * and ensures clean Vulkan resource management.
+     * @brief Destroys all owned image views and releases internal state.
      */
     ~VkImageViewsManager();
 
     /**
-     * @brief Creates a VkImageView for each image in the swap chain.
+     * @brief Creates one color VkImageView per entry in @p images.
      *
-     * Iterates through each VkImage in swapChainImages and creates a VkImageView with the specified
-     * format and standard settings, allowing each image to be used as a color target. Throws a
-     * runtime error if any image view creation fails.
+     * Any previously created color views are implicitly replaced. The view
+     * parameters (aspect mask, mip/layer ranges) are read from @p viewData.
      *
-     * @param aspectMask The aspect mask specifying which part of the image to use (e.g., color, depth). Default is VK_IMAGE_ASPECT_COLOR_BIT.
-     * @param baseMipLevel The base mip level for the image view (default is 0).
-     * @param levelCount The number of mip levels for the image view (default is 1).
-     * @param baseArrayLayer The starting layer for array textures (default is 0).
-     * @param layerCount The number of layers in the array (default is 1).
-     *
-     * @throws AuraException If vkCreateImageView fails to create an image view.
+     * @param images    Swapchain images to wrap.
+     * @param format    Surface format of the swapchain images.
+     * @param viewData  Subresource range and aspect mask configuration.
      */
-    void createImageViews(const std::vector<VkImage>& swapChainImages, VkFormat swapChainImageFormat, ImageViewData vkImageViewData);
+    void createImageViews(const std::vector<VkImage>& images,
+                          VkFormat format,
+                          ImageViewData viewData);
 
     /**
-     * @brief Provides access to the vector of created VkImageView objects.
+     * @brief Creates a depth VkImageView for the given @p image.
      *
-     * Returns a reference to the vector of VkImageView objects managed by this class, allowing
-     * external access to the image views for use in other parts of the Vulkan rendering pipeline.
+     * If a depth view already exists it is destroyed before creating the new one.
+     * The view always uses VK_IMAGE_ASPECT_DEPTH_BIT with a single mip level
+     * and a single array layer.
      *
-     * @return A reference to a vector of VkImageView objects.
+     * @param image  The depth VkImage to create a view for.
+     * @param format Depth format (e.g. VK_FORMAT_D32_SFLOAT).
      */
-    const std::vector<VkImageView>& getImageViews() const;
+    void createDepthImageView(VkImage image, VkFormat format);
 
+    /**
+     * @brief Returns all swapchain color image views.
+     * @return Const reference to the internal view vector; valid until the next
+     *         createImageViews() or cleanup() call.
+     */
+    const std::vector<VkImageView>& getImageViews() const { return _colorImageViews; }
+
+    /**
+     * @brief Returns the depth image view, or VK_NULL_HANDLE if not created.
+     * @return The depth VkImageView.
+     */
+    VkImageView getDepthImageView() const { return _depthImageView; }
+
+    /**
+     * @brief Destroys the depth image view and resets it to VK_NULL_HANDLE.
+     *
+     * No-op if no depth view was created. Call this before recreating the
+     * depth resources during a swapchain resize.
+     */
+    void cleanupDepthImageView();
+
+    /**
+     * @brief Destroys all color views and the depth view, and clears internal state.
+     */
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
-    VkDevice* _device; ///< The Vulkan logical device used to create and manage image views.
+    /**
+     * @brief Shared helper that allocates a single VkImageView with explicit parameters.
+     *
+     * @param image      Source VkImage.
+     * @param format     Image format.
+     * @param aspect     Aspect flags (color or depth).
+     * @param baseMip    Base mip level.
+     * @param mipLevels  Number of mip levels.
+     * @param baseLayer  Base array layer.
+     * @param layerCount Number of array layers.
+     * @return Newly created VkImageView.
+     */
+    VkImageView createView(VkImage image, VkFormat format,
+                           VkImageAspectFlags aspect,
+                           u32 baseMip, u32 mipLevels,
+                           u32 baseLayer, u32 layerCount);
 
-    std::vector<VkImageView> _swapChainImageViews; ///< Vector storing the created VkImageView objects.
+private:
+    VkHostAllocator* _hostAllocator;
+    VkDevice*        _device;
+
+    std::vector<VkImageView> _colorImageViews;
+    VkImageView              _depthImageView = VK_NULL_HANDLE;
 };
 
 }

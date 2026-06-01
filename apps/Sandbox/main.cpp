@@ -4,32 +4,51 @@
  * This file contains all application-specific rendering code: geometry data,
  * textures, descriptor sets, shader paths and the per-frame draw loop.
  * The engine library is intentionally kept clean of these concerns.
+ *
+ * The renderer backend and mode (2D / 3D) are driven entirely by
+ * settings.json — no code changes needed to switch between Vulkan,
+ * OpenGL or CPU.
  */
 
 #include <chrono>
 #include <thread>
 
+#ifdef AURA_HAS_OPENGL
 #include <glad/glad.h>
 #include "aura/Renderer/OpenGL/GlAura/GlShaderManager/GlShaderManager.h"
+#endif
 
 #include "aura/Core/Engine.h"
 #include "aura/Core/AuraCore.h"
 #include "aura/Renderer/IRenderer.h"
-#include "aura/Renderer/Vulkan/VulkanRenderer.h"
-#include "aura/Renderer/OpenGL/OpenGLRenderer.h"
-#include "aura/Renderer/Software/CPURenderer.h"
 #include "aura/Utils/ColorsDefinitions.h"
+
+#ifdef AURA_HAS_VULKAN
+#include "aura/Renderer/Vulkan/VulkanRenderer.h"
+#endif
+#ifdef AURA_HAS_OPENGL
+#include "aura/Renderer/OpenGL/OpenGLRenderer.h"
+#endif
+#ifdef AURA_HAS_CPU
+#include "aura/Renderer/Software/CPURenderer.h"
+#endif
 
 // ============================================================
 // Forward declarations for per-backend entry points
 // ============================================================
 
-static void runVulkan (aura3d::vk::VulkanRenderer*  renderer);
-static void runOpenGL (aura3d::gl::OpenGLRenderer*  renderer);
-static void runCPU    (aura3d::cpu::CPURenderer*    renderer);
+#ifdef AURA_HAS_VULKAN
+static void runVulkan(aura3d::vk::VulkanRenderer* renderer);
+#endif
+#ifdef AURA_HAS_OPENGL
+static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer);
+#endif
+#ifdef AURA_HAS_CPU
+static void runCPU(aura3d::cpu::CPURenderer* renderer);
+#endif
 
 // ============================================================
-// main
+// main — backend is selected by settings.json, not by code
 // ============================================================
 
 int main()
@@ -38,12 +57,26 @@ int main()
 
     aura3d::IRenderer* renderer = engine.getRenderer();
 
-    if (auto* vk = dynamic_cast<aura3d::vk::VulkanRenderer*>(renderer)) {
-        runVulkan(vk);
-    } else if (auto* gl = dynamic_cast<aura3d::gl::OpenGLRenderer*>(renderer)) {
-        runOpenGL(gl);
-    } else if (auto* cpu = dynamic_cast<aura3d::cpu::CPURenderer*>(renderer)) {
-        runCPU(cpu);
+    switch (engine.getBackend())
+    {
+#ifdef AURA_HAS_VULKAN
+    case aura3d::RendererChoice::VULKAN:
+        runVulkan(static_cast<aura3d::vk::VulkanRenderer*>(renderer));
+        break;
+#endif
+#ifdef AURA_HAS_OPENGL
+    case aura3d::RendererChoice::OPENGL:
+        runOpenGL(static_cast<aura3d::gl::OpenGLRenderer*>(renderer));
+        break;
+#endif
+#ifdef AURA_HAS_CPU
+    case aura3d::RendererChoice::SOFTWARE:
+        runCPU(static_cast<aura3d::cpu::CPURenderer*>(renderer));
+        break;
+#endif
+    default:
+        INK_ERROR << "Selected renderer backend was not compiled into this build.";
+        return 1;
     }
 
     return 0;
@@ -53,14 +86,20 @@ int main()
 // Vulkan sandbox
 // ============================================================
 
+#ifdef AURA_HAS_VULKAN
 static void runVulkan(aura3d::vk::VulkanRenderer* renderer)
 {
-    // ------------------------------------------------------------------
-    // 1. Build the graphics pipeline (shader paths are app-specific)
-    // ------------------------------------------------------------------
-    renderer->setupPipeline(
-        "./resources/shaders/vk/vk_shader2d_vert.spv",
-        "./resources/shaders/vk/vk_shader2d_frag.spv");
+    const bool is2d = renderer->is2D();
+
+    if (is2d) {
+        renderer->setupPipeline(
+            "./resources/shaders/vk/vk_shader2d_vert.spv",
+            "./resources/shaders/vk/vk_shader2d_frag.spv");
+    } else {
+        renderer->setupPipeline(
+            "./resources/shaders/vk/vk_shader3d_vert.spv",
+            "./resources/shaders/vk/vk_shader3d_frag.spv");
+    }
 
     auto* pipeline        = renderer->getGraphicsPipelineManager();
     auto* swapChain       = renderer->getSwapChainManager();
@@ -80,43 +119,46 @@ static void runVulkan(aura3d::vk::VulkanRenderer* renderer)
 
     u32 swapChainImageCount = swapChain->getSwapChainImages().size();
 
-    // ------------------------------------------------------------------
-    // 2. Create descriptor-set layouts + pipeline
-    // ------------------------------------------------------------------
     pipeline->createDescriptorSetLayouts();
 
-    // ------------------------------------------------------------------
-    // 3. Geometry – coloured rectangle
-    // ------------------------------------------------------------------
-    const std::vector<aura3d::Vertex2d> vertices = {
-        {{-0.5f, -0.5f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{ 0.5f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{ 0.5f,  0.5f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{-0.5f,  0.5f}, {0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}}
-    };
+    // Geometry — mode-aware vertex types
     const std::vector<u16> indices = { 0, 1, 2, 2, 3, 0 };
 
-    vertexMgr->createVertexBuffer(
-        "mainRect",
-        *renderer->getDeviceManager()->getPhysicalDevice(),
-        commandMgr->getThreadCommandPool(),
-        swapChain->getSwapchainCreateInfoKHR()->imageSharingMode,
-        graphicsQueue,
-        vertices,
-        false);
+    if (is2d) {
+        const std::vector<aura3d::Vertex2d> vertices = {
+            {{-0.5f, -0.5f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+            {{ 0.5f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+            {{ 0.5f,  0.5f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+            {{-0.5f,  0.5f}, {0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}}
+        };
+        vertexMgr->createVertexBuffer(
+            "mainRect",
+            *renderer->getDeviceManager()->getPhysicalDevice(),
+            commandMgr->getThreadCommandPool(),
+            swapChain->getSwapchainCreateInfoKHR()->imageSharingMode,
+            graphicsQueue, vertices, false);
+    } else {
+        const std::vector<aura3d::Vertex3d> vertices = {
+            {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
+            {{ 0.5f, -0.5f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
+            {{ 0.5f,  0.5f, 0.0f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
+            {{-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}
+        };
+        vertexMgr->createVertexBuffer(
+            "mainRect",
+            *renderer->getDeviceManager()->getPhysicalDevice(),
+            commandMgr->getThreadCommandPool(),
+            swapChain->getSwapchainCreateInfoKHR()->imageSharingMode,
+            graphicsQueue, vertices, false);
+    }
 
     indexMgr->createIndexBuffer(
         "rectIndices",
         *renderer->getDeviceManager()->getPhysicalDevice(),
         commandMgr->getThreadCommandPool(),
         swapChain->getSwapchainCreateInfoKHR()->imageSharingMode,
-        graphicsQueue,
-        indices,
-        false);
+        graphicsQueue, indices, false);
 
-    // ------------------------------------------------------------------
-    // 4. Uniform buffers (one per swapchain image)
-    // ------------------------------------------------------------------
     uniformMgr->createUniformBuffers(
         *renderer->getDeviceManager()->getPhysicalDevice(),
         swapChain->getSwapchainCreateInfoKHR()->imageSharingMode,
@@ -125,14 +167,23 @@ static void runVulkan(aura3d::vk::VulkanRenderer* renderer)
     aura3d::TransformUBO ubo{};
     ubo.model = glm::mat4(1.0f);
     ubo.view  = glm::mat4(1.0f);
-    ubo.proj  = glm::mat4(1.0f);
+
+    if (is2d) {
+        ubo.proj = glm::mat4(1.0f);
+    } else {
+        auto extent = *swapChain->getExtent2D();
+        float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+        ubo.proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+        ubo.view = glm::lookAt(
+            glm::vec3(0.0f, 0.0f, 2.0f),
+            glm::vec3(0.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f, 1.0f, 0.0f));
+    }
+
     for (u32 i = 0; i < swapChainImageCount; ++i) {
         uniformMgr->updateUniformBuffer(i, ubo);
     }
 
-    // ------------------------------------------------------------------
-    // 5. Texture + descriptor sets
-    // ------------------------------------------------------------------
     textureMgr->createSolidColorTexture("white", 255, 255, 255);
     const auto* whiteTexture = textureMgr->getTexture("white");
 
@@ -154,23 +205,20 @@ static void runVulkan(aura3d::vk::VulkanRenderer* renderer)
             whiteTexture->view, whiteTexture->sampler);
     }
 
-    // ------------------------------------------------------------------
-    // 6. Create the pipeline (needs render pass, extent, vertex layout)
-    // ------------------------------------------------------------------
     std::vector<VkVertexInputBindingDescription> bindingDescs = {
-        aura3d::vk::VkVertexBufferManager::getBindingDescription(true)
+        aura3d::vk::VkVertexBufferManager::getBindingDescription(is2d)
     };
-    auto attrDescs = aura3d::vk::VkVertexBufferManager::getAttributeDescriptions(true);
+    auto attrDescs = aura3d::vk::VkVertexBufferManager::getAttributeDescriptions(is2d);
+    u32 attrCount  = aura3d::vk::VkVertexBufferManager::getAttributeDescriptionCount(is2d);
 
     pipeline->createPipeline(
         *renderPassMgr->getRenderPass(),
         *swapChain->getExtent2D(),
         bindingDescs,
-        attrDescs);
+        attrDescs,
+        attrCount,
+        !is2d);
 
-    // ------------------------------------------------------------------
-    // 7. Cache frequently accessed objects before the loop
-    // ------------------------------------------------------------------
     auto* windowMgr  = renderer->getWindowManager();
     auto* windowFlags = windowMgr->getWindowFlags();
 
@@ -187,9 +235,6 @@ static void runVulkan(aura3d::vk::VulkanRenderer* renderer)
     u32 imagesCount  = swapChainImageCount;
     unsigned long long frameCount = 0;
 
-    // ------------------------------------------------------------------
-    // 8. Main render loop
-    // ------------------------------------------------------------------
     windowMgr->process([&]()
     {
         syncMgr->waitForFences(renderer->getCurrentFrame());
@@ -255,14 +300,17 @@ static void runVulkan(aura3d::vk::VulkanRenderer* renderer)
 
     vkDeviceWaitIdle(*renderer->getDeviceManager()->getDevice());
 }
+#endif // AURA_HAS_VULKAN
 
+// ============================================================
+// OpenGL sandbox
+// ============================================================
+
+#ifdef AURA_HAS_OPENGL
 static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer)
 {
     auto* windowMgr = renderer->getWindowManager();
 
-    // ------------------------------------------------------------------
-    // Shaders
-    // ------------------------------------------------------------------
     auto compileShader = [](GLenum type, const std::string& path) -> u32 {
         std::string src = aura3d::gl::GlShaderManager::readShaderSource_GL(path);
         const char* c   = src.c_str();
@@ -288,9 +336,6 @@ static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer)
     glDeleteShader(vert);
     glDeleteShader(frag);
 
-    // ------------------------------------------------------------------
-    // Geometry
-    // ------------------------------------------------------------------
     const std::vector<aura3d::Vertex2d> vertices = {
         {{-0.5f, -0.5f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
         {{ 0.5f, -0.5f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
@@ -326,9 +371,6 @@ static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer)
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    // ------------------------------------------------------------------
-    // Uniform buffer (model / view / proj matrices)
-    // ------------------------------------------------------------------
     u32 UBO;
     u32 uboSize = 3 * sizeof(glm::mat4);
     glGenBuffers(1, &UBO);
@@ -342,9 +384,6 @@ static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer)
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, UBO);
     }
 
-    // ------------------------------------------------------------------
-    // Default 1×1 white texture
-    // ------------------------------------------------------------------
     u32 whiteTexture;
     glGenTextures(1, &whiteTexture);
     glBindTexture(GL_TEXTURE_2D, whiteTexture);
@@ -356,9 +395,6 @@ static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer)
     unsigned long long frameCount = 0;
     wma::WindowFlags* windowFlags = windowMgr->getWindowFlags();
 
-    // ------------------------------------------------------------------
-    // Main render loop
-    // ------------------------------------------------------------------
     windowMgr->process([&]()
     {
         if (windowFlags->resized) {
@@ -375,8 +411,18 @@ static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer)
                     << " | Delta: " << windowFlags->deltaTime << "ms";
         }
 
-        // Update matrices every frame
         glm::mat4 model(1.0f), view(1.0f), proj(1.0f);
+
+        if (renderer->is3D()) {
+            auto* wd = windowMgr->getWindowDetails();
+            float aspect = static_cast<float>(wd->width) / static_cast<float>(wd->height);
+            proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+            view = glm::lookAt(
+                glm::vec3(0.0f, 0.0f, 2.0f),
+                glm::vec3(0.0f, 0.0f, 0.0f),
+                glm::vec3(0.0f, 1.0f, 0.0f));
+        }
+
         glBindBuffer(GL_UNIFORM_BUFFER, UBO);
         glBufferSubData(GL_UNIFORM_BUFFER, 0,                sizeof(glm::mat4), glm::value_ptr(model));
         glBufferSubData(GL_UNIFORM_BUFFER, sizeof(glm::mat4),sizeof(glm::mat4), glm::value_ptr(view));
@@ -399,7 +445,6 @@ static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer)
         ++frameCount;
     });
 
-    // Cleanup GL resources
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
@@ -407,20 +452,19 @@ static void runOpenGL(aura3d::gl::OpenGLRenderer* renderer)
     glDeleteTextures(1, &whiteTexture);
     glDeleteProgram(shaderProgram);
 }
+#endif // AURA_HAS_OPENGL
 
 // ============================================================
 // CPU / Software sandbox
 // ============================================================
 
+#ifdef AURA_HAS_CPU
 static void runCPU(aura3d::cpu::CPURenderer* renderer)
 {
     auto* windowMgr      = renderer->getWindowManager();
     auto* frameBuf       = renderer->getFrameBufferManager();
     auto* windowFlags    = windowMgr->getWindowFlags();
 
-    // ------------------------------------------------------------------
-    // Main render loop
-    // ------------------------------------------------------------------
     windowMgr->process([&]()
     {
         auto* wd = windowMgr->getWindowDetails();
@@ -443,7 +487,9 @@ static void runCPU(aura3d::cpu::CPURenderer* renderer)
         int textH = frameBuf->getTextHeight("FPS: 999");
         textY += 10 + textH;
 
-        frameBuf->drawText("Aura3D Sandbox", {10, textY}, aura3d::colors::RED_UINT32);
+        const char* modeLabel = renderer->is2D() ? "Mode: 2D" : "Mode: 3D";
+        frameBuf->drawText(std::string("Aura3D Sandbox | ") + modeLabel,
+                           {10, textY}, aura3d::colors::RED_UINT32);
 
         frameBuf->drawLine({250, 250}, {400, 400}, aura3d::colors::BLACK_UINT32);
         frameBuf->drawLine({400, 400}, {150, 600}, aura3d::colors::BLACK_UINT32);
@@ -453,3 +499,4 @@ static void runCPU(aura3d::cpu::CPURenderer* renderer)
         frameBuf->renderFramebuffer();
     });
 }
+#endif // AURA_HAS_CPU

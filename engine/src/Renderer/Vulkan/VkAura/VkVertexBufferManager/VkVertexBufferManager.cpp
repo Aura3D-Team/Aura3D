@@ -413,6 +413,11 @@ VkVertexInputBindingDescription VkVertexBufferManager::getBindingDescription(boo
     return bindingDescription;
 }
 
+u32 VkVertexBufferManager::getAttributeDescriptionCount(bool is2d)
+{
+    return is2d ? MAX_ATTRIBUTE_DESCRIPTION_2D : MAX_ATTRIBUTE_DESCRIPTION_3D;
+}
+
 AttributeDescriptionArray<VkVertexInputAttributeDescription> VkVertexBufferManager::getAttributeDescriptions(bool is2d)
 {
     AttributeDescriptionArray<VkVertexInputAttributeDescription> attributeDescriptions = {};
@@ -421,19 +426,16 @@ AttributeDescriptionArray<VkVertexInputAttributeDescription> VkVertexBufferManag
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = is2d ? VK_FORMAT_R32G32_SFLOAT : VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[0].offset = 0;
 
     // Texture Coordinate (vec2)
     attributeDescriptions[1].binding = 0;
     attributeDescriptions[1].location = 1;
     attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
-    attributeDescriptions[1].offset = 0;
 
     // Color (vec4)
     attributeDescriptions[2].binding = 0;
     attributeDescriptions[2].location = 2;
     attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributeDescriptions[2].offset = 0;
 
     if (is2d) {
         attributeDescriptions[0].offset = offsetof(Vertex2d, pos);
@@ -443,6 +445,12 @@ AttributeDescriptionArray<VkVertexInputAttributeDescription> VkVertexBufferManag
         attributeDescriptions[0].offset = offsetof(Vertex3d, pos);
         attributeDescriptions[1].offset = offsetof(Vertex3d, texCoord);
         attributeDescriptions[2].offset = offsetof(Vertex3d, color);
+
+        // Normal (vec3) — only for 3D vertices
+        attributeDescriptions[3].binding = 0;
+        attributeDescriptions[3].location = 3;
+        attributeDescriptions[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[3].offset = offsetof(Vertex3d, normal);
     }
 
     return attributeDescriptions;

@@ -23,19 +23,26 @@ VkFrameBuffersManager::~VkFrameBuffersManager()
 
 void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& imageViews,
                                                VkRenderPass renderPass,
-                                               VkExtent2D frameExtent)
+                                               VkExtent2D frameExtent,
+                                               VkImageView depthImageView)
 {
     _framebuffers.resize(imageViews.size());
 
     auto vkCallbacks = vkHostAllocator->getCallbacks();
+    const bool hasDepth = (depthImageView != VK_NULL_HANDLE);
 
     for (size_t i = 0; i < imageViews.size(); i++)
     {
+        std::vector<VkImageView> attachments = { imageViews[i] };
+        if (hasDepth) {
+            attachments.push_back(depthImageView);
+        }
+
         VkFramebufferCreateInfo framebufferInfo = {};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = renderPass;
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.pAttachments = &imageViews[i];
+        framebufferInfo.attachmentCount = static_cast<u32>(attachments.size());
+        framebufferInfo.pAttachments = attachments.data();
         framebufferInfo.width = frameExtent.width;
         framebufferInfo.height = frameExtent.height;
         framebufferInfo.layers = 1;

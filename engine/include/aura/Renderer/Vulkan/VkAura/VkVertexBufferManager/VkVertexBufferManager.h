@@ -52,9 +52,9 @@ public:
     // Get vertex count for a specific buffer
     size_t getVertexCount(const std::string& name);
 
-    // Static helper methods for pipeline setup
     static VkVertexInputBindingDescription getBindingDescription(bool is2d);
     static AttributeDescriptionArray<VkVertexInputAttributeDescription> getAttributeDescriptions(bool is2d);
+    static u32 getAttributeDescriptionCount(bool is2d);
 
     // Clean up a specific buffer or all buffers
     void cleanup(const std::string& name);

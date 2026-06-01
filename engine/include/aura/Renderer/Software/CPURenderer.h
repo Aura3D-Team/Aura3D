@@ -11,35 +11,18 @@
 namespace aura3d {
 namespace cpu {
 
-/**
- * @brief CPU-based software renderer.
- *
- * initialize() creates the SDL2 window and the CpuFrameBufferManager.
- * All drawing calls and the per-frame loop are the responsibility of the
- * consuming application (Sandbox).
- */
 class CPURenderer : public IRenderer {
 public:
-    CPURenderer(const wma::WindowDetails& windowDetails);
+    CPURenderer(const wma::WindowDetails& windowDetails, RendererMode mode);
     virtual ~CPURenderer();
 
-    /**
-     * @brief Create the window and framebuffer.
-     */
     void initialize() override;
-
-    /**
-     * @brief Resize the framebuffer after a window resize.
-     */
     void handleWindowChanges() override;
-
-    /**
-     * @brief Release all resources.
-     */
     void cleanup() override;
 
-    wma::IWindowManager*    getWindowManager()    override { return _windowManagerApi.get(); }
-    CpuFrameBufferManager*  getFrameBufferManager()        { return _frameBufferManager.get(); }
+    wma::IWindowManager*    getWindowManager()      override { return _windowManagerApi.get(); }
+    RendererChoice          getBackendType() const   override { return RendererChoice::SOFTWARE; }
+    CpuFrameBufferManager*  getFrameBufferManager()          { return _frameBufferManager.get(); }
 
 protected:
     void createWindow(const char* title) override;

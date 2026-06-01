@@ -10,13 +10,23 @@
     X(OPENGL)           \
     X(VULKAN)           \
 
+#define RENDERER_MODE_LIST \
+    X(MODE_2D)             \
+    X(MODE_3D)             \
+
 namespace aura3d {
 
 enum class RendererChoice
 {
-
 #define X(name) name,
     RENDERER_LIST
+#undef X
+};
+
+enum class RendererMode
+{
+#define X(name) name,
+    RENDERER_MODE_LIST
 #undef X
 };
 
@@ -30,67 +40,69 @@ inline bool RendererChoiceFromString(const std::string& s, RendererChoice& out)
     RENDERER_LIST
 #undef X
 
-        return false;
+    if (up == "CPU") { out = RendererChoice::SOFTWARE; return true; }
+
+    return false;
 }
 
-/**
- * @brief Abstract base class for all renderer implementations
- *
- * The Renderer class provides a common interface for different rendering backends
- * (Vulkan, OpenGL, CPU-based software rendering, etc.)
- */
+inline bool RendererModeFromString(const std::string& s, RendererMode& out)
+{
+    std::string low;
+    low.reserve(s.size());
+    for (const char c : s) low += std::tolower(c);
+
+    if (low == "2d" || low == "mode_2d") { out = RendererMode::MODE_2D; return true; }
+    if (low == "3d" || low == "mode_3d") { out = RendererMode::MODE_3D; return true; }
+
+    return false;
+}
+
+inline const char* RendererChoiceToString(RendererChoice c)
+{
+    switch (c) {
+    case RendererChoice::SOFTWARE: return "SOFTWARE";
+    case RendererChoice::OPENGL:   return "OPENGL";
+    case RendererChoice::VULKAN:   return "VULKAN";
+    }
+    return "UNKNOWN";
+}
+
+inline const char* RendererModeToString(RendererMode m)
+{
+    switch (m) {
+    case RendererMode::MODE_2D: return "2D";
+    case RendererMode::MODE_3D: return "3D";
+    }
+    return "UNKNOWN";
+}
+
 class IRenderer {
 public:
-    /**
-     * @brief Constructor with window configuration
-     * @param windowDetails Window configuration parameters
-     */
-    IRenderer(const wma::WindowDetails& windowDetails) : _windowDetails(windowDetails) {};
+    IRenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
+        : _windowDetails(windowDetails), _mode(mode) {}
 
-    /**
-     * @brief Virtual destructor
-     */
     virtual ~IRenderer() = default;
 
-    /**
-     * @brief Initialize the renderer
-     * This method should be called before any rendering operations
-     */
     virtual void initialize() = 0;
-
-    /**
-     * @brief Handle window resize and other window-related changes
-     */
     virtual void handleWindowChanges() = 0;
-
-    /**
-     * @brief Clean up all resources used by the renderer
-     */
     virtual void cleanup() = 0;
 
-    /**
-     * @brief Get the current window details
-     * @return Current window configuration
-     */
     const wma::WindowDetails& getWindowDetails() const { return _windowDetails; }
+    RendererMode getMode() const { return _mode; }
+    bool is2D() const { return _mode == RendererMode::MODE_2D; }
+    bool is3D() const { return _mode == RendererMode::MODE_3D; }
 
-    /**
-     * @brief Get the underlying window manager
-     * @return Pointer to the window manager (valid after initialize())
-     */
     virtual wma::IWindowManager* getWindowManager() = 0;
 
+    virtual RendererChoice getBackendType() const = 0;
+
 protected:
-    /**
-     * @brief Create and initialize the window
-     * @param title Window title
-     */
     virtual void createWindow(const char* title) = 0;
 
-    // Window details
     wma::WindowDetails _windowDetails;
+    RendererMode _mode;
 };
 
 } // namespace aura3d
 
-#endif // RENDERER_H
+#endif // IRENDERER_H

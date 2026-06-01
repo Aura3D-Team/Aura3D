@@ -32,11 +32,12 @@ public:
     // Create descriptor set layouts from the specified bindings
     void createDescriptorSetLayouts();
 
-    // Create the pipeline with vertex input and descriptor set layouts
     void createPipeline(VkRenderPass renderPass,
                         VkExtent2D extent,
                         const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
-                        const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray);
+                        const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray,
+                        u32 attributeDescriptionCount = MAX_ATTRIBUTE_DESCRIPTION,
+                        bool enableDepthTest = false);
 
     // Bind the pipeline and all descriptor sets to the command buffer
     void cmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint);

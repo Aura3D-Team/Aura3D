@@ -6,59 +6,97 @@
 namespace aura3d {
 namespace vk {
 
-VkImageViewsManager::VkImageViewsManager(VkHostAllocator* vkHostAllocator, VkDevice* device)
-    : vkHostAllocator(vkHostAllocator), _device(device)
-{
-    // empty
-}
+VkImageViewsManager::VkImageViewsManager(VkHostAllocator* hostAllocator, VkDevice* device)
+    : _hostAllocator(hostAllocator), _device(device)
+{}
 
 VkImageViewsManager::~VkImageViewsManager()
 {
     cleanup();
-
     _device = nullptr;
 }
 
-void VkImageViewsManager::createImageViews(const std::vector<VkImage>& swapChainImages,
-                                           VkFormat swapChainImageFormat,
-                                           ImageViewData vkImageViewData)
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal helper – creates one VkImageView with explicit parameters
+// ─────────────────────────────────────────────────────────────────────────────
+
+VkImageView VkImageViewsManager::createView(VkImage image, VkFormat format,
+                                             VkImageAspectFlags aspect,
+                                             u32 baseMip,    u32 mipLevels,
+                                             u32 baseLayer,  u32 layerCount)
 {
-    _swapChainImageViews.resize(swapChainImages.size());
+    VkImageViewCreateInfo info = {};
+    info.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    info.image    = image;
+    info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    info.format   = format;
 
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
-        VkImageViewCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = swapChainImages[i];
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = swapChainImageFormat;
+    info.components = {
+        VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+        VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY
+    };
 
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    info.subresourceRange.aspectMask     = aspect;
+    info.subresourceRange.baseMipLevel   = baseMip;
+    info.subresourceRange.levelCount     = mipLevels;
+    info.subresourceRange.baseArrayLayer = baseLayer;
+    info.subresourceRange.layerCount     = layerCount;
 
-        createInfo.subresourceRange.aspectMask = vkImageViewData.aspectMask;
-        createInfo.subresourceRange.baseMipLevel = vkImageViewData.baseMipLevel;
-        createInfo.subresourceRange.levelCount = vkImageViewData.levelCount;
-        createInfo.subresourceRange.baseArrayLayer = vkImageViewData.baseArrayLayer;
-        createInfo.subresourceRange.layerCount = vkImageViewData.layerCount;
+    VkImageView view;
+    VK_RESULT_CHECK(vkCreateImageView(*_device, &info, _hostAllocator->getCallbacks(), &view));
+    return view;
+}
 
-        VkResult result = vkCreateImageView(*_device, &createInfo, vkHostAllocator->getCallbacks(), &_swapChainImageViews[i]);
-        VK_RESULT_CHECK(result);
+// ─────────────────────────────────────────────────────────────────────────────
+// Color image views (one per swapchain image)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void VkImageViewsManager::createImageViews(const std::vector<VkImage>& images,
+                                           VkFormat format,
+                                           ImageViewData viewData)
+{
+    _colorImageViews.resize(images.size());
+    for (size_t i = 0; i < images.size(); ++i) {
+        _colorImageViews[i] = createView(
+            images[i], format,
+            viewData.aspectMask,
+            viewData.baseMipLevel, viewData.levelCount,
+            viewData.baseArrayLayer, viewData.layerCount);
     }
 }
 
-const std::vector<VkImageView>& VkImageViewsManager::getImageViews() const
+// ─────────────────────────────────────────────────────────────────────────────
+// Depth image view (single, optional)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void VkImageViewsManager::createDepthImageView(VkImage image, VkFormat format)
 {
-    return _swapChainImageViews;
+    cleanupDepthImageView();
+    _depthImageView = createView(image, format,
+                                  VK_IMAGE_ASPECT_DEPTH_BIT,
+                                  0, 1,
+                                  0, 1);
 }
+
+void VkImageViewsManager::cleanupDepthImageView()
+{
+    if (_depthImageView == VK_NULL_HANDLE) return;
+    vkDestroyImageView(*_device, _depthImageView, _hostAllocator->getCallbacks());
+    _depthImageView = VK_NULL_HANDLE;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Full cleanup
+// ─────────────────────────────────────────────────────────────────────────────
 
 void VkImageViewsManager::cleanup()
 {
-    for (VkImageView& imageView : _swapChainImageViews) {
-        vkDestroyImageView(*_device, imageView, vkHostAllocator->getCallbacks());
+    cleanupDepthImageView();
+
+    for (VkImageView view : _colorImageViews) {
+        vkDestroyImageView(*_device, view, _hostAllocator->getCallbacks());
     }
-    _swapChainImageViews.clear();
+    _colorImageViews.clear();
 }
 
 }

@@ -164,9 +164,10 @@ VkDescriptorSetLayout VkGraphicsPipelineManager::getDescriptorSetLayout(u32 setI
 void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
                                                VkExtent2D extent,
                                                const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
-                                               const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray)
+                                               const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray,
+                                               u32 attributeDescriptionCount,
+                                               bool enableDepthTest)
 {
-    // Make sure descriptor set layouts are created
     if (_descriptorSetLayouts.empty()) {
         createDescriptorSetLayouts();
     }
@@ -181,7 +182,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.vertexBindingDescriptionCount = static_cast<u32>(vertexBindingDescArray.size());
     vertexInputInfo.pVertexBindingDescriptions = vertexBindingDescArray.data();
-    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(vertexAttributeDescArray.size());
+    vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptionCount;
     vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDescArray.data();
 
     // Input assembly state
@@ -267,12 +268,22 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     colorBlending.blendConstants[2] = 0.0f; // Optional
     colorBlending.blendConstants[3] = 0.0f; // Optional
 
+    // Depth stencil state (only meaningful when render pass has a depth attachment)
+    VkPipelineDepthStencilStateCreateInfo depthStencil = {};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = enableDepthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = enableDepthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
     // Set all states in pipeline info
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = _pipelineLayout;
