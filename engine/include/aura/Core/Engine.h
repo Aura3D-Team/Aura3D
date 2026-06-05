@@ -4,9 +4,6 @@
 #include "aura/aura.h"
 
 #include "aura/Renderer/IRenderer.h"
-#include "aura/Renderer/Software/CPURenderer.h"
-#include "aura/Renderer/Vulkan/VulkanRenderer.h"
-#include "aura/Renderer/OpenGL/OpenGLRenderer.h"
 
 class Engine
 {

@@ -55,7 +55,7 @@ public:
      * @param currentImage Index of the current swapchain image
      * @param ubo Transform UBO data to upload
      */
-    void updateUniformBuffer(u32 currentImage, TransformUBO& ubo);
+    void updateUniformBuffer(u32 currentImage, gfx::TransformUBO& ubo);
 
     /**
      * @brief Gets a uniform buffer handle

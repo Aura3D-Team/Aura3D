@@ -24,22 +24,18 @@ public:
                          VkDevice* vkDevice);
     ~VkIndexBufferManager();
 
-    // Create a named Index buffer
     void createIndexBuffer(const std::string& name,
                            VkPhysicalDevice physicalDevice,
                            VkCommandPool commandPool,
                            VkSharingMode sharingMode,
                            VkQueue graphicsQueue,
-                           const std::vector<u16>& indices,
-                           bool persistentMapping = false);
+                           std::vector<u16>&& indices,
+                           bool persistentMapping = true);
 
-    // Update an existing buffer with new vertex data
-    void updateIndexBuffer(const std::string& name, const std::vector<u16>& indices);
+    void updateIndexBuffer(const std::string& name, std::vector<u16>&& indices);
 
-    // Get a specific vertex buffer by name
     IndexBufferInfo getIndexBuffer(const std::string& name);
 
-    // Clean up a specific buffer or all buffers
     void cleanup(const std::string& name);
     void cleanup();
 

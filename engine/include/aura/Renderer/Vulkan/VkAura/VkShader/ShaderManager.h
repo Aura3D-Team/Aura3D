@@ -3,8 +3,9 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <ink/ink.hpp>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include "ShaderSpirvExtractor.h"
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
@@ -21,6 +22,8 @@ public:
 
     void createVertShaderModule(const std::string& filename);
     void createFragShaderModule(const std::string& filename);
+    void createVertShaderModuleFromMemory(const unsigned char* data, u32 size);
+    void createFragShaderModuleFromMemory(const unsigned char* data, u32 size);
 
     void reset();
 

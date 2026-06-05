@@ -159,6 +159,7 @@ struct AuraBufferInfo {
     VkBuffer buffer      = VK_NULL_HANDLE; ///< Underlying Vulkan buffer handle.
     u32 allocationId     = 0;              ///< Allocation ID registered in VkDeviceAllocator.
     bool persistent      = false;          ///< True if the buffer memory is kept permanently mapped.
+    void* mappedPointer  = nullptr;        ///< CPU-visible mapped region (persistent uploads).
 };
 
 /**

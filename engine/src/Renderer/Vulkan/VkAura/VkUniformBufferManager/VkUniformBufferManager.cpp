@@ -31,7 +31,7 @@ void VkUniformBufferManager::createUniformBuffers(
     cleanup();
 
     // Calculate buffer size
-    VkDeviceSize bufferSize = sizeof(TransformUBO);
+    VkDeviceSize bufferSize = sizeof(gfx::TransformUBO);
 
     // Resize vectors to hold the requested number of buffers
     _uniformBuffers.resize(count, VK_NULL_HANDLE);
@@ -60,7 +60,7 @@ void VkUniformBufferManager::createUniformBuffers(
     }
 }
 
-void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, TransformUBO& ubo)
+void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, gfx::TransformUBO& ubo)
 {
     // Check if the index is valid
     if (currentImage >= _allocations.size() || _allocations[currentImage].mappedData == nullptr) {
@@ -94,7 +94,7 @@ VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const
 
 VkDeviceSize VkUniformBufferManager::getUniformBufferSize() const
 {
-    return sizeof(TransformUBO);
+    return sizeof(gfx::TransformUBO);
 }
 
 VkDescriptorSetLayoutBinding VkUniformBufferManager::getDescriptorSetLayoutBinding(u32 binding) const
@@ -116,7 +116,7 @@ VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(u32 index
     if (index < _uniformBuffers.size() && index < _allocations.size()) {
         bufferInfo.buffer = _uniformBuffers[index];
         bufferInfo.offset = _allocations[index].offset;
-        bufferInfo.range = sizeof(TransformUBO);
+        bufferInfo.range = sizeof(gfx::TransformUBO);
     }
     return bufferInfo;
 }

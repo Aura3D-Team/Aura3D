@@ -3,12 +3,11 @@
 
 #pragma once
 
-#include <wma/wma.hpp>
-
-#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
-#include <GLFW/glfw3.h>
+#include <vulkan/vulkan.h>
+#include <wma/wma.hpp>
 
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 

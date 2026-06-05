@@ -1,5 +1,15 @@
 #include "aura/Core/Engine.h"
 
+#ifdef AURA_HAS_OPENGL
+#include "aura/Renderer/OpenGL/OpenGLRenderer.h"
+#endif
+#ifdef AURA_HAS_VULKAN
+#include "aura/Renderer/Vulkan/VulkanRenderer.h"
+#endif
+#ifdef AURA_HAS_CPU
+#include "aura/Renderer/Software/CPURenderer.h"
+#endif
+
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
 Engine::Engine(const std::string& configPath)
@@ -13,7 +23,7 @@ Engine::Engine(const std::string& configPath)
     INK_CORE_LOGGER;
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
     ink::LogManager::getInstance().setGlobalLevel(logSeverity);
-    auto engine_settings = AuraSettings::get()->getSettings();
+    auto engine_settings = aura3d::AuraSettings::get()->getSettings();
     *engine_settings = ink::EnhancedJson::loadFromFile(configPath);
 
     configureWindow();
@@ -24,7 +34,7 @@ Engine::~Engine() = default;
 
 void Engine::configureWindow()
 {
-    auto config = AuraSettings::get()->getSettings();
+    auto config = aura3d::AuraSettings::get()->getSettings();
 
     _windowDetails = {};
     _windowDetails.width      = config->getPath<uint>("window/width", 1280);
@@ -40,9 +50,9 @@ void Engine::configureWindow()
 
 void Engine::createRenderer()
 {
-    auto config = AuraSettings::get()->getSettings();
+    auto config = aura3d::AuraSettings::get()->getSettings();
 
-    std::string backendStr = config->getPath<std::string>("renderer/backend", "software");
+    std::string backendStr = config->getPath<std::string>("renderer/backend", "vulkan");
     INK_ASSERT_MSG(
         aura3d::RendererChoiceFromString(backendStr, _rendererChoice),
         "Unsupported renderer backend: " + backendStr
@@ -59,19 +69,27 @@ void Engine::createRenderer()
 
     switch (_rendererChoice)
     {
+#ifdef AURA_HAS_CPU
     case aura3d::RendererChoice::SOFTWARE:
         INK_INFO << "Initializing Software Renderer...";
         _renderer = std::make_unique<aura3d::cpu::CPURenderer>(_windowDetails, _rendererMode);
         break;
+#endif
 
+#ifdef AURA_HAS_OPENGL
     case aura3d::RendererChoice::OPENGL:
         INK_INFO << "Initializing OpenGL Renderer...";
         _renderer = std::make_unique<aura3d::gl::OpenGLRenderer>(_windowDetails, _rendererMode);
         break;
+#endif
 
+#ifdef AURA_HAS_VULKAN
     case aura3d::RendererChoice::VULKAN:
         INK_INFO << "Initializing Vulkan Renderer...";
         _renderer = std::make_unique<aura3d::vk::VulkanRenderer>(_windowDetails, _rendererMode);
         break;
+#endif
     }
+
+    _renderer->initialize(aura3d::AuraSettings::get());
 }

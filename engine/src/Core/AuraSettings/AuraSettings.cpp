@@ -1,5 +1,7 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
+namespace aura3d {
+
 AuraSettings* AuraSettings::get()
 {
     static AuraSettings instance;
@@ -9,4 +11,6 @@ AuraSettings* AuraSettings::get()
 ink::EnhancedJson* AuraSettings::getSettings()
 {
     return &_settings;
+}
+
 }

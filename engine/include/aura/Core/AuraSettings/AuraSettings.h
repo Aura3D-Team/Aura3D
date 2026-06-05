@@ -3,6 +3,8 @@
 
 #include <ink/EnhancedJson.h>
 
+namespace aura3d {
+
 class AuraSettings {
 public:
     static AuraSettings* get();
@@ -12,5 +14,8 @@ public:
 private:
     ink::EnhancedJson _settings;
 };
+
+}
+
 
 #endif

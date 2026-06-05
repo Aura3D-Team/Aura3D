@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <GL/gl.h>
-
 #include "aura/aura.h"
 
 namespace aura3d {

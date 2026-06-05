@@ -30,21 +30,19 @@ public:
                             VkCommandPool commandPool,
                             VkSharingMode sharingMode,
                             VkQueue graphicsQueue,
-                            const std::vector<Vertex2d>& vertices2d,
-                            bool persistentMapping = false);
+                            std::vector<gfx::Vertex2D>&& vertices2d,
+                            bool persistentMapping = true);
 
-    // Create a named vertex buffer with 3D vertices
     void createVertexBuffer(const std::string& name,
                             VkPhysicalDevice physicalDevice,
                             VkCommandPool commandPool,
                             VkSharingMode sharingMode,
                             VkQueue graphicsQueue,
-                            const std::vector<Vertex3d>& vertices3d,
-                            bool persistentMapping = false);
+                            std::vector<gfx::Vertex3D>&& vertices3d,
+                            bool persistentMapping = true);
 
-    // Update an existing buffer with new vertex data
-    void updateVertexBuffer(const std::string& name, const std::vector<Vertex2d>& vertices2d);
-    void updateVertexBuffer(const std::string& name, const std::vector<Vertex3d>& vertices3d);
+    void updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex2D>&& vertices2d);
+    void updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex3D>&& vertices3d);
 
     // Get a specific vertex buffer by name
     VertexBufferInfo getVertexBuffer(const std::string& name);

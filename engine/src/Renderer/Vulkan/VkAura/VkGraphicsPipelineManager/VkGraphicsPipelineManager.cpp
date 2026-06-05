@@ -12,32 +12,26 @@ VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllo
                                                      VkDevice* device)
     : VkPipelineManager(vkHostAllocator, device), vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
 {
-    // Load shader modules
     _shaderManager.createVertShaderModule(shader_vert_spv);
     _shaderManager.createFragShaderModule(shader_frag_spv);
 
-    // Initialize shader stages
-    // Vertex Shader Stage Info
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
     vertShaderStageInfo.module = _shaderManager.getVertShaderModule();
     vertShaderStageInfo.pName = "main";
 
-    // Fragment Shader Stage Info
     VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
     fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     fragShaderStageInfo.module = _shaderManager.getFragShaderModule();
     fragShaderStageInfo.pName = "main";
 
-    // Store in array
     _shaderStages = { vertShaderStageInfo, fragShaderStageInfo };
 
-    // Initialize dynamic states
-    initializeDynamicStates();
+    // Initialize default dynamic states
+    _dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 
-    // Add default UBO descriptor for vertex shader (set 0, binding 0)
     DescriptorBindingInfo uboBinding;
     uboBinding.binding = 0;
     uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -45,7 +39,46 @@ VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllo
     uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     addDescriptorBinding(0, uboBinding);
 
-    // Add default sampler descriptor for fragment shader (set 1, binding 0)
+    DescriptorBindingInfo samplerBinding;
+    samplerBinding.binding = 0;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerBinding.descriptorCount = 1;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    addDescriptorBinding(1, samplerBinding);
+}
+
+VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
+                                                     const unsigned char* vertData, u32 vertSize,
+                                                     const unsigned char* fragData, u32 fragSize,
+                                                     VkDevice* device)
+    : VkPipelineManager(vkHostAllocator, device), vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
+{
+    _shaderManager.createVertShaderModuleFromMemory(vertData, vertSize);
+    _shaderManager.createFragShaderModuleFromMemory(fragData, fragSize);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = _shaderManager.getVertShaderModule();
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = _shaderManager.getFragShaderModule();
+    fragShaderStageInfo.pName = "main";
+
+    _shaderStages = { vertShaderStageInfo, fragShaderStageInfo };
+
+    _dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+
+    DescriptorBindingInfo uboBinding;
+    uboBinding.binding = 0;
+    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboBinding.descriptorCount = 1;
+    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    addDescriptorBinding(0, uboBinding);
+
     DescriptorBindingInfo samplerBinding;
     samplerBinding.binding = 0;
     samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -63,11 +96,6 @@ VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
 
     // Base class destructor will handle pipeline and pipeline layout
     INK_DEBUG << "Graphics Pipeline destroyed.";
-}
-
-void VkGraphicsPipelineManager::initializeDynamicStates()
-{
-    _dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 }
 
 void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const DescriptorBindingInfo& bindingInfo)
@@ -92,7 +120,8 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     _descriptorSetLayouts.clear();
 
     // Create a layout for each descriptor set
-    for (const auto& pair : _descriptorSetLayoutInfos) {
+    for (const auto& pair : _descriptorSetLayoutInfos)
+    {
         const DescriptorSetLayoutInfo& setInfo = pair.second;
 
         // Convert our bindings to VkDescriptorSetLayoutBinding

@@ -6,7 +6,7 @@ namespace aura3d {
 namespace cpu {
 
 CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
-    : IRenderer(windowDetails, mode)
+    : IRenderer(windowDetails, mode), _workerPool(std::thread::hardware_concurrency())
 {
     INK_INFO << "Renderer - SOFTWARE (" << RendererModeToString(mode) << ")";
 }
@@ -16,15 +16,20 @@ CPURenderer::~CPURenderer()
     cleanup();
 }
 
-void CPURenderer::initialize()
+void CPURenderer::initialize(const aura3d::AuraSettings* settings)
 {
-    // Empty
+    _vertexBufferPool2d.reserve(256);
+    _vertexBufferPool3d.reserve(256);
+    _indexBufferPool.reserve(256);
+    _texturePool.reserve(64);
+
+    createWindow(APPLICATION_NAME, wma::WindowBackend::SDL2);
 }
 
-void CPURenderer::createWindow(const char* title)
+void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
 {
     _windowManagerApi = wma::createWindowManager(
-        wma::WindowBackend::SDL2, _windowDetails, wma::GraphicsAPI::CPU);
+        wBackend, _windowDetails, wma::GraphicsAPI::CPU);
 
     _windowManagerApi->createWindow(title);
 
@@ -39,9 +44,6 @@ void CPURenderer::createWindow(const char* title)
         (SDL_Window*)_windowManagerApi->getWindowInstance(),
         "CpuFrameBufferManager",
         _frameBufferManager.get());
-
-    _windowManagerApi->getKeyboardListener().addKeyAction(wma::Key::KEY_ESCAPE, wma::KeyAction{
-        [this](){ cleanup(); }, nullptr });
 }
 
 void CPURenderer::handleWindowChanges()
@@ -55,7 +57,102 @@ void CPURenderer::cleanup()
 {
     _frameBufferManager.reset();
     _windowManagerApi.reset();
+    _vertexBufferPool2d.clear();
+    _vertexBufferPool3d.clear();
+    _indexBufferPool.clear();
+    _texturePool.clear();
 }
 
+VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices)
+{
+    _vertexBufferPool2d.push_back(std::move(vertices));
+    return static_cast<VertexBufferHandle>(_vertexBufferPool2d.size() - 1);
 }
+
+VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
+{
+    _vertexBufferPool3d.push_back(std::move(vertices));
+    return static_cast<VertexBufferHandle>(_vertexBufferPool3d.size() - 1);
+}
+
+IndexBufferHandle CPURenderer::createIndexBuffer(std::vector<u16>&& indices)
+{
+    std::vector<u32> upcasted;
+    upcasted.reserve(indices.size());
+    for (u16 idx : indices) {
+        upcasted.push_back(static_cast<u32>(idx));
+    }
+
+    _indexBufferPool.push_back(std::move(upcasted));
+    return static_cast<IndexBufferHandle>(_indexBufferPool.size() - 1);
+}
+
+IndexBufferHandle CPURenderer::createIndexBuffer(std::vector<u32>&& indices)
+{
+    _indexBufferPool.push_back(std::move(indices));
+    return static_cast<IndexBufferHandle>(_indexBufferPool.size() - 1);
+}
+
+TextureHandle CPURenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
+{
+    return INVALID_HANDLE;
+}
+
+void CPURenderer::beginFrame()
+{
+}
+
+void CPURenderer::beginRenderPass()
+{
+    if (_frameBufferManager) {
+        _frameBufferManager->clear(_clearColorU32);
+    }
+}
+
+void CPURenderer::endRenderPass()
+{
+}
+
+void CPURenderer::endFrame()
+{
+    if (_frameBufferManager) {
+        _frameBufferManager->renderFramebuffer();
+    }
+}
+
+void CPURenderer::setTransform(const gfx::TransformUBO& ubo)
+{
+    _currentTransform = ubo;
+}
+
+void CPURenderer::bindVertexBuffer(VertexBufferHandle handle)
+{
+}
+
+void CPURenderer::bindIndexBuffer(IndexBufferHandle handle)
+{
+}
+
+void CPURenderer::bindTexture(TextureHandle handle)
+{
+}
+
+void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
+{
+}
+
+void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
+{
+}
+
+void CPURenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
+{
+    u8 lr = static_cast<u8>(r * 255);
+    u8 lg = static_cast<u8>(g * 255);
+    u8 lb = static_cast<u8>(b * 255);
+    u8 la = static_cast<u8>(a * 255);
+    _clearColorU32 = (la << 24) | (lr << 16) | (lg << 8) | lb;
+}
+
+} // namespace cpu
 } // namespace aura3d

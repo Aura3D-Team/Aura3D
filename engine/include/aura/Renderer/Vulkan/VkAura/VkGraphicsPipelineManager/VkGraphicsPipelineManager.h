@@ -23,6 +23,12 @@ public:
                               std::string shader_vert_spv,
                               std::string shader_frag_spv,
                               VkDevice* device);
+
+    VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
+                              const unsigned char* vertData, u32 vertSize,
+                              const unsigned char* fragData, u32 fragSize,
+                              VkDevice* device);
+
     ~VkGraphicsPipelineManager();
 
     // Add a descriptor binding to a specific set
@@ -82,9 +88,6 @@ private:
     // Storage for descriptor set layouts
     std::unordered_map<u32, DescriptorSetLayoutInfo> _descriptorSetLayoutInfos;
     std::unordered_map<u32, VkDescriptorSetLayout> _descriptorSetLayouts;
-
-    // Initialize default dynamic states
-    void initializeDynamicStates();
 };
 
 }

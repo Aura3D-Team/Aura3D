@@ -7,65 +7,66 @@
 #include <SDL2/SDL_ttf.h>
 #include <string>
 
-// For C++20 PI constants.
-// If you are not using C++20, you can define PI_FLOAT manually:
-// const float PI_FLOAT = 3.1415926535f;
-// or more accurately: const float PI_FLOAT = std::acos(-1.0f);
-#if __cplusplus >= 202002L
-#include <numbers>
-static const float PI_FLOAT = std::numbers::pi_v<float>;
-#else
-// Fallback for pre-C++20 (or if <numbers> is not available)
 static const float PI_FLOAT = std::acos(-1.0f);
-#endif
 
+#include "aura/Core/AuraCore.h"
 #include "aura/Utils/AlignedVector.h"
 #include "aura/Core/AuraFont/AuraBitmapFont.h"
 
 namespace aura3d {
 namespace cpu {
 
-struct Pixel {
-    Pixel(u32 _rgb = 0, f32 _z = 1.0f) :
-        rgb(_rgb), z(_z) {}
-
-    u32 rgb;
-    f32 z;
-};
-
 struct Point {
     Point(i32 _x, i32 _y) :
-        x(_x), y(_y) {}
+        x(_x), y(_y) {};
 
     i32 x;
     i32 y;
+};
 
-    inline bool isValid(Point dims) noexcept {
-        return x <= dims.x && x >= 0 && y <= dims.y && y >= 0;
-    }
+struct Pixel {
+    constexpr Pixel(u32 rgb_ = 0, f32 z_ = 1.0f) noexcept
+        : rgb(rgb_), z(z_) {}
+
+    u32 rgb = 0;
+    f32 z = 1.0f;
 };
 
 struct Rectangle {
-    Rectangle(i32 _x, i32 _y, i32 _width, i32 _height) :
-        x(_x), y(_y), width(_width), height(_height) {}
+    constexpr Rectangle(
+        i32 x_ = 0,
+        i32 y_ = 0,
+        i32 width_ = 0,
+        i32 height_ = 0
+        ) noexcept
+        : x(x_), y(y_), width(width_), height(height_) {}
 
-    i32 x;
-    i32 y;
-    i32 width;
-    i32 height;
+    i32 x = 0;
+    i32 y = 0;
+    i32 width = 0;
+    i32 height = 0;
 
-    inline bool isValid() noexcept {
-        return x <= width && x >= 0 && y <= height && y >= 0;
+    [[nodiscard]]
+    constexpr bool isValid() const noexcept {
+        return width > 0 && height > 0 && x >= 0 && y >= 0;
+    }
+
+    [[nodiscard]]
+    constexpr bool contains(i32 px, i32 py) const noexcept {
+        return px >= x &&
+               py >= y &&
+               px < x + width &&
+               py < y + height;
     }
 };
 
-struct Vertex {
-    Vertex(f32 _x, f32 _y, f32 _z = 0, f32 _u = 0, f32 _v = 0, u32 _color = 0xFFFFFFFF) :
-        x(_x), y(_y), z(_z), u(_u), v(_v), color(_color) {}
-
-    f32 x, y, z;    // Position
-    f32 u, v;       // Texture coordinates
-    u32 color;  // Vertex color
+enum InterpolationMethod: u32 {
+    Linear = 0,
+    Smoothstep = 1,
+    Accelerate = 2,
+    Decelerate = 3,
+    Sine = 4,
+    Cosine = 5
 };
 
 struct Texture {
@@ -80,15 +81,6 @@ struct Texture {
         int y = INK_CLAMP(static_cast<int>(v * height), 0, height - 1);
         return data[y * width + x];
     }
-};
-
-enum class InterpolationMethod {
-    Linear = 0,
-    Smoothstep = 1,
-    Accelerate = 2,
-    Decelerate = 3,
-    Sine = 4,
-    Cosine = 5
 };
 
 class CpuFrameBufferManager
