@@ -29,14 +29,13 @@ namespace vk {
 
 class VulkanRenderer : public IRenderer {
 public:
-    VulkanRenderer(const wma::WindowDetails& windowDetails, RendererMode mode);
+    VulkanRenderer(const wma::WindowDetails& windowDetails);
     virtual ~VulkanRenderer();
 
     void initialize(const AuraSettings* settings) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
-    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices) override;
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u16>&& indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;

@@ -246,22 +246,19 @@ private:
     /**
      * @brief Acquire the proper lock for a memory operation
      * @param memoryTypeIndex The memory type index involved in the operation
-     * @param forWrite True if the operation will modify the pool
      */
-    void acquireLock(u32 memoryTypeIndex, bool forWrite = true);
+    void acquireLock(u32 memoryTypeIndex);
 
     /**
      * @brief Release the proper lock
      * @param memoryTypeIndex The memory type index for which the lock was acquired
-     * @param forWrite True if the lock was acquired for writing
      */
-    void releaseLock(u32 memoryTypeIndex, bool forWrite = true);
+    void releaseLock(u32 memoryTypeIndex);
 
     // Member variables
     VkHostAllocator* vkHostAllocator;
     VkPhysicalDevice physicalDevice;
     VkDevice device;
-
 
     VkDeviceSize defaultBlockSize;
     VkDeviceSize smallBlockSize;

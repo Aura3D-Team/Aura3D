@@ -18,14 +18,13 @@ namespace gl {
 
 class OpenGLRenderer : public IRenderer {
 public:
-    OpenGLRenderer(const wma::WindowDetails& windowDetails, RendererMode mode);
+    OpenGLRenderer(const wma::WindowDetails& windowDetails);
     virtual ~OpenGLRenderer();
 
     void initialize(const AuraSettings* settings) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
-    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices) override;
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u16>&& indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;

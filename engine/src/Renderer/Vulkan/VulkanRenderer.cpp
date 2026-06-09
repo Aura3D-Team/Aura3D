@@ -8,13 +8,13 @@
 namespace aura3d {
 namespace vk {
 
-VulkanRenderer::VulkanRenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
-    : IRenderer(windowDetails, mode),
+VulkanRenderer::VulkanRenderer(const wma::WindowDetails& windowDetails)
+    : IRenderer(windowDetails),
       _vkInstanceData({}),
       _vkDeviceData({}),
       _vkImageViewData({})
 {
-    INK_INFO << "Renderer - VULKAN (" << RendererModeToString(mode) << ")";
+    INK_INFO << "Renderer - VULKAN";
 
     _vkInstanceData.appName = "Aura3D";
     _vkInstanceData.engineName = "Aura3DEngine";
@@ -127,11 +127,7 @@ void VulkanRenderer::createResourceManagers()
     _vkFrameBuffersManager = std::make_unique<aura3d::vk::VkFrameBuffersManager>(_vkHostAllocator.get(), dev);
     _vkDescriptorManager = std::make_unique<aura3d::vk::VkDescriptorManager>(_vkHostAllocator.get(), dev);
 
-    if (is2D()) {
-        _vkGraphicsPipelineManager = std::make_unique<aura3d::vk::VkGraphicsPipelineManager>(_vkHostAllocator.get(), vk_vert_2d, vk_vert_2d_len, vk_frag_2d, vk_frag_2d_len, dev);
-    } else {
-        _vkGraphicsPipelineManager = std::make_unique<aura3d::vk::VkGraphicsPipelineManager>(_vkHostAllocator.get(), vk_vert_3d, vk_vert_3d_len, vk_frag_3d, vk_frag_3d_len, dev);
-    }
+    _vkGraphicsPipelineManager = std::make_unique<aura3d::vk::VkGraphicsPipelineManager>(_vkHostAllocator.get(), vk_vert_3d, vk_vert_3d_len, vk_frag_3d, vk_frag_3d_len, dev);
 
     _vkVertexBufferManager = std::make_unique<aura3d::vk::VkVertexBufferManager>(_vkHostAllocator.get(), _vkDeviceAllocator.get(), dev);
     _vkIndexBufferManager = std::make_unique<aura3d::vk::VkIndexBufferManager>(_vkHostAllocator.get(), _vkDeviceAllocator.get(), dev);
@@ -157,9 +153,9 @@ void VulkanRenderer::buildSwapchainResources()
     _vkSwapChainManager->createSwapChain(&_windowDetails, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get());
     _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(), _vkSwapChainManager->getChoosedSurfaceFormat()->format, _vkImageViewData);
 
-    if (is3D()) createDepthResources();
+    createDepthResources();
 
-    _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format, is3D(), _depth.format);
+    _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format, _depth.format);
     _vkFrameBuffersManager->createFrameBuffers(_vkImageViewsManager->getImageViews(), *_vkRenderPassManager->getRenderPass(), *_vkSwapChainManager->getExtent2D(), _vkImageViewsManager->getDepthImageView());
     _imagesCount = static_cast<u32>(_vkSwapChainManager->getSwapChainImages().size());
 }
@@ -184,10 +180,13 @@ void VulkanRenderer::createDescriptorSets()
         _vkDescriptorManager->updateDescriptorSet(_descSets[i], 0, _vkUniformBufferManager->getUniformBuffer(i), _vkUniformBufferManager->getUniformBufferSize());
     }
 
-    std::vector<VkVertexInputBindingDescription> bindings = { VkVertexBufferManager::getBindingDescription(is2D()) };
-    auto attributes = VkVertexBufferManager::getAttributeDescriptions(is2D());
+    std::vector<VkVertexInputBindingDescription> bindings = { VkVertexBufferManager::getBindingDescription() };
+    auto attributes = VkVertexBufferManager::getAttributeDescriptions();
 
-    _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(), *_vkSwapChainManager->getExtent2D(), bindings, attributes, VkVertexBufferManager::getAttributeDescriptionCount(is2D()), is3D());
+    _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(),
+                                               *_vkSwapChainManager->getExtent2D(),
+                                               bindings, attributes,
+                                               VkVertexBufferManager::getAttributeDescriptionCount());
     _pipelineReady = true;
 }
 
@@ -308,22 +307,15 @@ void VulkanRenderer::cleanup()
     _vkSwapChainManager.reset();
     _vkCommandManager.reset();
     _vkRenderSyncManager.reset();
-    _vkDeviceAllocator.reset();
     _vkDeviceManager.reset();
     _vkSurfaceManager.reset();
     _vkInstance.reset();
-    _vkHostAllocator.reset();
     _windowManagerApi.reset();
-    _isInitialized = false;
-}
 
-VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices)
-{
-    auto handle = _nextVbHandle++;
-    std::string name = "vb_" + std::to_string(handle);
-    _vkVertexBufferManager->createVertexBuffer(name, *_vkDeviceManager->getPhysicalDevice(), _vkCommandManager->getThreadCommandPool(), _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode, _queueDataFromExclusiveFlags.front()->queues.front(), std::move(vertices), false);
-    _vbNames[handle] = name;
-    return handle;
+    _vkDeviceAllocator.reset();
+    _vkHostAllocator.reset();
+
+    _isInitialized = false;
 }
 
 VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
@@ -454,8 +446,8 @@ void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     auto vbIt = _vbNames.find(_currentVertexBuffer);
     if (vbIt != _vbNames.end()) {
         auto vb = _vkVertexBufferManager->getVertexBuffer(vbIt->second);
-        auto& allocInfo = _vkDeviceAllocator->getAllocation(vb.allocationId);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vb.buffer, &allocInfo.offset);
+        VkDeviceSize vertexOffset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &vb.buffer, &vertexOffset);
     }
 
     auto ibIt = _ibNames.find(_currentIndexBuffer);
@@ -485,8 +477,8 @@ void VulkanRenderer::draw(u32 vertexCount, u32 instanceCount)
     auto vbIt = _vbNames.find(_currentVertexBuffer);
     if (vbIt != _vbNames.end()) {
         auto vb = _vkVertexBufferManager->getVertexBuffer(vbIt->second);
-        auto& allocInfo = _vkDeviceAllocator->getAllocation(vb.allocationId);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vb.buffer, &allocInfo.offset);
+        VkDeviceSize vertexOffset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &vb.buffer, &vertexOffset);
     }
 
     _vkGraphicsPipelineManager->cmdDraw(cmd, *_vkSwapChainManager->getExtent2D(), vertexCount, instanceCount, 0, 0);

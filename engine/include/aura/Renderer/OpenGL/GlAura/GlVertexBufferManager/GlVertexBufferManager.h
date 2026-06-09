@@ -13,10 +13,9 @@ namespace aura3d {
 namespace gl {
 
 struct GlVertexBufferData {
-    unsigned int vao = 0;
-    unsigned int vbo = 0;
-    u32   vertexCount = 0;
-    bool  is2d = true;
+    u32 vao = 0;
+    u32 vbo = 0;
+    u32 vertexCount = 0;
 };
 
 class GlVertexBufferManager {
@@ -24,7 +23,6 @@ public:
     GlVertexBufferManager();
     ~GlVertexBufferManager();
 
-    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices);
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices);
 
     void bind(VertexBufferHandle handle);

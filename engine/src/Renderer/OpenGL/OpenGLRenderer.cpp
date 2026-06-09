@@ -10,10 +10,10 @@
 namespace aura3d {
 namespace gl {
 
-OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
-    : IRenderer(windowDetails, mode)
+OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails& windowDetails)
+    : IRenderer(windowDetails)
 {
-    INK_INFO << "Renderer - OPENGL (" << RendererModeToString(mode) << ")";
+    INK_INFO << "Renderer - OPENGL";
 }
 
 OpenGLRenderer::~OpenGLRenderer()
@@ -92,11 +92,8 @@ void OpenGLRenderer::compileBuiltInShaders()
         return shader;
     };
 
-    const char* vertSrc = is2D() ? GL_VERTEX_2D : GL_VERTEX_3D;
-    const char* fragSrc = is2D() ? GL_FRAGMENT_2D : GL_FRAGMENT_3D;
-
-    GLuint vert = compileShader(GL_VERTEX_SHADER, vertSrc);
-    GLuint frag = compileShader(GL_FRAGMENT_SHADER, fragSrc);
+    GLuint vert = compileShader(GL_VERTEX_SHADER, GL_VERTEX_3D);
+    GLuint frag = compileShader(GL_FRAGMENT_SHADER, GL_FRAGMENT_3D);
 
     _shaderProgram = glCreateProgram();
     glAttachShader(_shaderProgram, vert);
@@ -139,13 +136,6 @@ void OpenGLRenderer::cleanup()
     _textureMgr.reset();
     _windowManagerApi.reset();
     _isInitialized = false;
-}
-
-// --- Resource creation ---
-
-VertexBufferHandle OpenGLRenderer::createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices)
-{
-    return _vertexMgr->createVertexBuffer(std::move(vertices));
 }
 
 VertexBufferHandle OpenGLRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
@@ -206,8 +196,6 @@ void OpenGLRenderer::endFrame()
         SDL_GL_SwapWindow(window);
     }
 }
-
-// --- Drawing state ---
 
 void OpenGLRenderer::setTransform(const gfx::TransformUBO& ubo)
 {

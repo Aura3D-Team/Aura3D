@@ -167,7 +167,6 @@ struct AuraBufferInfo {
  */
 struct VertexBufferInfo : public AuraBufferInfo {
     size_t vertexCount = 0;  ///< Number of vertices stored in the buffer.
-    bool   is2d        = true; ///< True for Vertex2d layout; false for Vertex3d layout.
 };
 
 /**

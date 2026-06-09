@@ -10,52 +10,27 @@ VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllo
                                                      std::string shader_vert_spv,
                                                      std::string shader_frag_spv,
                                                      VkDevice* device)
-    : VkPipelineManager(vkHostAllocator, device), vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
+    : VkPipelineManager(vkHostAllocator, device), _vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
 {
     _shaderManager.createVertShaderModule(shader_vert_spv);
     _shaderManager.createFragShaderModule(shader_frag_spv);
-
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = _shaderManager.getVertShaderModule();
-    vertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = _shaderManager.getFragShaderModule();
-    fragShaderStageInfo.pName = "main";
-
-    _shaderStages = { vertShaderStageInfo, fragShaderStageInfo };
-
-    // Initialize default dynamic states
-    _dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-
-    DescriptorBindingInfo uboBinding;
-    uboBinding.binding = 0;
-    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboBinding.descriptorCount = 1;
-    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    addDescriptorBinding(0, uboBinding);
-
-    DescriptorBindingInfo samplerBinding;
-    samplerBinding.binding = 0;
-    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerBinding.descriptorCount = 1;
-    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    addDescriptorBinding(1, samplerBinding);
+_init();
 }
 
 VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
                                                      const unsigned char* vertData, u32 vertSize,
                                                      const unsigned char* fragData, u32 fragSize,
                                                      VkDevice* device)
-    : VkPipelineManager(vkHostAllocator, device), vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
+    : VkPipelineManager(vkHostAllocator, device), _vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
 {
     _shaderManager.createVertShaderModuleFromMemory(vertData, vertSize);
     _shaderManager.createFragShaderModuleFromMemory(fragData, fragSize);
 
+    _init();
+}
+
+void VkGraphicsPipelineManager::_init()
+{
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -115,7 +90,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
 {
     // Clean up any existing layouts
     for (auto& pair : _descriptorSetLayouts) {
-        vkDestroyDescriptorSetLayout(*_device, pair.second, nullptr);
+        vkDestroyDescriptorSetLayout(*_device, pair.second, vkHostAllocator->getCallbacks());
     }
     _descriptorSetLayouts.clear();
 
@@ -169,6 +144,16 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         layouts[pair.first] = pair.second;
     }
 
+    if (_pipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(
+            *_device,
+            _pipelineLayout,
+            vkHostAllocator->getCallbacks());
+
+        _pipelineLayout = VK_NULL_HANDLE;
+    }
+
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -197,6 +182,16 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
                                                u32 attributeDescriptionCount,
                                                bool enableDepthTest)
 {
+    if (_pipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(
+            *_device,
+            _pipeline,
+            vkHostAllocator->getCallbacks());
+
+        _pipeline = VK_NULL_HANDLE;
+    }
+
     if (_descriptorSetLayouts.empty()) {
         createDescriptorSetLayouts();
     }

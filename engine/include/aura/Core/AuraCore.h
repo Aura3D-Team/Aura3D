@@ -47,11 +47,11 @@ struct Vertex3D {
  * @struct Vertex2d
  * @brief Base struct for 2D geometry (Sprites, UI).
  */
-struct Vertex2D {
-    glm::vec2 pos;      // (x, y)
-    glm::vec2 texCoord; // (u, v)
-    glm::vec4 color;    // (r, g, b, a)
-};
+// struct Vertex2D {
+//     glm::vec2 pos;      // (x, y)
+//     glm::vec2 texCoord; // (u, v)
+//     glm::vec4 color;    // (r, g, b, a)
+// };
 
 /**
  * @struct Mesh
@@ -75,18 +75,18 @@ struct Mesh {
     }
 };
 
-using Mesh2D = Mesh<Vertex2D>;
+// using Mesh2D = Mesh<Vertex2D>;
 using Mesh3D = Mesh<Vertex3D>;
 
 /**
  * @struct FragmentInput2D
  * @brief Data passed to the CPU fragment shader stage for 2D rendering.
  */
-struct FragmentInput2D {
-    glm::vec2 screenPos{};
-    glm::vec2 texCoord{};
-    glm::vec4 color{1.0f};
-};
+// struct FragmentInput2D {
+//     glm::vec2 screenPos{};
+//     glm::vec2 texCoord{};
+//     glm::vec4 color{1.0f};
+// };
 
 /**
  * @struct FragmentInput3D

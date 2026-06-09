@@ -13,14 +13,13 @@ namespace cpu {
 
 class CPURenderer : public IRenderer {
 public:
-    CPURenderer(const wma::WindowDetails& windowDetails, RendererMode mode);
+    CPURenderer(const wma::WindowDetails& windowDetails);
     virtual ~CPURenderer();
 
     void initialize(const aura3d::AuraSettings* settings) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
-    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices) override;
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices) override;
     IndexBufferHandle  createIndexBuffer(std::vector<u16>&& indices) override;
     IndexBufferHandle  createIndexBuffer(std::vector<u32>&& indices) override;
@@ -51,7 +50,6 @@ private:
     std::unique_ptr<CpuFrameBufferManager> _frameBufferManager;
 
     u32 _clearColorU32 = 0;
-    std::vector<std::vector<gfx::Vertex2D>> _vertexBufferPool2d;
     std::vector<std::vector<gfx::Vertex3D>> _vertexBufferPool3d;
     std::vector<std::vector<u32>> _indexBufferPool;
     std::vector<std::vector<cpu::Texture>> _texturePool;

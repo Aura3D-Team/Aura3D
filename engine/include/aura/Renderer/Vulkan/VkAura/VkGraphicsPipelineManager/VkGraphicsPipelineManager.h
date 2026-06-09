@@ -80,7 +80,9 @@ public:
     VkDescriptorSetLayout getDescriptorSetLayout(u32 setIndex) const;
 
 private:
-    VkHostAllocator* vkHostAllocator;
+    void _init();
+
+    VkHostAllocator* _vkHostAllocator;
     VkShaderManager _shaderManager;
     std::array<VkPipelineShaderStageCreateInfo, 2> _shaderStages;
     std::array<VkDynamicState, 2> _dynamicStates;

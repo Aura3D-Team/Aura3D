@@ -43,16 +43,6 @@ enum class RendererChoice
 };
 
 /**
- * @brief Strongly-typed enum representing the rendering target dimensions.
- */
-enum class RendererMode
-{
-#define X(name) name,
-    RENDERER_MODE_LIST
-#undef X
-};
-
-/**
  * @brief Converts a string representation to a RendererChoice enum.
  * * Case-insensitive. Also maps "CPU" to RendererChoice::SOFTWARE.
  * * @param[in] s The input string to parse.
@@ -75,49 +65,17 @@ inline bool RendererChoiceFromString(const std::string& s, RendererChoice& out)
 }
 
 /**
- * @brief Converts a string representation to a RendererMode enum.
- * * Case-insensitive. Valid values are "2d" and "3d".
- * * @param[in] s The input string to parse.
- * @param[out] out The destination enum variable.
- * @return true If the string matches a valid mode, false otherwise.
- */
-inline bool RendererModeFromString(const std::string& s, RendererMode& out)
-{
-    std::string low;
-    low.reserve(s.size());
-    for (const char c : s) low += std::tolower(c);
-
-    if (low == "2d") { out = RendererMode::MODE_2D; return true; }
-    if (low == "3d") { out = RendererMode::MODE_3D; return true; }
-
-    return false;
-}
-
-/**
  * @brief Converts a RendererChoice enum value to its exact string representation.
  * * @param[in] c The renderer enum value.
  * @return const char* A static string literal matching the enum identifier, or "UNKNOWN".
  */
 inline const char* RendererChoiceToString(RendererChoice c)
 {
-    switch (c) {
-    case RendererChoice::SOFTWARE: return "SOFTWARE";
-    case RendererChoice::OPENGL:   return "OPENGL";
-    case RendererChoice::VULKAN:   return "VULKAN";
-    }
-    return "UNKNOWN";
-}
-
-/**
- * @brief Converts a RendererMode enum value to a human-readable string.
- * * @param[in] m The renderer mode enum value.
- * @return const char* "2D", "3D", or "UNKNOWN".
- */
-inline const char* RendererModeToString(RendererMode m)
-{
-    switch (m) {
-    case RendererMode::MODE_2D: return "2D";
-    case RendererMode::MODE_3D: return "3D";
+    switch (c)
+    {
+        case RendererChoice::SOFTWARE: return "SOFTWARE";
+        case RendererChoice::OPENGL:   return "OPENGL";
+        case RendererChoice::VULKAN:   return "VULKAN";
     }
     return "UNKNOWN";
 }
@@ -134,10 +92,10 @@ public:
      /**
      * @brief Constructs the base IRenderer instance.
      * * @param[in] windowDetails Struct containing initial parameters like size and title.
-     * @param[in] mode Specifies if this context handles 2D or 3D operations.
+     * @param[in] mode Specifies if this context handles 3D operations.
      */
-    IRenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
-        : _windowDetails(windowDetails), _mode(mode) {}
+    IRenderer(const wma::WindowDetails& windowDetails)
+        : _windowDetails(windowDetails) {}
 
     /**
      * @brief Virtual destructor ensuring safe polymorphic cleanups.
@@ -159,13 +117,6 @@ public:
      * @brief Deallocates remaining graphics pipeline systems before shutdown.
      */
     virtual void cleanup() = 0;
-
-    /**
-     * @brief Generates a GPU vertex buffer optimized for 2D configurations.
-     * @param[in] vertices Array container of target 2D structural coordinate pieces.
-     * @return VertexBufferHandle Opaque pointer abstraction for pipeline binding.
-     */
-    virtual VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices) = 0;
 
     /**
      * @brief Generates a GPU vertex buffer optimized for 3D configurations.
@@ -289,24 +240,6 @@ public:
      */
     const wma::WindowDetails& getWindowDetails() const { return _windowDetails; }
 
-    /**
-     * @brief Inspects if the layout environment tracks 2D or 3D coordinate matrices.
-     * @return RendererMode Current spatial context.
-     */
-    RendererMode getMode() const { return _mode; }
-
-    /**
-     * @brief Utility query evaluating if the engine mode is explicitly configured for 2D graphics.
-     * @return true if mode is MODE_2D, false otherwise.
-     */
-    bool is2D() const { return _mode == RendererMode::MODE_2D; }
-
-    /**
-     * @brief Utility query evaluating if the engine mode is explicitly configured for 3D graphics.
-     * @return true if mode is MODE_3D, false otherwise.
-     */
-    bool is3D() const { return _mode == RendererMode::MODE_3D; }
-
 protected:
     /**
      * @brief Low-level window factory function implemented by specialized API backends.
@@ -316,7 +249,6 @@ protected:
     virtual void createWindow(const char* title, const wma::WindowBackend& wBackend) = 0;
 
     wma::WindowDetails _windowDetails;  /**< Copy of current platform dimension attributes. */
-    RendererMode _mode;                 /**< Active dimension format constraint setting. */
     bool _running = false;              /**< Control status tracker managing main loop life. */
 };
 

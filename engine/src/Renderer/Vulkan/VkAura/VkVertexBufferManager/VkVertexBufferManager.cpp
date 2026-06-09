@@ -46,7 +46,6 @@ void createVertexBufferImpl(VkHostAllocator* vkHostAllocator,
                             VkDeviceSize bufferSize,
                             const void* src,
                             u32 vertexCount,
-                            bool is2d,
                             bool persistentMapping,
                             std::unordered_map<std::string, VertexBufferInfo>& vertexBuffers)
 {
@@ -64,7 +63,6 @@ void createVertexBufferImpl(VkHostAllocator* vkHostAllocator,
 
     VertexBufferInfo bufferInfo{};
     bufferInfo.vertexCount = vertexCount;
-    bufferInfo.is2d = is2d;
 
     if (persistentMapping) {
         VkDeviceAllocation allocation;
@@ -162,36 +160,6 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
                                                VkCommandPool commandPool,
                                                VkSharingMode sharingMode,
                                                VkQueue graphicsQueue,
-                                               std::vector<gfx::Vertex2D>&& vertices2d,
-                                               bool persistentMapping)
-{
-    if (vertices2d.empty()) {
-        INK_WARN << "createVertexBuffer: empty 2D vertex data for " << name;
-        return;
-    }
-
-    const VkDeviceSize bufferSize = sizeof(gfx::Vertex2D) * vertices2d.size();
-    createVertexBufferImpl(vkHostAllocator,
-                           vkDeviceAllocator,
-                           _vkDevice,
-                           physicalDevice,
-                           commandPool,
-                           sharingMode,
-                           graphicsQueue,
-                           name,
-                           bufferSize,
-                           vertices2d.data(),
-                           static_cast<u32>(vertices2d.size()),
-                           true,
-                           persistentMapping,
-                           _vertexBuffers);
-}
-
-void VkVertexBufferManager::createVertexBuffer(const std::string& name,
-                                               VkPhysicalDevice physicalDevice,
-                                               VkCommandPool commandPool,
-                                               VkSharingMode sharingMode,
-                                               VkQueue graphicsQueue,
                                                std::vector<gfx::Vertex3D>&& vertices3d,
                                                bool persistentMapping)
 {
@@ -212,48 +180,13 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
                            bufferSize,
                            vertices3d.data(),
                            static_cast<u32>(vertices3d.size()),
-                           false,
                            persistentMapping,
                            _vertexBuffers);
-}
-
-void VkVertexBufferManager::updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex2D>&& vertices2d)
-{
-    auto it = _vertexBuffers.find(name);
-    if (it == _vertexBuffers.end() || !it->second.is2d) {
-        INK_ERROR << "Failed to update buffer - buffer doesn't exist or is not 2D: " << name;
-        return;
-    }
-
-    VertexBufferInfo& bufferInfo = it->second;
-    const VkDeviceSize bufferSize = sizeof(gfx::Vertex2D) * vertices2d.size();
-
-    VkDeviceAllocation& allocation = vkDeviceAllocator->getAllocation(bufferInfo.allocationId);
-    if (allocation.allocationId == 0) {
-        INK_ERROR << "Failed to retrieve allocation for buffer: " << name;
-        return;
-    }
-
-    if (bufferInfo.persistent && allocation.mappedData) {
-        std::memcpy(allocation.mappedData, vertices2d.data(), static_cast<size_t>(bufferSize));
-    } else {
-        void* data = nullptr;
-        if (vkDeviceAllocator->mapMemory(allocation, 0, bufferSize, &data) == VK_SUCCESS) {
-            std::memcpy(data, vertices2d.data(), static_cast<size_t>(bufferSize));
-            vkDeviceAllocator->unmapMemory(allocation);
-        }
-    }
-
-    bufferInfo.vertexCount = vertices2d.size();
 }
 
 void VkVertexBufferManager::updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex3D>&& vertices3d)
 {
     auto it = _vertexBuffers.find(name);
-    if (it == _vertexBuffers.end() || it->second.is2d) {
-        INK_ERROR << "Failed to update buffer - buffer doesn't exist or is not 3D: " << name;
-        return;
-    }
 
     VertexBufferInfo& bufferInfo = it->second;
     const VkDeviceSize bufferSize = sizeof(gfx::Vertex3D) * vertices3d.size();
@@ -337,28 +270,28 @@ void VkVertexBufferManager::cleanup()
     INK_INFO << "Cleaned up all vertex buffers";
 }
 
-VkVertexInputBindingDescription VkVertexBufferManager::getBindingDescription(bool is2d)
+VkVertexInputBindingDescription VkVertexBufferManager::getBindingDescription()
 {
     VkVertexInputBindingDescription bindingDescription = {};
     bindingDescription.binding = 0;
-    bindingDescription.stride = is2d ? sizeof(gfx::Vertex2D) : sizeof(gfx::Vertex3D);
+    bindingDescription.stride = sizeof(gfx::Vertex3D);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     return bindingDescription;
 }
 
-u32 VkVertexBufferManager::getAttributeDescriptionCount(bool is2d)
+u32 VkVertexBufferManager::getAttributeDescriptionCount()
 {
-    return is2d ? MAX_ATTRIBUTE_DESCRIPTION_2D : MAX_ATTRIBUTE_DESCRIPTION_3D;
+    return MAX_ATTRIBUTE_DESCRIPTION_3D;
 }
 
-AttributeDescriptionArray<VkVertexInputAttributeDescription> VkVertexBufferManager::getAttributeDescriptions(bool is2d)
+AttributeDescriptionArray<VkVertexInputAttributeDescription> VkVertexBufferManager::getAttributeDescriptions()
 {
     AttributeDescriptionArray<VkVertexInputAttributeDescription> attributeDescriptions = {};
 
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
-    attributeDescriptions[0].format = is2d ? VK_FORMAT_R32G32_SFLOAT : VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 
     attributeDescriptions[1].binding = 0;
     attributeDescriptions[1].location = 1;
@@ -368,20 +301,14 @@ AttributeDescriptionArray<VkVertexInputAttributeDescription> VkVertexBufferManag
     attributeDescriptions[2].location = 2;
     attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
-    if (is2d) {
-        attributeDescriptions[0].offset = offsetof(gfx::Vertex2D, pos);
-        attributeDescriptions[1].offset = offsetof(gfx::Vertex2D, texCoord);
-        attributeDescriptions[2].offset = offsetof(gfx::Vertex2D, color);
-    } else {
-        attributeDescriptions[0].offset = offsetof(gfx::Vertex3D, pos);
-        attributeDescriptions[1].offset = offsetof(gfx::Vertex3D, texCoord);
-        attributeDescriptions[2].offset = offsetof(gfx::Vertex3D, color);
+    attributeDescriptions[0].offset = offsetof(gfx::Vertex3D, pos);
+    attributeDescriptions[1].offset = offsetof(gfx::Vertex3D, texCoord);
+    attributeDescriptions[2].offset = offsetof(gfx::Vertex3D, color);
 
-        attributeDescriptions[3].binding = 0;
-        attributeDescriptions[3].location = 3;
-        attributeDescriptions[3].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[3].offset = offsetof(gfx::Vertex3D, normal);
-    }
+    attributeDescriptions[3].binding = 0;
+    attributeDescriptions[3].location = 3;
+    attributeDescriptions[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[3].offset = offsetof(gfx::Vertex3D, normal);
 
     return attributeDescriptions;
 }

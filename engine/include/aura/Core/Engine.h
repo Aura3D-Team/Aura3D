@@ -13,7 +13,6 @@ public:
 
     aura3d::IRenderer* getRenderer() const { return _renderer.get(); }
     aura3d::RendererChoice getBackend() const { return _rendererChoice; }
-    aura3d::RendererMode getMode() const { return _rendererMode; }
 
 private:
     void configureWindow();
@@ -23,7 +22,6 @@ private:
     std::unique_ptr<aura3d::IRenderer> _renderer;
     wma::WindowDetails _windowDetails;
     aura3d::RendererChoice _rendererChoice = aura3d::RendererChoice::SOFTWARE;
-    aura3d::RendererMode _rendererMode = aura3d::RendererMode::MODE_2D;
 };
 
 #endif // ENGINE_H

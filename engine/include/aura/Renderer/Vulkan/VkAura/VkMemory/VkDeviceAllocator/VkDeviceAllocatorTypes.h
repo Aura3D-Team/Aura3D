@@ -53,7 +53,7 @@ struct VkDeviceAllocation {
         size = 0;
         memoryTypeIndex = 0;
         mappedData = nullptr;
-        // Don't reset allocationId to keep it unique
+        allocationId = 0;
         mappingState = AllocationMappingState::UNMAPPED;
     }
 };

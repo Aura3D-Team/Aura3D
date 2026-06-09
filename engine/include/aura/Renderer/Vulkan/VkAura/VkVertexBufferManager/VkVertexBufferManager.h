@@ -24,15 +24,7 @@ public:
                           VkDevice* vkDevice);
     ~VkVertexBufferManager();
 
-    // Create a named vertex buffer with 2D vertices
-    void createVertexBuffer(const std::string& name,
-                            VkPhysicalDevice physicalDevice,
-                            VkCommandPool commandPool,
-                            VkSharingMode sharingMode,
-                            VkQueue graphicsQueue,
-                            std::vector<gfx::Vertex2D>&& vertices2d,
-                            bool persistentMapping = true);
-
+    // Create a named vertex buffer with 3D vertices
     void createVertexBuffer(const std::string& name,
                             VkPhysicalDevice physicalDevice,
                             VkCommandPool commandPool,
@@ -41,7 +33,6 @@ public:
                             std::vector<gfx::Vertex3D>&& vertices3d,
                             bool persistentMapping = true);
 
-    void updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex2D>&& vertices2d);
     void updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex3D>&& vertices3d);
 
     // Get a specific vertex buffer by name
@@ -50,9 +41,9 @@ public:
     // Get vertex count for a specific buffer
     size_t getVertexCount(const std::string& name);
 
-    static VkVertexInputBindingDescription getBindingDescription(bool is2d);
-    static AttributeDescriptionArray<VkVertexInputAttributeDescription> getAttributeDescriptions(bool is2d);
-    static u32 getAttributeDescriptionCount(bool is2d);
+    static VkVertexInputBindingDescription getBindingDescription();
+    static AttributeDescriptionArray<VkVertexInputAttributeDescription> getAttributeDescriptions();
+    static u32 getAttributeDescriptionCount();
 
     // Clean up a specific buffer or all buffers
     void cleanup(const std::string& name);

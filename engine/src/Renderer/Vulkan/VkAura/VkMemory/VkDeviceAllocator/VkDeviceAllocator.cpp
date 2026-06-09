@@ -39,6 +39,9 @@ VkDeviceAllocator::~VkDeviceAllocator()
     if (threadSafetyMode != ThreadSafetyMode::NONE)
         std::lock_guard<std::mutex> lock(globalMutex);
 
+    if (!inShutdown)
+        cleanup();
+
     if (trackLeaks && !allocationMap.empty() && !inShutdown)
     {
         INK_WARN << "VkDeviceAllocator destructed with " << allocationMap.size()
@@ -51,12 +54,9 @@ VkDeviceAllocator::~VkDeviceAllocator()
                          << ", mapped=" << (alloc.mappedData != nullptr ? "yes" : "no");
         }
     }
-
-    if (!inShutdown)
-        cleanup();
 }
 
-void VkDeviceAllocator::acquireLock(u32 memoryTypeIndex, bool forWrite)
+void VkDeviceAllocator::acquireLock(u32 memoryTypeIndex)
 {
     if (threadSafetyMode == ThreadSafetyMode::NONE)
     {
@@ -82,7 +82,7 @@ void VkDeviceAllocator::acquireLock(u32 memoryTypeIndex, bool forWrite)
 
 }
 
-void VkDeviceAllocator::releaseLock(u32 memoryTypeIndex, bool forWrite)
+void VkDeviceAllocator::releaseLock(u32 memoryTypeIndex)
 {
     if (threadSafetyMode == ThreadSafetyMode::NONE)
         return;
@@ -119,7 +119,7 @@ VkResult VkDeviceAllocator::allocateMemory(
         processDeferredFrees(false);
     }
 
-    acquireLock(memoryTypeIndex, true);
+    acquireLock(memoryTypeIndex);
 
     VkResult result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
@@ -337,7 +337,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
     if (deferFrees && !inShutdown)
     {
         u32 memoryTypeIndex = allocation.memoryTypeIndex;
-        acquireLock(memoryTypeIndex, true);
+        acquireLock(memoryTypeIndex);
 
         for (auto& pool : memoryTypePools)
         {
@@ -358,7 +358,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
     }
 
     u32 memoryTypeIndex = allocation.memoryTypeIndex;
-    acquireLock(memoryTypeIndex, true);
+    acquireLock(memoryTypeIndex);
 
     auto it = allocationMap.find(allocationId);
     if (it == allocationMap.end())
@@ -467,7 +467,7 @@ VkResult VkDeviceAllocator::mapMemory(
     }
 
     u32 memoryTypeIndex = allocation.memoryTypeIndex;
-    acquireLock(memoryTypeIndex, true);
+    acquireLock(memoryTypeIndex);
 
     if (allocation.mappingState != AllocationMappingState::UNMAPPED)
     {
@@ -542,7 +542,7 @@ void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation)
         return;
 
     u32 memoryTypeIndex = allocation.memoryTypeIndex;
-    acquireLock(memoryTypeIndex, true);
+    acquireLock(memoryTypeIndex);
 
     if (!inShutdown && allocation.mappingState == AllocationMappingState::PERSISTENTLY_MAPPED)
     {
@@ -880,12 +880,9 @@ VkResult VkDeviceAllocator::findAndAllocateInBlock(
         }
     }
 
-    if (!pool) {
-
+    if (!pool)
         return VK_ERROR_INITIALIZATION_FAILED;
-    }
 
-    size_t blockIndex = 0;
     for (auto& block : pool->blocks)
     {
         VkDeviceSize offset = 0;
@@ -895,12 +892,21 @@ VkResult VkDeviceAllocator::findAndAllocateInBlock(
         {
             VkDeviceSize alignedOffset = offset + padding;
 
+            if (alignedOffset + size > block.size)
+            {
+                INK_ERROR << "Allocator corruption detected";
+                return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+            }
+
+            VkDeviceSize originalRangeSize = block.freeRanges.offsetToSize[offset];
+
             block.freeRanges.remove(offset);
 
             if (padding > 0)
                 block.freeRanges.insert(offset, padding);
 
-            VkDeviceSize remainingSize = block.freeRanges.offsetToSize[offset] - size - padding;
+            VkDeviceSize remainingSize = originalRangeSize - size - padding;
+
             if (remainingSize > 0)
                 block.freeRanges.insert(alignedOffset + size, remainingSize);
 
@@ -915,8 +921,6 @@ VkResult VkDeviceAllocator::findAndAllocateInBlock(
 
             return VK_SUCCESS;
         }
-
-        blockIndex++;
     }
 
     return VK_ERROR_OUT_OF_DEVICE_MEMORY;

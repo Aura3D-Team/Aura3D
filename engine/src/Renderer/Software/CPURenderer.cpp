@@ -5,10 +5,10 @@
 namespace aura3d {
 namespace cpu {
 
-CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
-    : IRenderer(windowDetails, mode), _workerPool(std::thread::hardware_concurrency())
+CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails)
+    : IRenderer(windowDetails), _workerPool(std::thread::hardware_concurrency())
 {
-    INK_INFO << "Renderer - SOFTWARE (" << RendererModeToString(mode) << ")";
+    INK_INFO << "Renderer - SOFTWARE";
 }
 
 CPURenderer::~CPURenderer()
@@ -18,7 +18,6 @@ CPURenderer::~CPURenderer()
 
 void CPURenderer::initialize(const aura3d::AuraSettings* settings)
 {
-    _vertexBufferPool2d.reserve(256);
     _vertexBufferPool3d.reserve(256);
     _indexBufferPool.reserve(256);
     _texturePool.reserve(64);
@@ -57,16 +56,9 @@ void CPURenderer::cleanup()
 {
     _frameBufferManager.reset();
     _windowManagerApi.reset();
-    _vertexBufferPool2d.clear();
     _vertexBufferPool3d.clear();
     _indexBufferPool.clear();
     _texturePool.clear();
-}
-
-VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices)
-{
-    _vertexBufferPool2d.push_back(std::move(vertices));
-    return static_cast<VertexBufferHandle>(_vertexBufferPool2d.size() - 1);
 }
 
 VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)

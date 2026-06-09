@@ -58,35 +58,28 @@ void Engine::createRenderer()
         "Unsupported renderer backend: " + backendStr
     );
 
-    std::string modeStr = config->getPath<std::string>("renderer/mode", "2d");
-    INK_ASSERT_MSG(
-        aura3d::RendererModeFromString(modeStr, _rendererMode),
-        "Unsupported renderer mode: " + modeStr
-    );
-
-    INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice)
-             << " | Mode: " << aura3d::RendererModeToString(_rendererMode);
+    INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
 
     switch (_rendererChoice)
     {
 #ifdef AURA_HAS_CPU
     case aura3d::RendererChoice::SOFTWARE:
         INK_INFO << "Initializing Software Renderer...";
-        _renderer = std::make_unique<aura3d::cpu::CPURenderer>(_windowDetails, _rendererMode);
+        _renderer = std::make_unique<aura3d::cpu::CPURenderer>(_windowDetails);
         break;
 #endif
 
 #ifdef AURA_HAS_OPENGL
     case aura3d::RendererChoice::OPENGL:
         INK_INFO << "Initializing OpenGL Renderer...";
-        _renderer = std::make_unique<aura3d::gl::OpenGLRenderer>(_windowDetails, _rendererMode);
+        _renderer = std::make_unique<aura3d::gl::OpenGLRenderer>(_windowDetails);
         break;
 #endif
 
 #ifdef AURA_HAS_VULKAN
     case aura3d::RendererChoice::VULKAN:
         INK_INFO << "Initializing Vulkan Renderer...";
-        _renderer = std::make_unique<aura3d::vk::VulkanRenderer>(_windowDetails, _rendererMode);
+        _renderer = std::make_unique<aura3d::vk::VulkanRenderer>(_windowDetails);
         break;
 #endif
     }
