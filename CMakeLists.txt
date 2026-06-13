@@ -1,10 +1,14 @@
-cmake_minimum_required(VERSION 4.2.3)
+cmake_minimum_required(VERSION 4.3.3)
 
 project(Aura3D
     VERSION 1.0.0
     DESCRIPTION "Aura3D — Configurable Multi-Backend Engine"
     LANGUAGES C CXX
 )
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)

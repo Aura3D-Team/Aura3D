@@ -61,7 +61,7 @@ VkExtent2D* VkSwapChainManager::getExtent2D()
 void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount)
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
-    _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, windowDetails->vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR);
+    _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, windowDetails->vsync);
     _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, windowDetails);
 
     u32 imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
@@ -286,19 +286,24 @@ VkSurfaceFormatKHR VkSwapChainManager::_chooseSwapSurfaceFormat(const std::vecto
     return availableFormats[0];
 }
 
-VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VkPresentModeKHR vkPresentMode)
+VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const bool vSync)
 {
-    if (availablePresentModes.empty()) {
-        throw AuraException("No available present modes found.");
+    if (vSync)
+        return VK_PRESENT_MODE_FIFO_KHR;
+
+    for (auto mode : availablePresentModes)
+    {
+        if (mode == VK_PRESENT_MODE_MAILBOX_KHR)
+            return mode;
     }
 
-    for (const VkPresentModeKHR& presentMode : availablePresentModes) {
-        if (presentMode == vkPresentMode) {
-            return presentMode;
-        }
+    for (auto mode : availablePresentModes)
+    {
+        if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR)
+            return mode;
     }
 
-    throw AuraException("Current vkPresentMode is not available: "+std::to_string(vkPresentMode));
+    return VK_PRESENT_MODE_FIFO_KHR;
 }
 
 }

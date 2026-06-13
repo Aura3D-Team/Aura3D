@@ -307,13 +307,15 @@ void VulkanRenderer::cleanup()
     _vkSwapChainManager.reset();
     _vkCommandManager.reset();
     _vkRenderSyncManager.reset();
-    _vkDeviceManager.reset();
     _vkSurfaceManager.reset();
-    _vkInstance.reset();
+
     _windowManagerApi.reset();
 
     _vkDeviceAllocator.reset();
     _vkHostAllocator.reset();
+
+    _vkDeviceManager.reset();
+    _vkInstance.reset();
 
     _isInitialized = false;
 }

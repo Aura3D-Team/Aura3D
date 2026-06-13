@@ -196,7 +196,7 @@ VkResult VkDeviceAllocator::allocateMemory(
                 if (result != VK_SUCCESS)
                 {
                     INK_ERROR << "Failed to allocate new block, result: " << result;
-                    releaseLock(memoryTypeIndex, true);
+                    releaseLock(memoryTypeIndex);
                     return result;
                 }
 
@@ -222,7 +222,7 @@ VkResult VkDeviceAllocator::allocateMemory(
         }
     }
 
-    releaseLock(memoryTypeIndex, true);
+    releaseLock(memoryTypeIndex);
     return result;
 }
 
@@ -353,7 +353,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
             }
         }
 
-        releaseLock(memoryTypeIndex, true);
+        releaseLock(memoryTypeIndex);
         return;
     }
 
@@ -364,7 +364,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
     if (it == allocationMap.end())
     {
         INK_WARN << "Attempting to free unknown allocation: " << allocationId;
-        releaseLock(memoryTypeIndex, true);
+        releaseLock(memoryTypeIndex);
         return;
     }
 
@@ -394,7 +394,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
 
                         allocation.reset();
 
-                        releaseLock(memoryTypeIndex, true);
+                        releaseLock(memoryTypeIndex);
                         return;
                     }
                 }
@@ -437,7 +437,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
                     allocationMap.erase(it);
                     allocation.reset();
 
-                    releaseLock(memoryTypeIndex, true);
+                    releaseLock(memoryTypeIndex);
                     return;
                 }
             }
@@ -445,7 +445,7 @@ void VkDeviceAllocator::freeMemory(VkDeviceAllocation& allocation)
     }
 
     INK_ERROR << "Failed to find memory block for allocation: " << allocation.allocationId;
-    releaseLock(memoryTypeIndex, true);
+    releaseLock(memoryTypeIndex);
 }
 
 VkResult VkDeviceAllocator::mapMemory(
@@ -472,7 +472,7 @@ VkResult VkDeviceAllocator::mapMemory(
     if (allocation.mappingState != AllocationMappingState::UNMAPPED)
     {
         *ppData = allocation.mappedData;
-        releaseLock(memoryTypeIndex, true);
+        releaseLock(memoryTypeIndex);
         return VK_SUCCESS;
     }
 
@@ -480,7 +480,7 @@ VkResult VkDeviceAllocator::mapMemory(
     if ((memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
     {
         INK_ERROR << "Attempting to map memory that is not host visible";
-        releaseLock(memoryTypeIndex, true);
+        releaseLock(memoryTypeIndex);
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
@@ -493,7 +493,7 @@ VkResult VkDeviceAllocator::mapMemory(
     if (!findBlockByMemory(allocation.memory, &block))
     {
         INK_ERROR << "Failed to find memory block for mapping";
-        releaseLock(memoryTypeIndex, true);
+        releaseLock(memoryTypeIndex);
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
@@ -506,7 +506,7 @@ VkResult VkDeviceAllocator::mapMemory(
         if (result != VK_SUCCESS)
         {
             INK_ERROR << "Failed to map memory: id=" << allocation.allocationId << ", error=" << result;
-            releaseLock(memoryTypeIndex, true);
+            releaseLock(memoryTypeIndex);
             return result;
         }
 
@@ -532,7 +532,7 @@ VkResult VkDeviceAllocator::mapMemory(
 
     allocationMap[allocation.allocationId] = allocation;
 
-    releaseLock(memoryTypeIndex, true);
+    releaseLock(memoryTypeIndex);
     return VK_SUCCESS;
 }
 
@@ -546,7 +546,7 @@ void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation)
 
     if (!inShutdown && allocation.mappingState == AllocationMappingState::PERSISTENTLY_MAPPED)
     {
-        releaseLock(memoryTypeIndex, true);
+        releaseLock(memoryTypeIndex);
         return;
     }
 
@@ -554,7 +554,7 @@ void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation)
     if (!findBlockByMemory(allocation.memory, &block))
     {
         INK_ERROR << "Failed to find memory block for unmapping";
-        releaseLock(memoryTypeIndex, true);
+        releaseLock(memoryTypeIndex);
         return;
     }
 
@@ -587,7 +587,7 @@ void VkDeviceAllocator::unmapMemory(VkDeviceAllocation& allocation)
         allocationMap[allocation.allocationId] = allocation;
     }
 
-    releaseLock(memoryTypeIndex, true);
+    releaseLock(memoryTypeIndex);
 }
 
 void VkDeviceAllocator::unmapAllMemory()
@@ -1233,6 +1233,20 @@ void VkDeviceAllocator::cleanup()
 
         if (pool.buddyAllocator)
             pool.buddyAllocator.reset();
+    }
+
+    for (auto& pool : memoryTypePools)
+    {
+        for (auto& block : pool.blocks)
+        {
+            INK_LOG
+                << "Freeing VkDeviceMemory="
+                << block.memory
+                << " size="
+                << block.size;
+
+            vkFreeMemory(device, block.memory, nullptr);
+        }
     }
 
     memoryTypePools.clear();

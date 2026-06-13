@@ -199,7 +199,7 @@ private:
      *
      * @return VkPresentModeKHR The chosen presentation mode for the swap chain.
      */
-    VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VkPresentModeKHR vkPresentMode = VK_PRESENT_MODE_MAILBOX_KHR);
+    VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const bool vSync);
 };
 
 }

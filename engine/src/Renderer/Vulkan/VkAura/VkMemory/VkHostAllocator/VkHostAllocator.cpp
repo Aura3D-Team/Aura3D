@@ -54,10 +54,8 @@ VkHostAllocator::VkHostAllocator(const VkHostAllocatorCreateInfo& createInfo)
 VkHostAllocator::~VkHostAllocator()
 {
 
-    if (enableBatchProcessing) {
-
+    if (enableBatchProcessing)
         processDeferredDeallocations(true);
-    }
 
     if (trackLeaks && !allocations.empty()) {
         INK_WARN << "WARNING: " << allocations.size()
