@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -28,10 +27,9 @@ class VkImageViewsManager {
 public:
     /**
      * @brief Constructs the manager.
-     * @param hostAllocator Host-side allocator whose callbacks are forwarded to Vulkan.
      * @param device        Logical device used to create and destroy image views.
      */
-    VkImageViewsManager(VkHostAllocator* hostAllocator, VkDevice* device);
+    VkImageViewsManager(VkDevice* device);
 
     /**
      * @brief Destroys all owned image views and releases internal state.
@@ -109,7 +107,6 @@ private:
                            u32 baseLayer, u32 layerCount);
 
 private:
-    VkHostAllocator* _hostAllocator;
     VkDevice*        _device;
 
     std::vector<VkImageView> _colorImageViews;

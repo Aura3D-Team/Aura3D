@@ -76,10 +76,6 @@ if(AURA_ENABLE_OPENGL)
     set(AURA_GLAD_SOURCE
         "${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/glad.c"
     )
-
-    set(AURA_GLAD_INCLUDE_DIR
-        "${CMAKE_CURRENT_SOURCE_DIR}/vendor"
-    )
 endif()
 
 # =================================================================
@@ -88,14 +84,17 @@ endif()
 add_library(Aura3D STATIC)
 add_library(Aura3D::Aura3D ALIAS Aura3D)
 
-target_compile_features(Aura3D PUBLIC cxx_std_17)
-
 set_target_properties(Aura3D PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
     EXPORT_NAME Aura3D
     POSITION_INDEPENDENT_CODE ON
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
 )
+
+target_compile_features(Aura3D PUBLIC cxx_std_23)
 
 target_sources(Aura3D
     PRIVATE
@@ -122,14 +121,11 @@ target_include_directories(Aura3D
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/engine/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/glm>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/json/include>
-        $<$<BOOL:${AURA_ENABLE_OPENGL}>:$<BUILD_INTERFACE:${AURA_GLAD_INCLUDE_DIR}>>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/src
         ${CMAKE_CURRENT_SOURCE_DIR}/vendor/microui
-        ${CMAKE_CURRENT_SOURCE_DIR}/vendor
 )
 
 target_compile_definitions(Aura3D
@@ -185,10 +181,6 @@ if(AURA_ENABLE_VULKAN)
         PUBLIC
             Vulkan::Vulkan
     )
-
-    if(Vulkan_INCLUDE_DIRS)
-        target_include_directories(Aura3D PRIVATE ${Vulkan_INCLUDE_DIRS})
-    endif()
 endif()
 
 # =================================================================

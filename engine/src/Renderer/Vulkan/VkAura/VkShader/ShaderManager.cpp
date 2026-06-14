@@ -6,8 +6,8 @@
 namespace aura3d {
 namespace vk {
 
-VkShaderManager::VkShaderManager(VkHostAllocator* vkHostAllocator, VkDevice* device) :
-    vkHostAllocator(vkHostAllocator), _device(device), _vertShaderModule(VK_NULL_HANDLE),
+VkShaderManager::VkShaderManager(VkDevice* device) :
+    _device(device), _vertShaderModule(VK_NULL_HANDLE),
     _fragShaderModule(VK_NULL_HANDLE), _shaderFileExtractor(ShaderSpirvExtractor())
 {
     // Empty
@@ -50,8 +50,8 @@ void VkShaderManager::createFragShaderModuleFromMemory(const unsigned char* data
 
 void VkShaderManager::reset()
 {
-    vkDestroyShaderModule(*_device, _vertShaderModule, vkHostAllocator->getCallbacks());
-    vkDestroyShaderModule(*_device, _fragShaderModule, vkHostAllocator->getCallbacks());
+    vkDestroyShaderModule(*_device, _vertShaderModule, nullptr);
+    vkDestroyShaderModule(*_device, _fragShaderModule, nullptr);
     _vertShaderModule = VK_NULL_HANDLE;
     _fragShaderModule = VK_NULL_HANDLE;
 }
@@ -75,7 +75,7 @@ VkShaderModule VkShaderManager::_createShaderModule(VkDevice device, const std::
     createInfo.pCode = reinterpret_cast<const u32*>(code.data());
 
     VkShaderModule shaderModule;
-    VkResult result = vkCreateShaderModule(device, &createInfo, vkHostAllocator->getCallbacks(), &shaderModule);
+    VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
     VK_RESULT_CHECK(result);
 
     return shaderModule;

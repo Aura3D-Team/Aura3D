@@ -9,8 +9,6 @@
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkQueueManager/VkQueueManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkSurfaceManager/VkSurfaceManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
-
 namespace aura3d {
 namespace vk {
 
@@ -32,7 +30,7 @@ public:
      *
      * @param vkInstance The Vulkan instance to use for device management.
      */
-    VkDeviceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, VkDeviceData vkDeviceData);
+    VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData);
 
     /**
      * @brief Destructor that cleans up the logical device.
@@ -76,7 +74,6 @@ public:
     VkQueueManager* getQueueManager();
 
 private:
-    VkHostAllocator* vkHostAllocator;
     VkInstance* _vkInstance; ///< Vulkan instance pointer used bind the best device
 
     VkDeviceData _vkDeviceCreationData; ///< This struct represents Important data for VkDevice creation

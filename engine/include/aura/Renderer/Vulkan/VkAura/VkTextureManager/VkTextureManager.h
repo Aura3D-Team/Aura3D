@@ -8,8 +8,7 @@
 #include <unordered_map>
 
 #include "aura/aura.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
+#include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 
 namespace aura3d {
 namespace vk {
@@ -31,33 +30,19 @@ public:
      * including the image, memory allocation, view, and sampler.
      */
     struct TextureData {
-        VkImage image = VK_NULL_HANDLE;          // Vulkan image handle
-        VkDeviceAllocation* allocation = nullptr;     // Memory allocation information
-        VkImageView view = VK_NULL_HANDLE;        // Image view for shader access
-        VkSampler sampler = VK_NULL_HANDLE;       // Sampler for texture filtering
-        u32 width = 0;                       // Texture width in pixels
-        u32 height = 0;                      // Texture height in pixels
+        VkImage       image      = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
+        VkImageView   view       = VK_NULL_HANDLE;
+        VkSampler     sampler    = VK_NULL_HANDLE;
+        u32           width      = 0;
+        u32           height     = 0;
     };
 
-    /**
-     * @brief Constructs a texture manager
-     *
-     * @param device Pointer to the Vulkan logical device
-     * @param physicalDevice Pointer to the Vulkan physical device
-     * @param commandPool Command pool for texture operations
-     * @param graphicsQueue Queue for submitting texture commands
-     * @param bufferAllocator Memory allocator for texture resources
-     */
-    VkTextureManager(VkHostAllocator* vkHostAllocator,
-                     VkDeviceAllocator* vkDeviceAllocator,
+    VkTextureManager(VulkanMemoryManager* memoryManager,
                      VkDevice* device,
-                     VkPhysicalDevice* physicalDevice,
                      VkCommandPool commandPool,
                      VkQueue graphicsQueue);
 
-    /**
-     * @brief Destructor that cleans up all texture resources
-     */
     ~VkTextureManager();
 
     /**
@@ -90,15 +75,10 @@ public:
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
-    VkDeviceAllocator* vkDeviceAllocator;
-
-    VkDevice* _device;                  // Logical Vulkan device
-    VkPhysicalDevice* _physicalDevice;  // Physical Vulkan device
-    VkCommandPool _commandPool;         // Command pool for operations
-    VkQueue _graphicsQueue;             // Graphics queue for submissions
-
-    // Storage for textures by name
+    VulkanMemoryManager* _memoryManager;
+    VkDevice* _device;
+    VkCommandPool _commandPool;
+    VkQueue _graphicsQueue;
     std::unordered_map<std::string, TextureData> _textures;
 
     /**
@@ -159,8 +139,10 @@ private:
      * @param height Height of the region to copy
      */
     void copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height);
+    void destroyTextureData(TextureData& texture);
 };
 
-}
+} // namespace vk
 } // namespace aura3d
+
 #endif // VKTEXTUREMANAGER_H

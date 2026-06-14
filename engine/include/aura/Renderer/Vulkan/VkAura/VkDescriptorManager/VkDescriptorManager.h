@@ -6,7 +6,6 @@
 #include <vulkan/vulkan.h>
 
 #include "aura/aura.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -34,7 +33,7 @@ public:
      * @param vkDevice Pointer to the Vulkan logical device
      * @param pool_size Number of descriptor sets to allocate in the pool
      */
-    VkDescriptorManager(VkHostAllocator* vkHostAllocator, VkDevice* vkDevice, i32 pool_size = 20);
+    VkDescriptorManager(VkDevice* vkDevice, i32 pool_size = 20);
 
     /**
      * Destructor - cleans up resources
@@ -83,7 +82,6 @@ public:
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
     VkDevice* _vkDevice;                  // Pointer to the Vulkan device
 
     VkDescriptorPool _descriptorPool;      // The descriptor pool handle

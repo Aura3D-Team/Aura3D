@@ -12,7 +12,6 @@
 #include "aura/Renderer/Vulkan/VkAura/VkDeviceManager/VkDeviceManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkImageViewsManager/VkImageViewsManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 #include "aura/aura.h"
 
 namespace aura3d {
@@ -33,7 +32,7 @@ public:
      * @param device A pointer to the logical Vulkan device associated with the physical device.
      * @param vkSurface The Vulkan surface handle corresponding to the window or display surface.
      */
-    VkSwapChainManager(VkHostAllocator* vkHostAllocator, VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface);
+    VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface);
 
     /**
      * @brief Destructor for the VkSwapChainManager.
@@ -130,7 +129,6 @@ public:
 
     void cleanup();
 private:
-    VkHostAllocator* vkHostAllocator;
     SwapChainSupportDetails _swapChainSupportDetails; ///< Holds details about swap chain support.
 
     VkSwapchainCreateInfoKHR _swapChainCreateInfo; ///< Stores configuration settings for creating a swap chain.

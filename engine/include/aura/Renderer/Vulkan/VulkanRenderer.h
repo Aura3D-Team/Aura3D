@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+
 #include "aura/Renderer/IRenderer.h"
 #include "aura/Renderer/Vulkan/VkAura/VkInstanceManager/VkInstanceManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkDeviceManager/VkDeviceManager.h"
@@ -23,6 +24,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkCommandManager/VkCommandManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkRenderSyncManager/VkRenderSyncManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 
 namespace aura3d {
 namespace vk {
@@ -69,8 +71,7 @@ public:
     VkRenderSyncManager* getRenderSyncManager();
     VkTextureManager* getTextureManager();
     VkDeviceManager* getDeviceManager();
-    VkDeviceAllocator* getDeviceAllocator();
-    VkHostAllocator* getHostAllocator();
+    VulkanMemoryManager* getMemoryManager();
 
     const std::vector<aura3d::vk::QueueData*>& getQueues() const;
     void setupPipeline(const std::string& vertShaderPath, const std::string& fragShaderPath);
@@ -82,8 +83,8 @@ protected:
     void createWindow(const char* title, const wma::WindowBackend& wBackend) override;
 
 private:
-    void createAllocators(bool enableValidationLayers);
-    void createCoreObjects(bool enableValidationLayers);
+    void setupInput();
+    void createCoreObjects(bool enableValidation);
     void createResourceManagers();
     void buildSwapchainResources();
     void destroySwapchainResources();
@@ -95,8 +96,7 @@ private:
     void updateTextureDescriptorSets(TextureHandle textureHandle);
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
-    std::unique_ptr<aura3d::vk::VkHostAllocator> _vkHostAllocator;
-    std::unique_ptr<aura3d::vk::VkDeviceAllocator> _vkDeviceAllocator;
+    std::unique_ptr<VulkanMemoryManager> _memoryManager;
     std::unique_ptr<aura3d::vk::VkInstanceManager> _vkInstance;
     std::unique_ptr<aura3d::vk::VkDeviceManager> _vkDeviceManager;
     std::unique_ptr<aura3d::vk::VkSurfaceManager> _vkSurfaceManager;
@@ -121,6 +121,8 @@ private:
     bool _frameBegun = false;
     bool _renderPassActive = false;
     bool _pipelineReady = false;
+
+    VulkanMemoryManager::Config _vmaConfig{};
 
     VkInstanceData _vkInstanceData;
     VkDeviceData _vkDeviceData;

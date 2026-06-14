@@ -6,8 +6,8 @@
 namespace aura3d {
 namespace vk {
 
-VkImageViewsManager::VkImageViewsManager(VkHostAllocator* hostAllocator, VkDevice* device)
-    : _hostAllocator(hostAllocator), _device(device)
+VkImageViewsManager::VkImageViewsManager(VkDevice* device)
+    : _device(device)
 {}
 
 VkImageViewsManager::~VkImageViewsManager()
@@ -43,7 +43,7 @@ VkImageView VkImageViewsManager::createView(VkImage image, VkFormat format,
     info.subresourceRange.layerCount     = layerCount;
 
     VkImageView view;
-    VK_RESULT_CHECK(vkCreateImageView(*_device, &info, _hostAllocator->getCallbacks(), &view));
+    VK_RESULT_CHECK(vkCreateImageView(*_device, &info, nullptr, &view));
     return view;
 }
 
@@ -81,7 +81,7 @@ void VkImageViewsManager::createDepthImageView(VkImage image, VkFormat format)
 void VkImageViewsManager::cleanupDepthImageView()
 {
     if (_depthImageView == VK_NULL_HANDLE) return;
-    vkDestroyImageView(*_device, _depthImageView, _hostAllocator->getCallbacks());
+    vkDestroyImageView(*_device, _depthImageView, nullptr);
     _depthImageView = VK_NULL_HANDLE;
 }
 
@@ -94,7 +94,7 @@ void VkImageViewsManager::cleanup()
     cleanupDepthImageView();
 
     for (VkImageView view : _colorImageViews) {
-        vkDestroyImageView(*_device, view, _hostAllocator->getCallbacks());
+        vkDestroyImageView(*_device, view, nullptr);
     }
     _colorImageViews.clear();
 }

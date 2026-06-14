@@ -8,7 +8,6 @@
 #include <vulkan/vulkan.h>
 
 #include "ShaderSpirvExtractor.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -16,7 +15,7 @@ namespace vk {
 class VkShaderManager
 {
 public:
-    VkShaderManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
+    VkShaderManager(VkDevice* device);
 
     ~VkShaderManager();
 
@@ -31,7 +30,6 @@ public:
     VkShaderModule& getFragShaderModule();
 
 private:
-    VkHostAllocator* vkHostAllocator;
     VkDevice* _device;
 
     VkShaderModule _vertShaderModule;

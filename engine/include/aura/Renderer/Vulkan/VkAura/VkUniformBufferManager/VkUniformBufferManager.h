@@ -8,8 +8,7 @@
 
 #include "aura/aura.h"
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
+#include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 
 namespace aura3d {
 namespace vk {
@@ -24,28 +23,16 @@ namespace vk {
  */
 class VkUniformBufferManager {
 public:
-    /**
-     * @brief Constructor
-     * @param vkDevice Pointer to the Vulkan device
-     */
-    VkUniformBufferManager(VkHostAllocator* vkHostAllocator,
-                           VkDeviceAllocator* vkDeviceAllocator,
-                           VkDevice* vkDevice);
-
-    /**
-     * @brief Destructor - cleans up resources
-     */
+    VkUniformBufferManager(VulkanMemoryManager* memoryManager, VkDevice* vkDevice);
     ~VkUniformBufferManager();
 
     /**
      * @brief Creates uniform buffers (one per swapchain image)
      *
-     * @param physicalDevice Physical device handle
      * @param sharingMode Buffer sharing mode
      * @param count Number of buffers to create (typically matches swapchain image count)
      */
     void createUniformBuffers(
-        VkPhysicalDevice physicalDevice,
         VkSharingMode sharingMode,
         u32 count);
 
@@ -94,14 +81,12 @@ public:
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
-    VkDeviceAllocator* vkDeviceAllocator;
-    VkDevice* _vkDevice; ///< Pointer to Vulkan device
-
-    std::vector<VkBuffer> _uniformBuffers;    ///< Uniform buffer handles
-    std::vector<VkDeviceAllocation> _allocations; ///< Memory allocations with mapping info
+    VulkanMemoryManager* _memoryManager;
+    VkDevice* _vkDevice;
+    std::vector<AllocatedBuffer> _buffers;
 };
 
-}
+} // namespace vk
 } // namespace aura3d
+
 #endif // VKUNIFORMBUFFERMANAGER_H

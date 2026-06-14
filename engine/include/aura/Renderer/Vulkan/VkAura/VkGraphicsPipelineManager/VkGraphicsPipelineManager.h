@@ -11,7 +11,6 @@
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkPipelineManager/VkPipelineManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkShader/ShaderManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -19,13 +18,11 @@ namespace vk {
 class VkGraphicsPipelineManager : public VkPipelineManager
 {
 public:
-    VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
-                              std::string shader_vert_spv,
+    VkGraphicsPipelineManager(std::string shader_vert_spv,
                               std::string shader_frag_spv,
                               VkDevice* device);
 
-    VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
-                              const unsigned char* vertData, u32 vertSize,
+    VkGraphicsPipelineManager(const unsigned char* vertData, u32 vertSize,
                               const unsigned char* fragData, u32 fragSize,
                               VkDevice* device);
 
@@ -82,7 +79,6 @@ public:
 private:
     void _init();
 
-    VkHostAllocator* _vkHostAllocator;
     VkShaderManager _shaderManager;
     std::array<VkPipelineShaderStageCreateInfo, 2> _shaderStages;
     std::array<VkDynamicState, 2> _dynamicStates;

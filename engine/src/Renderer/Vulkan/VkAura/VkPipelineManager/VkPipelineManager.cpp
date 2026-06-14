@@ -6,8 +6,8 @@
 namespace aura3d {
 namespace vk {
 
-VkPipelineManager::VkPipelineManager(VkHostAllocator* vkHostAllocator, VkDevice* device)
-    : vkHostAllocator(vkHostAllocator), _device(device)
+VkPipelineManager::VkPipelineManager(VkDevice* device)
+    : _device(device)
 {
     // Empty
 }
@@ -26,18 +26,18 @@ void VkPipelineManager::createPipelineLayout()
     pipelineLayoutInfo.pushConstantRangeCount = 0;
     pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-   VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, vkHostAllocator->getCallbacks(), &_pipelineLayout));
+   VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout));
 }
 
 void VkPipelineManager::cleanup()
 {
     if (_pipeline)
     {
-        vkDestroyPipeline(*_device, _pipeline, vkHostAllocator->getCallbacks());
+        vkDestroyPipeline(*_device, _pipeline, nullptr);
     }
     if (_pipelineLayout)
     {
-        vkDestroyPipelineLayout(*_device, _pipelineLayout, vkHostAllocator->getCallbacks());
+        vkDestroyPipelineLayout(*_device, _pipelineLayout, nullptr);
     }
 }
 

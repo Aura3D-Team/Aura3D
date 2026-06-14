@@ -6,8 +6,8 @@
 namespace aura3d {
 namespace vk {
 
-VkDescriptorManager::VkDescriptorManager(VkHostAllocator* vkHostAllocator,VkDevice* vkDevice, i32 pool_size) :
-    vkHostAllocator(vkHostAllocator), _vkDevice(vkDevice), _pool_size(pool_size)
+VkDescriptorManager::VkDescriptorManager(VkDevice* vkDevice, i32 pool_size) :
+    _vkDevice(vkDevice), _pool_size(pool_size)
 {
     VkFixedArray<VkDescriptorPoolSize> poolSizes = {};
 
@@ -23,7 +23,7 @@ VkDescriptorManager::VkDescriptorManager(VkHostAllocator* vkHostAllocator,VkDevi
     _poolCreateInfo.pPoolSizes = poolSizes.data();
     _poolCreateInfo.maxSets = _pool_size * 2;
 
-    VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, vkHostAllocator->getCallbacks(), &_descriptorPool));
+    VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, nullptr, &_descriptorPool));
 }
 
 /**
@@ -42,7 +42,7 @@ VkDescriptorManager::~VkDescriptorManager()
  */
 void VkDescriptorManager::cleanup()
 {
-    vkDestroyDescriptorPool(*_vkDevice, _descriptorPool, vkHostAllocator->getCallbacks());
+    vkDestroyDescriptorPool(*_vkDevice, _descriptorPool, nullptr);
 }
 
 /**

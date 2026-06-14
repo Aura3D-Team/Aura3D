@@ -4,14 +4,12 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
 #include <unordered_map>
 #include <string>
 #include <vector>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
+#include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 
 namespace aura3d {
 namespace vk {
@@ -19,14 +17,10 @@ namespace vk {
 class VkVertexBufferManager
 {
 public:
-    VkVertexBufferManager(VkHostAllocator* vkHostAllocator,
-                          VkDeviceAllocator* vkDeviceAllocator,
-                          VkDevice* vkDevice);
+    VkVertexBufferManager(VulkanMemoryManager* memoryManager, VkDevice* vkDevice);
     ~VkVertexBufferManager();
 
-    // Create a named vertex buffer with 3D vertices
     void createVertexBuffer(const std::string& name,
-                            VkPhysicalDevice physicalDevice,
                             VkCommandPool commandPool,
                             VkSharingMode sharingMode,
                             VkQueue graphicsQueue,
@@ -35,28 +29,23 @@ public:
 
     void updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex3D>&& vertices3d);
 
-    // Get a specific vertex buffer by name
     VertexBufferInfo getVertexBuffer(const std::string& name);
-
-    // Get vertex count for a specific buffer
     size_t getVertexCount(const std::string& name);
 
     static VkVertexInputBindingDescription getBindingDescription();
     static AttributeDescriptionArray<VkVertexInputAttributeDescription> getAttributeDescriptions();
     static u32 getAttributeDescriptionCount();
 
-    // Clean up a specific buffer or all buffers
     void cleanup(const std::string& name);
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
-    VkDeviceAllocator* vkDeviceAllocator;
+    VulkanMemoryManager* _memoryManager;
     VkDevice* _vkDevice;
-
     std::unordered_map<std::string, VertexBufferInfo> _vertexBuffers;
 };
 
-}
+} // namespace vk
 } // namespace aura3d
+
 #endif // VKVERTEXBUFFERMANAGER_H

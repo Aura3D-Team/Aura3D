@@ -8,13 +8,13 @@
 namespace aura3d {
 namespace vk {
 
-VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window)
-    : _vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance), _windowBackend(windowBackend)
+VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window)
+    : _vkInstance(vkInstance), _windowBackend(windowBackend)
 {
     switch (windowBackend) {
 #ifdef WMA_ENABLE_GLFW
     case wma::WindowBackend::GLFW:
-        VK_RESULT_CHECK(glfwCreateWindowSurface(*_vkInstance, (GLFWwindow*)window, _vkHostAllocator->getCallbacks(), &_vkSurface));
+        VK_RESULT_CHECK(glfwCreateWindowSurface(*_vkInstance, (GLFWwindow*)window, nullptr, &_vkSurface));
         break;
 #endif
 #ifdef WMA_ENABLE_SDL
@@ -31,10 +31,7 @@ VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance*
 
 VkSurfaceManager::~VkSurfaceManager() {
     if (_vkSurface != VK_NULL_HANDLE) {
-        if (_windowBackend == wma::WindowBackend::SDL2)
-            vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
-        else
-            vkDestroySurfaceKHR(*_vkInstance, _vkSurface, _vkHostAllocator->getCallbacks());
+        vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
         INK_DEBUG << "VkSurface deleted";
     }
     _vkInstance = nullptr;

@@ -12,7 +12,7 @@ namespace vk {
 class VkPipelineManager
 {
 public:
-    explicit VkPipelineManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
+    explicit VkPipelineManager(VkDevice* device);
     virtual ~VkPipelineManager();
 
     VkPipeline getPipeline() const { return _pipeline; }
@@ -21,7 +21,6 @@ public:
     void cleanup();
 
 protected:
-    VkHostAllocator* vkHostAllocator;
     VkDevice* _device;
     VkPipeline _pipeline = VK_NULL_HANDLE;
     VkPipelineLayout _pipelineLayout = VK_NULL_HANDLE;

@@ -28,8 +28,13 @@
         "logs": "./logs/"
     },
     "memory": {
-        "vulkan_block_size_mb": 128,
-        "vulkan_small_allocation_mb": 8
+        "vma": {
+            "buffer_device_address": true,
+            "prefer_device_memory": true,
+            "persistently_map_upload_buffers": true,
+            "vulkan_api_version": "1.4",
+            "preferred_large_heap_block_size_mb": 128
+        }
     },
     "logging": {
         "level": "trace",

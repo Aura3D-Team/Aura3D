@@ -9,8 +9,6 @@
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkDebugger/VkDebugger.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -37,8 +35,7 @@ public:
      * validation layers, and required instance extensions.
      * If the Vulkan instance cannot be created, it throws an exception.
      */
-    VkInstanceManager(VkHostAllocator* vkHostAllocator,
-                      VkInstanceData vkInstanceData,
+    VkInstanceManager(VkInstanceData vkInstanceData,
                       bool enableValidationLayers);
 
     /**
@@ -150,8 +147,6 @@ public:
     std::unique_ptr<VkDebugger>* getVkDebugger();
 
 private:
-    VkHostAllocator* vkHosAllocator;
-
     /**
      * Vulkan instance handle.
      *

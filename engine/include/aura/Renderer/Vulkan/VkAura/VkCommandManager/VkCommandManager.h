@@ -9,7 +9,6 @@
 #include <thread>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -34,7 +33,7 @@ public:
      * @param device Pointer to a Vulkan logical device.
      * @param queueFamilyIndex Queue family index used for creating command pools.
      */
-    VkCommandManager(VkHostAllocator* vkHostAllocator, VkDevice* device, u32 queueFamilyIndex);
+    VkCommandManager(VkDevice* device, u32 queueFamilyIndex);
 
     /**
      * @brief Destroys the `VkCommandManager` and releases resources.
@@ -82,8 +81,6 @@ public:
     void freeCmdBuffer(VkCommandBuffer* commandBuffer);
 
 private:
-    VkHostAllocator* vkHostAllocator;
-
     VkDevice* _device;
     u32 _queueFamilyIndex; /**< The queue family index for command pool allocation. */
 

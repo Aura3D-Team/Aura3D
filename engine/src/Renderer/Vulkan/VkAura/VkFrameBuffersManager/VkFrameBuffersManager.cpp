@@ -6,8 +6,8 @@
 namespace aura3d {
 namespace vk {
 
-VkFrameBuffersManager::VkFrameBuffersManager(VkHostAllocator* vkHostAllocator, VkDevice* device) :
-    vkHostAllocator(vkHostAllocator), _device(device)
+VkFrameBuffersManager::VkFrameBuffersManager(VkDevice* device) :
+    _device(device)
 {
     // EMpty
 }
@@ -28,7 +28,6 @@ void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& i
 {
     _framebuffers.resize(imageViews.size());
 
-    auto vkCallbacks = vkHostAllocator->getCallbacks();
     const bool hasDepth = (depthImageView != VK_NULL_HANDLE);
 
     for (size_t i = 0; i < imageViews.size(); i++)
@@ -47,7 +46,7 @@ void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& i
         framebufferInfo.height = frameExtent.height;
         framebufferInfo.layers = 1;
 
-        VK_RESULT_CHECK(vkCreateFramebuffer(*_device, &framebufferInfo, vkCallbacks, &_framebuffers[i]));
+        VK_RESULT_CHECK(vkCreateFramebuffer(*_device, &framebufferInfo, nullptr, &_framebuffers[i]));
     }
 }
 
@@ -58,9 +57,8 @@ const std::vector<VkFramebuffer>& VkFrameBuffersManager::getFrameBuffers()
 
 void VkFrameBuffersManager::cleanup()
 {
-    auto vkCallbacks = vkHostAllocator->getCallbacks();
     for (auto& framebuffer : _framebuffers) {
-        vkDestroyFramebuffer(*_device, framebuffer, vkCallbacks);
+        vkDestroyFramebuffer(*_device, framebuffer, nullptr);
     }
 
     _framebuffers.clear();

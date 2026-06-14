@@ -4,11 +4,11 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <array>
 #include <vector>
 
 #include "aura/Core/AuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_ATTRIBUTE_DESCRIPTION_2D 3
@@ -17,6 +17,8 @@
 #define MAX_SHADER_MODULES 8
 #define MAX_DESCRIPTOR_SETS 4
 #define MAX_BINDING_COUNT 16
+
+inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_4;
 
 // Template array definitions
 template <typename T>
@@ -150,16 +152,14 @@ struct ImageViewData {
 };
 
 /**
- * @brief Base metadata shared by all GPU buffer types.
- *
- * Stores the raw VkBuffer handle, its allocation ID inside VkDeviceAllocator,
- * and whether the underlying memory is persistently mapped for CPU writes.
+ * @brief Base metadata shared by all GPU buffer types managed through VMA.
  */
 struct AuraBufferInfo {
-    VkBuffer buffer      = VK_NULL_HANDLE; ///< Underlying Vulkan buffer handle.
-    u32 allocationId     = 0;              ///< Allocation ID registered in VkDeviceAllocator.
-    bool persistent      = false;          ///< True if the buffer memory is kept permanently mapped.
-    void* mappedPointer  = nullptr;        ///< CPU-visible mapped region (persistent uploads).
+    VkBuffer      buffer        = VK_NULL_HANDLE;
+    VmaAllocation allocation    = VK_NULL_HANDLE;
+    VkDeviceSize  memoryOffset  = 0;
+    bool          persistent    = false;
+    void*         mappedPointer = nullptr;
 };
 
 /**
@@ -177,24 +177,15 @@ struct IndexBufferInfo : public AuraBufferInfo {
 };
 
 /**
- * @brief Aggregates the depth buffer image and its GPU memory allocation.
- *
- * Keeps the VkImage handle and the VkDeviceAllocator allocation together so
- * they are always created, destroyed, and tested as a unit. The associated
- * VkImageView is owned separately by VkImageViewsManager.
- *
- * Defaults to VK_FORMAT_D32_SFLOAT; only valid in 3D rendering mode.
+ * @brief Aggregates the depth buffer image and its VMA allocation.
  */
 struct DepthResources {
-    VkImage            image      = VK_NULL_HANDLE;    ///< Depth image handle.
-    VkDeviceAllocation allocation = {};                ///< Device memory backing the image.
-    VkFormat           format     = VK_FORMAT_D32_SFLOAT; ///< Depth format used for image and view creation.
+    VkImage       image      = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VkFormat      format     = VK_FORMAT_D32_SFLOAT;
 
-    /** @brief Returns true when the depth image has been allocated. */
     bool isValid() const { return image != VK_NULL_HANDLE; }
-
-    /** @brief Resets all fields to their null/empty defaults without freeing resources. */
-    void reset() { image = VK_NULL_HANDLE; allocation = {}; }
+    void reset() { image = VK_NULL_HANDLE; allocation = VK_NULL_HANDLE; }
 };
 
 }

@@ -5,8 +5,8 @@
 namespace aura3d {
 namespace vk {
 
-VkRenderSyncManager::VkRenderSyncManager(VkHostAllocator* vkHostAllocator, VkDevice* device) :
-    vkHostAllocator(vkHostAllocator), _device(device)
+VkRenderSyncManager::VkRenderSyncManager(VkDevice* device) :
+    _device(device)
 {
     // Empty
 }
@@ -22,13 +22,11 @@ void VkRenderSyncManager::create()
     fenceInfo.pNext = nullptr;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    auto vkCallbacks = vkHostAllocator->getCallbacks();
-
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, vkCallbacks, &_imageAvailableSemaphores[i]));
-        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, vkCallbacks, &_renderFinishedSemaphores[i]));
-        VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, vkCallbacks, &_inFlightFences[i]));
+        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_imageAvailableSemaphores[i]));
+        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]));
+        VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, nullptr, &_inFlightFences[i]));
     }
 }
 
@@ -66,12 +64,11 @@ VkFixedArray<VkFence>& VkRenderSyncManager::getInFlightFences()
 
 void VkRenderSyncManager::cleanup()
 {
-    auto vkCallbacks = vkHostAllocator->getCallbacks();
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-        vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], vkCallbacks);
-        vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], vkCallbacks);
-        vkDestroyFence(*_device, _inFlightFences[i], vkCallbacks);
+        vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], nullptr);
+        vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], nullptr);
+        vkDestroyFence(*_device, _inFlightFences[i], nullptr);
     }
 }
 

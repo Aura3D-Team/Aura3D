@@ -7,8 +7,8 @@
 namespace aura3d {
 namespace vk {
 
-VkSwapChainManager::VkSwapChainManager(VkHostAllocator* vkHostAllocator, VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
-    : vkHostAllocator(vkHostAllocator), _swapChainSupportDetails({}), _swapChainCreateInfo({}),
+VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
+    : _swapChainSupportDetails({}), _swapChainCreateInfo({}),
     _swapChain(VK_NULL_HANDLE), _device(device),
     _choosedSurfaceFormat(), _choosedPresentMode(),
     _choosedExtent(), _swapChainImages({})
@@ -121,7 +121,7 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
     _swapChainCreateInfo.clipped = VK_TRUE;
     _swapChainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, vkHostAllocator->getCallbacks(), &_swapChain));
+    VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, nullptr, &_swapChain));
 
     INK_DEBUG << "SwapChain successfuly created!";
     INK_DEBUG << "ImageCount: " << imageCount;
@@ -224,7 +224,7 @@ void VkSwapChainManager::transitionImageLayout(
 void VkSwapChainManager::cleanup()
 {
     if (_swapChain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(*_device, _swapChain, vkHostAllocator->getCallbacks());
+        vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
         INK_DEBUG << "VkSwapChain deleted";
     }
 
