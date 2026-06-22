@@ -15,9 +15,7 @@ include(CMakePackageConfigHelpers)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# =================================================================
 # Options
-# =================================================================
 option(BUILD_SHARED_LIBS       "Build shared libraries"              OFF)
 option(AURA_BUILD_SANDBOX      "Build Sandbox executable"            ON)
 option(AURA_INSTALL_SANDBOX    "Install Sandbox executable"          OFF)
@@ -33,9 +31,7 @@ if(NOT (AURA_ENABLE_VULKAN OR AURA_ENABLE_OPENGL OR AURA_ENABLE_CPU))
     message(FATAL_ERROR "At least one Aura3D renderer backend must be enabled")
 endif()
 
-# =================================================================
 # Dependencies
-# =================================================================
 find_package(Threads REQUIRED)
 find_package(wma CONFIG REQUIRED)
 find_package(ink CONFIG REQUIRED)
@@ -48,9 +44,7 @@ if(AURA_ENABLE_VULKAN)
     find_package(Vulkan REQUIRED)
 endif()
 
-# =================================================================
 # Engine sources
-# =================================================================
 file(GLOB_RECURSE AURA_ENGINE_PRIVATE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/src/*.c"
@@ -69,18 +63,14 @@ if(NOT AURA_ENGINE_PUBLIC_HEADERS)
     message(FATAL_ERROR "Aura3D public header list is empty. Check engine/include.")
 endif()
 
-# =================================================================
 # GLAD source check
-# =================================================================
 if(AURA_ENABLE_OPENGL)
     set(AURA_GLAD_SOURCE
         "${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/glad.c"
     )
 endif()
 
-# =================================================================
 # Engine library
-# =================================================================
 add_library(Aura3D STATIC)
 add_library(Aura3D::Aura3D ALIAS Aura3D)
 
@@ -183,9 +173,7 @@ if(AURA_ENABLE_VULKAN)
     )
 endif()
 
-# =================================================================
 # Sandbox executable
-# =================================================================
 if(AURA_BUILD_SANDBOX)
     add_executable(Sandbox
         apps/Sandbox/main.cpp
@@ -205,9 +193,7 @@ if(AURA_BUILD_SANDBOX)
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
     )
 
-    # =============================================================
     # Asset pipeline
-    # =============================================================
     set(PIPELINE_OUTPUTS "")
 
     macro(compile_or_copy_shaders INPUT_DIR OUTPUT_DIR EXTENSION COMPILER)
@@ -307,9 +293,7 @@ if(AURA_BUILD_SANDBOX)
     endif()
 endif()
 
-# =================================================================
 # Install Aura3D static package
-# =================================================================
 if(AURA_INSTALL_SANDBOX AND AURA_BUILD_SANDBOX)
     install(
         TARGETS Aura3D Sandbox
@@ -343,9 +327,7 @@ install(
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Aura3D
 )
 
-# =================================================================
 # Package config
-# =================================================================
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Aura3DConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/Aura3DConfig.cmake

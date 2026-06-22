@@ -1,6 +1,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkRenderPassManager/VkRenderPassManager.h"
 
 #include <array>
+#include <vector>
 
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"

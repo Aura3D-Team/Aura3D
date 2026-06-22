@@ -25,7 +25,7 @@ CpuFrameBufferManager::CpuFrameBufferManager(SDL_Window* window, Config config) 
 {
     // NOTE: The separate depthBuffer has been removed. Depth is now part of the Pixel struct.
 
-    _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED);
+    _renderer = SDL_CreateRenderer(_window, "Aura3DRenderer");
     INK_ASSERT_MSG(_renderer != nullptr, "Renderer could not be created! SDL_Error: " + std::string(SDL_GetError()));
 
     // Create texture that will be used to display our framebuffer
@@ -89,7 +89,7 @@ void CpuFrameBufferManager::renderFramebuffer()
 
     SDL_UpdateTexture(_texture, nullptr, pixel_data.data(), settings.width * sizeof(u32));
     SDL_RenderClear(_renderer);
-    SDL_RenderCopy(_renderer, _texture, nullptr, nullptr);
+    SDL_RenderTexture(_renderer, _texture, nullptr, nullptr);
     SDL_RenderPresent(_renderer);
 }
 
@@ -377,7 +377,8 @@ void CpuFrameBufferManager::drawText(const std::string& text, Point p, u32 color
             continue;
         }
 
-        if (c < 0 || c > 127) c = '?';
+        if ((c < 0) || (c > 127))
+            c = '?';
 
         if (cursorX >= settings.width || p.y >= settings.height || cursorX + scaledWidth <= 0 || p.y + scaledHeight <= 0) {
             cursorX += scaledWidth + scaledSpacing;

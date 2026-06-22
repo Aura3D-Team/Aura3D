@@ -1,7 +1,7 @@
 #include "aura/Renderer/OpenGL/OpenGLRenderer.h"
 
 #include <glad/glad.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include <stdexcept>
 #include <thread>
 
@@ -25,7 +25,7 @@ void OpenGLRenderer::initialize(const AuraSettings* settings)
 {
     if (_isInitialized) return;
 
-    createWindow(APPLICATION_NAME, wma::WindowBackend::SDL2);
+    createWindow(APPLICATION_NAME, wma::WindowBackend::SDL3);
     loadOpenGLEntryPoints();
     compileBuiltInShaders();
 

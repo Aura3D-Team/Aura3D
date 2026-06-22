@@ -53,7 +53,7 @@ void VulkanRenderer::initialize(const AuraSettings* settings)
     _vmaConfig = VulkanMemoryManager::loadConfig(settings);
     _memoryManager = std::make_unique<VulkanMemoryManager>();
 
-    createWindow(APPLICATION_NAME, wma::WindowBackend::SDL2);
+    createWindow(APPLICATION_NAME, wma::WindowBackend::SDL3);
     setupInput();
     createCoreObjects(enableValidation);
     createResourceManagers();

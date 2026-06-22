@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <vector>
 #include "aura/aura.h"
 
 namespace aura3d {

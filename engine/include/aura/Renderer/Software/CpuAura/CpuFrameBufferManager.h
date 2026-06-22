@@ -1,10 +1,9 @@
 #ifndef CPUFRAMEBUFFERMANAGER_H
 #define CPUFRAMEBUFFERMANAGER_H
 
-#pragma once
-
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
+#include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
+#include <cmath>
 #include <string>
 
 static const float PI_FLOAT = std::acos(-1.0f);

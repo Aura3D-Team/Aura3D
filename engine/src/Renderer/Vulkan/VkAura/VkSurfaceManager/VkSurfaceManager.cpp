@@ -18,8 +18,8 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend wi
         break;
 #endif
 #ifdef WMA_ENABLE_SDL
-    case wma::WindowBackend::SDL2:
-        if (!SDL_Vulkan_CreateSurface((SDL_Window*)window, *_vkInstance, &_vkSurface)) {
+    case wma::WindowBackend::SDL3:
+        if (!SDL_Vulkan_CreateSurface((SDL_Window*)window, *_vkInstance, nullptr, &_vkSurface)) {
             throw AuraException("Fail to create SDL Window surface! SDL Error: " + std::string(SDL_GetError()));
         }
         break;

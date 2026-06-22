@@ -22,7 +22,7 @@ void CPURenderer::initialize(const aura3d::AuraSettings* settings)
     _indexBufferPool.reserve(256);
     _texturePool.reserve(64);
 
-    createWindow(APPLICATION_NAME, wma::WindowBackend::SDL2);
+    createWindow(APPLICATION_NAME, wma::WindowBackend::SDL3);
 }
 
 void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
@@ -39,10 +39,8 @@ void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBac
     _frameBufferManager = std::make_unique<CpuFrameBufferManager>(
         (SDL_Window*)_windowManagerApi->getWindowInstance(), cfg);
 
-    SDL_SetWindowData(
-        (SDL_Window*)_windowManagerApi->getWindowInstance(),
-        "CpuFrameBufferManager",
-        _frameBufferManager.get());
+    SDL_PropertiesID props = SDL_GetWindowProperties((SDL_Window*)_windowManagerApi->getWindowInstance());
+    SDL_SetPointerProperty(props, "FrameBufferManager", this);
 }
 
 void CPURenderer::handleWindowChanges()
