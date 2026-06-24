@@ -1,0 +1,64 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Resolve the pre-built deps prefix (wma, ink built for Android via NDK).
+def depsPrefix = project.hasProperty('ANDROID_DEPS_PREFIX')
+        ? project.ANDROID_DEPS_PREFIX
+        : '/usr/local/android-deps'
+
+android {
+    namespace 'com.aura3d.sandbox'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId  "com.aura3d.sandbox"
+        minSdk         29          // Android 10 — Vulkan 1.1 guaranteed
+        targetSdk      35
+        versionCode    1
+        versionName    "1.0.0"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++23"
+                arguments(
+                    "-DAURA3D_ROOT=${rootProject.projectDir}/..",
+                    "-DCMAKE_PREFIX_PATH=${depsPrefix}",
+                    "-DANDROID_STL=c++_shared"
+                )
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled  false
+            signingConfig  signingConfigs.debug   // swap for a real keystore in production
+        }
+        debug {
+            jniDebuggable  true
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            // Dedicated CMakeLists.txt that adds the JNI entry point on top of
+            // the Aura3D static library.
+            path    "src/main/cpp/CMakeLists.txt"
+            version "3.22+"
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs    = ['src/main/java']
+            res.srcDirs     = ['src/main/res']
+            assets.srcDirs  = ['src/main/assets']
+        }
+    }
+}
+
+dependencies {
+    // No Java/Kotlin runtime dependencies — this is a pure native SDL3 app.
+}

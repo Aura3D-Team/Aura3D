@@ -51,11 +51,7 @@ void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, gfx::Transfor
     }
 
     const auto uboBytes = std::as_bytes(std::span{&ubo, 1});
-    const auto dst = std::span{
-        static_cast<std::byte*>(_buffers[currentImage].mappedData),
-        sizeof(gfx::TransformUBO),
-    };
-    std::ranges::copy(uboBytes, dst);
+    std::ranges::copy(uboBytes, static_cast<std::byte*>(_buffers[currentImage].mappedData));
 }
 
 VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const

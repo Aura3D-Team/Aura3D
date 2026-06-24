@@ -16,7 +16,7 @@ CPURenderer::~CPURenderer()
     cleanup();
 }
 
-void CPURenderer::initialize(const aura3d::AuraSettings* settings)
+void CPURenderer::initialize(aura3d::AuraSettings* settings)
 {
     _vertexBufferPool3d.reserve(256);
     _indexBufferPool.reserve(256);

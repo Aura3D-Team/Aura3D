@@ -21,7 +21,7 @@ OpenGLRenderer::~OpenGLRenderer()
     cleanup();
 }
 
-void OpenGLRenderer::initialize(const AuraSettings* settings)
+void OpenGLRenderer::initialize(AuraSettings* settings)
 {
     if (_isInitialized) return;
 

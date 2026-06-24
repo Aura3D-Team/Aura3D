@@ -34,7 +34,7 @@ public:
     VulkanRenderer(const wma::WindowDetails& windowDetails);
     virtual ~VulkanRenderer();
 
-    void initialize(const AuraSettings* settings) override;
+    void initialize(AuraSettings* settings) override;
     void handleWindowChanges() override;
     void cleanup() override;
 

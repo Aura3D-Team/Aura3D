@@ -1,8 +1,6 @@
 #ifndef ENGINE_H
 #define ENGINE_H
 
-#include "aura/aura.h"
-
 #include "aura/Renderer/IRenderer.h"
 
 class Engine
@@ -15,8 +13,8 @@ public:
     aura3d::RendererChoice getBackend() const { return _rendererChoice; }
 
 private:
-    void configureWindow();
-    void createRenderer();
+    void _configureWindow();
+    void _createRenderer();
 
 private:
     std::unique_ptr<aura3d::IRenderer> _renderer;

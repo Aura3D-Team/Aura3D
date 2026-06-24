@@ -1,8 +1,6 @@
 #ifndef AURA_HPP
 #define AURA_HPP
 
-#pragma once
-
 #include <ink/ink_base.hpp>
 #include <ink/Inkogger.h>
 

@@ -16,7 +16,7 @@ public:
     CPURenderer(const wma::WindowDetails& windowDetails);
     virtual ~CPURenderer();
 
-    void initialize(const aura3d::AuraSettings* settings) override;
+    void initialize(aura3d::AuraSettings* settings) override;
     void handleWindowChanges() override;
     void cleanup() override;
 

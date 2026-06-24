@@ -39,7 +39,7 @@ namespace {
 
 } // namespace
 
-VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(const AuraSettings* settings)
+VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(AuraSettings* settings)
 {
     Config cfg;
 

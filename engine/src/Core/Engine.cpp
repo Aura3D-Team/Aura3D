@@ -1,15 +1,5 @@
 #include "aura/Core/Engine.h"
-
-#ifdef AURA_HAS_OPENGL
-#include "aura/Renderer/OpenGL/OpenGLRenderer.h"
-#endif
-#ifdef AURA_HAS_VULKAN
-#include "aura/Renderer/Vulkan/VulkanRenderer.h"
-#endif
-#ifdef AURA_HAS_CPU
-#include "aura/Renderer/Software/CPURenderer.h"
-#endif
-
+#include "aura/Renderer/RendererFactory.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
 Engine::Engine(const std::string& configPath)
@@ -23,18 +13,18 @@ Engine::Engine(const std::string& configPath)
     INK_CORE_LOGGER;
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
     ink::LogManager::getInstance().setGlobalLevel(logSeverity);
-    auto engine_settings = aura3d::AuraSettings::get()->getSettings();
+    ink::EnhancedJson* engine_settings = aura3d::AuraSettings::get()->getSettings();
     *engine_settings = ink::EnhancedJson::loadFromFile(configPath);
 
-    configureWindow();
-    createRenderer();
+    _configureWindow();
+    _createRenderer();
 }
 
 Engine::~Engine() = default;
 
-void Engine::configureWindow()
+void Engine::_configureWindow()
 {
-    auto config = aura3d::AuraSettings::get()->getSettings();
+    ink::EnhancedJson* config = aura3d::AuraSettings::get()->getSettings();
 
     _windowDetails = {};
     _windowDetails.width      = config->getPath<uint>("window/width", 1280);
@@ -48,11 +38,16 @@ void Engine::configureWindow()
     }
 }
 
-void Engine::createRenderer()
+void Engine::_createRenderer()
 {
-    auto config = aura3d::AuraSettings::get()->getSettings();
+    ink::EnhancedJson* config = aura3d::AuraSettings::get()->getSettings();
 
-    std::string backendStr = config->getPath<std::string>("renderer/backend", "vulkan");
+    /* Use the compile-time default as the fallback so that WASM/Android
+       builds work even if settings.json still says "vulkan". */
+    const std::string defaultBackend =
+        aura3d::RendererChoiceToString(aura3d::RendererFactory::defaultChoice());
+
+    std::string backendStr = config->getPath<std::string>("renderer/backend", defaultBackend);
     INK_ASSERT_MSG(
         aura3d::RendererChoiceFromString(backendStr, _rendererChoice),
         "Unsupported renderer backend: " + backendStr
@@ -60,29 +55,6 @@ void Engine::createRenderer()
 
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
 
-    switch (_rendererChoice)
-    {
-#ifdef AURA_HAS_CPU
-    case aura3d::RendererChoice::SOFTWARE:
-        INK_INFO << "Initializing Software Renderer...";
-        _renderer = std::make_unique<aura3d::cpu::CPURenderer>(_windowDetails);
-        break;
-#endif
-
-#ifdef AURA_HAS_OPENGL
-    case aura3d::RendererChoice::OPENGL:
-        INK_INFO << "Initializing OpenGL Renderer...";
-        _renderer = std::make_unique<aura3d::gl::OpenGLRenderer>(_windowDetails);
-        break;
-#endif
-
-#ifdef AURA_HAS_VULKAN
-    case aura3d::RendererChoice::VULKAN:
-        INK_INFO << "Initializing Vulkan Renderer...";
-        _renderer = std::make_unique<aura3d::vk::VulkanRenderer>(_windowDetails);
-        break;
-#endif
-    }
-
+    _renderer = aura3d::RendererFactory::create(_rendererChoice, _windowDetails);
     _renderer->initialize(aura3d::AuraSettings::get());
 }

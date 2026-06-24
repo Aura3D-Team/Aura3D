@@ -14,11 +14,11 @@ namespace {
 
 void destroyBufferInfo(VulkanMemoryManager* memory, VertexBufferInfo& info)
 {
-    if (info.persistent && info.mappedPointer && info.allocation != VK_NULL_HANDLE) {
-        memory->unmap({info.buffer, info.allocation, info.mappedPointer, info.memoryOffset});
-    }
-
     AllocatedBuffer allocated{info.buffer, info.allocation, info.mappedPointer, info.memoryOffset};
+
+    if (info.persistent && info.mappedPointer && info.allocation != VK_NULL_HANDLE)
+        memory->unmap(allocated);
+
     memory->destroyBuffer(allocated);
     info = {};
 }
@@ -61,7 +61,8 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
     VertexBufferInfo bufferInfo{};
     bufferInfo.vertexCount = vertices3d.size();
 
-    if (persistentMapping) {
+    if (persistentMapping)
+    {
         VmaAllocationCreateFlags flags =
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT;
@@ -77,20 +78,24 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
         bufferInfo.persistent = true;
 
         if (bufferInfo.mappedPointer) {
-            std::ranges::copy(vertices3d,
-                              std::span{static_cast<gfx::Vertex3D*>(bufferInfo.mappedPointer), vertices3d.size()});
+            std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D*>(bufferInfo.mappedPointer));
         }
 
         INK_DEBUG << "Created persistently mapped vertex buffer: " << name
                   << ", vertices: " << bufferInfo.vertexCount;
-    } else {
+    }
+    else
+    {
         AllocatedBuffer staging = _memoryManager->createUploadBuffer(bufferSize, sharingMode);
-        if (staging.mappedData) {
-            std::ranges::copy(vertices3d,
-                              std::span{static_cast<gfx::Vertex3D*>(staging.mappedData), vertices3d.size()});
-        } else {
+
+        if (staging.mappedData)
+        {
+            std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D*>(staging.mappedData));
+        }
+        else
+        {
             auto* data = static_cast<gfx::Vertex3D*>(_memoryManager->map(staging));
-            std::ranges::copy(vertices3d, std::span{data, vertices3d.size()});
+            std::ranges::copy(vertices3d, data);
             _memoryManager->unmap(staging);
         }
 
@@ -119,16 +124,17 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
 void VkVertexBufferManager::updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex3D>&& vertices3d)
 {
     auto it = _vertexBuffers.find(name);
-    if (it == _vertexBuffers.end()) {
+    if (it == _vertexBuffers.end())
+    {
         INK_ERROR << "Failed to update vertex buffer - not found: " << name;
         return;
     }
 
     VertexBufferInfo& bufferInfo = it->second;
 
-    if (bufferInfo.persistent && bufferInfo.mappedPointer) {
-        std::ranges::copy(vertices3d,
-                          std::span{static_cast<gfx::Vertex3D*>(bufferInfo.mappedPointer), vertices3d.size()});
+    if (bufferInfo.persistent && bufferInfo.mappedPointer)
+    {
+        std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D*>(bufferInfo.mappedPointer));
         bufferInfo.vertexCount = vertices3d.size();
         return;
     }
@@ -139,9 +145,8 @@ void VkVertexBufferManager::updateVertexBuffer(const std::string& name, std::vec
 VertexBufferInfo VkVertexBufferManager::getVertexBuffer(const std::string& name)
 {
     auto it = _vertexBuffers.find(name);
-    if (it != _vertexBuffers.end()) {
+    if (it != _vertexBuffers.end())
         return it->second;
-    }
 
     INK_ERROR << "Invalid vertex buffer name: " << name;
     throw AuraException("Invalid VertexBuffer Name");
@@ -150,31 +155,36 @@ VertexBufferInfo VkVertexBufferManager::getVertexBuffer(const std::string& name)
 size_t VkVertexBufferManager::getVertexCount(const std::string& name)
 {
     auto it = _vertexBuffers.find(name);
-    if (it != _vertexBuffers.end()) {
+
+    if (it != _vertexBuffers.end())
         return it->second.vertexCount;
-    }
+
     return 0;
 }
 
 void VkVertexBufferManager::cleanup(const std::string& name)
 {
     auto it = _vertexBuffers.find(name);
-    if (it == _vertexBuffers.end()) {
+
+    if (it == _vertexBuffers.end())
         return;
-    }
 
     destroyBufferInfo(_memoryManager, it->second);
     _vertexBuffers.erase(it);
+
     INK_DEBUG << "Cleaned up vertex buffer: " << name;
 }
 
 void VkVertexBufferManager::cleanup()
 {
-    for (const auto& pair : _vertexBuffers) {
+    for (const auto& pair : _vertexBuffers)
+    {
         VertexBufferInfo info = pair.second;
         destroyBufferInfo(_memoryManager, info);
     }
+
     _vertexBuffers.clear();
+
     INK_INFO << "Cleaned up all vertex buffers";
 }
 

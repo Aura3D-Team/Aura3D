@@ -41,7 +41,7 @@ public:
     VulkanMemoryManager(const VulkanMemoryManager&) = delete;
     VulkanMemoryManager& operator=(const VulkanMemoryManager&) = delete;
 
-    [[nodiscard]] static Config loadConfig(const AuraSettings* settings);
+    [[nodiscard]] static Config loadConfig(AuraSettings* settings);
 
     void initialize(VkInstance instance,
                     VkPhysicalDevice physicalDevice,

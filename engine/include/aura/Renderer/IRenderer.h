@@ -106,7 +106,7 @@ public:
      * @brief Configures underlying graphics libraries and hardware contexts using engine settings.
      * * @param[in] settings Pointer to the foundational application runtime configuration.
      */
-    virtual void initialize(const AuraSettings* settings) = 0;
+    virtual void initialize(AuraSettings* settings) = 0;
 
     /**
      * @brief Refreshes viewport contexts and internal buffers following user sizing adjustments.

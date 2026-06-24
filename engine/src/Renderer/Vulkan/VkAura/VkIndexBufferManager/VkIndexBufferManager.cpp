@@ -14,11 +14,11 @@ namespace {
 
 void destroyBufferInfo(VulkanMemoryManager* memory, IndexBufferInfo& info)
 {
-    if (info.persistent && info.mappedPointer && info.allocation != VK_NULL_HANDLE) {
-        memory->unmap({info.buffer, info.allocation, info.mappedPointer, info.memoryOffset});
-    }
-
     AllocatedBuffer allocated{info.buffer, info.allocation, info.mappedPointer, info.memoryOffset};
+
+    if (info.persistent && info.mappedPointer && info.allocation != VK_NULL_HANDLE)
+        memory->unmap(allocated);
+
     memory->destroyBuffer(allocated);
     info = {};
 }
@@ -77,8 +77,7 @@ void VkIndexBufferManager::createIndexBuffer(const std::string& name,
         bufferInfo.persistent = true;
 
         if (bufferInfo.mappedPointer) {
-            std::ranges::copy(indices,
-                              std::span{static_cast<u16*>(bufferInfo.mappedPointer), indices.size()});
+            std::ranges::copy(indices, static_cast<u16*>(bufferInfo.mappedPointer));
         }
 
         INK_DEBUG << "Created persistently mapped index buffer: " << name
@@ -86,10 +85,10 @@ void VkIndexBufferManager::createIndexBuffer(const std::string& name,
     } else {
         AllocatedBuffer staging = _memoryManager->createUploadBuffer(bufferSize, sharingMode);
         if (staging.mappedData) {
-            std::ranges::copy(indices, std::span{static_cast<u16*>(staging.mappedData), indices.size()});
+            std::ranges::copy(indices, static_cast<u16*>(staging.mappedData));
         } else {
             auto* data = static_cast<u16*>(_memoryManager->map(staging));
-            std::ranges::copy(indices, std::span{data, indices.size()});
+            std::ranges::copy(indices, data);
             _memoryManager->unmap(staging);
         }
 
@@ -126,8 +125,7 @@ void VkIndexBufferManager::updateIndexBuffer(const std::string& name, std::vecto
     IndexBufferInfo& bufferInfo = it->second;
 
     if (bufferInfo.persistent && bufferInfo.mappedPointer) {
-        std::ranges::copy(indices,
-                          std::span{static_cast<u16*>(bufferInfo.mappedPointer), indices.size()});
+        std::ranges::copy(indices, static_cast<u16*>(bufferInfo.mappedPointer));
         bufferInfo.indexCount = static_cast<u32>(indices.size());
         return;
     }

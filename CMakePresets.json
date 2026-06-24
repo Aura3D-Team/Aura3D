@@ -1,0 +1,106 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 22, "patch": 0 },
+
+  "configurePresets": [
+
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+
+    {
+      "name": "linux-debug",
+      "displayName": "Linux — Debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AURA_ENABLE_VULKAN": "ON",
+        "AURA_ENABLE_OPENGL": "ON",
+        "AURA_ENABLE_CPU":    "ON"
+      }
+    },
+
+    {
+      "name": "linux-release",
+      "displayName": "Linux — Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":  "Release",
+        "AURA_ENABLE_VULKAN": "ON",
+        "AURA_ENABLE_OPENGL": "ON",
+        "AURA_ENABLE_CPU":    "ON",
+        "AURA_ENABLE_LTO":    "ON",
+        "AURA_NATIVE_OPTIMIZE": "ON"
+      }
+    },
+
+    {
+      "name": "wasm-release",
+      "displayName": "WebAssembly — Release (Emscripten)",
+      "inherits": "base",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":       "Release",
+        "AURA_WASM_ASYNCIFY":     "ON",
+        "AURA_WASM_OUTPUT_NAME":  "Aura3D"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{EMSDK}",
+        "rhs": ""
+      }
+    },
+
+    {
+      "name": "wasm-debug",
+      "displayName": "WebAssembly — Debug (Emscripten)",
+      "inherits": "wasm-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":    "Debug",
+        "AURA_WASM_ASYNCIFY":  "ON"
+      }
+    },
+
+    {
+      "name": "android-arm64",
+      "displayName": "Android — arm64-v8a (Vulkan)",
+      "inherits": "base",
+      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":   "Release",
+        "ANDROID_ABI":        "arm64-v8a",
+        "ANDROID_PLATFORM":   "android-29",
+        "ANDROID_STL":        "c++_shared"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{ANDROID_NDK_HOME}",
+        "rhs": ""
+      }
+    },
+
+    {
+      "name": "android-x86_64",
+      "displayName": "Android — x86_64 (Vulkan, emulator)",
+      "inherits": "android-arm64",
+      "cacheVariables": {
+        "ANDROID_ABI": "x86_64"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    { "name": "linux-debug",    "configurePreset": "linux-debug"   },
+    { "name": "linux-release",  "configurePreset": "linux-release" },
+    { "name": "wasm-release",   "configurePreset": "wasm-release"  },
+    { "name": "wasm-debug",     "configurePreset": "wasm-debug"    },
+    { "name": "android-arm64",  "configurePreset": "android-arm64" },
+    { "name": "android-x86_64", "configurePreset": "android-x86_64"}
+  ]
+}

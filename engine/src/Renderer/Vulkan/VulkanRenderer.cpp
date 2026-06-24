@@ -40,7 +40,7 @@ VulkanRenderer::~VulkanRenderer()
     cleanup();
 }
 
-void VulkanRenderer::initialize(const AuraSettings* settings)
+void VulkanRenderer::initialize(AuraSettings* settings)
 {
     if (_isInitialized) return;
 
