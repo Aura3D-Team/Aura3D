@@ -10,7 +10,7 @@
 #   • ANDROID_NDK_HOME env var set (NDK 27+)
 #   • ANDROID_HOME env var set (SDK with build-tools & platform 29+)
 #   • wma and ink built with the Android NDK and their CMake config available.
-#     Place them under $ANDROID_DEPS_PREFIX (default: /usr/local/android-deps).
+#     Place them under $ANDROID_DEPS_PREFIX (default: /usr/local).
 #
 # Usage
 #   ./scripts/build_android.sh [--abi arm64-v8a|x86_64] [--apk] [--debug]
@@ -26,7 +26,7 @@ ROOT="$(dirname "$SCRIPT_DIR")"
 ABI="arm64-v8a"
 BUILD_APK=0
 BUILD_TYPE="Release"
-ANDROID_DEPS_PREFIX="${ANDROID_DEPS_PREFIX:-/usr/local/android-deps}"
+ANDROID_DEPS_PREFIX="${ANDROID_DEPS_PREFIX:-/usr/local}"
 
 for arg in "$@"; do
   case "$arg" in
