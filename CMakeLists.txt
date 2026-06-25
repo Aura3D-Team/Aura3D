@@ -53,7 +53,6 @@ if(ANDROID)
     set(AURA_ENABLE_VULKAN     ON  CACHE BOOL "" FORCE)
     set(AURA_ENABLE_OPENGL     OFF CACHE BOOL "" FORCE)
     set(AURA_ENABLE_CPU        OFF CACHE BOOL "" FORCE)
-    # No standalone Sandbox on Android — JNI entry point is built by the Gradle project.
     set(AURA_BUILD_SANDBOX     OFF CACHE BOOL "" FORCE)
     set(AURA_NATIVE_OPTIMIZE   OFF CACHE BOOL "" FORCE)
 endif()
