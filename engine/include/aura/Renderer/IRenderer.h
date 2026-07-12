@@ -3,12 +3,13 @@
 
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <vector>
 
 #include <wma/wma.hpp>
 #include <glm/glm.hpp>
+
+#include "aura/Utils/PlatformCompat.h"
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Renderer/RenderHandles.h"
@@ -220,7 +221,7 @@ public:
      * @brief Initializes execution loop parameters, executing callback functions inside standard frame limits.
      * * @param[in] onFrame Callable callback structure managing system updates per game tick iteration.
      */
-    void run(std::function<void()> onFrame);
+    void run(move_only_function<void()> onFrame);
 
     /**
      * @brief Fetches access coordinates belonging to the overarching client operating window instance.

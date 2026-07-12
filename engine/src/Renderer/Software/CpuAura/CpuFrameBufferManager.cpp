@@ -2,8 +2,8 @@
 
 #include <cstring>
 #include <cmath>
-#include <algorithm> // For std::fill and std::transform
-#include <vector>    // For the temporary pixel buffer
+#include <algorithm>
+#include <vector>
 
 #include "aura/Core/AuraException/AuraException.h"
 
@@ -338,6 +338,126 @@ void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point>& points, 
     }
 }
 
+
+/**
+ * Half-space (edge-function) triangle rasteriser.
+ *
+ * Pipeline per triangle
+ * 1. Compute screen-space bounding box (clamped to viewport).
+ * 2. Evaluate edge functions at each pixel centre (+0.5 sub-pixel bias).
+ * 3. Accept pixels whose barycentric weights are all ≥ 0 (handles both
+ *    CW and CCW winding by normalising with the signed area).
+ * 4. Depth test: discard fragment if z ≥ stored depth.
+ * 5. Perspective-correct interpolation of UV and vertex colour.
+ * 6. Nearest-neighbour texture sample (if texture != nullptr).
+ * 7. Modulate texture colour by vertex colour, write pixel + depth.
+ */ 
+void CpuFrameBufferManager::drawTriangle(const ScreenVertex& v0, const ScreenVertex& v1,
+                                         const ScreenVertex& v2, const Texture* texture)
+{
+    // bbox
+    const int xmin = std::max(0, (int)std::floor(std::min({v0.x, v1.x, v2.x})));
+    const int xmax = std::min(settings.width - 1, (int)std::ceil(std::max({v0.x, v1.x, v2.x})));
+    const int ymin = std::max(0, (int)std::floor(std::min({v0.y, v1.y, v2.y})));
+    const int ymax = std::min(settings.height- 1, (int)std::ceil(std::max({v0.y, v1.y, v2.y})));
+
+    if (xmin > xmax || ymin > ymax) 
+        return;
+
+    // Signed area (2×) also serves as the edge-function denominator
+    //   area2 = edgeFn(v0, v1, v2)
+    //         = (v1.x−v0.x)·(v2.y−v0.y) − (v1.y−v0.y)·(v2.x−v0.x)
+    const float area2 = (v1.x - v0.x) * (v2.y - v0.y)
+                      - (v1.y - v0.y) * (v2.x - v0.x);
+
+    if (std::abs(area2) < 1e-6f) 
+        return;
+
+    const float invArea2 = 1.0f / area2;
+
+    // Pre-divide attributes by w for perspective-correct interpolation 
+    const glm::vec2 uv0w = v0.uv * v0.invW;
+    const glm::vec2 uv1w = v1.uv * v1.invW;
+    const glm::vec2 uv2w = v2.uv * v2.invW;
+    const glm::vec4 col0w = v0.color * v0.invW;
+    const glm::vec4 col1w = v1.color * v1.invW;
+    const glm::vec4 col2w = v2.color * v2.invW;
+
+    // Rasterise
+    for (int y = ymin; y <= ymax; ++y)
+    {
+        const float py = static_cast<float>(y) + 0.5f;
+
+        for (int x = xmin; x <= xmax; ++x)
+        {
+            const float px = static_cast<float>(x) + 0.5f;
+
+            // Edge functions:
+            //   w0 = edgeFn(v1, v2, p)  →  barycentric weight for v0
+            //   w1 = edgeFn(v2, v0, p)  →  barycentric weight for v1
+            //   w2 = edgeFn(v0, v1, p)  →  barycentric weight for v2
+            const float w0 = (v2.x - v1.x) * (py - v1.y) - (v2.y - v1.y) * (px - v1.x);
+            const float w1 = (v0.x - v2.x) * (py - v2.y) - (v0.y - v2.y) * (px - v2.x);
+            const float w2 = (v1.x - v0.x) * (py - v0.y) - (v1.y - v0.y) * (px - v0.x);
+
+            // Inside test — normalise by sign of area to handle both windings.
+            if (area2 > 0.0f) {
+                if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+            } else {
+                if (w0 > 0.0f || w1 > 0.0f || w2 > 0.0f) continue;
+            }
+
+            // Barycentric coordinates ∈ [0, 1],  b0+b1+b2 = 1
+            const float b0 = w0 * invArea2;
+            const float b1 = w1 * invArea2;
+            const float b2 = w2 * invArea2;
+
+            // Interpolated depth (linear in screen space is fine for NDC z)
+            const float z = b0 * v0.z + b1 * v1.z + b2 * v2.z;
+
+            // Depth test
+            const int idx = y * settings.width + x;
+            if (settings.useDepthBuffer && z >= framebuffer[idx].z) continue;
+
+            // Perspective-correct 1/w
+            const float invW = b0 * v0.invW + b1 * v1.invW + b2 * v2.invW;
+            if (invW <= 0.0f) continue;
+            const float perspW = 1.0f / invW;
+
+            // Reconstruct UV and colour
+            const glm::vec2 uv    = (b0 * uv0w  + b1 * uv1w  + b2 * uv2w)  * perspW;
+            const glm::vec4 vcolor= glm::clamp(
+                                        (b0 * col0w + b1 * col1w + b2 * col2w) * perspW,
+                                        0.0f, 1.0f);
+
+            // Texture sample (nearest-neighbour)
+            const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
+
+            // Unpack texel (ARGB8888 — matches SDL_PIXELFORMAT_ARGB8888)
+            const u8 ta = static_cast<u8>((texel >> 24) & 0xFFu);
+            const u8 tr = static_cast<u8>((texel >> 16) & 0xFFu);
+            const u8 tg = static_cast<u8>((texel >>  8) & 0xFFu);
+            const u8 tb = static_cast<u8>( texel        & 0xFFu);
+
+            // Modulate by vertex colour
+            const u8 fr = static_cast<u8>(static_cast<float>(tr) * vcolor.r);
+            const u8 fg = static_cast<u8>(static_cast<float>(tg) * vcolor.g);
+            const u8 fb = static_cast<u8>(static_cast<float>(tb) * vcolor.b);
+            const u8 fa = static_cast<u8>(static_cast<float>(ta) * vcolor.a);
+
+            const u32 finalColor =  (static_cast<u32>(fa) << 24)
+                                  | (static_cast<u32>(fr) << 16)
+                                  | (static_cast<u32>(fg) <<  8)
+                                  |  static_cast<u32>(fb);
+
+            // Write pixel and depth
+            framebuffer[idx].rgb = finalColor;
+            if (settings.useDepthBuffer) {
+                framebuffer[idx].z = z;
+            }
+        }
+    }
+}
 
 /**
  * Blends two colors according to an alpha value

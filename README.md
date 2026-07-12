@@ -102,39 +102,53 @@ int main() {
 
 ```
 Aura3D/
-├── apps/                     # Executables (games, tests)
-│   └── Sandbox/              # Example application
+├── apps/
+│   └── Sandbox/
 │       ├── main.cpp
-│       └── settings.json     # Runtime configuration
+│       ├── settings.json
+│       └── CMakeLists.txt
 │
-├── engine/                   # The Engine Library
-│   ├── include/aura/         # PUBLIC HEADERS
-│   │   ├── aura.h            # Main version/name defines
-│   │   ├── Core/             # Engine, AuraCore, Settings, Font, Exception
-│   │   ├── Renderer/
-│   │   │   ├── IRenderer.h   # Abstract interface + RendererChoice/RendererMode enums
-│   │   │   ├── Software/     # CPU renderer + framebuffer manager
-│   │   │   ├── OpenGL/       # OpenGL renderer + GL shader/buffer managers
-│   │   │   └── Vulkan/       # Vulkan renderer + full VkAura subsystem
-│   │   └── Utils/            # Colors, math utilities, aligned allocator
+├── engine/
+│   ├── include/
+│   │   └── aura/
+│   │       ├── aura.h
+│   │       ├── Core/
+│   │       ├── Renderer/
+│   │       └── Utils/
 │   │
-│   └── src/                  # PRIVATE SOURCE (hidden from consumers)
-│       ├── Core/             # Config loader, settings implementation
-│       ├── Renderer/
-│       │   ├── Software/     # CPU rasterizer implementation
-│       │   ├── OpenGL/       # GL context + shader management
-│       │   └── Vulkan/       # Instance, device, swapchain, pipeline, memory, etc.
-│       └── Utils/            # Utility implementations
+│   ├── src/
+│   │   ├── Core/
+│   │   ├── Renderer/
+│   │   └── Utils/
+│   │
+│   └── CMakeLists.txt
 │
-├── resources/                # Runtime assets
+├── resources/
 │   └── shaders/
-│       ├── opengl/           # GLSL shaders
-│       └── vulkan/           # GLSL shaders (compiled to SPIR-V by CMake)
+│       ├── opengl/
+│       └── vulkan/
 │
-├── vendor/                   # Third-party (glad, microui)
-├── cmake/                    # CMake package config templates
-├── config.json               # Engine default config template
-└── CMakeLists.txt
+├── vendor/
+│
+├── android/
+│   └── app/
+│       ├── src/main/
+│       │   ├── cpp/
+│       │   │   ├── android_main.cpp
+│       │   │   └── CMakeLists.txt
+│       │   ├── AndroidManifest.xml
+│       │   └── res/
+│       └── build.gradle
+│
+├── cmake/
+│   ├── Platform.cmake
+│   ├── Dependencies.cmake
+│   ├── Install.cmake
+│   ├── Assets.cmake
+│   └── Aura3DConfig.cmake.in
+│
+├── CMakeLists.txt
+└── CMakePresets.json
 ```
 
 **Key design principles:**
@@ -156,14 +170,10 @@ public:
     virtual void cleanup() = 0;
     virtual wma::IWindowManager* getWindowManager() = 0;
     virtual RendererChoice getBackendType() const = 0;
-
-    RendererMode getMode() const;
-    bool is2D() const;
-    bool is3D() const;
 };
 ```
 
-The `Engine` class reads `settings.json`, creates the correct renderer, and exposes it. Your application code queries `engine.getBackend()` and `engine.getMode()` to adapt behavior.
+The `Engine` class reads `settings.json`, creates the correct renderer, and exposes it. Your application code queries `engine.getBackend()` and to adapt behavior.
 
 ---
 

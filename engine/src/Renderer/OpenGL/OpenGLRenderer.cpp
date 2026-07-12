@@ -158,8 +158,6 @@ TextureHandle OpenGLRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
     return _textureMgr->createSolidColorTexture(r, g, b, a);
 }
 
-// --- Frame lifecycle ---
-
 void OpenGLRenderer::beginFrame()
 {
     auto* wd = _windowManagerApi->getWindowDetails();

@@ -2,7 +2,7 @@
 
 namespace aura3d {
 
-void IRenderer::run(std::function<void()> onFrame)
+void IRenderer::run(move_only_function<void()> onFrame)
 {
     auto* windowMgr = getWindowManager();
     if (!windowMgr) return;

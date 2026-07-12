@@ -2,9 +2,9 @@
 #define CPUFRAMEBUFFERMANAGER_H
 
 #include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
 #include <cmath>
 #include <string>
+#include <glm/glm.hpp>
 
 static const float PI_FLOAT = std::acos(-1.0f);
 
@@ -69,31 +69,43 @@ enum InterpolationMethod: u32 {
 };
 
 struct Texture {
-    Texture(int w, int h) : data(w * h, 0), width(w), height(h)  {}
+    Texture(int w, int h) : data(w * h, 0), width(w), height(h) {}
 
     AlignedVector<u32> data;
     i32 width;
     i32 height;
 
-    u32 sample(f32 u, f32 v) const {
-        int x = INK_CLAMP(static_cast<int>(u * width), 0, width - 1);
-        int y = INK_CLAMP(static_cast<int>(v * height), 0, height - 1);
-        return data[y * width + x];
+    u32 sample(f32 u, f32 v) const noexcept 
+    {
+        int x = INK_CLAMP(static_cast<int>(u * static_cast<f32>(width)),  0, width  - 1);
+        int y = INK_CLAMP(static_cast<int>(v * static_cast<f32>(height)), 0, height - 1);
+        return data[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)];
     }
+};
+
+/**
+ * @brief Screen-space vertex produced by the vertex-transform stage.
+ *
+ * All floating-point positions are in pixel coordinates.
+ * Attributes (uv, color) are stored in their original form; perspective-
+ * correct interpolation is applied inside drawTriangle().
+ */
+struct ScreenVertex {
+    f32        x    = 0.0f;   ///< Pixel X (left = 0)
+    f32        y    = 0.0f;   ///< Pixel Y (top  = 0)
+    f32        z    = 1.0f;   ///< Depth in [0, 1]  (0 = near, 1 = far)
+    f32        invW = 1.0f;   ///< 1 / clip_w  (for perspective-correct interp)
+    glm::vec2  uv   = {};     ///< Texture coordinates
+    glm::vec4  color= {1,1,1,1}; ///< Vertex color  [0, 1] per channel
 };
 
 class CpuFrameBufferManager
 {
 public:
     struct Config {
-        i32 width;
-        i32 height;
-        bool useDepthBuffer;
-
-        Config() :
-            width(1280),
-            height(720),
-            useDepthBuffer(false) {}
+        i32 width = 1280;
+        i32 height = 720;
+        bool useDepthBuffer = true;
     };
 
     CpuFrameBufferManager(SDL_Window* window, Config config);
@@ -116,6 +128,21 @@ public:
     void drawPolygon(const std::vector<Point>& points, u32 color, bool closed = true);
     void drawPolygon(const std::vector<Point>& points, const std::vector<u32>& colors, bool closed = true);
     void drawFilledPolygon(const std::vector<Point>& points, u32 color);
+
+    /**
+     * @brief Rasterise a single screen-space triangle.
+     *
+     * Implements a half-space (edge-function) rasteriser with:
+     *   - Barycentric perspective-correct attribute interpolation
+     *   - Per-pixel depth test (when Config::useDepthBuffer is true)
+     *   - Optional nearest-neighbour texture sampling
+     *   - Vertex-colour × texture-colour modulation
+     *
+     * @param v0,v1,v2  Screen-space vertices from the vertex transform stage.
+     * @param texture   Optional texture; pass nullptr for untextured geometry.
+     */
+    void drawTriangle(const ScreenVertex& v0, const ScreenVertex& v1,
+                      const ScreenVertex& v2, const Texture* texture);
 
     // Text rendering
     void drawText(const std::string& text, Point p, u32 color, u32 fontSize = 2);
