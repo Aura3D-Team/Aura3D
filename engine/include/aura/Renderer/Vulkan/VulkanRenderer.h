@@ -42,6 +42,7 @@ public:
     IndexBufferHandle createIndexBuffer(std::vector<u16>&& indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
+    TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) override;
 
     void beginFrame() override;
     void beginRenderPass() override;
@@ -49,6 +50,7 @@ public:
     void endFrame() override;
 
     void setTransform(const gfx::TransformUBO& ubo) override;
+    void setLight(const gfx::LightUBO& light) override;
     void bindVertexBuffer(VertexBufferHandle handle) override;
     void bindIndexBuffer(IndexBufferHandle handle) override;
     void bindTexture(TextureHandle handle) override;
@@ -94,6 +96,10 @@ private:
     void createUniformBuffers();
     void createDescriptorSets();
     void updateTextureDescriptorSets(TextureHandle textureHandle);
+    void updateLightUniformBuffers();
+    //! Records the per-draw state (transform push constants, UBO/light/texture
+    //! descriptor sets) shared by drawIndexed() and draw().
+    void bindDrawState(VkCommandBuffer cmd);
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
     std::unique_ptr<VulkanMemoryManager> _memoryManager;
@@ -110,6 +116,7 @@ private:
     std::unique_ptr<aura3d::vk::VkVertexBufferManager> _vkVertexBufferManager;
     std::unique_ptr<aura3d::vk::VkIndexBufferManager> _vkIndexBufferManager;
     std::unique_ptr<aura3d::vk::VkUniformBufferManager> _vkUniformBufferManager;
+    std::unique_ptr<aura3d::vk::VkUniformBufferManager> _vkLightUniformBufferManager;
     std::unique_ptr<aura3d::vk::VkCommandManager> _vkCommandManager;
     std::unique_ptr<aura3d::vk::VkRenderSyncManager> _vkRenderSyncManager;
 
@@ -139,8 +146,16 @@ private:
     std::unordered_map<IndexBufferHandle, std::string> _ibNames;
     std::unordered_map<TextureHandle, std::string> _texNames;
 
-    std::vector<VkDescriptorSet> _descSets;
-    std::vector<VkDescriptorSet> _texDescSets;
+    std::vector<VkDescriptorSet> _descSets; //! set 0: transform, per image
+    std::vector<VkDescriptorSet> _lightDescSets; //! set 2: light, per image
+
+    /*
+     * set 1: one descriptor set per swapchain image, per texture. Keyed by
+     * handle rather than kept as a single array so that bindTexture() actually
+     * selects a texture: sharing one array across every texture would make the
+     * last-created one win for all draws.
+     */
+    std::unordered_map<TextureHandle, std::vector<VkDescriptorSet>> _texDescSets;
 
     VertexBufferHandle _currentVertexBuffer = INVALID_HANDLE;
     IndexBufferHandle _currentIndexBuffer = INVALID_HANDLE;

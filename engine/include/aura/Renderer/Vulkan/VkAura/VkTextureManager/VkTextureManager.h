@@ -60,6 +60,23 @@ public:
                                         u8 a = 255);
 
     /**
+     * @brief Uploads arbitrary RGBA8 pixel data through a staging buffer.
+     *
+     * The general upload path: createSolidColorTexture() is a 1x1 case of it.
+     *
+     * @param name Unique identifier for the texture; an existing entry is replaced.
+     * @param rgba Tightly packed @p width * @p height * 4 bytes, RGBA order.
+     * @param width Texture width in pixels.
+     * @param height Texture height in pixels.
+     * @return TextureData containing the created texture resources; a default
+     *         constructed value when the input is empty.
+     */
+    TextureData createTextureFromPixels(const std::string& name,
+                                        const u8* rgba,
+                                        u32 width,
+                                        u32 height);
+
+    /**
      * @brief Retrieves a texture by name
      *
      * @param name The identifier of the texture to retrieve

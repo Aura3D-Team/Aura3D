@@ -31,10 +31,13 @@ public:
      *
      * @param sharingMode Buffer sharing mode
      * @param count Number of buffers to create (typically matches swapchain image count)
+     * @param elementSize Bytes per buffer. Defaults to a TransformUBO, but any
+     *        blob works, which lets the same manager back the light UBO.
      */
     void createUniformBuffers(
         VkSharingMode sharingMode,
-        u32 count);
+        u32 count,
+        VkDeviceSize elementSize = sizeof(gfx::TransformUBO));
 
     /**
      * @brief Updates a uniform buffer with new transform data
@@ -43,6 +46,13 @@ public:
      * @param ubo Transform UBO data to upload
      */
     void updateUniformBuffer(u32 currentImage, gfx::TransformUBO& ubo);
+
+    /**
+     * @brief Uploads @p size bytes of @p data into buffer @p currentImage.
+     *
+     * Writes are rejected when they would overrun the configured element size.
+     */
+    void updateUniformBufferRaw(u32 currentImage, const void* data, VkDeviceSize size);
 
     /**
      * @brief Gets a uniform buffer handle
@@ -84,6 +94,7 @@ private:
     VulkanMemoryManager* _memoryManager;
     VkDevice* _vkDevice;
     std::vector<AllocatedBuffer> _buffers;
+    VkDeviceSize _elementSize = sizeof(gfx::TransformUBO);
 };
 
 } // namespace vk

@@ -120,6 +120,7 @@ void VulkanRenderer::createResourceManagers()
     _vkVertexBufferManager = std::make_unique<VkVertexBufferManager>(_memoryManager.get(), dev);
     _vkIndexBufferManager = std::make_unique<VkIndexBufferManager>(_memoryManager.get(), dev);
     _vkUniformBufferManager = std::make_unique<VkUniformBufferManager>(_memoryManager.get(), dev);
+    _vkLightUniformBufferManager = std::make_unique<VkUniformBufferManager>(_memoryManager.get(), dev);
     _vkCommandManager = std::make_unique<VkCommandManager>(dev, _graphicsIndexFamily);
 
     _vkTextureManager = std::make_unique<VkTextureManager>(
@@ -166,13 +167,35 @@ void VulkanRenderer::buildSwapchainResources()
 
 void VulkanRenderer::createUniformBuffers()
 {
-    _vkUniformBufferManager->createUniformBuffers(
-        _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
-        _imagesCount);
+    const VkSharingMode sharingMode = _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode;
 
-    for (u32 i = 0; i < _imagesCount; ++i) {
+    _vkUniformBufferManager->createUniformBuffers(sharingMode, _imagesCount);
+
+    for (u32 i = 0; i < _imagesCount; ++i) 
+    {
         _vkUniformBufferManager->updateUniformBuffer(i, const_cast<gfx::TransformUBO&>(_currentTransform));
     }
+
+    _vkLightUniformBufferManager->createUniformBuffers(sharingMode, _imagesCount, sizeof(gfx::LightUBO));
+
+    updateLightUniformBuffers();
+}
+
+void VulkanRenderer::updateLightUniformBuffers()
+{
+    if (!_vkLightUniformBufferManager) 
+        return;
+
+    for (u32 i = 0; i < _imagesCount; ++i) 
+    {
+        _vkLightUniformBufferManager->updateUniformBufferRaw(i, &_light, sizeof(gfx::LightUBO));
+    }
+}
+
+void VulkanRenderer::setLight(const gfx::LightUBO& light)
+{
+    IRenderer::setLight(light);
+    updateLightUniformBuffers();
 }
 
 void VulkanRenderer::createDescriptorSets()
@@ -181,6 +204,7 @@ void VulkanRenderer::createDescriptorSets()
 
     _vkGraphicsPipelineManager->createDescriptorSetLayouts();
     _descSets.resize(_imagesCount);
+    _lightDescSets.resize(_imagesCount);
 
     for (u32 i = 0; i < _imagesCount; ++i) {
         _descSets[i] = _vkDescriptorManager->allocateDescriptorSet(
@@ -189,6 +213,11 @@ void VulkanRenderer::createDescriptorSets()
         VkDescriptorBufferInfo bufInfo = _vkUniformBufferManager->getDescriptorBufferInfo(i);
         _vkDescriptorManager->updateDescriptorSet(
             _descSets[i], 0, bufInfo.buffer, bufInfo.range, bufInfo.offset);
+
+        _lightDescSets[i] = _vkDescriptorManager->allocateDescriptorSet(_vkGraphicsPipelineManager->getDescriptorSetLayout(2));
+
+        VkDescriptorBufferInfo lightInfo = _vkLightUniformBufferManager->getDescriptorBufferInfo(i);
+        _vkDescriptorManager->updateDescriptorSet(_lightDescSets[i], 0, lightInfo.buffer, lightInfo.range, lightInfo.offset);
     }
 
     std::vector<VkVertexInputBindingDescription> bindings = { VkVertexBufferManager::getBindingDescription() };
@@ -215,19 +244,22 @@ void VulkanRenderer::updateTextureDescriptorSets(TextureHandle textureHandle)
     const auto* texture = _vkTextureManager->getTexture(nameIt->second);
     if (!texture) return;
 
-    _texDescSets.resize(_imagesCount);
-    for (u32 i = 0; i < _imagesCount; ++i) {
-        _texDescSets[i] = _vkDescriptorManager->allocateDescriptorSet(
+    std::vector<VkDescriptorSet> sets(_imagesCount);
+    for (u32 i = 0; i < _imagesCount; ++i) 
+    {
+        sets[i] = _vkDescriptorManager->allocateDescriptorSet(
             _vkGraphicsPipelineManager->getDescriptorSetLayout(1));
         _vkDescriptorManager->updateCombinedImageSamplerDescriptorSet(
-            _texDescSets[i], 0, texture->view, texture->sampler);
+            sets[i], 0, texture->view, texture->sampler);
     }
+    _texDescSets[textureHandle] = std::move(sets);
 }
 
 void VulkanRenderer::destroySwapchainResources()
 {
     _pipelineReady = false;
     _descSets.clear();
+    _lightDescSets.clear();
     _texDescSets.clear();
 
     _vkFrameBuffersManager->cleanup();
@@ -292,10 +324,11 @@ void VulkanRenderer::handleWindowChanges()
     createUniformBuffers();
     createDescriptorSets();
 
-    for (const auto& entry : _texNames) {
+    //! Every texture needs fresh per-image sets: the old pool was destroyed with
+    //! the swapchain resources.
+    for (const auto& entry : _texNames)
         updateTextureDescriptorSets(entry.first);
-        break;
-    }
+
     _vkRenderSyncManager->create();
 }
 
@@ -304,7 +337,10 @@ void VulkanRenderer::cleanup()
     if (_vkDeviceManager && _vkDeviceManager->getDevice())
         vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
 
+    clearSharedResources();
+
     _descSets.clear();
+    _lightDescSets.clear();
     _texDescSets.clear();
     _vbNames.clear();
     _ibNames.clear();
@@ -316,6 +352,7 @@ void VulkanRenderer::cleanup()
     if (_vkVertexBufferManager) _vkVertexBufferManager->cleanup();
     if (_vkIndexBufferManager) _vkIndexBufferManager->cleanup();
     if (_vkUniformBufferManager) _vkUniformBufferManager->cleanup();
+    if (_vkLightUniformBufferManager) _vkLightUniformBufferManager->cleanup();
     if (_vkTextureManager) _vkTextureManager->cleanup();
     if (_depth.isValid()) destroyDepthResources();
 
@@ -330,6 +367,7 @@ void VulkanRenderer::cleanup()
     _vkVertexBufferManager.reset();
     _vkIndexBufferManager.reset();
     _vkUniformBufferManager.reset();
+    _vkLightUniformBufferManager.reset();
     _vkTextureManager.reset();
 
     if (_memoryManager) _memoryManager->shutdown();
@@ -379,19 +417,40 @@ IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16>&& indices)
 
 IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u32>&& indices)
 {
-    std::vector<u16> indices16;
-    indices16.reserve(indices.size());
-    for (u32 idx : indices) {
-        indices16.push_back(static_cast<u16>(idx));
-    }
-    return createIndexBuffer(std::move(indices16));
+    auto handle = _nextIbHandle++;
+    std::string name = "ib_" + std::to_string(handle);
+
+    _vkIndexBufferManager->createIndexBuffer(
+        name,
+        _vkCommandManager->getThreadCommandPool(),
+        _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
+        _queueDataFromExclusiveFlags.front()->queues.front(),
+        std::move(indices),
+        false
+    );
+
+    _ibNames[handle] = name;
+    return handle;
 }
 
 TextureHandle VulkanRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 {
+    const u8 pixel[4] = {r, g, b, a};
+    return createTextureFromPixels(pixel, 1, 1);
+}
+
+TextureHandle VulkanRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
+{
+    if (!rgbaPixels || width == 0 || height == 0)
+    {
+        INK_ERROR << "VulkanRenderer: refusing to upload an empty texture";
+        return INVALID_HANDLE;
+    }
+
     auto handle = _nextTexHandle++;
     std::string name = "tex_" + std::to_string(handle);
-    _vkTextureManager->createSolidColorTexture(name, r, g, b, a);
+
+    _vkTextureManager->createTextureFromPixels(name, rgbaPixels, width, height);
     _texNames[handle] = name;
     updateTextureDescriptorSets(handle);
     return handle;
@@ -490,17 +549,52 @@ void VulkanRenderer::bindVertexBuffer(VertexBufferHandle handle) { _currentVerte
 void VulkanRenderer::bindIndexBuffer(IndexBufferHandle handle) { _currentIndexBuffer = handle; }
 void VulkanRenderer::bindTexture(TextureHandle handle) { _currentTexture = handle; }
 
-void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
+void VulkanRenderer::bindDrawState(VkCommandBuffer cmd)
 {
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady) return;
-
-    VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
     _vkGraphicsPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
 
-    if (_currentImageIndex < _descSets.size()) {
+    //! set 0 - view/projection, refreshed once per frame in beginRenderPass().
+    if (_currentImageIndex < _descSets.size())
+    {
         _vkGraphicsPipelineManager->cmdBindDescriptorSets(
             cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &_descSets[_currentImageIndex], 0, nullptr);
     }
+
+    // set 1 - the texture selected by the last bindTexture().
+    auto texIt = _texDescSets.find(_currentTexture);
+    if (texIt != _texDescSets.end() && _currentImageIndex < texIt->second.size())
+    {
+        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
+            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 1, 1, &texIt->second[_currentImageIndex], 0, nullptr);
+    }
+
+    // set 2 - directional light.
+    if (_currentImageIndex < _lightDescSets.size())
+    {
+        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
+            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 2, 1, &_lightDescSets[_currentImageIndex], 0, nullptr);
+    }
+
+    /*
+     * Per-draw transform. The model matrix travels as a push constant rather
+     * than in the UBO, because the UBO is only written once per frame: pushing
+     * here is what lets several objects with different transforms share a
+     * single render pass.
+     */
+    PushConstantBlock pushConstants;
+    pushConstants.model = _currentTransform.model;
+    pushConstants.normalMatrix =
+        glm::mat4(glm::transpose(glm::inverse(glm::mat3(_currentTransform.model))));
+    _vkGraphicsPipelineManager->cmdPushConstants(cmd, &pushConstants);
+}
+
+void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
+{
+    if (!_frameBegun || !_renderPassActive || !_pipelineReady) 
+        return;
+
+    VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
+    bindDrawState(cmd);
 
     auto vbIt = _vbNames.find(_currentVertexBuffer);
     if (vbIt != _vbNames.end()) {
@@ -512,12 +606,7 @@ void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     auto ibIt = _ibNames.find(_currentIndexBuffer);
     if (ibIt != _ibNames.end()) {
         auto ib = _vkIndexBufferManager->getIndexBuffer(ibIt->second);
-        vkCmdBindIndexBuffer(cmd, ib.buffer, ib.memoryOffset, VK_INDEX_TYPE_UINT16);
-    }
-
-    if (_currentImageIndex < _texDescSets.size()) {
-        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
-            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 1, 1, &_texDescSets[_currentImageIndex], 0, nullptr);
+        vkCmdBindIndexBuffer(cmd, ib.buffer, ib.memoryOffset, ib.indexType);
     }
 
     _vkGraphicsPipelineManager->cmdIndexedDraw(
@@ -526,15 +615,11 @@ void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 
 void VulkanRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady) return;
+    if (!_frameBegun || !_renderPassActive || !_pipelineReady) 
+        return;
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
-    _vkGraphicsPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-
-    if (_currentImageIndex < _descSets.size()) {
-        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
-            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &_descSets[_currentImageIndex], 0, nullptr);
-    }
+    bindDrawState(cmd);
 
     auto vbIt = _vbNames.find(_currentVertexBuffer);
     if (vbIt != _vbNames.end()) {

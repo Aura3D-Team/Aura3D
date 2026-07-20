@@ -9,6 +9,9 @@ namespace aura3d {
  * AURA_GLES is defined by CMake when targeting WebGL2 (WASM) or OpenGL ES 3.0.
  * WebGL2 == OpenGL ES 3.0: same API, same GLSL dialect (#version 300 es).
  * Desktop OpenGL uses #version 330 core (GLSL 3.30).
+ *
+ * These mirror resources/shaders/opengl/*.glsl; keep the two in sync.
+ * The LightBlock layout matches aura3d::gfx::LightUBO.
  */
 
 #ifdef AURA_GLES
@@ -30,11 +33,12 @@ layout(std140) uniform UniformBufferObject {
     mat4 proj;
 } ubo;
 void main() {
-    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0);
+    vec4 worldPos = ubo.model * vec4(inPosition, 1.0);
+    gl_Position  = ubo.proj * ubo.view * worldPos;
     fragTexCoord = inTexCoord;
     fragColor    = inColor;
-    fragNormal   = inNormal;
-    fragPos      = vec3(ubo.model * vec4(inPosition, 1.0));
+    fragNormal   = mat3(transpose(inverse(ubo.model))) * inNormal;
+    fragPos      = worldPos.xyz;
 }
 )";
 
@@ -47,9 +51,19 @@ in vec3 fragNormal;
 in vec3 fragPos;
 out vec4 outColor;
 uniform sampler2D textureSampler;
+layout(std140) uniform LightBlock {
+    vec3  direction;
+    float intensity;
+    vec4  color;
+    float ambient;
+} light;
 void main() {
+    vec3 toLight = normalize(-light.direction);
+    vec3 norm    = normalize(fragNormal);
+    float diffuse  = max(dot(norm, toLight), 0.0) * light.intensity;
+    float lighting = light.ambient + diffuse;
     vec4 texColor = texture(textureSampler, fragTexCoord);
-    outColor = texColor * fragColor;
+    outColor = texColor * fragColor * vec4(light.color.rgb * lighting, 1.0);
 }
 )";
 
@@ -71,11 +85,12 @@ layout(std140) uniform UniformBufferObject {
     mat4 proj;
 } ubo;
 void main() {
-    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0);
+    vec4 worldPos = ubo.model * vec4(inPosition, 1.0);
+    gl_Position  = ubo.proj * ubo.view * worldPos;
     fragTexCoord = inTexCoord;
     fragColor    = inColor;
-    fragNormal   = inNormal;
-    fragPos      = vec3(ubo.model * vec4(inPosition, 1.0));
+    fragNormal   = mat3(transpose(inverse(ubo.model))) * inNormal;
+    fragPos      = worldPos.xyz;
 }
 )";
 
@@ -87,9 +102,19 @@ in vec3 fragNormal;
 in vec3 fragPos;
 out vec4 outColor;
 uniform sampler2D textureSampler;
+layout(std140) uniform LightBlock {
+    vec3  direction;
+    float intensity;
+    vec4  color;
+    float ambient;
+} light;
 void main() {
+    vec3 toLight = normalize(-light.direction);
+    vec3 norm    = normalize(fragNormal);
+    float diffuse  = max(dot(norm, toLight), 0.0) * light.intensity;
+    float lighting = light.ambient + diffuse;
     vec4 texColor = texture(textureSampler, fragTexCoord);
-    outColor = texColor * fragColor;
+    outColor = texColor * fragColor * vec4(light.color.rgb * lighting, 1.0);
 }
 )";
 

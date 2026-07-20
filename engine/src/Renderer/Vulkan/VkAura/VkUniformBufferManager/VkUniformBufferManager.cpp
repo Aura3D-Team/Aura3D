@@ -1,8 +1,6 @@
 #include "aura/Renderer/Vulkan/VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
 
-#include <algorithm>
-#include <ranges>
-#include <span>
+#include <cstring>
 
 #include "aura/aura.h"
 
@@ -19,11 +17,12 @@ VkUniformBufferManager::~VkUniformBufferManager()
     cleanup();
 }
 
-void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32 count)
+void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32 count, VkDeviceSize elementSize)
 {
     cleanup();
 
-    const VkDeviceSize bufferSize = sizeof(gfx::TransformUBO);
+    _elementSize = elementSize;
+    const VkDeviceSize bufferSize = _elementSize;
     _buffers.resize(count);
 
     VmaAllocationCreateFlags flags =
@@ -46,12 +45,22 @@ void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32
 
 void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, gfx::TransformUBO& ubo)
 {
-    if (currentImage >= _buffers.size() || _buffers[currentImage].mappedData == nullptr) {
+    updateUniformBufferRaw(currentImage, &ubo, sizeof(gfx::TransformUBO));
+}
+
+void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void* data, VkDeviceSize size)
+{
+    if (currentImage >= _buffers.size() || _buffers[currentImage].mappedData == nullptr || !data)
+        return;
+
+    if (size > _elementSize)
+    {
+        INK_ERROR << "updateUniformBuffer: write of " << size
+                  << " bytes exceeds the " << _elementSize << "-byte buffer";
         return;
     }
 
-    const auto uboBytes = std::as_bytes(std::span{&ubo, 1});
-    std::ranges::copy(uboBytes, static_cast<std::byte*>(_buffers[currentImage].mappedData));
+    std::memcpy(_buffers[currentImage].mappedData, data, static_cast<size_t>(size));
 }
 
 VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const
@@ -64,7 +73,7 @@ VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const
 
 VkDeviceSize VkUniformBufferManager::getUniformBufferSize() const
 {
-    return sizeof(gfx::TransformUBO);
+    return _elementSize;
 }
 
 VkDescriptorSetLayoutBinding VkUniformBufferManager::getDescriptorSetLayoutBinding(u32 binding) const
@@ -84,7 +93,7 @@ VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(u32 index
     if (index < _buffers.size()) {
         bufferInfo.buffer = _buffers[index].buffer;
         bufferInfo.offset = _buffers[index].offset;
-        bufferInfo.range = sizeof(gfx::TransformUBO);
+        bufferInfo.range = _elementSize;
     }
     return bufferInfo;
 }

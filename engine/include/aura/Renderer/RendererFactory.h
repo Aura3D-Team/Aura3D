@@ -27,8 +27,29 @@ public:
     static RendererChoice defaultChoice() noexcept;
 
     /**
-     * @brief Constructs and returns a renderer for the given backend.
-     * @throws std::runtime_error if the requested backend was not compiled in.
+     * @brief Reports whether @p choice was compiled into this build.
+     *
+     * Lets application code query capability before committing to a backend,
+     * instead of discovering the answer from a failed create().
+     */
+    static bool isAvailable(RendererChoice choice) noexcept;
+
+    /**
+     * @brief Maps @p choice onto the closest backend that is actually available.
+     *
+     * Walks the VULKAN → OPENGL → SOFTWARE chain starting at @p choice and
+     * returns the first compiled-in entry. When @p choice is available it is
+     * returned unchanged. Purely a query: nothing is constructed or logged.
+     */
+    static RendererChoice resolve(RendererChoice choice) noexcept;
+
+    /**
+     * @brief Constructs a renderer, degrading gracefully to an available backend.
+     *
+     * If @p choice was not compiled in, logs a warning and falls back along
+     * VULKAN → OPENGL → SOFTWARE rather than throwing.
+     *
+     * @throws std::runtime_error only if no backend at all was compiled in.
      */
     static std::unique_ptr<IRenderer> create(RendererChoice choice,
                                              const wma::WindowDetails& details);

@@ -58,6 +58,22 @@ void VkGraphicsPipelineManager::_init()
     samplerBinding.descriptorCount = 1;
     samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     addDescriptorBinding(1, samplerBinding);
+
+    // set 2: directional light, read by the fragment stage.
+    DescriptorBindingInfo lightBinding;
+    lightBinding.binding = 0;
+    lightBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    lightBinding.descriptorCount = 1;
+    lightBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    addDescriptorBinding(2, lightBinding);
+
+    /*
+     * Per-draw transform. set 0 carries view/proj once per frame, while the
+     * model and normal matrices arrive as push constants immediately before each
+     * draw, which is what allows many objects with distinct transforms inside a
+     * single render pass. Two mat4s is exactly the 128 bytes Vulkan guarantees.
+     */
+    setPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantBlock));
 }
 
 VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
@@ -69,6 +85,27 @@ VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
 
     // Base class destructor will handle pipeline and pipeline layout
     INK_DEBUG << "Graphics Pipeline destroyed.";
+}
+
+void VkGraphicsPipelineManager::setPushConstantRange(VkShaderStageFlags stageFlags, u32 offset, u32 size)
+{
+    _pushConstantRange.stageFlags = stageFlags;
+    _pushConstantRange.offset = offset;
+    _pushConstantRange.size = size;
+    _hasPushConstants = size > 0;
+}
+
+void VkGraphicsPipelineManager::cmdPushConstants(VkCommandBuffer commandBuffer, const void* data)
+{
+    if (!_hasPushConstants || _pipelineLayout == VK_NULL_HANDLE || !data)
+        return;
+
+    vkCmdPushConstants(commandBuffer,
+                       _pipelineLayout,
+                       _pushConstantRange.stageFlags,
+                       _pushConstantRange.offset,
+                       _pushConstantRange.size,
+                       data);
 }
 
 void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const DescriptorBindingInfo& bindingInfo)
@@ -158,10 +195,18 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     pipelineLayoutInfo.setLayoutCount = static_cast<u32>(layouts.size());
     pipelineLayoutInfo.pSetLayouts = layouts.data();
 
+    if (_hasPushConstants)
+    {
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &_pushConstantRange;
+    }
+
     // Create the pipeline layout
     VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout));
 
-    INK_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts";
+    INK_DEBUG << "Created pipeline layout with " << layouts.size()
+              << " descriptor set layouts and "
+              << (_hasPushConstants ? _pushConstantRange.size : 0u) << " push-constant bytes";
 }
 
 VkDescriptorSetLayout VkGraphicsPipelineManager::getDescriptorSetLayout(u32 setIndex) const

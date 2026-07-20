@@ -43,12 +43,14 @@ VkIndexBufferManager::~VkIndexBufferManager()
     cleanup();
 }
 
-void VkIndexBufferManager::createIndexBuffer(const std::string& name,
-                                             VkCommandPool commandPool,
-                                             VkSharingMode sharingMode,
-                                             VkQueue graphicsQueue,
-                                             std::vector<u16>&& indices,
-                                             bool persistentMapping)
+template <typename IndexT>
+void VkIndexBufferManager::createIndexBufferImpl(const std::string& name,
+                                                 VkCommandPool commandPool,
+                                                 VkSharingMode sharingMode,
+                                                 VkQueue graphicsQueue,
+                                                 std::vector<IndexT>&& indices,
+                                                 bool persistentMapping,
+                                                 VkIndexType indexType)
 {
     cleanup(name);
 
@@ -57,9 +59,10 @@ void VkIndexBufferManager::createIndexBuffer(const std::string& name,
         return;
     }
 
-    const VkDeviceSize bufferSize = sizeof(u16) * indices.size();
+    const VkDeviceSize bufferSize = sizeof(IndexT) * indices.size();
     IndexBufferInfo bufferInfo{};
     bufferInfo.indexCount = static_cast<u32>(indices.size());
+    bufferInfo.indexType = indexType;
 
     if (persistentMapping) {
         VmaAllocationCreateFlags flags =
@@ -76,18 +79,20 @@ void VkIndexBufferManager::createIndexBuffer(const std::string& name,
         fillFromAllocated(bufferInfo, allocated);
         bufferInfo.persistent = true;
 
-        if (bufferInfo.mappedPointer) {
-            std::ranges::copy(indices, static_cast<u16*>(bufferInfo.mappedPointer));
-        }
+        if (bufferInfo.mappedPointer)
+            std::ranges::copy(indices, static_cast<IndexT*>(bufferInfo.mappedPointer));
 
         INK_DEBUG << "Created persistently mapped index buffer: " << name
                   << ", indices: " << bufferInfo.indexCount;
     } else {
         AllocatedBuffer staging = _memoryManager->createUploadBuffer(bufferSize, sharingMode);
-        if (staging.mappedData) {
-            std::ranges::copy(indices, static_cast<u16*>(staging.mappedData));
-        } else {
-            auto* data = static_cast<u16*>(_memoryManager->map(staging));
+        if (staging.mappedData)
+        {
+            std::ranges::copy(indices, static_cast<IndexT*>(staging.mappedData));
+        }
+        else 
+        {
+            auto* data = static_cast<IndexT*>(_memoryManager->map(staging));
             std::ranges::copy(indices, data);
             _memoryManager->unmap(staging);
         }
@@ -114,23 +119,67 @@ void VkIndexBufferManager::createIndexBuffer(const std::string& name,
     _indexBuffers[name] = bufferInfo;
 }
 
-void VkIndexBufferManager::updateIndexBuffer(const std::string& name, std::vector<u16>&& indices)
+void VkIndexBufferManager::createIndexBuffer(const std::string& name,
+                                             VkCommandPool commandPool,
+                                             VkSharingMode sharingMode,
+                                             VkQueue graphicsQueue,
+                                             std::vector<u16>&& indices,
+                                             bool persistentMapping)
+{
+    createIndexBufferImpl(name, commandPool, sharingMode, graphicsQueue,
+                          std::move(indices), persistentMapping, VK_INDEX_TYPE_UINT16);
+}
+
+void VkIndexBufferManager::createIndexBuffer(const std::string& name,
+                                             VkCommandPool commandPool,
+                                             VkSharingMode sharingMode,
+                                             VkQueue graphicsQueue,
+                                             std::vector<u32>&& indices,
+                                             bool persistentMapping)
+{
+    createIndexBufferImpl(name, commandPool, sharingMode, graphicsQueue,
+                          std::move(indices), persistentMapping, VK_INDEX_TYPE_UINT32);
+}
+
+template <typename IndexT>
+void VkIndexBufferManager::updateIndexBufferImpl(const std::string& name, std::vector<IndexT>&& indices)
 {
     auto it = _indexBuffers.find(name);
-    if (it == _indexBuffers.end()) {
+    if (it == _indexBuffers.end())
+    {
         INK_ERROR << "Failed to update buffer - buffer doesn't exist " << name;
         return;
     }
 
     IndexBufferInfo& bufferInfo = it->second;
 
-    if (bufferInfo.persistent && bufferInfo.mappedPointer) {
-        std::ranges::copy(indices, static_cast<u16*>(bufferInfo.mappedPointer));
+    constexpr VkIndexType kIncomingType = sizeof(IndexT) == sizeof(u16) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
+
+    if (bufferInfo.indexType != kIncomingType)
+    {
+        INK_ERROR << "updateIndexBuffer: index width mismatch for " << name
+                  << " - recreate the buffer instead";
+        return;
+    }
+
+    if (bufferInfo.persistent && bufferInfo.mappedPointer)
+    {
+        std::ranges::copy(indices, static_cast<IndexT*>(bufferInfo.mappedPointer));
         bufferInfo.indexCount = static_cast<u32>(indices.size());
         return;
     }
 
     INK_WARN << "updateIndexBuffer: non-persistent buffer cannot be updated in place: " << name;
+}
+
+void VkIndexBufferManager::updateIndexBuffer(const std::string& name, std::vector<u16>&& indices)
+{
+    updateIndexBufferImpl(name, std::move(indices));
+}
+
+void VkIndexBufferManager::updateIndexBuffer(const std::string& name, std::vector<u32>&& indices)
+{
+    updateIndexBufferImpl(name, std::move(indices));
 }
 
 IndexBufferInfo VkIndexBufferManager::getIndexBuffer(const std::string& name)

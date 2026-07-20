@@ -25,6 +25,15 @@ public:
 
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255);
 
+    /**
+     * @brief Uploads tightly packed RGBA8 pixels via glTexImage2D.
+     *
+     * @param rgba   width * height * 4 bytes, RGBA order.
+     * @param smooth Linear filtering when true, nearest when false. Nearest
+     *               keeps 1x1 and checkerboard patterns crisp.
+     */
+    TextureHandle createTextureFromPixels(const u8* rgba, u32 width, u32 height, bool smooth = true);
+
     void bind(TextureHandle handle, GLuint unit = 0);
     GlTextureData* get(TextureHandle handle);
     void cleanup();

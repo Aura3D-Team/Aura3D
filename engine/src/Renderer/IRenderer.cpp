@@ -1,5 +1,7 @@
 #include "aura/Renderer/IRenderer.h"
 
+#include "aura/Core/ImageLoader/ImageLoader.h"
+
 namespace aura3d {
 
 void IRenderer::run(move_only_function<void()> onFrame)
@@ -16,6 +18,119 @@ void IRenderer::run(move_only_function<void()> onFrame)
         onFrame();
         endFrame();
     });
+}
+
+/*
+ * Everything below is backend-independent: decoding an image, pairing a
+ * vertex/index buffer into a mesh and tracking materials look identical for
+ * Vulkan, OpenGL and the software rasteriser. They are implemented once here on
+ * top of each backend's primitives (createTextureFromPixels, createVertexBuffer,
+ * bindTexture, ...) instead of being repeated three times. Backends may still
+ * override any of them where they can do better.
+ */
+
+TextureHandle IRenderer::createTextureFromFile(const std::string& path)
+{
+    ImageData image = ImageLoader::loadRGBA(path);
+
+    if (!image.valid()) 
+    {
+        INK_WARN << "createTextureFromFile: '" << path
+                 << "' unavailable; substituting the checkerboard fallback";
+        image = ImageLoader::makeCheckerboard();
+    }
+
+    return createTextureFromPixels(image.pixels.data(), image.width, image.height);
+}
+
+TextureHandle IRenderer::createCheckerboardTexture(u32 size)
+{
+    const ImageData image = ImageLoader::makeCheckerboard(size);
+    return createTextureFromPixels(image.pixels.data(), image.width, image.height);
+}
+
+MeshHandle IRenderer::createMesh(const gfx::Mesh3D& mesh)
+{
+    if (mesh.empty()) 
+    {
+        INK_WARN << "createMesh: refusing to upload an empty mesh";
+        return INVALID_HANDLE;
+    }
+
+    MeshRecord record;
+    record.indexCount   = static_cast<u32>(mesh.indices.size());
+    record.vertexBuffer = createVertexBuffer(std::vector<gfx::Vertex3D>(mesh.vertices));
+    record.indexBuffer  = createIndexBuffer(std::vector<u32>(mesh.indices));
+
+    if (!isValidHandle(record.vertexBuffer) || !isValidHandle(record.indexBuffer)) 
+    {
+        INK_ERROR << "createMesh: backend failed to allocate the buffer pair";
+        return INVALID_HANDLE;
+    }
+
+    _meshes.push_back(record);
+    return static_cast<MeshHandle>(_meshes.size()); // 1-based
+}
+
+void IRenderer::drawMesh(MeshHandle mesh, TextureHandle texture)
+{
+    const MeshRecord* record = getMesh(mesh);
+    if (!record)
+        return;
+
+    bindVertexBuffer(record->vertexBuffer);
+    bindIndexBuffer(record->indexBuffer);
+
+    if (isValidHandle(texture))
+        bindTexture(texture);
+
+    drawIndexed(record->indexCount);
+}
+
+MaterialHandle IRenderer::createMaterial(const Material& material)
+{
+    _materials.push_back(material);
+    return static_cast<MaterialHandle>(_materials.size()); // 1-based
+}
+
+void IRenderer::bindMaterial(MaterialHandle handle)
+{
+    const Material* material = getMaterial(handle);
+    if (!material)
+        return;
+
+    _currentMaterial = *material;
+
+    if (isValidHandle(material->albedo))
+        bindTexture(material->albedo);
+}
+
+void IRenderer::setLight(const gfx::LightUBO& light)
+{
+    _light = light;
+}
+
+const IRenderer::MeshRecord* IRenderer::getMesh(MeshHandle handle) const
+{
+    if (!isValidHandle(handle) || handle > _meshes.size())
+        return nullptr;
+
+    return &_meshes[handle - 1];
+}
+
+const Material* IRenderer::getMaterial(MaterialHandle handle) const
+{
+    if (!isValidHandle(handle) || handle > _materials.size())
+        return nullptr;
+
+    return &_materials[handle - 1];
+}
+
+void IRenderer::clearSharedResources()
+{
+    _meshes.clear();
+    _materials.clear();
+    _currentMaterial = Material{};
 }
 
 } // namespace aura3d

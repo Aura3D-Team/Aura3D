@@ -128,6 +128,8 @@ void OpenGLRenderer::handleWindowChanges()
 
 void OpenGLRenderer::cleanup()
 {
+    clearSharedResources();
+
     if (_shaderProgram) glDeleteProgram(_shaderProgram);
     _shaderProgram = 0;
     _vertexMgr.reset();
@@ -158,6 +160,11 @@ TextureHandle OpenGLRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
     return _textureMgr->createSolidColorTexture(r, g, b, a);
 }
 
+TextureHandle OpenGLRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
+{
+    return _textureMgr->createTextureFromPixels(rgbaPixels, width, height);
+}
+
 void OpenGLRenderer::beginFrame()
 {
     auto* wd = _windowManagerApi->getWindowDetails();
@@ -175,14 +182,31 @@ void OpenGLRenderer::beginFrame()
 
 void OpenGLRenderer::beginRenderPass()
 {
+    //! cleanup() can run mid-frame (the ESC key action calls it), which drops
+    //! the managers while the frame loop is still executing.
+    if (!_uniformMgr) 
+        return;
+
     glClearColor(_clearR, _clearG, _clearB, _clearA);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     _uniformMgr->bind(_shaderProgram);
     _uniformMgr->update(_currentTransform);
+    _uniformMgr->updateLight(_light);
 }
 
 void OpenGLRenderer::endRenderPass()
 {
+    /*
+     * OpenGL has no render-pass object to close, but the pass boundary is still
+     * the point at which recorded work must be handed to the driver. Flushing
+     * here mirrors the Vulkan backend's vkCmdEndRenderPass and unbinds the VAO
+     * so state does not leak into whatever the caller does next.
+     */
+    if (!_vertexMgr) 
+        return;
+
+    _vertexMgr->unbind();
+    glFlush();
 }
 
 void OpenGLRenderer::endFrame()
@@ -198,6 +222,16 @@ void OpenGLRenderer::endFrame()
 void OpenGLRenderer::setTransform(const gfx::TransformUBO& ubo)
 {
     _currentTransform = ubo;
+}
+
+void OpenGLRenderer::setLight(const gfx::LightUBO& light)
+{
+    IRenderer::setLight(light);
+
+    //! Uploaded immediately when a context already exists, and re-uploaded every
+    //! beginRenderPass so a light set before initialize() is not lost.
+    if (_uniformMgr)
+        _uniformMgr->updateLight(_light);
 }
 
 void OpenGLRenderer::bindVertexBuffer(VertexBufferHandle handle)

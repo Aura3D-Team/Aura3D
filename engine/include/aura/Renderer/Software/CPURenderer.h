@@ -21,9 +21,10 @@ public:
     void cleanup() override;
 
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices) override;
-    IndexBufferHandle  createIndexBuffer(std::vector<u16>&& indices) override;
-    IndexBufferHandle  createIndexBuffer(std::vector<u32>&& indices) override;
-    TextureHandle      createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
+    IndexBufferHandlecreateIndexBuffer(std::vector<u16>&& indices) override;
+    IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;
+    TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
+    TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) override;
 
     void beginFrame() override;
     void beginRenderPass() override;
@@ -38,12 +39,16 @@ public:
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
 
-    wma::IWindowManager*    getWindowManager()      override { return _windowManagerApi.get(); }
-    RendererChoice          getBackendType() const   override { return RendererChoice::SOFTWARE; }
-    CpuFrameBufferManager*  getFrameBufferManager()          { return _frameBufferManager.get(); }
+    wma::IWindowManager* getWindowManager()      override { return _windowManagerApi.get(); }
+    RendererChoice getBackendType() const   override { return RendererChoice::SOFTWARE; }
+    CpuFrameBufferManager* getFrameBufferManager()          { return _frameBufferManager.get(); }
 
 protected:
     void createWindow(const char* title, const wma::WindowBackend& wBackend) override;
+
+private:
+    //! Resolves a 1-based texture handle to its base mip, or nullptr.
+    const Texture* _resolveTexture(TextureHandle handle) const;
 
 private:
     std::unique_ptr<wma::IWindowManager>   _windowManagerApi;

@@ -29,6 +29,7 @@ public:
     IndexBufferHandle createIndexBuffer(std::vector<u16>&& indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
+    TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) override;
 
     void beginFrame() override;
     void beginRenderPass() override;
@@ -36,6 +37,7 @@ public:
     void endFrame() override;
 
     void setTransform(const gfx::TransformUBO& ubo) override;
+    void setLight(const gfx::LightUBO& light) override;
     void bindVertexBuffer(VertexBufferHandle handle) override;
     void bindIndexBuffer(IndexBufferHandle handle) override;
     void bindTexture(TextureHandle handle) override;

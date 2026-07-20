@@ -46,23 +46,34 @@ void VkTextureManager::destroyTextureData(TextureData& texture)
 VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
     const std::string& name, u8 r, u8 g, u8 b, u8 a)
 {
+    const u8 pixel[4] = {r, g, b, a};
+    return createTextureFromPixels(name, pixel, 1, 1);
+}
+
+VkTextureManager::TextureData VkTextureManager::createTextureFromPixels(
+    const std::string& name, const u8* rgba, u32 width, u32 height)
+{
+    if (!rgba || width == 0 || height == 0)
+    {
+        INK_ERROR << "VkTextureManager: refusing to upload an empty texture: " << name;
+        return TextureData{};
+    }
+
     auto it = _textures.find(name);
     if (it != _textures.end()) {
         destroyTextureData(it->second);
         _textures.erase(it);
     }
 
-    constexpr u32 width = 1;
-    constexpr u32 height = 1;
-
     TextureData textureData{};
     textureData.width = width;
     textureData.height = height;
 
-    AllocatedBuffer staging = _memoryManager->createUploadBuffer(4, VK_SHARING_MODE_EXCLUSIVE);
-    u8 pixelData[4] = {r, g, b, a};
+    const VkDeviceSize imageBytes = static_cast<VkDeviceSize>(width) * height * 4u;
+
+    AllocatedBuffer staging = _memoryManager->createUploadBuffer(imageBytes, VK_SHARING_MODE_EXCLUSIVE);
     void* data = staging.mappedData ? staging.mappedData : _memoryManager->map(staging);
-    std::memcpy(data, pixelData, 4);
+    std::memcpy(data, rgba, static_cast<size_t>(imageBytes));
     if (!staging.mappedData) {
         _memoryManager->unmap(staging);
     }

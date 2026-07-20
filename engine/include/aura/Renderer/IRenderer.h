@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <wma/wma.hpp>
@@ -12,6 +13,7 @@
 #include "aura/Utils/PlatformCompat.h"
 
 #include "aura/Core/AuraCore.h"
+#include "aura/Renderer/Material.h"
 #include "aura/Renderer/RenderHandles.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
@@ -151,6 +153,85 @@ public:
     virtual TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) = 0;
 
     /**
+     * @brief Uploads tightly packed 8-bit RGBA pixels as a sampleable texture.
+     *
+     * This is the single texture-upload primitive each backend must provide;
+     * every other texture entry point in this interface funnels through it.
+     *
+     * @param[in] rgbaPixels Pointer to @p width * @p height * 4 bytes, RGBA order.
+     * @param[in] width Texture width in pixels.
+     * @param[in] height Texture height in pixels.
+     * @return TextureHandle Binding reference, or INVALID_HANDLE on failure.
+     */
+    virtual TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) = 0;
+
+    /**
+     * @brief Loads a texture from disk (PNG/JPEG/TGA/BMP/...).
+     *
+     * Never throws and never fails: a missing or corrupt file logs a warning
+     * and yields the magenta/black checkerboard instead, so a broken asset is
+     * obvious on screen rather than fatal.
+     *
+     * @param[in] path Filesystem path to the image.
+     * @return TextureHandle for the decoded image, or for the fallback pattern.
+     */
+    virtual TextureHandle createTextureFromFile(const std::string& path);
+
+    /**
+     * @brief Generates the embedded magenta/black "missing texture" pattern.
+     *
+     * Requires no file I/O, so it is available on every platform.
+     * @param[in] size Edge length in pixels.
+     */
+    virtual TextureHandle createCheckerboardTexture(u32 size = 64);
+
+    /**
+     * @brief Uploads a CPU-side mesh as a GPU-resident vertex + index buffer pair.
+     * @param[in] mesh Geometry to upload; an empty mesh yields INVALID_HANDLE.
+     * @return MeshHandle referencing the uploaded pair.
+     */
+    virtual MeshHandle createMesh(const gfx::Mesh3D& mesh);
+
+    /**
+     * @brief Draws a whole mesh, replacing the bind-VB / bind-IB / drawIndexed triple.
+     *
+     * This is the primary draw path; the lower-level bind/draw calls remain
+     * available for advanced use.
+     *
+     * @param[in] mesh Mesh to draw.
+     * @param[in] texture Optional texture; INVALID_HANDLE keeps the current binding.
+     */
+    virtual void drawMesh(MeshHandle mesh, TextureHandle texture = INVALID_HANDLE);
+
+    /**
+     * @brief Registers a material so it can be bound by handle.
+     */
+    virtual MaterialHandle createMaterial(const Material& material);
+
+    /**
+     * @brief Makes @p handle the active material, binding its albedo texture.
+     */
+    virtual void bindMaterial(MaterialHandle handle);
+
+    /**
+     * @brief Sets the directional light consumed by the built-in shaders.
+     *
+     * Backends override this to push the data to the GPU; the base
+     * implementation records it so getLight() always reflects the last value.
+     */
+    virtual void setLight(const gfx::LightUBO& light);
+
+    /**
+     * @brief Returns the directional light currently in effect.
+     */
+    const gfx::LightUBO& getLight() const { return _light; }
+
+    /**
+     * @brief Returns the material bound by the most recent bindMaterial() call.
+     */
+    const Material& getCurrentMaterial() const { return _currentMaterial; }
+
+    /**
      * @brief Prepares hardware commands to execute a synchronized drawing pass cycle.
      */
     virtual void beginFrame() = 0;
@@ -249,8 +330,33 @@ protected:
      */
     virtual void createWindow(const char* title, const wma::WindowBackend& wBackend) = 0;
 
-    wma::WindowDetails _windowDetails;  /**< Copy of current platform dimension attributes. */
-    bool _running = false;              /**< Control status tracker managing main loop life. */
+    /**
+     * @struct MeshRecord
+     * @brief The vertex/index buffer pair a MeshHandle resolves to.
+     */
+    struct MeshRecord {
+        VertexBufferHandle vertexBuffer = INVALID_HANDLE;
+        IndexBufferHandle indexBuffer  = INVALID_HANDLE;
+        u32 indexCount   = 0;
+    };
+
+    //! Resolves a 1-based MeshHandle, or nullptr when it does not refer to a mesh.
+    const MeshRecord* getMesh(MeshHandle handle) const;
+
+    //! Resolves a 1-based MaterialHandle, or nullptr when unknown.
+    const Material* getMaterial(MaterialHandle handle) const;
+
+    //! Drops every mesh/material record. Backends call this from cleanup(),
+    //! since the underlying buffers die with the backend's own pools.
+    void clearSharedResources();
+
+    wma::WindowDetails _windowDetails;  //! Copy of current platform dimension attributes
+    bool _running = false;              //! Control status tracker managing main loop life
+
+    std::vector<MeshRecord> _meshes;    //! Mesh registry; handle == index + 1
+    std::vector<Material> _materials;   //! Material registry; handle == index + 1
+    gfx::LightUBO _light{};             //! Directional light for the built-in shaders
+    Material _currentMaterial{};        //! Material bound by the last bindMaterial()
 };
 
 } // namespace aura3d

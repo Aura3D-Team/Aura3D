@@ -41,6 +41,22 @@ namespace aura3d {
 namespace vk {
 
 /**
+ * @brief Per-draw transform delivered through push constants.
+ *
+ * Sized to exactly the 128 bytes every Vulkan implementation guarantees, so it
+ * needs no device capability check. The normal matrix is widened to a mat4
+ * because std430/push-constant rules pad a mat3 to the same footprint anyway,
+ * and a mat4 avoids per-column alignment surprises.
+ */
+struct PushConstantBlock {
+    glm::mat4 model{1.0f};
+    glm::mat4 normalMatrix{1.0f};
+};
+
+static_assert(sizeof(PushConstantBlock) == 128,
+              "PushConstantBlock must fit the guaranteed 128-byte push-constant budget");
+
+/**
  * @brief This struct represents Important data for VkInstance creation
  *
  * Obs: for more details, it can have more parameters in the future
@@ -88,9 +104,9 @@ struct QueueData {
  * present mode, and extent during swapchain creation.
  */
 struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR        capabilities; ///< Surface capabilities (min/max image count, extent, etc.).
-    std::vector<VkSurfaceFormatKHR> formats;      ///< Supported surface formats.
-    std::vector<VkPresentModeKHR>   presentModes; ///< Supported presentation modes.
+    VkSurfaceCapabilitiesKHR capabilities; //! Surface capabilities (min/max image count, extent, etc.).
+    std::vector<VkSurfaceFormatKHR> formats; //! Supported surface formats.
+    std::vector<VkPresentModeKHR> presentModes; //! Supported presentation modes.
 };
 
 
@@ -112,11 +128,11 @@ struct VkCommandPoolData {
  * Used when building VkDescriptorSetLayoutBinding entries for pipeline creation.
  */
 struct DescriptorBindingInfo {
-    u32                binding;             ///< Binding point in the shader.
-    VkDescriptorType   descriptorType;      ///< Type of descriptor (uniform buffer, sampler, etc.).
-    u32                descriptorCount;     ///< Number of descriptors at this binding.
-    VkShaderStageFlags stageFlags;          ///< Shader stages that access this binding.
-    const VkSampler*   pImmutableSamplers;  ///< Optional immutable samplers (may be nullptr).
+    u32 binding; //! Binding point in the shader.
+    VkDescriptorType descriptorType; //! Type of descriptor (uniform buffer, sampler, etc.).
+    u32 descriptorCount; //! Number of descriptors at this binding.
+    VkShaderStageFlags stageFlags; //! Shader stages that access this binding.
+    const VkSampler* pImmutableSamplers; //! Optional immutable samplers (may be nullptr).
 
     DescriptorBindingInfo() : binding(0), descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
         descriptorCount(1), stageFlags(VK_SHADER_STAGE_VERTEX_BIT),
@@ -130,8 +146,8 @@ struct DescriptorBindingInfo {
  * set identified by @c setIndex.
  */
 struct DescriptorSetLayoutInfo {
-    u32                                setIndex; ///< Set number used in the shader (layout(set = N)).
-    std::vector<DescriptorBindingInfo> bindings; ///< All bindings belonging to this set.
+    u32 setIndex; //! Set number used in the shader (layout(set = N)).
+    std::vector<DescriptorBindingInfo> bindings; //! All bindings belonging to this set.
 
     DescriptorSetLayoutInfo() : setIndex(0) {}
 };
@@ -144,11 +160,11 @@ struct DescriptorSetLayoutInfo {
  * aspect mask, mip levels, and array layers for each swapchain image view.
  */
 struct ImageViewData {
-    VkImageAspectFlags aspectMask;    ///< Aspect to expose (e.g. VK_IMAGE_ASPECT_COLOR_BIT).
-    u32 baseMipLevel;                 ///< First mip level accessible to the view.
-    u32 levelCount;                   ///< Number of mip levels accessible.
-    u32 baseArrayLayer;               ///< First array layer accessible.
-    u32 layerCount;                   ///< Number of array layers accessible.
+    VkImageAspectFlags aspectMask; //! Aspect to expose (e.g. VK_IMAGE_ASPECT_COLOR_BIT).
+    u32 baseMipLevel; //! First mip level accessible to the view.
+    u32 levelCount; //! Number of mip levels accessible.
+    u32 baseArrayLayer; //! First array layer accessible.
+    u32 layerCount; //! Number of array layers accessible.
 };
 
 /**
@@ -166,14 +182,17 @@ struct AuraBufferInfo {
  * @brief Metadata for a vertex buffer, extending AuraBufferInfo.
  */
 struct VertexBufferInfo : public AuraBufferInfo {
-    size_t vertexCount = 0;  ///< Number of vertices stored in the buffer.
+    size_t vertexCount = 0;  //! Number of vertices stored in the buffer.
 };
 
 /**
  * @brief Metadata for an index buffer, extending AuraBufferInfo.
  */
 struct IndexBufferInfo : public AuraBufferInfo {
-    u32 indexCount = 0; ///< Number of indices stored in the buffer.
+    u32 indexCount = 0; //! Number of indices stored in the buffer.
+    //! Width of each index, recorded at upload time and replayed by
+    //! vkCmdBindIndexBuffer so 32-bit meshes are not truncated.
+    VkIndexType indexType = VK_INDEX_TYPE_UINT16;
 };
 
 /**
