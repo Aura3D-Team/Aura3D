@@ -21,7 +21,7 @@ public:
     void cleanup() override;
 
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices) override;
-    IndexBufferHandlecreateIndexBuffer(std::vector<u16>&& indices) override;
+    IndexBufferHandle createIndexBuffer(std::vector<u16>&& indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
     TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) override;

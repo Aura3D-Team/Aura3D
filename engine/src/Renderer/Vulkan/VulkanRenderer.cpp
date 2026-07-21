@@ -599,14 +599,17 @@ void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     auto vbIt = _vbNames.find(_currentVertexBuffer);
     if (vbIt != _vbNames.end()) {
         auto vb = _vkVertexBufferManager->getVertexBuffer(vbIt->second);
-        VkDeviceSize vertexOffset = vb.memoryOffset;
+        // vb.memoryOffset is VMA's suballocation offset within a shared
+        // VkDeviceMemory block, not an offset into this VkBuffer — each mesh
+        // owns its own dedicated buffer, so the bind offset is always 0.
+        VkDeviceSize vertexOffset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &vb.buffer, &vertexOffset);
     }
 
     auto ibIt = _ibNames.find(_currentIndexBuffer);
     if (ibIt != _ibNames.end()) {
         auto ib = _vkIndexBufferManager->getIndexBuffer(ibIt->second);
-        vkCmdBindIndexBuffer(cmd, ib.buffer, ib.memoryOffset, ib.indexType);
+        vkCmdBindIndexBuffer(cmd, ib.buffer, 0, ib.indexType);
     }
 
     _vkGraphicsPipelineManager->cmdIndexedDraw(
@@ -624,7 +627,7 @@ void VulkanRenderer::draw(u32 vertexCount, u32 instanceCount)
     auto vbIt = _vbNames.find(_currentVertexBuffer);
     if (vbIt != _vbNames.end()) {
         auto vb = _vkVertexBufferManager->getVertexBuffer(vbIt->second);
-        VkDeviceSize vertexOffset = vb.memoryOffset;
+        VkDeviceSize vertexOffset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &vb.buffer, &vertexOffset);
     }
 

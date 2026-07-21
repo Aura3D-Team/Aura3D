@@ -92,7 +92,10 @@ VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(u32 index
     VkDescriptorBufferInfo bufferInfo{};
     if (index < _buffers.size()) {
         bufferInfo.buffer = _buffers[index].buffer;
-        bufferInfo.offset = _buffers[index].offset;
+        // _buffers[index].offset is VMA's suballocation offset within a
+        // shared VkDeviceMemory block, not an offset into this VkBuffer —
+        // each element owns its own dedicated buffer, so this is always 0.
+        bufferInfo.offset = 0;
         bufferInfo.range = _elementSize;
     }
     return bufferInfo;

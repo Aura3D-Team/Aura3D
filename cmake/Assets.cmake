@@ -38,10 +38,21 @@ function(aura_compile_shaders TARGET INPUT_DIR OUTPUT_DIR)
         return()
     endif()
 
+    # Compile into a fixed build-tree directory rather than OUTPUT_DIR
+    # directly: OUTPUT_DIR is typically derived from
+    # $<TARGET_FILE_DIR:TARGET>, and add_custom_command's OUTPUT can't use a
+    # generator expression that depends on TARGET itself — TARGET's link
+    # step would depend (via ${TARGET}_shaders) on a command whose output
+    # path depends on TARGET's own location, which CMake can't resolve
+    # ("No target ..." at generate time). Stage into a plain path instead,
+    # then copy next to the binary as a POST_BUILD step (generator
+    # expressions on TARGET are fine there, same as aura_copy_assets below).
+    set(_stage_dir "${CMAKE_CURRENT_BINARY_DIR}/spirv/${TARGET}")
+
     set(_aura_spv_outputs "")
     foreach(_shader IN LISTS _aura_shader_sources)
         get_filename_component(_shader_name "${_shader}" NAME)
-        set(_spv "${OUTPUT_DIR}/${_shader_name}.spv")
+        set(_spv "${_stage_dir}/${_shader_name}.spv")
 
         if(AURA_GLSL_COMPILER MATCHES "glslangValidator")
             set(_compile_cmd "${AURA_GLSL_COMPILER}" -V "${_shader}" -o "${_spv}")
@@ -51,7 +62,7 @@ function(aura_compile_shaders TARGET INPUT_DIR OUTPUT_DIR)
 
         add_custom_command(
             OUTPUT  "${_spv}"
-            COMMAND "${CMAKE_COMMAND}" -E make_directory "${OUTPUT_DIR}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${_stage_dir}"
             COMMAND ${_compile_cmd}
             DEPENDS "${_shader}"
             COMMENT "Compiling SPIR-V: ${_shader_name}"
@@ -62,6 +73,14 @@ function(aura_compile_shaders TARGET INPUT_DIR OUTPUT_DIR)
 
     add_custom_target(${TARGET}_shaders DEPENDS ${_aura_spv_outputs})
     add_dependencies(${TARGET} ${TARGET}_shaders)
+
+    add_custom_command(TARGET ${TARGET} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                "${_stage_dir}"
+                "${OUTPUT_DIR}"
+        COMMENT "Staging compiled SPIR-V for ${TARGET}"
+        VERBATIM
+    )
 endfunction()
 
 # Stage runtime assets next to the target binary so the app can be run

@@ -55,11 +55,11 @@ ImageData ImageLoader::makeCheckerboard(u32 size, u32 cells,
                                         u8 r1, u8 g1, u8 b1)
 {
     ImageData image;
-    image.width  = std::max(size, 2);
+    image.width  = std::max(size, 2u);
     image.height = image.width;
 
-    const u32 cellCount = std::max(cells, 1);
-    const u32 cellSize  = std::max(image.width / cellCount, 1);
+    const u32 cellCount = std::max(cells, 1u);
+    const u32 cellSize  = std::max(image.width / cellCount, 1u);
 
     image.pixels.resize(static_cast<size_t>(image.width) * image.height * 4);
 

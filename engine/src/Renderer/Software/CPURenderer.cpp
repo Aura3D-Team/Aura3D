@@ -208,14 +208,14 @@ glm::vec4 shadeVertex(const gfx::Vertex3D& v,
  * Returns false (by setting invW < 0) when the vertex is behind the camera.
  */
 [[nodiscard]]
-CpuFrameBufferManager::ScreenVertex projectVertex(const gfx::Vertex3D&  v,
+ScreenVertex projectVertex(const gfx::Vertex3D&  v,
                                                   const glm::mat4& MVP,
                                                   const glm::mat3& normalMatrix,
                                                   const gfx::LightUBO& light,
                                                   float W,
                                                   float H) noexcept
 {
-    CpuFrameBufferManager::ScreenVertex sv;
+    ScreenVertex sv;
 
     const glm::vec4 clip = MVP * glm::vec4(v.pos, 1.0f);
 
