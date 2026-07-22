@@ -16,9 +16,6 @@ void destroyBufferInfo(VulkanMemoryManager* memory, VertexBufferInfo& info)
 {
     AllocatedBuffer allocated{info.buffer, info.allocation, info.mappedPointer, info.memoryOffset};
 
-    if (info.persistent && info.mappedPointer && info.allocation != VK_NULL_HANDLE)
-        memory->unmap(allocated);
-
     memory->destroyBuffer(allocated);
     info = {};
 }

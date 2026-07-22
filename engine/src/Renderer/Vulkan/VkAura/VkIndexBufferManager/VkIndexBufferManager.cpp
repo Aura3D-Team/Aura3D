@@ -16,9 +16,13 @@ void destroyBufferInfo(VulkanMemoryManager* memory, IndexBufferInfo& info)
 {
     AllocatedBuffer allocated{info.buffer, info.allocation, info.mappedPointer, info.memoryOffset};
 
-    if (info.persistent && info.mappedPointer && info.allocation != VK_NULL_HANDLE)
-        memory->unmap(allocated);
-
+    //! Persistent buffers get their mappedPointer from
+    //! VMA_ALLOCATION_CREATE_MAPPED_BIT's automatic "0-th" mapping, never from
+    //! an explicit vmaMapMemory() call, so there's no matching unmap to make
+    //! here destroyBuffer() releases that mapping on its own. Calling
+    //! vmaUnmapMemory() here would be an extra, unbalanced call and asserts
+    //! inside VMA.
+    //! docs: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/group__group__alloc.html#ga9bc268595cb33f6ec4d519cfce81ff45
     memory->destroyBuffer(allocated);
     info = {};
 }

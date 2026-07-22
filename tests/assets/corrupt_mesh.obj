@@ -1,0 +1,4 @@
+# Golden test asset: parses successfully as OBJ syntax but contains no
+# geometry at all (no 'v'/'f' records). Exercises MeshLoader::loadOBJ's
+# mesh.empty() fallback branch, which substitutes createCube() — a different
+# code path than a missing file (which fails to open instead).

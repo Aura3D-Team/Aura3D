@@ -106,8 +106,13 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         priority -= 0.05f;
     }
 
+    VkPhysicalDeviceVulkan12Features enabledVk12Features{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .bufferDeviceAddress = VK_TRUE //! Resolves your VUID-VkMemoryAllocateInfo-flags-03331 error
+    };
+
     const std::vector<VkDeviceQueueCreateInfo> vkDeviceQueueCreateInfos = _vkQueueManager.getDeviceQueueCreateInfos();
-    _deviceInfo.pNext = nullptr;
+    _deviceInfo.pNext = &enabledVk12Features;
     _deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     _deviceInfo.queueCreateInfoCount = static_cast<u32>(vkDeviceQueueCreateInfos.size());
     _deviceInfo.pQueueCreateInfos = vkDeviceQueueCreateInfos.data();
@@ -115,7 +120,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     _deviceInfo.ppEnabledLayerNames = _vkDeviceCreationData.vkEnabledLayers.data();
     _deviceInfo.enabledExtensionCount = static_cast<u32>(_vkDeviceCreationData.vkDeviceExtensions.size());
     _deviceInfo.ppEnabledExtensionNames = _vkDeviceCreationData.vkDeviceExtensions.data();
-    _deviceInfo.pEnabledFeatures = &_deviceFeatures;
+    _deviceInfo.pEnabledFeatures = nullptr; //! No need to be &_deviceFeatures;
 
     result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
     VK_RESULT_CHECK(result);

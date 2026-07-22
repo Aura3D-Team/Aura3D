@@ -104,9 +104,6 @@ VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(u32 index
 void VkUniformBufferManager::cleanup()
 {
     for (auto& buffer : _buffers) {
-        if (buffer.mappedData && buffer.allocation != VK_NULL_HANDLE) {
-            _memoryManager->unmap(buffer);
-        }
         _memoryManager->destroyBuffer(buffer);
     }
     _buffers.clear();

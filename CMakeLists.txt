@@ -16,6 +16,7 @@ include(GNUInstallDirs)
 # previously disabled every renderer backend.
 option(AURA_BUILD_SANDBOX   "Build the Sandbox demo application"   ON)
 option(AURA_INSTALL_SANDBOX "Install the Sandbox demo application" OFF)
+option(AURA_BUILD_TESTS     "Build the automated test suite"       OFF)
 
 option(AURA_ENABLE_VULKAN "Compile the Vulkan backend"            ON)
 option(AURA_ENABLE_OPENGL "Compile the OpenGL backend"            ON)
@@ -158,6 +159,15 @@ endif()
 
 if(AURA_BUILD_SANDBOX)
     add_subdirectory(apps/Sandbox)
+endif()
+
+################################################################################
+# Tests
+################################################################################
+
+if(AURA_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
 
 include(cmake/Install.cmake)

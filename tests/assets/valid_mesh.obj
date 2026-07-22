@@ -1,0 +1,8 @@
+# Golden test asset: a single flat triangle with no vertex normals.
+# Deliberately normal-free so MeshLoader::loadOBJ exercises its
+# generateNormals() fallback path (see generateNormals() in MeshLoader.cpp).
+# Expected face normal for v1->v2->v3 (CCW) is (0, 0, 1).
+v 0.0 0.0 0.0
+v 1.0 0.0 0.0
+v 0.0 1.0 0.0
+f 1 2 3
