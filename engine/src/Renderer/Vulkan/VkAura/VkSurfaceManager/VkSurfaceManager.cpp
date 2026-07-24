@@ -1,6 +1,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkSurfaceManager/VkSurfaceManager.h"
 
 #include <ink/ink.hpp>
+#include <wma/core/BuildConfig.hpp>
 
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
@@ -12,12 +13,12 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend wi
     : _vkInstance(vkInstance), _windowBackend(windowBackend)
 {
     switch (windowBackend) {
-#ifdef WMA_ENABLE_GLFW
+#if WMA_HAS_GLFW
     case wma::WindowBackend::GLFW:
         VK_RESULT_CHECK(glfwCreateWindowSurface(*_vkInstance, (GLFWwindow*)window, nullptr, &_vkSurface));
         break;
 #endif
-#ifdef WMA_ENABLE_SDL
+#if WMA_HAS_SDL
     case wma::WindowBackend::SDL3:
         if (!SDL_Vulkan_CreateSurface((SDL_Window*)window, *_vkInstance, nullptr, &_vkSurface)) {
             throw AuraException("Fail to create SDL Window surface! SDL Error: " + std::string(SDL_GetError()));
