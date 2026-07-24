@@ -2,9 +2,26 @@ plugins {
     id 'com.android.application'
 }
 
+// Pinned to the NDK version actually installed in this environment -- without
+// this, AGP defaults to whatever side-by-side NDK version it prefers and
+// tries to auto-download it, which fails wherever the SDK directory isn't
+// writable (e.g. a shared/read-only SDK install).
+def ndkVersionPinned = "27.1.12297006"
+
+// wma/ink/SDL3 for Android are prebuilt outside this Gradle project (see
+// scripts/build_android.sh) and installed under a single prefix; forward it
+// to CMake so find_package() can locate them. gradle.properties sets a
+// default; -PANDROID_DEPS_PREFIX=... on the command line overrides it.
+def androidDepsPrefix = project.findProperty('ANDROID_DEPS_PREFIX') ?: '/usr/local/android-deps'
+
 android {
     namespace 'com.aura3d.sandbox'
     compileSdk 35
+    // Pinned for the same reason as ndkVersion above: AGP's default for
+    // compileSdk 35 wants build-tools 34.0.0, which isn't installed here
+    // (35.0.0 is) and can't be auto-downloaded into a read-only SDK dir.
+    buildToolsVersion "35.0.0"
+    ndkVersion ndkVersionPinned
 
     defaultConfig {
         applicationId 'com.aura3d.sandbox'
@@ -17,7 +34,9 @@ android {
             cmake {
                 arguments(
                     "-DAURA3D_ROOT=${rootProject.projectDir}/..",
-                    "-DANDROID_STL=c++_shared"
+                    "-DANDROID_STL=c++_shared",
+                    "-DCMAKE_PREFIX_PATH=${androidDepsPrefix}",
+                    "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH"
                 )
 
                 abiFilters 'arm64-v8a'

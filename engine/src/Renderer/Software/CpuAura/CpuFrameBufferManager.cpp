@@ -5,54 +5,28 @@
 #include <algorithm>
 #include <vector>
 
+#include <wma/managers/IWindowManager.hpp>
+#include <wma/rendering/SoftwareRenderer.hpp>
+
 #include "aura/Core/AuraException/AuraException.h"
 
 namespace aura3d {
 namespace cpu {
 
 /**
- * Constructor - Initializes the framebuffer using the Pixel struct
- * @param config Configuration settings for width, height, and depth buffer usage
+ * Constructor - allocates the CPU colour/depth plane. Presentation is delegated
+ * to the wma window manager, so no backend (SDL/X11/Wayland) objects are owned
+ * here; wma::IWindowManager::lockFramebuffer() hands us the surface each frame.
+ * @param windowManager wma window created with GraphicsAPI::CPU.
+ * @param config        Width, height, and depth-buffer settings.
  */
-CpuFrameBufferManager::CpuFrameBufferManager(SDL_Window* window, Config config) :
+CpuFrameBufferManager::CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config) :
     settings(config),
     // Initialize framebuffer with Pixel objects: black color (0) and max depth (1.0f)
-    framebuffer(config.width* config.height, Pixel{0, 1.0f}),
-    _window(window),
-    _renderer(nullptr),
-    _texture(nullptr),
+    framebuffer(static_cast<size_t>(config.width) * static_cast<size_t>(config.height), Pixel{0, 1.0f}),
+    _windowManager(&windowManager),
     _font(GetDefaultBitmapFont())
 {
-    // NOTE: The separate depthBuffer has been removed. Depth is now part of the Pixel struct.
-
-    _renderer = SDL_CreateRenderer(_window, "Aura3DRenderer");
-    INK_ASSERT_MSG(_renderer != nullptr, "Renderer could not be created! SDL_Error: " + std::string(SDL_GetError()));
-
-    // Create texture that will be used to display our framebuffer
-    _texture = SDL_CreateTexture(
-        _renderer,
-        SDL_PIXELFORMAT_ARGB8888,  // Ensure this matches your framebuffer format
-        SDL_TEXTUREACCESS_STREAMING,
-        settings.width,
-        settings.height
-        );
-    INK_ASSERT_MSG(_texture != nullptr, "Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
-}
-
-/**
- * Destructor - Vector memory is automatically freed
- */
-CpuFrameBufferManager::~CpuFrameBufferManager()
-{
-    if (_texture != nullptr) {
-        SDL_DestroyTexture(_texture);
-        _texture = nullptr;
-    }
-
-    if (_renderer != nullptr) {
-        SDL_DestroyRenderer(_renderer);
-        _renderer = nullptr;
-    }
 }
 
 /**
@@ -69,32 +43,47 @@ void CpuFrameBufferManager::clear(u32 color)
 }
 
 /**
- * Renders the framebuffer to the screen using SDL
+ * Presents the colour plane through wma's software-render contract.
  *
  * Process:
- * 1. Extract just the RGB color data into a temporary, contiguous buffer.
- * 2. Copy that temporary buffer to the SDL texture.
- * 3. Clear the renderer.
- * 4. Copy texture to renderer.
- * 5. Present the renderer (display the result).
+ * 1. Acquire the backend's CPU-writable surface via lockFramebuffer().
+ * 2. Copy our packed ARGB8888 colours into it — honouring the surface pitch —
+ *    in parallel across CPU cores with wma::parallelFill(), the software
+ *    analogue of a GPU spreading pixel work across its execution units.
+ * 3. Hand the surface back with presentFramebuffer(), which blits it to screen.
+ *
+ * This works on every wma backend that supports GraphicsAPI::CPU, with no
+ * direct dependency on any windowing library.
  */
 void CpuFrameBufferManager::renderFramebuffer()
 {
-    // SDL_UpdateTexture expects a contiguous array of u32 colors, but our
-    // framebuffer is an array of Pixel structs (u32 rgb, f32 z).
-    // We must first copy the color data into a temporary buffer.
-    std::vector<u32> pixel_data(settings.width * settings.height);
-    std::transform(framebuffer.begin(), framebuffer.end(), pixel_data.begin(),
-                   [](const Pixel& p) { return p.rgb; });
+    if (_windowManager == nullptr)
+        return;
 
-    SDL_UpdateTexture(_texture, nullptr, pixel_data.data(), settings.width * sizeof(u32));
-    SDL_RenderClear(_renderer);
-    SDL_RenderTexture(_renderer, _texture, nullptr, nullptr);
-    SDL_RenderPresent(_renderer);
+    const wma::SoftwareFramebuffer target = _windowManager->lockFramebuffer();
+    if (!target.valid())
+        return;
+
+    // Our plane and the locked surface can momentarily disagree on size (a
+    // resize event not yet propagated through handleWindowChanges), so bound
+    // every sample to the plane we actually own.
+    const i32 planeWidth  = settings.width;
+    const i32 planeHeight = settings.height;
+
+    wma::parallelFill(target, [this, planeWidth, planeHeight](i32 x, i32 y) noexcept -> u32 {
+        if (x < planeWidth && y < planeHeight)
+            return framebuffer[static_cast<size_t>(y) * static_cast<size_t>(planeWidth)
+                             + static_cast<size_t>(x)].rgb;
+        return 0u;
+    });
+
+    _windowManager->presentFramebuffer();
 }
 
 /**
- * Resizes the framebuffer to new dimensions
+ * Resizes the CPU framebuffer to new dimensions. The backend surface tracks the
+ * window on its own (lockFramebuffer() always returns the current size), so
+ * only our own colour/depth plane needs reallocating here.
  * @param width New width in pixels
  * @param height New height in pixels
  */
@@ -111,29 +100,11 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height)
         return;
     }
 
-    // Clean up existing texture
-    if (_texture != nullptr) {
-        SDL_DestroyTexture(_texture);
-    }
-
-    // Create new texture with new dimensions
-    _texture = SDL_CreateTexture(
-        _renderer,
-        SDL_PIXELFORMAT_ARGB8888,
-        SDL_TEXTUREACCESS_STREAMING,
-        width, height
-        );
-
-    if (_texture == nullptr) {
-        throw aura3d::AuraException("Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
-    }
-
-    // Update settings first
     settings.width = width;
     settings.height = height;
 
     // Resize the framebuffer vector, initializing new pixels to black with max depth
-    framebuffer.assign(width * height, Pixel{0, 1.0f});
+    framebuffer.assign(static_cast<size_t>(width) * static_cast<size_t>(height), Pixel{0, 1.0f});
 }
 
 /**

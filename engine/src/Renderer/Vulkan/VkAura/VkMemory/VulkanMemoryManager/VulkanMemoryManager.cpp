@@ -1,5 +1,15 @@
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 
+#ifdef ANDROID
+//! VMA defaults to linking Vulkan core functions statically, but the Android
+//! NDK's stub libvulkan.so (tied to the target API level) doesn't guarantee
+//! every newer core-1.3 function as a directly linkable symbol -- resolve
+//! them at runtime via vkGetInstanceProcAddr/vkGetDeviceProcAddr instead, as
+//! VMA's own docs recommend for Android.
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+#endif
+
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
@@ -48,14 +58,14 @@ VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(AuraSettings* settin
     }
 
     ink::EnhancedJson* json = settings->getSettings();
-    cfg.bufferDeviceAddress = json->getPath<bool>("memory/vma/buffer_device_address", true);
-    cfg.preferDeviceMemory = json->getPath<bool>("memory/vma/prefer_device_memory", true);
-    cfg.persistentlyMapUploadBuffers = json->getPath<bool>("memory/vma/persistently_map_upload_buffers", true);
+    cfg.bufferDeviceAddress = json->getPath<bool>("/memory/vma/buffer_device_address", true);
+    cfg.preferDeviceMemory = json->getPath<bool>("/memory/vma/prefer_device_memory", true);
+    cfg.persistentlyMapUploadBuffers = json->getPath<bool>("/memory/vma/persistently_map_upload_buffers", true);
 
-    const u32 blockMb = json->getPath<u32>("memory/vma/preferred_large_heap_block_size_mb", 128);
+    const u32 blockMb = json->getPath<u32>("/memory/vma/preferred_large_heap_block_size_mb", 128);
     cfg.preferredLargeHeapBlockSize = static_cast<size_t>(blockMb) * 1024u * 1024u;
 
-    const std::string apiVersion = json->getPath<std::string>("memory/vma/vulkan_api_version", "1.4");
+    const std::string apiVersion = json->getPath<std::string>("/memory/vma/vulkan_api_version", "1.4");
     cfg.vulkanApiVersion = parseVulkanApiVersion(apiVersion);
 
     return cfg;
@@ -72,6 +82,15 @@ void VulkanMemoryManager::initialize(VkInstance instance,
 
     _config = config;
 
+#ifdef ANDROID
+    //! VMA_DYNAMIC_VULKAN_FUNCTIONS requires these two seed pointers; it
+    //! resolves every other Vulkan entry point itself from there.
+    const VmaVulkanFunctions vulkanFunctions{
+        .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
+        .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
+    };
+#endif
+
     VmaAllocatorCreateInfo allocatorInfo{
         .flags = config.bufferDeviceAddress ? VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT : 0u,
         .physicalDevice = physicalDevice,
@@ -79,6 +98,9 @@ void VulkanMemoryManager::initialize(VkInstance instance,
         .preferredLargeHeapBlockSize = config.preferredLargeHeapBlockSize,
         .instance = instance,
         .vulkanApiVersion = config.vulkanApiVersion,
+#ifdef ANDROID
+        .pVulkanFunctions = &vulkanFunctions,
+#endif
     };
 
     VK_RESULT_CHECK(vmaCreateAllocator(&allocatorInfo, &_allocator));

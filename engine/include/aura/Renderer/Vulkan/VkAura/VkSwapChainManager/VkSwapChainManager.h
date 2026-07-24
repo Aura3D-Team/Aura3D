@@ -12,6 +12,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkDeviceManager/VkDeviceManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkImageViewsManager/VkImageViewsManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h"
+#include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/aura.h"
 
 namespace aura3d {
@@ -183,21 +184,20 @@ private:
                                                 const VkFormat vkFormat = VK_FORMAT_B8G8R8A8_SRGB, const VkColorSpaceKHR vkColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
 
     /**
-     * @brief Chooses the optimal presentation mode for the swap chain.
+     * @brief Chooses the swap chain presentation mode for the requested VSyncMode.
      *
-     * This function selects the best presentation mode based on the preferred settings.
-     * The preferred mode is VK_PRESENT_MODE_MAILBOX_KHR, which allows for reduced
-     * latency and tearing avoidance (similar to triple buffering).
-     * If VK_PRESENT_MODE_MAILBOX_KHR is unavailable, the function defaults to
-     * VK_PRESENT_MODE_FIFO_KHR, which is always available and similar to traditional
-     * vsync.
+     * AutoVsync and AutoNoVsync pick the first supported mode out of their
+     * fallback group; the concrete modes (Fifo, FifoRelaxed, Immediate,
+     * Mailbox) are used directly when supported and fall back to
+     * VK_PRESENT_MODE_FIFO_KHR otherwise, since Fifo is guaranteed by the
+     * Vulkan spec to always be available.
      *
      * @param availablePresentModes A list of supported presentation modes for the swap chain.
-     * @param vkPresentMode Preferred vkPresentMode VK_PRESENT_MODE_MAILBOX_KHR
+     * @param mode The requested VSyncMode, read from AuraSettings.
      *
      * @return VkPresentModeKHR The chosen presentation mode for the swap chain.
      */
-    VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const bool vSync);
+    VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VSyncMode mode);
 };
 
 }

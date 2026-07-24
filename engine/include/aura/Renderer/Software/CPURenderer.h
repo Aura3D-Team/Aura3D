@@ -63,8 +63,6 @@ private:
     IndexBufferHandle _boundIndexBuffer = INVALID_HANDLE;
     TextureHandle _boundTexture = INVALID_HANDLE;
     gfx::TransformUBO  _currentTransform;
-
-    ink::ThreadPool _workerPool;
 };
 
 } // namespace cpu

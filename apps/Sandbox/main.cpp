@@ -33,16 +33,50 @@ int main()
     ResourceManager* resources = engine.resources();
     const AuraSettings* settings = engine.getSettings();
 
+    auto* windowManager = r->getWindowManager();
+    wma::KeyboardListener& keyboard = windowManager->getKeyboardListener();
+    wma::MouseListener& mouse = windowManager->getMouseListener();
+    wma::InputContextId gameplay = keyboard.createContext();
+    keyboard.setActiveContext(gameplay);
+
     // camera
     const wma::WindowDetails* wd = r->getWindowManager()->getWindowDetails();
     const float aspect = static_cast<float>(wd->width) / static_cast<float>(wd->height);
 
-    Camera camera = Camera::perspective({.fovDeg = 45.0f,
+    Camera camera = Camera::perspective({.fovDeg = 60.0f,
                                          .aspect = aspect,
                                          .nearZ  = 0.1f,
                                          .farZ   = 100.0f});
-    camera.setPosition({0.0f, 1.8f, 4.5f});
-    camera.lookAt({0.0f, 0.0f, 0.0f});
+
+    camera.setPosition({0.0f, 0.8f, 4.5f});
+
+    float camYaw = -90.0f;
+    float camPitch = -8.0f;
+    camera.setRotation(camYaw, camPitch);
+
+    constexpr float kMouseSensitivity = 0.1f;
+    mouse.setCursorEnabled(false);
+    mouse.setMoveAction(wma::MouseAction{[&](const wma::WMAMousePosition& pos) {
+        camYaw += static_cast<float>(pos.deltaX) * kMouseSensitivity;
+        camPitch += static_cast<float>(pos.deltaY) * kMouseSensitivity;
+        camera.setRotation(camYaw, camPitch);
+    }});
+
+    bool moveForward = false, moveBack = false, moveLeft = false, moveRight = false;
+    bool moveUp = false, moveDown = false;
+
+    auto bindHeld = [&keyboard](wma::Key key, bool& flag) {
+        keyboard.addKeyAction(key, wma::KeyAction{
+            [&flag]() { flag = true; },
+            [&flag]() { flag = false; }
+        });
+    };
+    bindHeld(wma::KEY_W, moveForward);
+    bindHeld(wma::KEY_S, moveBack);
+    bindHeld(wma::KEY_A, moveLeft);
+    bindHeld(wma::KEY_D, moveRight);
+    bindHeld(wma::KEY_SPACE, moveUp);
+    bindHeld(wma::KEY_LEFT_SHIFT, moveDown);
 
     //- light
     gfx::LightUBO light;
@@ -97,9 +131,34 @@ int main()
 
     const auto startTime = std::chrono::steady_clock::now();
 
+    constexpr float kMoveSpeed = 3.0f; // world units per second
+
     r->run([&]() {
         const float elapsed = std::chrono::duration<float>(
             std::chrono::steady_clock::now() - startTime).count();
+
+        const float dt = static_cast<float>(windowManager->getWindowFlags()->deltaTime) / 1000.0f;
+
+        const glm::vec3 forward = camera.forward();
+        const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+
+        glm::vec3 moveDir{0.0f};
+        if (moveForward)
+            moveDir += forward;
+        if (moveBack)
+            moveDir -= forward;
+        if (moveRight)
+            moveDir += right;
+        if (moveLeft)
+            moveDir -= right;
+        if (moveUp)
+            moveDir += glm::vec3(0.0f, 1.0f, 0.0f);
+        if (moveDown)
+            moveDir -= glm::vec3(0.0f, 1.0f, 0.0f);
+
+        if (glm::length(moveDir) > 0.0f) {
+            camera.setPosition(camera.position() + glm::normalize(moveDir) * kMoveSpeed * dt);
+        }
 
         r->beginRenderPass();
 

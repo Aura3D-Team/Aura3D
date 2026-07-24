@@ -11,11 +11,11 @@
         "resizable": true,
         "fullscreen": false,
         "vsync": true,
+        "vsync_mode": "Fifo",
         "fps_limit": 144
     },
     "renderer": {
         "backend": "vulkan",
-        "mode": "2d",
         "validation_layers": true,
         "gpu_preference": "discrete",
         "max_frames_in_flight": 2,

@@ -2,5 +2,6 @@ local.properties
 .gradle/
 build/
 app/build/
+app/.cxx/
 *.apk
 *.aab

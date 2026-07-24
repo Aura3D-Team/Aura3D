@@ -31,7 +31,8 @@ All runtime behavior is controlled by `settings.json`:
 | `renderer.mode`     | `"2d"`, `"3d"`                  | Orthographic (2D) or perspective (3D) |
 | `window.width`      | integer                         | Window width in pixels                |
 | `window.height`     | integer                         | Window height in pixels               |
-| `window.vsync`      | `true` / `false`                | Enable vertical sync                  |
+| `window.vsync`      | `true` / `false`                | Enable vertical sync (legacy; ignored when `vsync_mode` is set) |
+| `window.vsync_mode` | `"AutoVsync"`, `"AutoNoVsync"`, `"Fifo"`, `"FifoRelaxed"`, `"Immediate"`, `"Mailbox"` | Swap chain present mode (Vulkan). Defaults to `Fifo`/`AutoNoVsync` derived from `vsync` if omitted |
 | `window.fullscreen` | `true` / `false`                | Start in fullscreen mode              |
 | `window.fps_limit`  | integer                         | Target FPS (ignored when vsync is on) |
 

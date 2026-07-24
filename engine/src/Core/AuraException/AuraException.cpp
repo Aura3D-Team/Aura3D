@@ -20,6 +20,7 @@ AuraException::AuraException(const std::string& msg)
     // Empty
 }
 
+#ifdef AURA_HAS_VULKAN
 AuraException::AuraException(const VkResult code)
 {
     if (vkResultToString.find(code) != vkResultToString.end()) {
@@ -28,6 +29,7 @@ AuraException::AuraException(const VkResult code)
         _msg = "VkResult not mapped.";
     }
 }
+#endif
 
 AuraException::~AuraException() noexcept = default;
 

@@ -61,7 +61,7 @@ VkExtent2D* VkSwapChainManager::getExtent2D()
 void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount)
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
-    _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, windowDetails->vsync);
+    _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, AuraSettings::get()->getVSyncMode());
     _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, windowDetails);
 
     u32 imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
@@ -286,21 +286,44 @@ VkSurfaceFormatKHR VkSwapChainManager::_chooseSwapSurfaceFormat(const std::vecto
     return availableFormats[0];
 }
 
-VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const bool vSync)
+VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VSyncMode mode)
 {
-    if (vSync)
-        return VK_PRESENT_MODE_FIFO_KHR;
-
-    for (auto mode : availablePresentModes)
+    switch (mode)
     {
-        if (mode == VK_PRESENT_MODE_MAILBOX_KHR)
-            return mode;
-    }
+        case VSyncMode::AutoVsync:
+            // FifoRelaxed, then Fifo (always supported).
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
+                return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+            return VK_PRESENT_MODE_FIFO_KHR;
 
-    for (auto mode : availablePresentModes)
-    {
-        if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR)
-            return mode;
+        case VSyncMode::AutoNoVsync:
+            // Immediate, then Mailbox, then Fifo (always supported).
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
+                return VK_PRESENT_MODE_IMMEDIATE_KHR;
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+                return VK_PRESENT_MODE_MAILBOX_KHR;
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::FifoRelaxed:
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
+                return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+            INK_WARN << "VK_PRESENT_MODE_FIFO_RELAXED_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::Immediate:
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
+                return VK_PRESENT_MODE_IMMEDIATE_KHR;
+            INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::Mailbox:
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+                return VK_PRESENT_MODE_MAILBOX_KHR;
+            INK_WARN << "VK_PRESENT_MODE_MAILBOX_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::Fifo:
+            return VK_PRESENT_MODE_FIFO_KHR;
     }
 
     return VK_PRESENT_MODE_FIFO_KHR;

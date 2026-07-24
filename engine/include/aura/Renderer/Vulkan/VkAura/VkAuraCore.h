@@ -18,7 +18,16 @@
 #define MAX_DESCRIPTOR_SETS 4
 #define MAX_BINDING_COUNT 16
 
+//! Not every Vulkan header in the wild has 1.4's version macro yet (e.g. the
+//! Android NDK's bundled headers currently top out at 1.3) -- fall back to
+//! the newest one actually available rather than hard-requiring 1.4.
+#if defined(VK_API_VERSION_1_4)
 inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_4;
+#elif defined(VK_API_VERSION_1_3)
+inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_3;
+#else
+inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_2;
+#endif
 
 // Template array definitions
 template <typename T>

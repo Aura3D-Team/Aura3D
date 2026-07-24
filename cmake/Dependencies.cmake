@@ -9,7 +9,13 @@ if(ANDROID)
 elseif(EMSCRIPTEN)
     set(_AURA_PLATFORM "wasm")
 else()
-    set(_AURA_PLATFORM "linux")
+    # libink/libwma's linux presets install to linux/debug or linux/release
+    # (single-config Ninja generator, so CMAKE_BUILD_TYPE is known here).
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(_AURA_PLATFORM "linux/debug")
+    else()
+        set(_AURA_PLATFORM "linux/release")
+    endif()
 endif()
 
 set(ink_DIR "${_AURA_SEARCH_PREFIX}/${_AURA_PLATFORM}/lib/cmake/ink")

@@ -8,8 +8,7 @@ namespace aura3d {
 namespace cpu {
 
 CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails) :
-    IRenderer(windowDetails),
-    _workerPool(std::thread::hardware_concurrency())
+    IRenderer(windowDetails)
 {
     INK_INFO << "Renderer - SOFTWARE";
 }
@@ -39,8 +38,7 @@ void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBac
     cfg.height = _windowDetails.height;
     cfg.useDepthBuffer = true;
 
-    _frameBufferManager = std::make_unique<CpuFrameBufferManager>(
-        static_cast<SDL_Window*>(_windowManagerApi->getWindowInstance()), cfg);
+    _frameBufferManager = std::make_unique<CpuFrameBufferManager>(*_windowManagerApi, cfg);
 }
 
 void CPURenderer::handleWindowChanges()

@@ -26,13 +26,14 @@ SERVE=0
 ASYNCIFY="ON"
 WASM_DEPS_PREFIX="${WASM_DEPS_PREFIX:-/usr/local/wasm-deps}"
 
-for arg in "$@"; do
-  case "$arg" in
-    --debug)        BUILD_TYPE="Debug" ;;
-    --release)      BUILD_TYPE="Release" ;;
-    --serve)        SERVE=1 ;;
-    --no-asyncify)  ASYNCIFY="OFF" ;;
-    --prefix)       shift; WASM_DEPS_PREFIX="$1" ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --debug)        BUILD_TYPE="Debug"; shift ;;
+    --release)      BUILD_TYPE="Release"; shift ;;
+    --serve)        SERVE=1; shift ;;
+    --no-asyncify)  ASYNCIFY="OFF"; shift ;;
+    --prefix)       WASM_DEPS_PREFIX="$2"; shift 2 ;;
+    *)              shift ;;
   esac
 done
 
@@ -58,10 +59,15 @@ echo ""
 BUILD_DIR="$ROOT/build/wasm-${BUILD_TYPE,,}"
 
 # Configure
+#
+# CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH: the Emscripten toolchain file
+# defaults find_package() to searching only its own sysroot, which would
+# never see wma/ink installed under WASM_DEPS_PREFIX.
 emcmake cmake -S "$ROOT" -B "$BUILD_DIR" \
   -G Ninja \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
   -DCMAKE_PREFIX_PATH="$WASM_DEPS_PREFIX" \
+  -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
   -DAURA_WASM_ASYNCIFY="$ASYNCIFY" \
   -DAURA_WASM_OUTPUT_NAME="Aura3D" \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON

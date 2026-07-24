@@ -28,12 +28,13 @@ BUILD_APK=0
 BUILD_TYPE="Release"
 ANDROID_DEPS_PREFIX="${ANDROID_DEPS_PREFIX:-/usr/local}"
 
-for arg in "$@"; do
-  case "$arg" in
-    --abi)    shift; ABI="$1" ;;
-    --apk)    BUILD_APK=1 ;;
-    --debug)  BUILD_TYPE="Debug" ;;
-    --prefix) shift; ANDROID_DEPS_PREFIX="$1" ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --abi)    ABI="$2"; shift 2 ;;
+    --apk)    BUILD_APK=1; shift ;;
+    --debug)  BUILD_TYPE="Debug"; shift ;;
+    --prefix) ANDROID_DEPS_PREFIX="$2"; shift 2 ;;
+    *)        shift ;;
   esac
 done
 
@@ -66,6 +67,7 @@ cmake -S "$ROOT" -B "$BUILD_DIR" \
   -DANDROID_STL="c++_shared" \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
   -DCMAKE_PREFIX_PATH="$ANDROID_DEPS_PREFIX" \
+  -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 cmake --build "$BUILD_DIR" -- -j"$(nproc)"

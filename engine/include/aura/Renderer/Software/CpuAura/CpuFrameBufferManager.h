@@ -1,7 +1,6 @@
 #ifndef CPUFRAMEBUFFERMANAGER_H
 #define CPUFRAMEBUFFERMANAGER_H
 
-#include <SDL3/SDL.h>
 #include <cmath>
 #include <string>
 #include <glm/glm.hpp>
@@ -11,6 +10,12 @@ static const float PI_FLOAT = std::acos(-1.0f);
 #include "aura/Core/AuraCore.h"
 #include "aura/Utils/AlignedVector.h"
 #include "aura/Core/AuraFont/AuraBitmapFont.h"
+
+/// wma owns the platform window and exposes the CPU framebuffer through its
+/// lockFramebuffer()/presentFramebuffer() contract. The manager only needs a
+/// non-owning handle to it, so a forward declaration keeps the backend-specific
+/// wma/SDL headers out of this public header.
+namespace wma { class IWindowManager; }
 
 namespace aura3d {
 namespace cpu {
@@ -108,11 +113,18 @@ public:
         bool useDepthBuffer = true;
     };
 
-    CpuFrameBufferManager(SDL_Window* window, Config config);
-    ~CpuFrameBufferManager();
+    /// @param windowManager  wma window created with GraphicsAPI::CPU. Must
+    ///                        outlive this manager (owned by the CPURenderer).
+    /// @param config          Framebuffer dimensions and depth-buffer settings.
+    CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config);
+    ~CpuFrameBufferManager() = default;
 
     // Core rendering
     void clear(u32 color = 0);
+
+    /// Present the color plane by locking the backend's software framebuffer
+    /// (wma::IWindowManager::lockFramebuffer()), blitting into it in parallel
+    /// across CPU cores via wma::parallelFill(), then presenting it.
     void renderFramebuffer();
 
     // Memory management
@@ -168,9 +180,10 @@ private:
 
     Config settings;
     AlignedVector<Pixel> framebuffer;
-    SDL_Window* _window;
-    SDL_Renderer* _renderer;
-    SDL_Texture* _texture;
+
+    //! Non-owning handle to the presenting window; the CPURenderer owns it and
+    //! guarantees it outlives this manager.
+    wma::IWindowManager* _windowManager;
 
     // Aura Font
     const AuraBitmapFont& _font;

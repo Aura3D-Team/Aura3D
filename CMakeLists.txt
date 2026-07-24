@@ -16,6 +16,7 @@ include(GNUInstallDirs)
 # previously disabled every renderer backend.
 option(AURA_BUILD_SANDBOX   "Build the Sandbox demo application"   ON)
 option(AURA_INSTALL_SANDBOX "Install the Sandbox demo application" OFF)
+option(AURA_BUILD_ORGLOGO   "Build the OrgLogo demo application"   ON)
 option(AURA_BUILD_TESTS     "Build the automated test suite"       OFF)
 
 option(AURA_ENABLE_VULKAN "Compile the Vulkan backend"            ON)
@@ -24,6 +25,11 @@ option(AURA_ENABLE_CPU    "Compile the software (CPU) backend"    ON)
 
 option(AURA_ENABLE_LTO      "Enable link-time optimization"       ON)
 option(AURA_NATIVE_OPTIMIZE "Tune codegen for the host CPU"       ON)
+
+# WASM (Emscripten) output. Only meaningful for the Sandbox target when
+# EMSCRIPTEN; see apps/Sandbox/CMakeLists.txt for how these are consumed.
+option(AURA_WASM_ASYNCIFY "Enable Emscripten Asyncify (needed if the app ever blocks synchronously; costs size/speed)" OFF)
+set(AURA_WASM_OUTPUT_NAME "Aura3D" CACHE STRING "Base filename (no extension) for the WASM Sandbox build's pkg/ output")
 
 include(cmake/Platform.cmake)
 include(cmake/Dependencies.cmake)
@@ -113,6 +119,11 @@ if(AURA_ENABLE_OPENGL)
         target_include_directories(Aura3D PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/wasm>)
         target_compile_definitions(Aura3D PUBLIC AURA_GLES)
+        # Emscripten only exposes ES3/WebGL2 entry points (uniform blocks,
+        # glBindBufferBase, ...) when explicitly told to target WebGL2 --
+        # PUBLIC so it reaches the final link of whatever executable links
+        # Aura3D, not just this static library's own (nonexistent) link step.
+        target_link_options(Aura3D PUBLIC "-sMAX_WEBGL_VERSION=2" "-sMIN_WEBGL_VERSION=2")
     elseif(ANDROID)
         target_include_directories(Aura3D PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/android>)
@@ -159,6 +170,10 @@ endif()
 
 if(AURA_BUILD_SANDBOX)
     add_subdirectory(apps/Sandbox)
+endif()
+
+if(AURA_BUILD_ORGLOGO)
+    add_subdirectory(apps/OrgLogo)
 endif()
 
 ################################################################################
