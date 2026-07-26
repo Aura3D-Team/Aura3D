@@ -1,6 +1,7 @@
 #include "aura/Core/Engine.h"
 #include "aura/Renderer/RendererFactory.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Core/Camera/Camera.h"
 
 Engine::Engine(const std::string& configPath)
 {
@@ -66,6 +67,9 @@ void Engine::_createRenderer()
     // SOFTWARE, so record what we actually ended up with.
     _renderer = aura3d::RendererFactory::create(requested, _windowDetails);
     _rendererChoice = _renderer->getBackendType();
+    aura3d::Camera::setClipSpace(backend == aura3d::RendererChoice::VULKAN
+                                 ? aura3d::Camera::ClipSpace::Vulkan
+                                 : aura3d::Camera::ClipSpace::OpenGL);
 
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
 
@@ -108,6 +112,9 @@ void Engine::switchBackend(aura3d::RendererChoice choice)
 
     _renderer = aura3d::RendererFactory::create(resolved, _windowDetails);
     _rendererChoice = _renderer->getBackendType();
+    aura3d::Camera::setClipSpace(backend == aura3d::RendererChoice::VULKAN
+                                 ? aura3d::Camera::ClipSpace::Vulkan
+                                 : aura3d::Camera::ClipSpace::OpenGL);
     _renderer->initialize(aura3d::AuraSettings::get());
 
     if (_resources)
