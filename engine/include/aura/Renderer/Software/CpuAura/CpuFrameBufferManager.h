@@ -156,6 +156,26 @@ public:
     void drawTriangle(const ScreenVertex& v0, const ScreenVertex& v1,
                       const ScreenVertex& v2, const Texture* texture);
 
+    /**
+     * @brief Rasterise a screen-space triangle for the unlit 2D overlay pass.
+     *
+     * The software counterpart of the GPU backends' 2D pipeline, and it differs
+     * from drawTriangle() in exactly the ways that pipeline does:
+     *   - Affine (not perspective-correct) attribute interpolation. The overlay
+     *     projection is orthographic, so w is 1 everywhere and the perspective
+     *     divide would be an identity operation.
+     *   - No depth test and no depth write, so the batch always composites on
+     *     top of the scene already drawn.
+     *   - Straight source-over alpha blending against the colour plane, rather
+     *     than an opaque overwrite. This is what lets an antialiased glyph's
+     *     partially covered edge texels fade into the background.
+     *
+     * @param v0,v1,v2  Vertices already in pixel coordinates.
+     * @param texture   Optional texture; nullptr draws vertex colour alone.
+     */
+    void drawTriangle2D(const ScreenVertex& v0, const ScreenVertex& v1,
+                        const ScreenVertex& v2, const Texture* texture);
+
     // Text rendering
     void drawText(const std::string& text, Point p, u32 color, u32 fontSize = 2);
 

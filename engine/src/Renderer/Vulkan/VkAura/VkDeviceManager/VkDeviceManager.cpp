@@ -3,6 +3,7 @@
 #include <set>
 
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/Core/AuraSettings/AuraSettings.h"
 
 namespace aura3d {
 namespace vk {
@@ -60,9 +61,19 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         // Scoring the device
         u32 score = 0;
 
-        // Prefer discrete GPUs (dedicated graphics cards)
-        if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-            score += 1000;
+        // graphics.gpu_preference steers which device type wins the +1000 type
+        // bonus; "any" drops the type bonus entirely and lets capability alone
+        // (API version, image limits, geometry shader) decide.
+        const std::string gpuPreference = aura3d::AuraSettings::get()->getGpuPreference();
+        if (gpuPreference == "integrated") {
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+                score += 1000;
+            }
+        } else if (gpuPreference != "any") {
+            // Default: prefer discrete GPUs (dedicated graphics cards).
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                score += 1000;
+            }
         }
 
         if (deviceFeatures.geometryShader) {
@@ -174,6 +185,20 @@ VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> 
     }
 
     return requiredExtensions.empty() ? VK_SUCCESS : VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
+VkSampleCountFlagBits VkDeviceManager::getMaxUsableSampleCount() const
+{
+    const VkSampleCountFlags counts = _deviceProperties.limits.framebufferColorSampleCounts
+                                     & _deviceProperties.limits.framebufferDepthSampleCounts;
+
+    if (counts & VK_SAMPLE_COUNT_64_BIT) return VK_SAMPLE_COUNT_64_BIT;
+    if (counts & VK_SAMPLE_COUNT_32_BIT) return VK_SAMPLE_COUNT_32_BIT;
+    if (counts & VK_SAMPLE_COUNT_16_BIT) return VK_SAMPLE_COUNT_16_BIT;
+    if (counts & VK_SAMPLE_COUNT_8_BIT)  return VK_SAMPLE_COUNT_8_BIT;
+    if (counts & VK_SAMPLE_COUNT_4_BIT)  return VK_SAMPLE_COUNT_4_BIT;
+    if (counts & VK_SAMPLE_COUNT_2_BIT)  return VK_SAMPLE_COUNT_2_BIT;
+    return VK_SAMPLE_COUNT_1_BIT;
 }
 
 }

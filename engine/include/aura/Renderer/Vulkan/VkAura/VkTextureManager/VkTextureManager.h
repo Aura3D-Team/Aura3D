@@ -77,6 +77,41 @@ public:
                                         u32 height);
 
     /**
+     * @brief Allocates an empty texture whose texels are written later by
+     *        updateRegion().
+     *
+     * The image is created, cleared to transparent black and left in
+     * SHADER_READ_ONLY_OPTIMAL, so it is immediately safe to sample and to
+     * describe in a descriptor set. Because the VkImage, view and sampler never
+     * change afterwards, the descriptor sets pointing at it stay valid for the
+     * texture's whole life -- which is what makes an atlas that keeps growing
+     * affordable on this backend.
+     *
+     * @param name Unique identifier for the texture; an existing entry is replaced.
+     * @param width Texture width in pixels.
+     * @param height Texture height in pixels.
+     * @return TextureData for the new texture; a default value on failure.
+     */
+    TextureData createDynamicTexture(const std::string& name, u32 width, u32 height);
+
+    /**
+     * @brief Uploads RGBA8 texels into a sub-rectangle of an existing texture.
+     *
+     * Stages through a host-visible buffer and copies only the named rectangle,
+     * transitioning the image to TRANSFER_DST and back around the copy.
+     *
+     * @param name Identifier of the texture to update.
+     * @param x Left edge of the destination rectangle, in pixels.
+     * @param y Top edge of the destination rectangle, in pixels.
+     * @param width Rectangle width in pixels.
+     * @param height Rectangle height in pixels.
+     * @param rgba Tightly packed @p width * @p height * 4 bytes.
+     */
+    void updateRegion(const std::string& name,
+                      u32 x, u32 y, u32 width, u32 height,
+                      const u8* rgba);
+
+    /**
      * @brief Retrieves a texture by name
      *
      * @param name The identifier of the texture to retrieve
@@ -156,6 +191,16 @@ private:
      * @param height Height of the region to copy
      */
     void copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height);
+
+    /**
+     * @brief Copies a buffer into an offset sub-rectangle of an image.
+     *
+     * The whole-image copyBufferToImage() is the special case of this with a
+     * zero offset and the image's full extent.
+     */
+    void copyBufferToImageRegion(VkBuffer buffer, VkImage image,
+                                 u32 x, u32 y, u32 width, u32 height);
+
     void destroyTextureData(TextureData& texture);
 };
 

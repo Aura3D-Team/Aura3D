@@ -73,6 +73,14 @@ public:
 
     VkQueueManager* getQueueManager();
 
+    /**
+     * @brief Largest MSAA sample count the selected device supports for both
+     *        the color and depth attachments together.
+     * @return The highest common VkSampleCountFlagBits, or VK_SAMPLE_COUNT_1_BIT
+     *         if the device reports no multisampling support.
+     */
+    [[nodiscard]] VkSampleCountFlagBits getMaxUsableSampleCount() const;
+
 private:
     VkInstance* _vkInstance; ///< Vulkan instance pointer used bind the best device
 

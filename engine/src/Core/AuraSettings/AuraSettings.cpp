@@ -91,6 +91,16 @@ int AuraSettings::getMaxFramesInFlight() const
     return _settings.getPath<int>("/renderer/max_frames_in_flight", 2);
 }
 
+std::string AuraSettings::getGpuPreference() const
+{
+    return _settings.getPath<std::string>("/graphics/gpu_preference", "discrete");
+}
+
+int AuraSettings::getMsaaSamples() const
+{
+    return _settings.getPath<int>("/graphics/msaa_samples", 1);
+}
+
 std::string AuraSettings::getShadersPath() const
 {
     return _settings.getPath<std::string>("/paths/shaders", "./resources/shaders/");
@@ -104,6 +114,43 @@ std::string AuraSettings::getTexturesPath() const
 std::string AuraSettings::getModelsPath() const
 {
     return _settings.getPath<std::string>("/paths/models", "./resources/models/");
+}
+
+std::string AuraSettings::getLogsPath() const
+{
+    return _settings.getPath<std::string>("/paths/logs", "./logs/");
+}
+
+ink::LogLevel AuraSettings::getLogLevel() const
+{
+#ifdef NDEBUG
+    constexpr ink::LogLevel kDefault = ink::LogLevel::INFO;
+#else
+    constexpr ink::LogLevel kDefault = ink::LogLevel::TRACE;
+#endif
+
+    const std::string levelStr = _settings.getPath<std::string>("/logging/level", std::string());
+    if (levelStr.empty()) 
+        return kDefault;
+
+    std::string up;
+    up.reserve(levelStr.size());
+    for (const char c : levelStr) 
+        up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+    // Reuses the same name table the logger itself prints with, so the two
+    // never drift apart.
+    for (u32 i = 0; i < std::to_underlying(ink::LogLevel::COUNT); ++i) 
+    {
+        if (up == ink::MAP_COLORS_FOR_LEVEL[i].desc)
+            return static_cast<ink::LogLevel>(i);
+    }
+    return kDefault;
+}
+
+bool AuraSettings::getLogToFile() const
+{
+    return _settings.getPath<bool>("/logging/write_to_file", false);
 }
 
 } // namespace aura3d

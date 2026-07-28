@@ -121,6 +121,19 @@ void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const Descrip
     _descriptorSetLayoutInfos[setIndex].bindings.push_back(bindingInfo);
 }
 
+void VkGraphicsPipelineManager::resetInterface()
+{
+    for (auto& pair : _descriptorSetLayouts) 
+    {
+        vkDestroyDescriptorSetLayout(*_device, pair.second, nullptr);
+    }
+    _descriptorSetLayouts.clear();
+    _descriptorSetLayoutInfos.clear();
+
+    _pushConstantRange = {};
+    _hasPushConstants = false;
+}
+
 void VkGraphicsPipelineManager::createDescriptorSetLayouts()
 {
     // Clean up any existing layouts
@@ -223,7 +236,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
                                                const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
                                                const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray,
                                                u32 attributeDescriptionCount,
-                                               bool enableDepthTest)
+                                               const PipelineOptions& options)
 {
     if (_pipeline != VK_NULL_HANDLE)
     {
@@ -291,7 +304,9 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    //! Screen-space overlay quads have no meaningful facing, so culling them
+    //! would drop whichever winding the batch happened to emit.
+    rasterizer.cullMode = options.cullBackFaces ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasSlopeFactor = 0.0f;
@@ -303,7 +318,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     VkPipelineMultisampleStateCreateInfo multisampling = {};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = options.sampleCount;
     multisampling.minSampleShading = 1.0f; // Optional
     multisampling.pSampleMask = nullptr; // Optional
     multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
@@ -315,13 +330,32 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
                                           VK_COLOR_COMPONENT_G_BIT |
                                           VK_COLOR_COMPONENT_B_BIT |
                                           VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD; // Optional
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD; // Optional
+    colorBlendAttachment.blendEnable = options.alphaBlend ? VK_TRUE : VK_FALSE;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    if (options.alphaBlend)
+    {
+        /*
+         * Straight (non-premultiplied) source-over:
+         *   rgb = src.rgb * src.a + dst.rgb * (1 - src.a)
+         *   a   = src.a         + dst.a   * (1 - src.a)
+         * The alpha channel accumulates rather than replacing, so stacking two
+         * translucent overlays leaves a sensible coverage value behind.
+         */
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    }
+    else
+    {
+        //! Ignored while blendEnable is false, but must still be valid values.
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    }
 
     // Color blend state
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
@@ -338,8 +372,8 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     // Depth stencil state (only meaningful when render pass has a depth attachment)
     VkPipelineDepthStencilStateCreateInfo depthStencil = {};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = enableDepthTest ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable = enableDepthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthTestEnable = options.depthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = options.depthTest ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;

@@ -5,6 +5,7 @@
 #include <string>
 
 #include <ink/EnhancedJson.h>
+#include <ink/Inkogger.h>
 
 /**
  * @brief List of supported presentation modes, mirroring WebGPU's PresentMode.
@@ -101,12 +102,23 @@ public:
     //! Renderer
     std::string getRendererBackend()  const;  //! default "vulkan"
     bool        getValidationLayers() const;  //! default true in debug builds
+    //! Informational only: MAX_FRAMES_IN_FLIGHT (VkAuraCore.h) is a compile-time
+    //! constant, so this value is not propagated to the Vulkan renderer.
     int         getMaxFramesInFlight() const; //! default 2
 
-    //! Paths-
+    //! Graphics (device selection & visual quality; Vulkan-only)
+    std::string getGpuPreference()    const;  //! "discrete" | "integrated" | "any", default "discrete"
+    int         getMsaaSamples()      const;  //! default 1 (off); clamped to the device's max supported count
+
+    //! Paths
     std::string getShadersPath()  const;      //! default "./resources/shaders/"
     std::string getTexturesPath() const;      //! default "./resources/textures/"
     std::string getModelsPath()   const;      //! default "./resources/models/"
+    std::string getLogsPath()     const;      //! default "./logs/"
+
+    //! Logging
+    ink::LogLevel getLogLevel()  const;       //! default: TRACE in debug builds, INFO in release
+    bool          getLogToFile() const;       //! default false
 
 private:
     ink::EnhancedJson _settings;

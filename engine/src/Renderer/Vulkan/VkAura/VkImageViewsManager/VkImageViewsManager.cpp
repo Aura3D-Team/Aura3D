@@ -16,10 +16,6 @@ VkImageViewsManager::~VkImageViewsManager()
     _device = nullptr;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Internal helper – creates one VkImageView with explicit parameters
-// ─────────────────────────────────────────────────────────────────────────────
-
 VkImageView VkImageViewsManager::createView(VkImage image, VkFormat format,
                                              VkImageAspectFlags aspect,
                                              u32 baseMip,    u32 mipLevels,
@@ -47,10 +43,6 @@ VkImageView VkImageViewsManager::createView(VkImage image, VkFormat format,
     return view;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Color image views (one per swapchain image)
-// ─────────────────────────────────────────────────────────────────────────────
-
 void VkImageViewsManager::createImageViews(const std::vector<VkImage>& images,
                                            VkFormat format,
                                            ImageViewData viewData)
@@ -64,10 +56,6 @@ void VkImageViewsManager::createImageViews(const std::vector<VkImage>& images,
             viewData.baseArrayLayer, viewData.layerCount);
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Depth image view (single, optional)
-// ─────────────────────────────────────────────────────────────────────────────
 
 void VkImageViewsManager::createDepthImageView(VkImage image, VkFormat format)
 {
@@ -85,13 +73,26 @@ void VkImageViewsManager::cleanupDepthImageView()
     _depthImageView = VK_NULL_HANDLE;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Full cleanup
-// ─────────────────────────────────────────────────────────────────────────────
+void VkImageViewsManager::createColorMsaaImageView(VkImage image, VkFormat format)
+{
+    cleanupColorMsaaImageView();
+    _colorMsaaImageView = createView(image, format,
+                                      VK_IMAGE_ASPECT_COLOR_BIT,
+                                      0, 1,
+                                      0, 1);
+}
+
+void VkImageViewsManager::cleanupColorMsaaImageView()
+{
+    if (_colorMsaaImageView == VK_NULL_HANDLE) return;
+    vkDestroyImageView(*_device, _colorMsaaImageView, nullptr);
+    _colorMsaaImageView = VK_NULL_HANDLE;
+}
 
 void VkImageViewsManager::cleanup()
 {
     cleanupDepthImageView();
+    cleanupColorMsaaImageView();
 
     for (VkImageView view : _colorImageViews) {
         vkDestroyImageView(*_device, view, nullptr);

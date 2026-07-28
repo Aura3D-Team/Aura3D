@@ -66,6 +66,30 @@ static_assert(sizeof(PushConstantBlock) == 128,
               "PushConstantBlock must fit the guaranteed 128-byte push-constant budget");
 
 /**
+ * @brief The fixed-function state that actually differs between the engine's
+ *        graphics pipelines.
+ *
+ * The defaults describe the unlit 2D overlay: no depth interaction, straight
+ * source-over blending, and no culling (screen-space quads have no meaningful
+ * facing). The 3D scene pipeline flips all three.
+ *
+ * At namespace scope rather than nested in VkGraphicsPipelineManager because a
+ * nested class' default member initializers are not usable inside the enclosing
+ * class' own declarations, which is where this is wanted as a defaulted
+ * parameter.
+ */
+struct PipelineOptions {
+    bool depthTest = false;     //! Enables both the depth test and depth writes.
+    bool alphaBlend = false;    //! src*srcAlpha + dst*(1-srcAlpha).
+    bool cullBackFaces = false; //! Discards clockwise-wound back faces.
+
+    //! Must match the sample count the render pass this pipeline is built
+    //! against was created with (VkRenderPassManager::createRenderPass) --
+    //! every pipeline bound within a subpass shares its multisample state.
+    VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
+};
+
+/**
  * @brief This struct represents Important data for VkInstance creation
  *
  * Obs: for more details, it can have more parameters in the future
@@ -211,6 +235,18 @@ struct DepthResources {
     VkImage       image      = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
     VkFormat      format     = VK_FORMAT_D32_SFLOAT;
+
+    bool isValid() const { return image != VK_NULL_HANDLE; }
+    void reset() { image = VK_NULL_HANDLE; allocation = VK_NULL_HANDLE; }
+};
+
+/**
+ * @brief Aggregates the transient multisampled color image and its VMA
+ *        allocation, used only when MSAA (graphics.msaa_samples > 1) is active.
+ */
+struct MsaaColorResources {
+    VkImage image = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
 
     bool isValid() const { return image != VK_NULL_HANDLE; }
     void reset() { image = VK_NULL_HANDLE; allocation = VK_NULL_HANDLE; }

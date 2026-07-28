@@ -430,6 +430,96 @@ void CpuFrameBufferManager::drawTriangle(const ScreenVertex& v0, const ScreenVer
     }
 }
 
+void CpuFrameBufferManager::drawTriangle2D(const ScreenVertex& v0, const ScreenVertex& v1,
+                                           const ScreenVertex& v2, const Texture* texture)
+{
+    const int xmin = std::max(0, static_cast<int>(std::floor(std::min({v0.x, v1.x, v2.x}))));
+    const int xmax = std::min(settings.width - 1, static_cast<int>(std::ceil(std::max({v0.x, v1.x, v2.x}))));
+    const int ymin = std::max(0, static_cast<int>(std::floor(std::min({v0.y, v1.y, v2.y}))));
+    const int ymax = std::min(settings.height - 1, static_cast<int>(std::ceil(std::max({v0.y, v1.y, v2.y}))));
+
+    if (xmin > xmax || ymin > ymax)
+        return;
+
+    //! Twice the signed area, doubling as the edge-function denominator.
+    const float area2 = (v1.x - v0.x) * (v2.y - v0.y)
+                      - (v1.y - v0.y) * (v2.x - v0.x);
+
+    if (std::abs(area2) < 1e-6f)
+        return; //! Degenerate: zero-area triangle covers nothing.
+
+    const float invArea2 = 1.0f / area2;
+
+    for (int y = ymin; y <= ymax; ++y)
+    {
+        const float py = static_cast<float>(y) + 0.5f;
+
+        for (int x = xmin; x <= xmax; ++x)
+        {
+            const float px = static_cast<float>(x) + 0.5f;
+
+            const float w0 = (v2.x - v1.x) * (py - v1.y) - (v2.y - v1.y) * (px - v1.x);
+            const float w1 = (v0.x - v2.x) * (py - v2.y) - (v0.y - v2.y) * (px - v2.x);
+            const float w2 = (v1.x - v0.x) * (py - v0.y) - (v1.y - v0.y) * (px - v0.x);
+
+            //! Inside test, normalised by the area's sign so either winding works.
+            if (area2 > 0.0f) {
+                if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+            } else {
+                if (w0 > 0.0f || w1 > 0.0f || w2 > 0.0f) continue;
+            }
+
+            //! Affine barycentrics: orthographic projection means w is constant.
+            const float b0 = w0 * invArea2;
+            const float b1 = w1 * invArea2;
+            const float b2 = w2 * invArea2;
+
+            const glm::vec2 uv = b0 * v0.uv + b1 * v1.uv + b2 * v2.uv;
+            const glm::vec4 vcolor = glm::clamp(b0 * v0.color + b1 * v1.color + b2 * v2.color,
+                                                0.0f, 1.0f);
+
+            const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
+
+            //! ARGB8888, matching SDL_PIXELFORMAT_ARGB8888.
+            const float ta = static_cast<float>((texel >> 24) & 0xFFu) / 255.0f;
+            const float tr = static_cast<float>((texel >> 16) & 0xFFu);
+            const float tg = static_cast<float>((texel >>  8) & 0xFFu);
+            const float tb = static_cast<float>( texel        & 0xFFu);
+
+            //! Unlit: texel * vertex colour, exactly like the GPU 2D shader.
+            const float srcA = ta * vcolor.a;
+            if (srcA <= 0.0f)
+                continue; //! Fully transparent: nothing to composite.
+
+            const float srcR = tr * vcolor.r;
+            const float srcG = tg * vcolor.g;
+            const float srcB = tb * vcolor.b;
+
+            const int idx = y * settings.width + x;
+            const u32 dst = framebuffer[idx].rgb;
+
+            const float dstR = static_cast<float>((dst >> 16) & 0xFFu);
+            const float dstG = static_cast<float>((dst >>  8) & 0xFFu);
+            const float dstB = static_cast<float>( dst        & 0xFFu);
+
+            /*
+             * Source-over: out = src * a + dst * (1 - a). The same operation
+             * GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA performs on the GPU paths.
+             */
+            const float invA = 1.0f - srcA;
+            const u8 outR = static_cast<u8>(srcR * srcA + dstR * invA);
+            const u8 outG = static_cast<u8>(srcG * srcA + dstG * invA);
+            const u8 outB = static_cast<u8>(srcB * srcA + dstB * invA);
+
+            //! Colour plane only: the overlay never touches the depth buffer.
+            framebuffer[idx].rgb = 0xFF000000u
+                                 | (static_cast<u32>(outR) << 16)
+                                 | (static_cast<u32>(outG) <<  8)
+                                 |  static_cast<u32>(outB);
+        }
+    }
+}
+
 /**
  * Blends two colors according to an alpha value
  * @param c1 Background color

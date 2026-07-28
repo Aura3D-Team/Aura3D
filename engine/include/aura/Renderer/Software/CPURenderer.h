@@ -25,6 +25,9 @@ public:
     IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
     TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) override;
+    TextureHandle createDynamicTexture(u32 width, u32 height) override;
+    void updateTextureRegion(TextureHandle handle, u32 x, u32 y,
+                             u32 width, u32 height, const u8* rgbaPixels) override;
 
     void beginFrame() override;
     void beginRenderPass() override;
@@ -37,6 +40,9 @@ public:
     void bindTexture(TextureHandle handle) override;
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
+    void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
+                     std::span<const u32> indices,
+                     TextureHandle texture) override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
 
     wma::IWindowManager* getWindowManager()      override { return _windowManagerApi.get(); }

@@ -45,6 +45,20 @@ public:
      */
     void cmdPushConstants(VkCommandBuffer commandBuffer, const void* data);
 
+    /**
+     * @brief Discards every descriptor binding and push-constant range declared
+     *        so far, along with any layouts already built from them.
+     *
+     * The constructor installs the 3D scene interface (sets 0/1/2 and a 128-byte
+     * push-constant block). A pipeline whose shaders present a different
+     * interface -- the unlit 2D overlay declares only set 0 and a 64-byte
+     * range -- calls this first and then declares its own, rather than
+     * inheriting bindings its shaders never reference.
+     *
+     * Must be called before createDescriptorSetLayouts().
+     */
+    void resetInterface();
+
     //! Create descriptor set layouts from the specified bindings
     void createDescriptorSetLayouts();
 
@@ -53,7 +67,7 @@ public:
                         const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
                         const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray,
                         u32 attributeDescriptionCount = MAX_ATTRIBUTE_DESCRIPTION,
-                        bool enableDepthTest = false);
+                        const PipelineOptions& options = PipelineOptions{});
 
     //! Bind the pipeline and all descriptor sets to the command buffer
     void cmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint);

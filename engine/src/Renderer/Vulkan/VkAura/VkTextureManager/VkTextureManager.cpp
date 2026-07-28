@@ -107,6 +107,119 @@ VkTextureManager::TextureData VkTextureManager::createTextureFromPixels(
     return textureData;
 }
 
+VkTextureManager::TextureData VkTextureManager::createDynamicTexture(
+    const std::string& name, u32 width, u32 height)
+{
+    if (width == 0 || height == 0)
+    {
+        INK_ERROR << "VkTextureManager: refusing to allocate an empty dynamic texture: " << name;
+        return TextureData{};
+    }
+
+    auto it = _textures.find(name);
+    if (it != _textures.end()) {
+        destroyTextureData(it->second);
+        _textures.erase(it);
+    }
+
+    TextureData textureData{};
+    textureData.width = width;
+    textureData.height = height;
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = {width, height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+
+    AllocatedImage gpuImage = _memoryManager->createImage(imageInfo, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    textureData.image = gpuImage.image;
+    textureData.allocation = gpuImage.allocation;
+
+    /*
+     * Clear on the device rather than staging an all-zero buffer: a 2048x2048
+     * atlas would otherwise mean pushing 16 MB across the bus just to write
+     * zeroes. vkCmdClearColorImage does it without any host memory at all.
+     */
+    transitionImageLayout(textureData.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    const VkClearColorValue transparentBlack{{0.0f, 0.0f, 0.0f, 0.0f}};
+    VkImageSubresourceRange range{};
+    range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    range.baseMipLevel = 0;
+    range.levelCount = 1;
+    range.baseArrayLayer = 0;
+    range.layerCount = 1;
+
+    vkCmdClearColorImage(commandBuffer, textureData.image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &transparentBlack, 1, &range);
+
+    endSingleTimeCommands(commandBuffer);
+
+    transitionImageLayout(textureData.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
+    textureData.sampler = createSampler();
+
+    _textures[name] = textureData;
+    return textureData;
+}
+
+void VkTextureManager::updateRegion(const std::string& name,
+                                    u32 x, u32 y, u32 width, u32 height,
+                                    const u8* rgba)
+{
+    if (!rgba || width == 0 || height == 0)
+        return;
+
+    auto it = _textures.find(name);
+    if (it == _textures.end())
+    {
+        INK_ERROR << "VkTextureManager: updateRegion on an unknown texture: " << name;
+        return;
+    }
+
+    TextureData& textureData = it->second;
+    if (x + width > textureData.width || y + height > textureData.height)
+    {
+        INK_ERROR << "VkTextureManager: updateRegion rectangle exceeds the bounds of " << name;
+        return;
+    }
+
+    const VkDeviceSize regionBytes = static_cast<VkDeviceSize>(width) * height * 4u;
+
+    AllocatedBuffer staging = _memoryManager->createUploadBuffer(regionBytes, VK_SHARING_MODE_EXCLUSIVE);
+    void* data = staging.mappedData ? staging.mappedData : _memoryManager->map(staging);
+    std::memcpy(data, rgba, static_cast<size_t>(regionBytes));
+
+    if (!staging.mappedData)
+        _memoryManager->unmap(staging);
+
+    transitionImageLayout(textureData.image,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    copyBufferToImageRegion(staging.buffer, textureData.image, x, y, width, height);
+
+    transitionImageLayout(textureData.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    _memoryManager->destroyBuffer(staging);
+}
+
 const VkTextureManager::TextureData* VkTextureManager::getTexture(const std::string& name) const
 {
     auto it = _textures.find(name);
@@ -220,18 +333,34 @@ void VkTextureManager::transitionImageLayout(VkImage image, VkImageLayout oldLay
     VkPipelineStageFlags sourceStage;
     VkPipelineStageFlags destinationStage;
 
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && 
+        newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+    {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-               newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    } 
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) 
+    {
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } else {
+    } 
+    else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+    {
+        //! Re-entering the transfer state to patch an already sampleable
+        //! texture, as the glyph atlas does whenever a new character appears.
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        sourceStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } 
+    else
+    {
         throw AuraException("Unsupported layout transition!");
     }
 
@@ -241,17 +370,28 @@ void VkTextureManager::transitionImageLayout(VkImage image, VkImageLayout oldLay
 
 void VkTextureManager::copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height)
 {
+    copyBufferToImageRegion(buffer, image, 0, 0, width, height);
+}
+
+void VkTextureManager::copyBufferToImageRegion(VkBuffer buffer, VkImage image,
+                                               u32 x, u32 y, u32 width, u32 height)
+{
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
+    /*
+     * Zero means "rows are tightly packed at imageExtent.width". That holds
+     * here because the caller stages exactly the sub-rectangle it wants to
+     * write, rather than a window into a larger image.
+     */
     region.bufferRowLength = 0;
     region.bufferImageHeight = 0;
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
-    region.imageOffset = {0, 0, 0};
+    region.imageOffset = {static_cast<i32>(x), static_cast<i32>(y), 0};
     region.imageExtent = {width, height, 1};
 
     vkCmdCopyBufferToImage(commandBuffer,

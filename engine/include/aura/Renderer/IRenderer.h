@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -166,6 +167,44 @@ public:
     virtual TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) = 0;
 
     /**
+     * @brief Allocates an empty RGBA8 texture whose contents are meant to change.
+     *
+     * Distinct from createTextureFromPixels() because the backing store must
+     * stay writable for the resource's whole life: the texture is allocated
+     * once (and, on Vulkan, consumes descriptor-pool slots exactly once), then
+     * refreshed in place with updateTextureRegion(). That is what makes a glyph
+     * atlas that grows at runtime affordable -- recreating the texture per new
+     * character would exhaust the descriptor pool within minutes.
+     *
+     * The initial contents are transparent black.
+     *
+     * @param[in] width Texture width in pixels.
+     * @param[in] height Texture height in pixels.
+     * @return TextureHandle for the new texture, or INVALID_HANDLE on failure.
+     */
+    virtual TextureHandle createDynamicTexture(u32 width, u32 height) = 0;
+
+    /**
+     * @brief Overwrites a sub-rectangle of a texture in place.
+     *
+     * Only the named rectangle travels to the GPU, so adding one glyph to a
+     * 2048x2048 atlas costs a few hundred bytes rather than 16 MB.
+     *
+     * @param[in] handle Texture from createDynamicTexture().
+     * @param[in] x Left edge of the destination rectangle, in pixels.
+     * @param[in] y Top edge of the destination rectangle, in pixels.
+     * @param[in] width Rectangle width in pixels.
+     * @param[in] height Rectangle height in pixels.
+     * @param[in] rgbaPixels Tightly packed @p width * @p height * 4 bytes.
+     *
+     * @note A rectangle reaching outside the texture is rejected, not clamped.
+     */
+    virtual void updateTextureRegion(TextureHandle handle,
+                                     u32 x, u32 y,
+                                     u32 width, u32 height,
+                                     const u8* rgbaPixels) = 0;
+
+    /**
      * @brief Loads a texture from disk (PNG/JPEG/TGA/BMP/...).
      *
      * Never throws and never fails: a missing or corrupt file logs a warning
@@ -288,6 +327,37 @@ public:
      * @param[in] instanceCount Total rendering loops for geometry instancing workflows (defaults to 1).
      */
     virtual void draw(u32 vertexCount, u32 instanceCount = 1) = 0;
+
+    /**
+     * @brief Submits one batch of unlit 2D geometry as a single draw call.
+     *
+     * Runs on a dedicated overlay pipeline, independent of the 3D scene:
+     *  - positions are window pixels with (0,0) at the top-left corner, mapped
+     *    to clip space by an orthographic projection the backend derives from
+     *    the current framebuffer size -- no camera is involved, so a caller
+     *    never has to fold a scene view/projection out of its coordinates;
+     *  - shading is unlit, @c texel * @c vertexColor, so overlays keep their
+     *    exact colour whatever the scene's light is doing;
+     *  - depth testing is off and straight alpha blending is on, so the batch
+     *    composites over everything already drawn this pass;
+     *  - the whole batch becomes one draw call, which is what makes a 500-glyph
+     *    string cost the same as a single quad.
+     *
+     * Vertex and index data are copied into backend-owned dynamic buffers, so
+     * the caller may reuse or destroy its arrays as soon as this returns.
+     *
+     * Must be called between beginRenderPass() and endRenderPass(), after the
+     * scene's own draws. Leaves no 2D state bound: the next 3D draw rebinds its
+     * own pipeline.
+     *
+     * @param[in] vertices Batch vertices in window-pixel space.
+     * @param[in] indices Triangle list into @p vertices.
+     * @param[in] texture Texture sampled by the batch; INVALID_HANDLE draws
+     *        untextured (vertex colour only).
+     */
+    virtual void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
+                             std::span<const u32> indices,
+                             TextureHandle texture) = 0;
 
     /**
      * @brief Sets the clear color for target framebuffers.

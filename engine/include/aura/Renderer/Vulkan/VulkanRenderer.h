@@ -43,6 +43,9 @@ public:
     IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
     TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) override;
+    TextureHandle createDynamicTexture(u32 width, u32 height) override;
+    void updateTextureRegion(TextureHandle handle, u32 x, u32 y,
+                             u32 width, u32 height, const u8* rgbaPixels) override;
 
     void beginFrame() override;
     void beginRenderPass() override;
@@ -56,6 +59,9 @@ public:
     void bindTexture(TextureHandle handle) override;
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
+    void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
+                     std::span<const u32> indices,
+                     TextureHandle texture) override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
 
     wma::IWindowManager* getWindowManager() override;
@@ -92,6 +98,9 @@ private:
     void destroySwapchainResources();
     void createDepthResources();
     void destroyDepthResources();
+    //! No-op when _msaaSamples == VK_SAMPLE_COUNT_1_BIT (MSAA disabled).
+    void createMsaaColorResources();
+    void destroyMsaaColorResources();
     void setupCommandBuffers();
     void createUniformBuffers();
     void createDescriptorSets();
@@ -100,6 +109,37 @@ private:
     //! Records the per-draw state (transform push constants, UBO/light/texture
     //! descriptor sets) shared by drawIndexed() and draw().
     void bindDrawState(VkCommandBuffer cmd);
+
+    /**
+     * @brief Builds the unlit 2D overlay pipeline against the current render
+     *        pass and swapchain extent.
+     *
+     * Called from createDescriptorSets(), so it is rebuilt alongside the 3D
+     * pipeline whenever the swapchain is recreated.
+     */
+    void createOverlay2DPipeline();
+
+    /**
+     * @brief Allocates a descriptor set per swapchain image binding @p handle
+     *        to the overlay pipeline's set 0.
+     *
+     * Separate from updateTextureDescriptorSets(): the two pipelines have
+     * different layouts, so a set allocated for one cannot be bound to the other.
+     */
+    void updateOverlay2DTextureDescriptorSets(TextureHandle handle);
+
+    /**
+     * @brief Grows this frame's overlay vertex/index buffers to fit a batch.
+     *
+     * The buffers are host-visible and persistently mapped, and there is one
+     * pair per frame in flight so that writing this frame's geometry cannot
+     * scribble over a batch the GPU is still reading. They only ever grow, so a
+     * steady-state overlay stops allocating after the first few frames.
+     */
+    void ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes, VkDeviceSize indexBytes);
+
+    //! Destroys every per-frame overlay buffer.
+    void destroyOverlay2DBuffers();
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
     std::unique_ptr<VulkanMemoryManager> _memoryManager;
@@ -120,6 +160,22 @@ private:
     std::unique_ptr<aura3d::vk::VkCommandManager> _vkCommandManager;
     std::unique_ptr<aura3d::vk::VkRenderSyncManager> _vkRenderSyncManager;
 
+    /*
+     * The unlit 2D overlay pipeline: its own shader modules, its own layout
+     * (one combined image sampler in set 0, plus a 64-byte push-constant
+     * projection) and its own fixed-function state (no depth, alpha blending,
+     * no culling). Nothing about it is shared with the 3D pipeline above.
+     */
+    std::unique_ptr<aura3d::vk::VkGraphicsPipelineManager> _vkOverlay2DPipelineManager;
+    VkFixedArray<AllocatedBuffer> _overlay2DVertexBuffers{};
+    VkFixedArray<AllocatedBuffer> _overlay2DIndexBuffers{};
+    VkFixedArray<VkDeviceSize> _overlay2DVertexCapacity{};
+    VkFixedArray<VkDeviceSize> _overlay2DIndexCapacity{};
+    //! Overlay-layout sets, keyed by texture and indexed by swapchain image.
+    std::unordered_map<TextureHandle, std::vector<VkDescriptorSet>> _tex2dDescSets;
+    //! 1x1 opaque white, substituted when a batch asks for no texture.
+    TextureHandle _white2DTexture = INVALID_HANDLE;
+
     VkFixedArray<VkCommandBuffer> _cmdBuffers;
     u32 _currentFrame = 0;
     u32 _currentImageIndex = 0;
@@ -137,6 +193,8 @@ private:
     std::vector<aura3d::vk::QueueData*> _queueDataFromExclusiveFlags;
     u32 _graphicsIndexFamily = 0;
     DepthResources _depth;
+    MsaaColorResources _msaaColor;
+    VkSampleCountFlagBits _msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
     VertexBufferHandle _nextVbHandle = 1;
     IndexBufferHandle _nextIbHandle = 1;

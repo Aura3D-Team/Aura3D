@@ -24,7 +24,7 @@ void CPURenderer::initialize(aura3d::AuraSettings* settings)
     _indexBufferPool.reserve(256);
     _texturePool.reserve(64);
 
-    createWindow(APPLICATION_NAME, wma::WindowBackend::SDL3);
+    createWindow(settings->getWindowTitle().c_str(), wma::WindowBackend::SDL3);
 }
 
 void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
@@ -119,6 +119,59 @@ TextureHandle CPURenderer::createTextureFromPixels(const u8* rgbaPixels, u32 wid
     //! Handle is 1-based so that no valid handle collides with INVALID_HANDLE.
     _texturePool.push_back({ std::move(tex) });
     return static_cast<TextureHandle>(_texturePool.size()); // 1-based
+}
+
+TextureHandle CPURenderer::createDynamicTexture(u32 width, u32 height)
+{
+    if (width == 0 || height == 0)
+    {
+        INK_ERROR << "CPURenderer: refusing to allocate a zero-sized dynamic texture";
+        return INVALID_HANDLE;
+    }
+
+    //! Texture's constructor zero-fills, i.e. transparent black.
+    Texture tex(static_cast<int>(width), static_cast<int>(height));
+    _texturePool.push_back({ std::move(tex) });
+    return static_cast<TextureHandle>(_texturePool.size()); // 1-based
+}
+
+void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
+                                      u32 width, u32 height, const u8* rgbaPixels)
+{
+    if (!rgbaPixels || width == 0 || height == 0)
+        return;
+
+    if (!isValidHandle(handle) || handle > static_cast<TextureHandle>(_texturePool.size()))
+    {
+        INK_ERROR << "CPURenderer: updateTextureRegion on an unknown texture";
+        return;
+    }
+
+    auto& mips = _texturePool[handle - 1];
+    if (mips.empty())
+        return;
+
+    Texture& tex = mips[0];
+    if (x + width > static_cast<u32>(tex.width) || y + height > static_cast<u32>(tex.height))
+    {
+        INK_ERROR << "CPURenderer: updateTextureRegion rectangle exceeds the texture bounds";
+        return;
+    }
+
+    //! Repack RGBA8 rows into the ARGB8888 words the framebuffer samples.
+    for (u32 row = 0; row < height; ++row)
+    {
+        const u8* src = rgbaPixels + static_cast<size_t>(row) * width * 4;
+        u32* dst = tex.data.data() + static_cast<size_t>(y + row) * tex.width + x;
+
+        for (u32 col = 0; col < width; ++col)
+        {
+            dst[col] = (static_cast<u32>(src[col * 4 + 3]) << 24)
+                     | (static_cast<u32>(src[col * 4 + 0]) << 16)
+                     | (static_cast<u32>(src[col * 4 + 1]) <<  8)
+                     |  static_cast<u32>(src[col * 4 + 2]);
+        }
+    }
 }
 
 void CPURenderer::beginFrame()
@@ -341,6 +394,49 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     }
 
     (void)instanceCount;
+}
+
+void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
+                              std::span<const u32> indices,
+                              TextureHandle texture)
+{
+    if (!_frameBufferManager || vertices.empty() || indices.empty())
+        return;
+
+    const Texture* sampled = _resolveTexture(texture);
+
+    /*
+     * No projection matrix is needed here: the batch already arrives in window
+     * pixels, which is precisely the software rasteriser's own coordinate space.
+     * What the GPU backends express as an orthographic matrix is, on this path,
+     * simply the absence of a transform.
+     */
+    const auto toScreenVertex = [](const gfx::Vertex2D& v) noexcept {
+        ScreenVertex sv;
+        sv.x = v.pos.x;
+        sv.y = v.pos.y;
+        sv.z = 0.0f;
+        sv.invW = 1.0f; //! Orthographic: no perspective division.
+        sv.uv = v.texCoord;
+        sv.color = v.color;
+        return sv;
+    };
+
+    const size_t triCount = indices.size() / 3;
+    for (size_t t = 0; t < triCount; ++t)
+    {
+        const u32 i0 = indices[t * 3 + 0];
+        const u32 i1 = indices[t * 3 + 1];
+        const u32 i2 = indices[t * 3 + 2];
+
+        if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())
+            continue;
+
+        _frameBufferManager->drawTriangle2D(toScreenVertex(vertices[i0]),
+                                            toScreenVertex(vertices[i1]),
+                                            toScreenVertex(vertices[i2]),
+                                            sampled);
+    }
 }
 
 } // namespace cpu

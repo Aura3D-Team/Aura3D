@@ -3,19 +3,23 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Core/Camera/Camera.h"
 
+#include <filesystem>
+
 Engine::Engine(const std::string& configPath)
 {
-#ifdef NDEBUG
-    const ink::LogLevel logSeverity = ink::LogLevel::INFO;
-#else
-    const ink::LogLevel logSeverity = ink::LogLevel::TRACE;
-#endif
-
     INK_CORE_LOGGER;
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
-    ink::LogManager::getInstance().setGlobalLevel(logSeverity);
 
     aura3d::AuraSettings::get()->reload(configPath);
+
+    const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
+    ink::LogManager::getInstance().setGlobalLevel(config->getLogLevel());
+    if (config->getLogToFile()) {
+        const std::string logsPath = config->getLogsPath();
+        std::error_code ec;
+        std::filesystem::create_directories(logsPath, ec);
+        ink::LogManager::getInstance().setLogToFile(logsPath + APPLICATION_NAME + ".log");
+    }
 
     _configureWindow();
     _createRenderer();
@@ -36,6 +40,7 @@ void Engine::_configureWindow()
     _windowDetails.width = config->getWindowWidth();
     _windowDetails.height = config->getWindowHeight();
     _windowDetails.resizable = config->getWindowResizable();
+    _windowDetails.fullscreen = config->getFullscreen();
     _windowDetails.vsync = config->getVSync();
     _windowDetails.targetFPS = config->getFPSLimit();
 
@@ -67,7 +72,7 @@ void Engine::_createRenderer()
     // SOFTWARE, so record what we actually ended up with.
     _renderer = aura3d::RendererFactory::create(requested, _windowDetails);
     _rendererChoice = _renderer->getBackendType();
-    aura3d::Camera::setClipSpace(backend == aura3d::RendererChoice::VULKAN
+    aura3d::Camera::setClipSpace(_rendererChoice == aura3d::RendererChoice::VULKAN
                                  ? aura3d::Camera::ClipSpace::Vulkan
                                  : aura3d::Camera::ClipSpace::OpenGL);
 
@@ -112,7 +117,7 @@ void Engine::switchBackend(aura3d::RendererChoice choice)
 
     _renderer = aura3d::RendererFactory::create(resolved, _windowDetails);
     _rendererChoice = _renderer->getBackendType();
-    aura3d::Camera::setClipSpace(backend == aura3d::RendererChoice::VULKAN
+    aura3d::Camera::setClipSpace(_rendererChoice == aura3d::RendererChoice::VULKAN
                                  ? aura3d::Camera::ClipSpace::Vulkan
                                  : aura3d::Camera::ClipSpace::OpenGL);
     _renderer->initialize(aura3d::AuraSettings::get());

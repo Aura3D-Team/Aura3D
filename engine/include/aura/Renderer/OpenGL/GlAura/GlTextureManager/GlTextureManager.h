@@ -34,6 +34,27 @@ public:
      */
     TextureHandle createTextureFromPixels(const u8* rgba, u32 width, u32 height, bool smooth = true);
 
+    /**
+     * @brief Allocates an uninitialised RGBA8 texture meant to be refreshed in
+     *        place by updateRegion().
+     *
+     * Clamp-to-edge wrapping is used rather than the repeat the static path
+     * picks: an atlas is addressed by sub-rectangle, and repeat would wrap a
+     * filtered edge texel round to the opposite side of the sheet.
+     *
+     * @param width  Texture width in pixels.
+     * @param height Texture height in pixels.
+     */
+    TextureHandle createDynamicTexture(u32 width, u32 height);
+
+    /**
+     * @brief Uploads @p rgba into the given sub-rectangle via glTexSubImage2D.
+     *
+     * Rejects (rather than clamps) a rectangle that would reach outside the
+     * texture, since a partial upload would silently corrupt the atlas.
+     */
+    void updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8* rgba);
+
     void bind(TextureHandle handle, GLuint unit = 0);
     GlTextureData* get(TextureHandle handle);
     void cleanup();

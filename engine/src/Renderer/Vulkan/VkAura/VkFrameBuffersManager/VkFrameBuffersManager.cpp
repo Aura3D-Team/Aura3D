@@ -24,18 +24,25 @@ VkFrameBuffersManager::~VkFrameBuffersManager()
 void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& imageViews,
                                                VkRenderPass renderPass,
                                                VkExtent2D frameExtent,
-                                               VkImageView depthImageView)
+                                               VkImageView depthImageView,
+                                               VkImageView colorMsaaView)
 {
     _framebuffers.resize(imageViews.size());
 
     const bool hasDepth = (depthImageView != VK_NULL_HANDLE);
+    const bool useMsaa = (colorMsaaView != VK_NULL_HANDLE);
 
     for (size_t i = 0; i < imageViews.size(); i++)
     {
-        std::vector<VkImageView> attachments = { imageViews[i] };
-        if (hasDepth) {
+        // Order must mirror VkRenderPassManager::createRenderPass:
+        // [color(0), depth(1, optional), resolve(optional, MSAA only)].
+        std::vector<VkImageView> attachments = { useMsaa ? colorMsaaView : imageViews[i] };
+
+        if (hasDepth)
             attachments.push_back(depthImageView);
-        }
+
+        if (useMsaa)
+            attachments.push_back(imageViews[i]);
 
         VkFramebufferCreateInfo framebufferInfo = {};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
