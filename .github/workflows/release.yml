@@ -62,9 +62,7 @@ jobs:
         run: cmake --build build/linux/release --parallel
 
       - name: Install
-        run: >
-          cmake --install build/linux/release
-          --prefix "${{ github.workspace }}/stage/aura3d-linux-x86_64"
+        run: cmake --install build/linux/release --prefix stage/aura3d-linux-x86_64
 
       - name: Package
         run: |
