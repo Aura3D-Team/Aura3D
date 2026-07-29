@@ -43,7 +43,8 @@ nothing, so this doc is deliberately exact about which is which.
     },
     "graphics": {
         "gpu_preference": "discrete",
-        "msaa_samples": 4
+        "msaa_samples": 4,
+        "cpu_threads": 0
     },
     "paths": {
         "shaders": "./resources/shaders/",
@@ -93,12 +94,13 @@ nothing, so this doc is deliberately exact about which is which.
 | `backend` | string | `"vulkan"` | `"vulkan"`, `"opengl"`, or `"cpu"` (also accepts `"software"`). An unsupported value or a backend not compiled in falls back through Vulkan → OpenGL → Software with a warning — see [03-engine-and-renderer.md](03-engine-and-renderer.md#backend-resolution--fallback). |
 | `validation_layers` | bool | `true` in debug builds, `false` in release | Vulkan only. Enables `VK_LAYER_KHRONOS_validation`. |
 
-## `graphics` — live (Vulkan only)
+## `graphics` — live
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `gpu_preference` | string | `"discrete"` | `"discrete"`, `"integrated"`, or `"any"`. Steers Vulkan physical-device selection: `"discrete"`/`"integrated"` add a scoring bonus to that device type, `"any"` drops the type bonus entirely and lets capability (API version, image limits, geometry-shader support) decide alone. |
-| `msaa_samples` | int | 1 | Requested MSAA sample count (`1`, `2`, `4`, `8`, ...). Clamped down to the largest count the selected device actually supports for both color and depth attachments. `1` disables MSAA. Only the Vulkan backend implements this — OpenGL and the CPU backend always render at 1x regardless of this value. |
+| `gpu_preference` | string | `"discrete"` | `"discrete"`, `"integrated"`, or `"any"`. Steers Vulkan physical-device selection: `"discrete"`/`"integrated"` add a scoring bonus to that device type, `"any"` drops the type bonus entirely and lets capability (API version, image limits, geometry-shader support) decide alone. Vulkan only. |
+| `msaa_samples` | int | 1 | Requested MSAA sample count (`1`, `2`, `4`, `8`, ...). Clamped down to the largest count the selected device actually supports for both color and depth attachments. `1` disables MSAA. Only the Vulkan backend implements this — OpenGL and the CPU backend always render at 1x regardless of this value. Vulkan only. |
+| `cpu_threads` | int | 0 | Worker threads the CPU (software) backend's row-band rasterizer splits a frame across. `0` auto-detects via `std::thread::hardware_concurrency()`; a positive value pins the count instead — useful to leave headroom for other processes, or to force single-threaded rendering for profiling. CPU backend only; ignored by Vulkan and OpenGL. |
 
 ## `paths` — live
 
@@ -137,6 +139,7 @@ const aura3d::AuraSettings* settings = engine.getSettings();
 settings->getWindowWidth();      // int
 settings->getRendererBackend();  // std::string
 settings->getMsaaSamples();      // int
+settings->getCpuThreads();       // int (0 = auto-detect)
 settings->getSettings();         // raw ink::EnhancedJson*, for bespoke schemas
                                   // (this is how memory.vma.* reads its own keys)
 ```

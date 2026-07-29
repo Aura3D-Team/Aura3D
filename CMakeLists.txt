@@ -45,27 +45,39 @@ file(GLOB_RECURSE AURA_ENGINE_PRIVATE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/*.c
 )
 
-file(GLOB_RECURSE AURA_ENGINE_PUBLIC_HEADERS
+file(GLOB_RECURSE AURA_ENGINE_ALL_HEADERS
     CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/include/*.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/include/*.h
 )
 
+# A game only ever touches aura3d::IRenderer (obtained from Engine or
+# RendererFactory) plus the backend-agnostic Core/Renderer/Utils API never
+# a concrete VulkanRenderer/OpenGLRenderer/CPURenderer or the manager classes
+# behind it (VkDeviceManager, GlTextureManager, ...). Those per-backend
+# directories are therefore split into their own, non-installed file set below:
+# still compiled and still visible to IDEs, just never copied by `cmake --install`.
+set(AURA_ENGINE_PUBLIC_HEADERS ${AURA_ENGINE_ALL_HEADERS})
+list(FILTER AURA_ENGINE_PUBLIC_HEADERS EXCLUDE REGEX "/engine/include/aura/Renderer/(Vulkan|OpenGL|Software)/")
+
+set(AURA_ENGINE_BACKEND_HEADERS ${AURA_ENGINE_ALL_HEADERS})
+list(FILTER AURA_ENGINE_BACKEND_HEADERS INCLUDE REGEX "/engine/include/aura/Renderer/(Vulkan|OpenGL|Software)/")
+
 # Backends are selected at configure time: drop the sources of any backend that
 # is switched off so their API headers are never required.
 if(NOT AURA_ENABLE_VULKAN)
-    list(FILTER AURA_ENGINE_PRIVATE_SOURCES EXCLUDE REGEX "/engine/src/Renderer/Vulkan/")
-    list(FILTER AURA_ENGINE_PUBLIC_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/Vulkan/")
+    list(FILTER AURA_ENGINE_PRIVATE_SOURCES  EXCLUDE REGEX "/engine/src/Renderer/Vulkan/")
+    list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/Vulkan/")
 endif()
 
 if(NOT AURA_ENABLE_OPENGL)
-    list(FILTER AURA_ENGINE_PRIVATE_SOURCES EXCLUDE REGEX "/engine/src/Renderer/OpenGL/")
-    list(FILTER AURA_ENGINE_PUBLIC_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/OpenGL/")
+    list(FILTER AURA_ENGINE_PRIVATE_SOURCES  EXCLUDE REGEX "/engine/src/Renderer/OpenGL/")
+    list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/OpenGL/")
 endif()
 
 if(NOT AURA_ENABLE_CPU)
-    list(FILTER AURA_ENGINE_PRIVATE_SOURCES EXCLUDE REGEX "/engine/src/Renderer/Software/")
-    list(FILTER AURA_ENGINE_PUBLIC_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/Software/")
+    list(FILTER AURA_ENGINE_PRIVATE_SOURCES  EXCLUDE REGEX "/engine/src/Renderer/Software/")
+    list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/Software/")
 endif()
 
 add_library(Aura3D STATIC)
@@ -80,6 +92,11 @@ target_sources(Aura3D
         TYPE HEADERS
         BASE_DIRS engine/include
         FILES ${AURA_ENGINE_PUBLIC_HEADERS}
+    PRIVATE
+        FILE_SET backend_headers
+        TYPE HEADERS
+        BASE_DIRS engine/include
+        FILES ${AURA_ENGINE_BACKEND_HEADERS}
 )
 
 target_include_directories(Aura3D

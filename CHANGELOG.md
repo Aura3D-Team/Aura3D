@@ -94,3 +94,15 @@ for multi-object 3D scenes.
 - `apps/Sandbox/main.cpp`: a multi-object scene (floor, two spinning cubes, a
   sphere) demonstrating `Camera`, `ResourceManager`, `Material`, and
   per-object `drawMesh`.
+- **CPU backend: multi-threaded rasterization.** `CpuFrameBufferManager`
+  splits a frame's triangles into row-bands, one per hardware thread, and
+  rasterizes every band concurrently (`drawTriangles` / `drawTriangles2D`);
+  previously only the final present blit was parallel, so a several-thousand-
+  triangle mesh rasterized entirely on the calling thread. `graphics.cpu_threads`
+  (`AuraSettings::getCpuThreads()`) pins the worker count; `0` (default)
+  auto-detects via `std::thread::hardware_concurrency()`.
+- Backend-internal headers (`Vk*Manager`, `Gl*Manager`, `VulkanRenderer.h`,
+  `OpenGLRenderer.h`, `CPURenderer.h`, ...) are now excluded from
+  `cmake --install`, matching the "internals stay out of your include path"
+  design principle — a consumer only ever sees `aura3d::IRenderer` and the
+  backend-agnostic `Core`/`Renderer`/`Utils` API.

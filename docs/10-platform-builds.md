@@ -107,6 +107,23 @@ backend and optimization flags per platform as described above — anything
 you pass explicitly for a disabled backend on Android/WASM is silently
 forced back off, not an error.
 
+## Troubleshooting: OpenGL desktop fails to create a window surface
+
+If the OpenGL backend throws `unable to create an EGL window surface` (or
+similar) on Linux while Vulkan and the CPU backend both start fine, this is
+almost always the **environment**, not Aura3D: Vulkan and the CPU backend
+have their own, more forgiving paths to the display (a Vulkan surface
+extension, or SDL's plain software-surface API), while desktop OpenGL asks
+SDL for a full EGL/GLX context — something containerized or virtualized GPU
+setups (Docker with a passthrough/virtual GPU, some remote-desktop or CI
+environments) frequently can't hand out even when Vulkan works perfectly on
+the same machine. Confirm this is what's happening by running the same
+build's Vulkan or CPU backend (`renderer.backend` in `settings.json`) on the
+same machine — if those render normally, the OpenGL failure is a host/EGL
+configuration gap, not a code path to debug in Aura3D. Test the OpenGL
+backend on a real desktop GPU (not inside a container) before relying on it
+for a release.
+
 ## Cross-repo build order
 
 Because Aura3D depends on `libink` and `libwma`, a from-scratch build of the
