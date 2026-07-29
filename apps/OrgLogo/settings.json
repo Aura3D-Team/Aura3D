@@ -1,24 +1,25 @@
 {
     "application": {
-        "name": "Aura3D Game Engine",
+        "name": "Aura3D Organization Logo",
         "version": "1.0.0",
         "headless": false
     },
     "window": {
-        "width": 1920,
-        "height": 1080,
-        "title": "Aura Engine",
-        "resizable": true,
+        "width": 1440,
+        "height": 1024,
+        "title": "Aura3D — Organization Logo",
+        "resizable": false,
         "fullscreen": false,
-        "vsync": false,
-        "fps_limit": 0
+        "vsync": true,
+        "fps_limit": 60
     },
     "renderer": {
-        "backend": "opengl"
+        "backend": "software",
+        "validation_layers": true
     },
     "graphics": {
         "gpu_preference": "discrete",
-        "msaa_samples": 0
+        "msaa_samples": 4
     },
     "paths": {
         "shaders": "./resources/shaders/",
@@ -28,7 +29,7 @@
     },
     "memory": {
         "vma": {
-            "buffer_device_address": false,
+            "buffer_device_address": true,
             "prefer_device_memory": true,
             "persistently_map_upload_buffers": true,
             "vulkan_api_version": "1.4",
@@ -37,6 +38,6 @@
     },
     "logging": {
         "level": "info",
-        "write_to_file": false
+        "write_to_file": true
     }
 }
