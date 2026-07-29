@@ -8,6 +8,7 @@
         "width": 1920,
         "height": 1080,
         "title": "Aura Engine",
+        "backend": "SDL3",
         "resizable": true,
         "fullscreen": false,
         "vsync": false,

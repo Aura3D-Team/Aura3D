@@ -29,7 +29,7 @@ void OpenGLRenderer::initialize(AuraSettings* settings)
 {
     if (_isInitialized) return;
 
-    createWindow(settings->getWindowTitle().c_str(), wma::WindowBackend::SDL3);
+    createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
     loadOpenGLEntryPoints();
     compileBuiltInShaders();
 

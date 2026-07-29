@@ -31,6 +31,7 @@ nothing, so this doc is deliberately exact about which is which.
         "width": 1280,
         "height": 720,
         "title": "My Game",
+        "backend": "SDL3",
         "resizable": true,
         "fullscreen": false,
         "vsync": true,
@@ -81,6 +82,7 @@ nothing, so this doc is deliberately exact about which is which.
 |---|---|---|---|
 | `width`, `height` | int | 1280, 720 | Initial window size. |
 | `title` | string | `"Aura3D"` | Window title, used verbatim by every backend. |
+| `backend` | string | `"SDL3"` | Windowing library `wma` creates the window through: `"SDL3"`, `"GLFW"`, `"X11"`, or `"WAYLAND"` (case-insensitive). SDL3 is the only one exercised by all three renderer backends on every platform this engine targets — pick another only if you have a specific reason to (e.g. testing wma's X11/Wayland backends directly). An unrecognized value falls back to SDL3 with a warning, the same pattern `renderer.backend` uses. |
 | `resizable` | bool | `true` | |
 | `fullscreen` | bool | `false` | |
 | `vsync` | bool | `false` | Legacy on/off switch. When `true` and `vsync_mode` is absent, resolves to `Fifo`. Also zeroes `fps_limit` (the display is the limiter). |
@@ -137,6 +139,7 @@ Configuration for the Vulkan Memory Allocator (VMA), read directly by
 const aura3d::AuraSettings* settings = engine.getSettings();
 
 settings->getWindowWidth();      // int
+settings->getWindowBackend();    // wma::WindowBackend (SDL3/GLFW/X11/WAYLAND)
 settings->getRendererBackend();  // std::string
 settings->getMsaaSamples();      // int
 settings->getCpuThreads();       // int (0 = auto-detect)

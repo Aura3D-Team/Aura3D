@@ -171,13 +171,17 @@ const TextureHandle tex = engine.resources()->loadTexture("crate.png"); // reloa
 
 The CPU backend is a real rasterizer, not a stub: perspective-correct
 barycentric interpolation, a depth buffer, Gouraud shading identical in
-spirit to the GPU backends' lighting model. It presents through the window
-manager's software-framebuffer path (`wma::IWindowManager::lockFramebuffer`/
-`presentFramebuffer`), so it works on any platform wma supports, not just
-one windowing backend.
+spirit to the GPU backends' lighting model. Rasterization is parallel — a
+frame's triangles are split into row-bands, one per worker thread — and it
+presents through the window manager's software-framebuffer path
+(`wma::IWindowManager::lockFramebuffer`/`presentFramebuffer`), so it works
+with any `window.backend` wma supports (see
+[02-project-configuration.md](02-project-configuration.md#window--live)), not
+just one.
 
-Because it has no GPU descriptor limits or pipeline objects, `graphics.*`
-(MSAA, GPU preference) and `renderer.validation_layers` don't apply to it —
-those are Vulkan-specific knobs.
+Because it has no GPU descriptor limits or pipeline objects, `graphics.gpu_preference`,
+`graphics.msaa_samples`, and `renderer.validation_layers` don't apply to it —
+those are Vulkan-specific knobs. `graphics.cpu_threads` is the one `graphics.*`
+key it *does* read: it pins the row-band worker count (`0` auto-detects).
 
 Next: **[04-camera.md](04-camera.md)**.

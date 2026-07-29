@@ -8,6 +8,7 @@
         "width": 1440,
         "height": 1024,
         "title": "Aura3D — Organization Logo",
+        "backend": "SDL3",
         "resizable": false,
         "fullscreen": false,
         "vsync": true,

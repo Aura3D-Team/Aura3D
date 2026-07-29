@@ -7,6 +7,8 @@
 #include <ink/EnhancedJson.h>
 #include <ink/Inkogger.h>
 
+#include <wma/core/Types.hpp>
+
 /**
  * @brief List of supported presentation modes, mirroring WebGPU's PresentMode.
  * Uses X-Macros for synchronized enum and string conversions (see RENDERER_LIST).
@@ -19,7 +21,54 @@
     X(Immediate)        \
     X(Mailbox)
 
+/**
+ * @brief List of windowing backends wma can create a window through.
+ *
+ * Mirrors @c wma::WindowBackend (defined in libwma's core/Types.hpp, not
+ * here) rather than declaring a fresh enum -- unlike VSYNC_MODE_LIST, which
+ * owns the type it enumerates, this list only owns the string<->enum mapping
+ * for a type the engine doesn't control. Keep in sync with wma::WindowBackend
+ * by hand; there's no way to generate one from the other across the library
+ * boundary.
+ */
+#define WINDOW_BACKEND_LIST \
+    X(GLFW)                 \
+    X(SDL3)                 \
+    X(X11)                  \
+    X(WAYLAND)
+
 namespace aura3d {
+
+/**
+ * @brief Converts a string representation to a wma::WindowBackend. Case-insensitive.
+ * @return true if the string matches a known backend, false otherwise.
+ */
+inline bool WindowBackendFromString(const std::string& s, wma::WindowBackend& out)
+{
+    std::string up;
+    up.reserve(s.size());
+    for (const char c : s) up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+#define X(name) if (up == #name) { out = wma::WindowBackend::name; return true; }
+    WINDOW_BACKEND_LIST
+#undef X
+
+    return false;
+}
+
+/**
+ * @brief Converts a wma::WindowBackend to its exact string representation.
+ */
+inline const char* WindowBackendToString(wma::WindowBackend backend)
+{
+    switch (backend)
+    {
+#define X(name) case wma::WindowBackend::name: return #name;
+        WINDOW_BACKEND_LIST
+#undef X
+    }
+    return "UNKNOWN";
+}
 
 /**
  * @brief Strongly-typed enum selecting how the swapchain presents frames.
@@ -93,6 +142,11 @@ public:
     int         getWindowWidth()     const;   //! default 1280
     int         getWindowHeight()    const;   //! default 720
     std::string getWindowTitle()     const;   //! default "Aura3D"
+    //! Windowing library backend wma creates the window through. Default
+    //! "SDL3" -- the only backend all three of Vulkan/OpenGL/CPU exercise on
+    //! every platform this engine targets. An unrecognized value falls back
+    //! to SDL3 with a warning, the same pattern getRendererBackend() uses.
+    wma::WindowBackend getWindowBackend() const;
     bool        getWindowResizable() const;   //! default true
     bool        getFullscreen()      const;   //! default false
     bool        getVSync()           const;   //! default false

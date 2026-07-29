@@ -25,7 +25,7 @@ void CPURenderer::initialize(aura3d::AuraSettings* settings)
     _indexBufferPool.reserve(256);
     _texturePool.reserve(64);
 
-    createWindow(settings->getWindowTitle().c_str(), wma::WindowBackend::SDL3);
+    createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
 }
 
 void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)

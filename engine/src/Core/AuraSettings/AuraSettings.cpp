@@ -37,6 +37,19 @@ std::string AuraSettings::getWindowTitle() const
     return _settings.getPath<std::string>("/window/title", APPLICATION_NAME);
 }
 
+wma::WindowBackend AuraSettings::getWindowBackend() const
+{
+    const std::string backendStr = _settings.getPath<std::string>("/window/backend", "SDL3");
+
+    wma::WindowBackend backend;
+    if (WindowBackendFromString(backendStr, backend))
+        return backend;
+
+    INK_WARN << "AuraSettings: unsupported window backend '" << backendStr
+             << "'; falling back to SDL3";
+    return wma::WindowBackend::SDL3;
+}
+
 bool AuraSettings::getWindowResizable() const
 {
     return _settings.getPath<bool>("/window/resizable", true);
