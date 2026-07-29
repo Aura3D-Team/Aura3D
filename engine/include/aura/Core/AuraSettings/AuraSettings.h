@@ -110,6 +110,13 @@ public:
     std::string getGpuPreference()    const;  //! "discrete" | "integrated" | "any", default "discrete"
     int         getMsaaSamples()      const;  //! default 1 (off); clamped to the device's max supported count
 
+    //! CPU (software) backend
+    //! Worker threads the row-band rasteriser splits a frame across. 0 (the
+    //! default) auto-detects via std::thread::hardware_concurrency(); any
+    //! positive value pins the count instead (useful to leave headroom for
+    //! other processes, or to force single-threaded rendering for profiling).
+    int getCpuThreads() const;
+
     //! Paths
     std::string getShadersPath()  const;      //! default "./resources/shaders/"
     std::string getTexturesPath() const;      //! default "./resources/textures/"

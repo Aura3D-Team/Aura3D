@@ -975,14 +975,15 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
         cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &texIt->second[_currentImageIndex], 0, nullptr);
 
     /*
-     * Window pixels -> clip space. Vulkan's NDC has Y growing downwards, which
-     * is the same direction as pixel rows, so bottom=0/top=height maps pixel
-     * (0,0) to the top-left corner with no flip. _ZO because Vulkan's depth
+     * Window pixels -> clip space. cmdIndexedDraw() sets a negative-height
+     * viewport (see its comment) so every Vulkan draw shares OpenGL/GLM's
+     * Y-up NDC convention; bottom=height/top=0 is exactly the same swap the
+     * OpenGL overlay path uses for that reason. _ZO because Vulkan's depth
      * range is [0,1]; the actual depth is irrelevant with the test disabled.
      */
     const glm::mat4 projection = glm::orthoRH_ZO(
         0.0f, static_cast<f32>(extent.width),
-        0.0f, static_cast<f32>(extent.height),
+        static_cast<f32>(extent.height), 0.0f,
         0.0f, 1.0f);
 
     _vkOverlay2DPipelineManager->cmdPushConstants(cmd, &projection);

@@ -3,6 +3,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "aura/aura.h"
+#include "aura/Core/AuraSettings/AuraSettings.h"
 
 namespace aura3d {
 namespace cpu {
@@ -37,8 +38,14 @@ void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBac
     cfg.width  = _windowDetails.width;
     cfg.height = _windowDetails.height;
     cfg.useDepthBuffer = true;
+    //! 0 (the JSON default) auto-detects inside CpuFrameBufferManager; a
+    //! positive value pins the row-band rasteriser to that many threads.
+    cfg.threadCount = aura3d::AuraSettings::get()->getCpuThreads();
 
     _frameBufferManager = std::make_unique<CpuFrameBufferManager>(*_windowManagerApi, cfg);
+
+    INK_INFO << "CPURenderer: rasterising across "
+             << _frameBufferManager->getWorkerCount() << " worker thread(s)";
 }
 
 void CPURenderer::handleWindowChanges()
@@ -338,6 +345,16 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     const u32 safeCount = std::min(indexCount, static_cast<u32>(indices.size()));
     const u32 triCount  = safeCount / 3;
 
+    /*
+     * Project every triangle first and rasterise the whole list in one
+     * dispatchRowBands() call, rather than one dispatch per triangle: with the
+     * list in hand, the framebuffer can be split into row-bands once and every
+     * core rasterises across the full mesh concurrently, instead of the work
+     * staying serialised on this thread one triangle at a time.
+     */
+    std::vector<ScreenTriangle> triangles;
+    triangles.reserve(triCount);
+
     for (u32 t = 0; t < triCount; ++t)
     {
         const u32 i0 = indices[t * 3    ];
@@ -352,11 +369,13 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
         const auto sv2 = projectVertex(verts[i2], MVP, normalMatrix, _light, W, H);
 
         // Skip triangles with any vertex behind the near plane.
-        if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f) 
+        if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
             continue;
 
-        _frameBufferManager->drawTriangle(sv0, sv1, sv2, texture);
+        triangles.push_back({sv0, sv1, sv2});
     }
+
+    _frameBufferManager->drawTriangles(triangles, texture);
 
     (void)instanceCount;
 }
@@ -381,17 +400,22 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     const u32 safeCount = std::min(vertexCount, static_cast<u32>(verts.size()));
     const u32 triCount  = safeCount / 3;
 
+    std::vector<ScreenTriangle> triangles;
+    triangles.reserve(triCount);
+
     for (u32 t = 0; t < triCount; ++t)
     {
         const auto sv0 = projectVertex(verts[t * 3    ], MVP, normalMatrix, _light, W, H);
         const auto sv1 = projectVertex(verts[t * 3 + 1], MVP, normalMatrix, _light, W, H);
         const auto sv2 = projectVertex(verts[t * 3 + 2], MVP, normalMatrix, _light, W, H);
 
-        if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f) 
+        if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
             continue;
 
-        _frameBufferManager->drawTriangle(sv0, sv1, sv2, texture);
+        triangles.push_back({sv0, sv1, sv2});
     }
+
+    _frameBufferManager->drawTriangles(triangles, texture);
 
     (void)instanceCount;
 }
@@ -423,6 +447,9 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     };
 
     const size_t triCount = indices.size() / 3;
+    std::vector<ScreenTriangle> triangles;
+    triangles.reserve(triCount);
+
     for (size_t t = 0; t < triCount; ++t)
     {
         const u32 i0 = indices[t * 3 + 0];
@@ -432,11 +459,12 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
         if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())
             continue;
 
-        _frameBufferManager->drawTriangle2D(toScreenVertex(vertices[i0]),
-                                            toScreenVertex(vertices[i1]),
-                                            toScreenVertex(vertices[i2]),
-                                            sampled);
+        triangles.push_back({toScreenVertex(vertices[i0]),
+                             toScreenVertex(vertices[i1]),
+                             toScreenVertex(vertices[i2])});
     }
+
+    _frameBufferManager->drawTriangles2D(triangles, sampled);
 }
 
 } // namespace cpu

@@ -3,12 +3,13 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <future>
+#include <thread>
 #include <vector>
 
+#include <ink/ThreadPool.h>
 #include <wma/managers/IWindowManager.hpp>
 #include <wma/rendering/SoftwareRenderer.hpp>
-
-#include "aura/Core/AuraException/AuraException.h"
 
 namespace aura3d {
 namespace cpu {
@@ -18,15 +19,18 @@ namespace cpu {
  * to the wma window manager, so no backend (SDL/X11/Wayland) objects are owned
  * here; wma::IWindowManager::lockFramebuffer() hands us the surface each frame.
  * @param windowManager wma window created with GraphicsAPI::CPU.
- * @param config        Width, height, and depth-buffer settings.
+ * @param config        Width, height, depth-buffer and worker-count settings.
  */
 CpuFrameBufferManager::CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config) :
     settings(config),
     // Initialize framebuffer with Pixel objects: black color (0) and max depth (1.0f)
     framebuffer(static_cast<size_t>(config.width) * static_cast<size_t>(config.height), Pixel{0, 1.0f}),
     _windowManager(&windowManager),
+    _rasterPool(std::make_unique<ink::ThreadPool>(static_cast<size_t>(_workerCount))),
     _font(GetDefaultBitmapFont())
 {
+    const unsigned count = std::thread::hardware_concurrency();
+    _workerCount = config.threadCount > 0 ? config.threadCount : count > 0 ? static_cast<i32>(count) : 1;
 }
 
 /**
@@ -326,13 +330,20 @@ void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point>& points, 
 void CpuFrameBufferManager::drawTriangle(const ScreenVertex& v0, const ScreenVertex& v1,
                                          const ScreenVertex& v2, const Texture* texture)
 {
-    // bbox
+    rasterizeTriangleSpan(v0, v1, v2, texture, 0, settings.height);
+}
+
+void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex& v0, const ScreenVertex& v1,
+                                                   const ScreenVertex& v2, const Texture* texture,
+                                                   i32 yStart, i32 yEnd)
+{
+    // bbox, additionally clipped to [yStart, yEnd) -- the caller's row-band.
     const int xmin = std::max(0, (int)std::floor(std::min({v0.x, v1.x, v2.x})));
     const int xmax = std::min(settings.width - 1, (int)std::ceil(std::max({v0.x, v1.x, v2.x})));
-    const int ymin = std::max(0, (int)std::floor(std::min({v0.y, v1.y, v2.y})));
-    const int ymax = std::min(settings.height- 1, (int)std::ceil(std::max({v0.y, v1.y, v2.y})));
+    const int ymin = std::max(yStart, (int)std::floor(std::min({v0.y, v1.y, v2.y})));
+    const int ymax = std::min(yEnd - 1, (int)std::ceil(std::max({v0.y, v1.y, v2.y})));
 
-    if (xmin > xmax || ymin > ymax) 
+    if (xmin > xmax || ymin > ymax)
         return;
 
     // Signed area (2×) also serves as the edge-function denominator
@@ -433,10 +444,17 @@ void CpuFrameBufferManager::drawTriangle(const ScreenVertex& v0, const ScreenVer
 void CpuFrameBufferManager::drawTriangle2D(const ScreenVertex& v0, const ScreenVertex& v1,
                                            const ScreenVertex& v2, const Texture* texture)
 {
+    rasterizeTriangle2DSpan(v0, v1, v2, texture, 0, settings.height);
+}
+
+void CpuFrameBufferManager::rasterizeTriangle2DSpan(const ScreenVertex& v0, const ScreenVertex& v1,
+                                                     const ScreenVertex& v2, const Texture* texture,
+                                                     i32 yStart, i32 yEnd)
+{
     const int xmin = std::max(0, static_cast<int>(std::floor(std::min({v0.x, v1.x, v2.x}))));
     const int xmax = std::min(settings.width - 1, static_cast<int>(std::ceil(std::max({v0.x, v1.x, v2.x}))));
-    const int ymin = std::max(0, static_cast<int>(std::floor(std::min({v0.y, v1.y, v2.y}))));
-    const int ymax = std::min(settings.height - 1, static_cast<int>(std::ceil(std::max({v0.y, v1.y, v2.y}))));
+    const int ymin = std::max(yStart, static_cast<int>(std::floor(std::min({v0.y, v1.y, v2.y}))));
+    const int ymax = std::min(yEnd - 1, static_cast<int>(std::ceil(std::max({v0.y, v1.y, v2.y}))));
 
     if (xmin > xmax || ymin > ymax)
         return;
@@ -518,6 +536,60 @@ void CpuFrameBufferManager::drawTriangle2D(const ScreenVertex& v0, const ScreenV
                                  |  static_cast<u32>(outB);
         }
     }
+}
+
+void CpuFrameBufferManager::dispatchRowBands(const std::function<void(i32 yStart, i32 yEnd)>& rasterizeBand)
+{
+    if (settings.height <= 0)
+        return;
+
+    const i32 bands = std::min(_workerCount, settings.height);
+    const i32 rowsPerBand = settings.height / bands;
+    const i32 remainder = settings.height % bands;
+
+    std::vector<std::future<void>> futures;
+    futures.reserve(static_cast<size_t>(bands));
+
+    i32 y = 0;
+    for (i32 b = 0; b < bands; ++b)
+    {
+        //! Distribute the remainder across the first `remainder` bands rather
+        //! than dumping it all on the last one, so no single thread is left
+        //! with a visibly taller slice than its neighbours.
+        const i32 bandRows = rowsPerBand + (b < remainder ? 1 : 0);
+        const i32 yStart = y;
+        const i32 yEnd = y + bandRows;
+        y = yEnd;
+
+        futures.push_back(_rasterPool->submit([&rasterizeBand, yStart, yEnd] {
+            rasterizeBand(yStart, yEnd);
+        }));
+    }
+
+    for (auto& f : futures)
+        f.get();
+}
+
+void CpuFrameBufferManager::drawTriangles(std::span<const ScreenTriangle> triangles, const Texture* texture)
+{
+    if (triangles.empty())
+        return;
+
+    dispatchRowBands([this, triangles, texture](i32 yStart, i32 yEnd) {
+        for (const ScreenTriangle& tri : triangles)
+            rasterizeTriangleSpan(tri.v0, tri.v1, tri.v2, texture, yStart, yEnd);
+    });
+}
+
+void CpuFrameBufferManager::drawTriangles2D(std::span<const ScreenTriangle> triangles, const Texture* texture)
+{
+    if (triangles.empty())
+        return;
+
+    dispatchRowBands([this, triangles, texture](i32 yStart, i32 yEnd) {
+        for (const ScreenTriangle& tri : triangles)
+            rasterizeTriangle2DSpan(tri.v0, tri.v1, tri.v2, texture, yStart, yEnd);
+    });
 }
 
 /**

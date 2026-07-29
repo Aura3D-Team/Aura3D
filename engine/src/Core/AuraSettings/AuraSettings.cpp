@@ -101,6 +101,11 @@ int AuraSettings::getMsaaSamples() const
     return _settings.getPath<int>("/graphics/msaa_samples", 1);
 }
 
+int AuraSettings::getCpuThreads() const
+{
+    return _settings.getPath<int>("/graphics/cpu_threads", 0);
+}
+
 std::string AuraSettings::getShadersPath() const
 {
     return _settings.getPath<std::string>("/paths/shaders", "./resources/shaders/");

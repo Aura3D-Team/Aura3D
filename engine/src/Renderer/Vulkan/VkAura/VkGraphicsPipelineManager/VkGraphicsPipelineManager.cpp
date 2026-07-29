@@ -307,7 +307,19 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     //! Screen-space overlay quads have no meaningful facing, so culling them
     //! would drop whichever winding the batch happened to emit.
     rasterizer.cullMode = options.cullBackFaces ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    /*
+     * The dynamic viewport this pipeline is bound with (cmdIndexedDraw() /
+     * cmdDraw()) uses a negative height to flip Y into GLM's convention (see
+     * the comment there). That flip mirrors every triangle's 2D footprint in
+     * framebuffer space, which reverses the winding the rasterizer measures:
+     * geometry authored clockwise now arrives counter-clockwise on screen.
+     * VK_FRONT_FACE_COUNTER_CLOCKWISE compensates so cullBackFaces still
+     * culls the actual back faces instead of the front ones -- without it, a
+     * single-sided mesh like a ground plane is entirely invisible (its one
+     * visible face is exactly the one now getting culled), while a closed
+     * mesh like a cube just silently shows its inside instead of its outside.
+     */
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasSlopeFactor = 0.0f;
     rasterizer.depthBiasConstantFactor = 0.0f;
@@ -433,9 +445,21 @@ void VkGraphicsPipelineManager::cmdIndexedDraw(VkCommandBuffer commandBuffer,
     // Set dynamic viewport and scissor
     VkViewport viewport = {};
     viewport.x = 0.0f;
-    viewport.y = 0.0f;
+    /*
+     * Negative-height viewport (core since Vulkan 1.1 / VK_KHR_maintenance1):
+     * flips the NDC-to-framebuffer Y mapping so that NDC -1 lands at the
+     * *top* of the image, matching OpenGL/GLM's Y-up convention instead of
+     * Vulkan's native Y-down NDC. Without this, every mesh drawn with a
+     * GLM-built (Y-up) projection -- which is what Camera::perspective()/
+     * ortho() produce -- renders vertically mirrored: geometry below the
+     * camera (e.g. a floor) appears at the top of the screen instead of the
+     * bottom. Mirroring the image also mirrors the 2D winding the rasterizer
+     * measures for every triangle, which is why createPipeline() sets
+     * VK_FRONT_FACE_COUNTER_CLOCKWISE to compensate -- see the comment there.
+     */
+    viewport.y = static_cast<f32>(extent.height);
     viewport.width = static_cast<f32>(extent.width);
-    viewport.height = static_cast<f32>(extent.height);
+    viewport.height = -static_cast<f32>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -459,9 +483,10 @@ void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer,
     // Set dynamic viewport and scissor
     VkViewport viewport = {};
     viewport.x = 0.0f;
-    viewport.y = 0.0f;
+    //! Same Y-flip as cmdIndexedDraw(); see the comment there.
+    viewport.y = static_cast<f32>(extent.height);
     viewport.width = static_cast<f32>(extent.width);
-    viewport.height = static_cast<f32>(extent.height);
+    viewport.height = -static_cast<f32>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);

@@ -6,6 +6,7 @@
 #include "aura/Core/Camera/Camera.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
 #include "aura/Core/ResourceManager/ResourceManager.h"
+#include "aura/Core/TextOverlay/TextOverlay.h"
 #include "aura/Renderer/IRenderer.h"
 #include "aura/Renderer/Material.h"
 #include "aura/Utils/ColorsDefinitions.h"
@@ -78,7 +79,7 @@ int main()
     bindHeld(wma::KEY_SPACE, moveUp);
     bindHeld(wma::KEY_LEFT_SHIFT, moveDown);
 
-    //- light
+    // light
     gfx::LightUBO light;
     light.direction = {-0.4f, -1.0f, -0.5f}; // the way the light travels
     light.color = {1.0f, 0.98f, 0.92f, 1.0f};
@@ -125,6 +126,13 @@ int main()
     const colors::RGBf clear = colors::MIDNIGHT_BLUE_F;
     r->setClearColor(clear.r, clear.g, clear.b, 1.0f);
 
+    // Built once: allocates the glyph atlas texture. Characters are rasterized
+    // into it the first time they are drawn, and each string then costs a
+    // single batched draw call on the renderer's unlit 2D pipeline.
+    TextOverlayDesc overlayDesc;
+    overlayDesc.pixelHeight = 18.0f;
+    TextOverlay overlay(r, overlayDesc);
+
     // Seed view/projection before the first beginRenderPass, which is what
     // uploads them for the frame.
     r->setTransform(camera.buildUBO());
@@ -156,17 +164,18 @@ int main()
         if (moveDown)
             moveDir -= glm::vec3(0.0f, 1.0f, 0.0f);
 
-        if (glm::length(moveDir) > 0.0f) {
+        if (glm::length(moveDir) > 0.0f)
             camera.setPosition(camera.position() + glm::normalize(moveDir) * kMoveSpeed * dt);
-        }
 
         r->beginRenderPass();
 
-        for (const SceneObject& object : scene) {
+        for (const SceneObject& object : scene)
+        {
             glm::mat4 model = glm::translate(glm::mat4(1.0f), object.position);
-            if (object.spinSpeed != 0.0f) {
+
+            if (object.spinSpeed != 0.0f)
                 model = glm::rotate(model, elapsed * object.spinSpeed, glm::vec3(0.0f, 1.0f, 0.0f));
-            }
+
             model = glm::scale(model, object.scale);
 
             // One transform per object: the per-draw path the renderer feeds to
@@ -175,6 +184,11 @@ int main()
             r->bindMaterial(object.material);
             r->drawMesh(object.mesh);
         }
+
+        // The 2D pipeline supplies its own orthographic projection, so the
+        // overlay needs nothing from the scene camera and leaves the scene's
+        // transform untouched.
+        overlay.drawFPS(10.0f, 10.0f);
 
         r->endRenderPass();
     });
