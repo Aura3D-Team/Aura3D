@@ -1,0 +1,202 @@
+name: Release
+
+# Triggered by pushing a version tag, e.g.:
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Builds libAura3D.a (+ public headers) for Linux and Android, and the WASM
+# pkg/ output, then attaches one archive per platform to a GitHub Release.
+# These are separate binaries for separate toolchains/ABIs -- there is no
+# single artifact that covers all three (see docs/10-platform-builds.md).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-from-tag \
+            --draft
+
+  linux-release:
+    name: Package Linux
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: arthurrl/vulkan-dev:lts
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build/linux/release -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DAURA_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build/linux/release --parallel
+
+      - name: Install
+        run: >
+          cmake --install build/linux/release
+          --prefix "${{ github.workspace }}/stage/aura3d-linux-x86_64"
+
+      - name: Package
+        run: |
+          tar -C stage -czf aura3d-${{ github.ref_name }}-linux-x86_64.tar.gz \
+            aura3d-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: aura3d-${{ github.ref_name }}-linux-x86_64.tar.gz
+          retention-days: 1
+
+  android-release:
+    name: Package Android
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: arthurrl/vulkan-dev:lts
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        # Mirrors ci.yml's android-build job -- see its Configure step for why
+        # CMAKE_PREFIX_PATH/CMAKE_FIND_ROOT_PATH_MODE_PACKAGE are set this way.
+        run: >
+          cmake -S . -B build-android
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake
+          -DANDROID_ABI=arm64-v8a
+          -DANDROID_PLATFORM=android-29
+          -DANDROID_STL=c++_shared
+          -DCMAKE_BUILD_TYPE=Release
+          -DAURA_BUILD_TESTS=OFF
+          -DCMAKE_PREFIX_PATH="/usr/local/android;/usr/local"
+          -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
+
+      - name: Build
+        run: cmake --build build-android --parallel
+
+      - name: Stage
+        # cmake/Install.cmake skips install() entirely for Android (the .a
+        # is meant to be linked into a host app's own build, not installed
+        # to a system prefix), so stage the static lib + public headers by
+        # hand instead of `cmake --install`.
+        run: |
+          STAGE="stage/aura3d-android-arm64-v8a"
+          mkdir -p "$STAGE/lib"
+          cp build-android/libAura3D.a "$STAGE/lib/"
+          cp -r engine/include "$STAGE/include"
+
+      - name: Package
+        run: |
+          tar -C stage -czf aura3d-${{ github.ref_name }}-android-arm64-v8a.tar.gz \
+            aura3d-android-arm64-v8a
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-arm64-v8a
+          path: aura3d-${{ github.ref_name }}-android-arm64-v8a.tar.gz
+          retention-days: 1
+
+  wasm-release:
+    name: Package WASM
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: arthurrl/vulkan-dev:lts
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        # Same nlohmann_json fix as ci.yml's wasm-build job -- see its
+        # Configure step comment.
+        run: |
+          source /opt/emsdk/emsdk_env.sh
+          emcmake cmake -S . -B build-wasm \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAURA_BUILD_TESTS=OFF \
+            -DCMAKE_PREFIX_PATH="/usr/local/wasm;/usr/local" \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
+
+      - name: Build
+        run: |
+          source /opt/emsdk/emsdk_env.sh
+          cmake --build build-wasm --parallel
+
+      - name: Stage
+        run: |
+          STAGE="stage/aura3d-wasm"
+          mkdir -p "$STAGE"
+          cp build-wasm/pkg/Aura3D.js build-wasm/pkg/Aura3D.wasm "$STAGE/"
+          cp index.html "$STAGE/"
+
+      - name: Package
+        run: |
+          tar -C stage -czf aura3d-${{ github.ref_name }}-wasm.tar.gz aura3d-wasm
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: aura3d-${{ github.ref_name }}-wasm.tar.gz
+          retention-days: 1
+
+  publish-release:
+    name: Publish release
+    needs: [linux-release, android-release, wasm-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload assets and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" artifacts/*/*.tar.gz \
+            --repo "${{ github.repository }}"
+          gh release edit "${{ github.ref_name }}" --draft=false \
+            --repo "${{ github.repository }}"
