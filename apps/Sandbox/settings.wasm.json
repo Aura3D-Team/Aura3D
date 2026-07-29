@@ -1,0 +1,43 @@
+{
+    "application": {
+        "name": "Aura3D Game Engine",
+        "version": "1.0.0",
+        "headless": false
+    },
+    "window": {
+        "width": 1920,
+        "height": 1080,
+        "title": "Aura Engine",
+        "backend": "SDL3",
+        "resizable": true,
+        "fullscreen": false,
+        "vsync": false,
+        "fps_limit": 0
+    },
+    "renderer": {
+        "backend": "opengl"
+    },
+    "graphics": {
+        "gpu_preference": "discrete",
+        "msaa_samples": 0
+    },
+    "paths": {
+        "shaders": "./resources/shaders/",
+        "textures": "./resources/textures/",
+        "models": "./resources/models/",
+        "logs": "./logs/"
+    },
+    "memory": {
+        "vma": {
+            "buffer_device_address": false,
+            "prefer_device_memory": true,
+            "persistently_map_upload_buffers": true,
+            "vulkan_api_version": "1.4",
+            "preferred_large_heap_block_size_mb": 128
+        }
+    },
+    "logging": {
+        "level": "info",
+        "write_to_file": false
+    }
+}

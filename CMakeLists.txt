@@ -1,370 +1,205 @@
-cmake_minimum_required(VERSION 4.2.3)
+cmake_minimum_required(VERSION 4.3.3)
 
 project(Aura3D
     VERSION 1.0.0
-    DESCRIPTION "Aura3D — Configurable Multi-Backend Engine"
+    DESCRIPTION "Aura3D Multi Backend Engine"
     LANGUAGES C CXX
 )
 
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# NOTE: option() is option(<var> "<help>" [initial-value]). Passing the value
+# where the help string belongs silently defaults the option to OFF, which
+# previously disabled every renderer backend.
+option(AURA_BUILD_SANDBOX   "Build the Sandbox demo application"   ON)
+option(AURA_INSTALL_SANDBOX "Install the Sandbox demo application" OFF)
+option(AURA_BUILD_ORGLOGO   "Build the OrgLogo demo application"   ON)
+option(AURA_BUILD_TESTS     "Build the automated test suite"       OFF)
 
-# =================================================================
-# Options
-# =================================================================
-option(BUILD_SHARED_LIBS       "Build shared libraries"              OFF)
-option(AURA_BUILD_SANDBOX      "Build Sandbox executable"            ON)
-option(AURA_INSTALL_SANDBOX    "Install Sandbox executable"          OFF)
+option(AURA_ENABLE_VULKAN "Compile the Vulkan backend"            ON)
+option(AURA_ENABLE_OPENGL "Compile the OpenGL backend"            ON)
+option(AURA_ENABLE_CPU    "Compile the software (CPU) backend"    ON)
 
-option(AURA_ENABLE_VULKAN      "Enable Vulkan backend"               ON)
-option(AURA_ENABLE_OPENGL      "Enable OpenGL backend"               ON)
-option(AURA_ENABLE_CPU         "Enable CPU renderer backend"         ON)
+option(AURA_ENABLE_LTO      "Enable link-time optimization"       ON)
+option(AURA_NATIVE_OPTIMIZE "Tune codegen for the host CPU"       ON)
 
-option(AURA_ENABLE_LTO         "Enable LTO in Release builds"        ON)
-option(AURA_NATIVE_OPTIMIZE    "Use -march=native in Release builds" ON)
+# WASM (Emscripten) output. Only meaningful for the Sandbox target when
+# EMSCRIPTEN; see apps/Sandbox/CMakeLists.txt for how these are consumed.
+option(AURA_WASM_ASYNCIFY "Enable Emscripten Asyncify (needed if the app ever blocks synchronously; costs size/speed)" OFF)
+set(AURA_WASM_OUTPUT_NAME "Aura3D" CACHE STRING "Base filename (no extension) for the WASM Sandbox build's pkg/ output")
 
-if(NOT (AURA_ENABLE_VULKAN OR AURA_ENABLE_OPENGL OR AURA_ENABLE_CPU))
-    message(FATAL_ERROR "At least one Aura3D renderer backend must be enabled")
-endif()
+include(cmake/Platform.cmake)
+include(cmake/Dependencies.cmake)
+include(cmake/Assets.cmake)
 
-# =================================================================
-# Dependencies
-# =================================================================
-find_package(Threads REQUIRED)
-find_package(wma CONFIG REQUIRED)
-find_package(ink CONFIG REQUIRED)
-
-if(AURA_ENABLE_OPENGL)
-    find_package(OpenGL REQUIRED)
-endif()
-
-if(AURA_ENABLE_VULKAN)
-    find_package(Vulkan REQUIRED)
-endif()
-
-# =================================================================
-# Engine sources
-# =================================================================
-file(GLOB_RECURSE AURA_ENGINE_PRIVATE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/engine/src/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/engine/src/*.c"
-)
-
-file(GLOB_RECURSE AURA_ENGINE_PUBLIC_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/*.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/*.h"
-)
-
-if(NOT AURA_ENGINE_PRIVATE_SOURCES)
-    message(FATAL_ERROR "Aura3D source list is empty. Check engine/src.")
-endif()
-
-if(NOT AURA_ENGINE_PUBLIC_HEADERS)
-    message(FATAL_ERROR "Aura3D public header list is empty. Check engine/include.")
-endif()
-
-# =================================================================
-# GLAD source check
-# =================================================================
-if(AURA_ENABLE_OPENGL)
-    set(AURA_GLAD_SOURCE
-        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/glad.c"
-    )
-
-    set(AURA_GLAD_INCLUDE_DIR
-        "${CMAKE_CURRENT_SOURCE_DIR}/vendor"
-    )
-endif()
-
-# =================================================================
+################################################################################
 # Engine library
-# =================================================================
-add_library(Aura3D STATIC)
-add_library(Aura3D::Aura3D ALIAS Aura3D)
+################################################################################
 
-target_compile_features(Aura3D PUBLIC cxx_std_17)
-
-set_target_properties(Aura3D PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    EXPORT_NAME Aura3D
-    POSITION_INDEPENDENT_CODE ON
+file(GLOB_RECURSE AURA_ENGINE_PRIVATE_SOURCES
+    CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/*.c
 )
+
+file(GLOB_RECURSE AURA_ENGINE_ALL_HEADERS
+    CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/include/*.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/include/*.h
+)
+
+# A game only ever touches aura3d::IRenderer (obtained from Engine or
+# RendererFactory) plus the backend-agnostic Core/Renderer/Utils API never
+# a concrete VulkanRenderer/OpenGLRenderer/CPURenderer or the manager classes
+# behind it (VkDeviceManager, GlTextureManager, ...). Those per-backend
+# directories are therefore split into their own, non-installed file set below:
+# still compiled and still visible to IDEs, just never copied by `cmake --install`.
+set(AURA_ENGINE_PUBLIC_HEADERS ${AURA_ENGINE_ALL_HEADERS})
+list(FILTER AURA_ENGINE_PUBLIC_HEADERS EXCLUDE REGEX "/engine/include/aura/Renderer/(Vulkan|OpenGL|Software)/")
+
+set(AURA_ENGINE_BACKEND_HEADERS ${AURA_ENGINE_ALL_HEADERS})
+list(FILTER AURA_ENGINE_BACKEND_HEADERS INCLUDE REGEX "/engine/include/aura/Renderer/(Vulkan|OpenGL|Software)/")
+
+# Backends are selected at configure time: drop the sources of any backend that
+# is switched off so their API headers are never required.
+if(NOT AURA_ENABLE_VULKAN)
+    list(FILTER AURA_ENGINE_PRIVATE_SOURCES  EXCLUDE REGEX "/engine/src/Renderer/Vulkan/")
+    list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/Vulkan/")
+endif()
+
+if(NOT AURA_ENABLE_OPENGL)
+    list(FILTER AURA_ENGINE_PRIVATE_SOURCES  EXCLUDE REGEX "/engine/src/Renderer/OpenGL/")
+    list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/OpenGL/")
+endif()
+
+if(NOT AURA_ENABLE_CPU)
+    list(FILTER AURA_ENGINE_PRIVATE_SOURCES  EXCLUDE REGEX "/engine/src/Renderer/Software/")
+    list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/Software/")
+endif()
+
+add_library(Aura3D STATIC)
+
+add_library(Aura3D::Aura3D ALIAS Aura3D)
 
 target_sources(Aura3D
     PRIVATE
-        ${AURA_ENGINE_PRIVATE_SOURCES}
-
+    ${AURA_ENGINE_PRIVATE_SOURCES}
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
-        BASE_DIRS
-            ${CMAKE_CURRENT_SOURCE_DIR}/engine/include
-        FILES
-            ${AURA_ENGINE_PUBLIC_HEADERS}
+        BASE_DIRS engine/include
+        FILES ${AURA_ENGINE_PUBLIC_HEADERS}
+    PRIVATE
+        FILE_SET backend_headers
+        TYPE HEADERS
+        BASE_DIRS engine/include
+        FILES ${AURA_ENGINE_BACKEND_HEADERS}
 )
-
-# Add GLAD directly into libAura3D.a
-if(AURA_ENABLE_OPENGL)
-    target_sources(Aura3D
-        PRIVATE
-            ${AURA_GLAD_SOURCE}
-    )
-endif()
 
 target_include_directories(Aura3D
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/engine/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/glm>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/json/include>
-        $<$<BOOL:${AURA_ENABLE_OPENGL}>:$<BUILD_INTERFACE:${AURA_GLAD_INCLUDE_DIR}>>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/engine/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/engine/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/microui
-        ${CMAKE_CURRENT_SOURCE_DIR}/vendor
+    # Header-only third-party loaders (stb_image, tinyobjloader).
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/stb
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/tinyobj
 )
 
-target_compile_definitions(Aura3D
+target_link_libraries(Aura3D
     PUBLIC
-        $<$<BOOL:${AURA_ENABLE_VULKAN}>:AURA_HAS_VULKAN>
-        $<$<BOOL:${AURA_ENABLE_OPENGL}>:AURA_HAS_OPENGL>
-        $<$<BOOL:${AURA_ENABLE_CPU}>:AURA_HAS_CPU>
-
-    PRIVATE
-        $<$<BOOL:${AURA_ENABLE_VULKAN}>:GLFW_INCLUDE_VULKAN>
-        $<$<CONFIG:Debug>:DEBUG_MODE>
-        $<$<CONFIG:Release>:NDEBUG>
-        AURA_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    wma::wma
+    ink::ink
+    Threads::Threads
 )
 
-target_compile_options(Aura3D
-    PRIVATE
-        $<$<CONFIG:Debug>:-Wall -Wextra -g -O0>
-        $<$<CONFIG:Release>:-O3 -fno-plt>
-        $<$<AND:$<CONFIG:Release>,$<BOOL:${AURA_NATIVE_OPTIMIZE}>>:-march=native -mtune=native>
-)
+################################################################################
+# Backend wiring
+#
+# AURA_HAS_* drive RendererFactory's compile-time backend switch and must stay
+# in sync with the source filtering above.
+################################################################################
+
+if(AURA_ENABLE_VULKAN)
+    target_compile_definitions(Aura3D PUBLIC AURA_HAS_VULKAN)
+    target_link_libraries(Aura3D PUBLIC Vulkan::Vulkan)
+endif()
+
+if(AURA_ENABLE_OPENGL)
+    target_compile_definitions(Aura3D PUBLIC AURA_HAS_OPENGL)
+
+    if(EMSCRIPTEN)
+        # WebGL2 == OpenGL ES 3.0: GLAD is a thin stub over the browser context.
+        target_include_directories(Aura3D PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/wasm>)
+        target_compile_definitions(Aura3D PUBLIC AURA_GLES)
+        # Emscripten only exposes ES3/WebGL2 entry points (uniform blocks,
+        # glBindBufferBase, ...) when explicitly told to target WebGL2 --
+        # PUBLIC so it reaches the final link of whatever executable links
+        # Aura3D, not just this static library's own (nonexistent) link step.
+        target_link_options(Aura3D PUBLIC "-sMAX_WEBGL_VERSION=2" "-sMIN_WEBGL_VERSION=2")
+    elseif(ANDROID)
+        target_include_directories(Aura3D PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/android>)
+        target_compile_definitions(Aura3D PUBLIC AURA_GLES)
+        target_link_libraries(Aura3D PUBLIC GLESv3 EGL)
+    else()
+        # vendor/ is the include root so that <glad/glad.h> resolves.
+        target_include_directories(Aura3D PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor>)
+        target_sources(Aura3D PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/glad.c)
+        target_link_libraries(Aura3D PUBLIC OpenGL::GL)
+    endif()
+endif()
+
+if(AURA_ENABLE_CPU)
+    target_compile_definitions(Aura3D PUBLIC AURA_HAS_CPU)
+endif()
+
+################################################################################
+# Optimization
+################################################################################
 
 if(AURA_ENABLE_LTO)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT AURA_IPO_SUPPORTED OUTPUT AURA_IPO_ERROR)
-
     if(AURA_IPO_SUPPORTED)
-        set_property(TARGET Aura3D PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+        set_property(TARGET Aura3D PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
     else()
-        message(WARNING "IPO/LTO not supported: ${AURA_IPO_ERROR}")
+        message(STATUS "Aura3D: LTO unavailable (${AURA_IPO_ERROR})")
     endif()
 endif()
 
-target_link_libraries(Aura3D
-    PUBLIC
-        wma::wma
-        ink::ink
-        Threads::Threads
-
-    PRIVATE
-        ${CMAKE_DL_LIBS}
-)
-
-if(AURA_ENABLE_OPENGL)
-    target_link_libraries(Aura3D
-        PUBLIC
-            OpenGL::GL
-    )
-endif()
-
-if(AURA_ENABLE_VULKAN)
-    target_link_libraries(Aura3D
-        PUBLIC
-            Vulkan::Vulkan
-    )
-
-    if(Vulkan_INCLUDE_DIRS)
-        target_include_directories(Aura3D PRIVATE ${Vulkan_INCLUDE_DIRS})
+if(AURA_NATIVE_OPTIMIZE AND NOT EMSCRIPTEN AND NOT ANDROID)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-march=native" AURA_HAS_MARCH_NATIVE)
+    if(AURA_HAS_MARCH_NATIVE)
+        target_compile_options(Aura3D PRIVATE -march=native)
     endif()
 endif()
 
-# =================================================================
-# Sandbox executable
-# =================================================================
+################################################################################
+# Sandbox
+################################################################################
+
 if(AURA_BUILD_SANDBOX)
-    add_executable(Sandbox
-        apps/Sandbox/main.cpp
-    )
-
-    target_link_libraries(Sandbox
-        PRIVATE
-            Aura3D::Aura3D
-    )
-
-    target_include_directories(Sandbox
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/engine/include
-    )
-
-    set_target_properties(Sandbox PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-    )
-
-    # =============================================================
-    # Asset pipeline
-    # =============================================================
-    set(PIPELINE_OUTPUTS "")
-
-    macro(compile_or_copy_shaders INPUT_DIR OUTPUT_DIR EXTENSION COMPILER)
-        file(GLOB_RECURSE RAW_FILES CONFIGURE_DEPENDS "${INPUT_DIR}/*${EXTENSION}")
-
-        foreach(SRC_FILE ${RAW_FILES})
-            get_filename_component(FILE_NAME ${SRC_FILE} NAME)
-
-            if("${COMPILER}" STREQUAL "")
-                set(OUT_FILE "${OUTPUT_DIR}/${FILE_NAME}")
-
-                add_custom_command(
-                    OUTPUT ${OUT_FILE}
-                    COMMAND ${CMAKE_COMMAND} -E make_directory ${OUTPUT_DIR}
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SRC_FILE} ${OUT_FILE}
-                    DEPENDS ${SRC_FILE}
-                    VERBATIM
-                )
-            else()
-                set(OUT_FILE "${OUTPUT_DIR}/${FILE_NAME}.spv")
-
-                add_custom_command(
-                    OUTPUT ${OUT_FILE}
-                    COMMAND ${CMAKE_COMMAND} -E make_directory ${OUTPUT_DIR}
-                    COMMAND ${COMPILER} ${SRC_FILE} -o ${OUT_FILE}
-                    DEPENDS ${SRC_FILE}
-                    VERBATIM
-                )
-            endif()
-
-            list(APPEND PIPELINE_OUTPUTS ${OUT_FILE})
-        endforeach()
-    endmacro()
-
-    if(AURA_ENABLE_VULKAN)
-        if(DEFINED ENV{VULKAN_SDK})
-            set(SPV_COMPILER "$ENV{VULKAN_SDK}/bin/glslc")
-        else()
-            find_program(SPV_COMPILER glslc REQUIRED)
-        endif()
-
-        compile_or_copy_shaders(
-            "${CMAKE_CURRENT_SOURCE_DIR}/resources/shaders/vulkan"
-            "${CMAKE_BINARY_DIR}/resources/shaders/vk"
-            ".vert"
-            "${SPV_COMPILER}"
-        )
-
-        compile_or_copy_shaders(
-            "${CMAKE_CURRENT_SOURCE_DIR}/resources/shaders/vulkan"
-            "${CMAKE_BINARY_DIR}/resources/shaders/vk"
-            ".frag"
-            "${SPV_COMPILER}"
-        )
-    endif()
-
-    if(AURA_ENABLE_OPENGL)
-        compile_or_copy_shaders(
-            "${CMAKE_CURRENT_SOURCE_DIR}/resources/shaders/opengl"
-            "${CMAKE_BINARY_DIR}/resources/shaders/gl"
-            ".vert"
-            ""
-        )
-
-        compile_or_copy_shaders(
-            "${CMAKE_CURRENT_SOURCE_DIR}/resources/shaders/opengl"
-            "${CMAKE_BINARY_DIR}/resources/shaders/gl"
-            ".frag"
-            ""
-        )
-    endif()
-
-    if(PIPELINE_OUTPUTS)
-        add_custom_target(AssetPipeline ALL
-            DEPENDS ${PIPELINE_OUTPUTS}
-        )
-
-        add_dependencies(Sandbox AssetPipeline)
-    endif()
-
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/Sandbox/settings.json")
-        add_custom_command(TARGET Sandbox POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_CURRENT_SOURCE_DIR}/apps/Sandbox/settings.json"
-                "${CMAKE_BINARY_DIR}/settings.json"
-            VERBATIM
-        )
-    endif()
-
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vk_layer_settings.txt")
-        add_custom_command(TARGET Sandbox POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_CURRENT_SOURCE_DIR}/vk_layer_settings.txt"
-                "${CMAKE_BINARY_DIR}/vk_layer_settings.txt"
-            VERBATIM
-        )
-    endif()
+    add_subdirectory(apps/Sandbox)
 endif()
 
-# =================================================================
-# Install Aura3D static package
-# =================================================================
-if(AURA_INSTALL_SANDBOX AND AURA_BUILD_SANDBOX)
-    install(
-        TARGETS Aura3D Sandbox
-        EXPORT Aura3DTargets
-
-        FILE_SET public_headers
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
-else()
-    install(
-        TARGETS Aura3D
-        EXPORT Aura3DTargets
-
-        FILE_SET public_headers
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
+if(AURA_BUILD_ORGLOGO)
+    add_subdirectory(apps/OrgLogo)
 endif()
 
-install(
-    EXPORT Aura3DTargets
-    FILE Aura3DTargets.cmake
-    NAMESPACE Aura3D::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Aura3D
-)
+################################################################################
+# Tests
+################################################################################
 
-# =================================================================
-# Package config
-# =================================================================
-configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Aura3DConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Aura3DConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Aura3D
-)
+if(AURA_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
-write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/Aura3DConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-
-install(
-    FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/Aura3DConfig.cmake
-        ${CMAKE_CURRENT_BINARY_DIR}/Aura3DConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Aura3D
-)
+include(cmake/Install.cmake)

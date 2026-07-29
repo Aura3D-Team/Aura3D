@@ -4,7 +4,6 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -12,12 +11,23 @@ namespace vk {
 class VkRenderPassManager
 {
 public:
-    VkRenderPassManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
+    VkRenderPassManager(VkDevice* device);
     ~VkRenderPassManager();
 
+    /**
+     * @param sampleCount  MSAA sample count for the color/depth attachments.
+     *                     VK_SAMPLE_COUNT_1_BIT (default) is the plain,
+     *                     non-multisampled path: the swapchain image is
+     *                     attachment 0 and is presented directly. Any higher
+     *                     count adds a transient multisampled color attachment
+     *                     at index 0 and moves the presented swapchain image to
+     *                     a resolve attachment, written by the fixed-function
+     *                     resolve at the end of the subpass.
+     */
     void createRenderPass(VkFormat swapchainImageFormat,
                           bool enableDepth = false,
-                          VkFormat depthFormat = VK_FORMAT_D32_SFLOAT);
+                          VkFormat depthFormat = VK_FORMAT_D32_SFLOAT,
+                          VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT);
 
     void beginRenderPass(VkCommandBuffer commandBuffer,
                          VkFramebuffer framebuffer,
@@ -33,7 +43,6 @@ public:
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
     VkDevice* _device;
 
     VkRenderPass _renderPass = VK_NULL_HANDLE;

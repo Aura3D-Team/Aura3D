@@ -2,19 +2,14 @@
 
 #include <cstring>
 
-#include "aura/Renderer/Vulkan/VkAura/VkBufferManager/VkBufferManager.h"
-#include "aura/Core/AuraException/AuraException.h"
 #include "aura/aura.h"
 
 namespace aura3d {
 namespace vk {
 
-VkUniformBufferManager::VkUniformBufferManager(VkHostAllocator* vkHostAllocator,
-                                               VkDeviceAllocator* vkDeviceAllocator,
-                                               VkDevice* vkDevice) :
-    vkHostAllocator(vkHostAllocator), vkDeviceAllocator(vkDeviceAllocator), _vkDevice(vkDevice)
+VkUniformBufferManager::VkUniformBufferManager(VulkanMemoryManager* memoryManager, VkDevice* vkDevice)
+    : _memoryManager(memoryManager), _vkDevice(vkDevice)
 {
-    // Initialize with empty vectors - will be populated in createUniformBuffers
 }
 
 VkUniformBufferManager::~VkUniformBufferManager()
@@ -22,127 +17,97 @@ VkUniformBufferManager::~VkUniformBufferManager()
     cleanup();
 }
 
-void VkUniformBufferManager::createUniformBuffers(
-    VkPhysicalDevice physicalDevice,
-    VkSharingMode sharingMode,
-    u32 count)
+void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32 count, VkDeviceSize elementSize)
 {
-    // Clean up existing buffers if any
     cleanup();
 
-    // Calculate buffer size
-    VkDeviceSize bufferSize = sizeof(gfx::TransformUBO);
+    _elementSize = elementSize;
+    const VkDeviceSize bufferSize = _elementSize;
+    _buffers.resize(count);
 
-    // Resize vectors to hold the requested number of buffers
-    _uniformBuffers.resize(count, VK_NULL_HANDLE);
-    _allocations.resize(count);
+    VmaAllocationCreateFlags flags =
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    // Create uniform buffers
-    for (size_t i = 0; i < count; i++) {
-        // Create host-visible buffer for easy updates
-        VkBufferManager::createBuffer(
-            vkHostAllocator,
-            vkDeviceAllocator,
-            *_vkDevice,
-            physicalDevice,
+    for (u32 i = 0; i < count; ++i) {
+        _buffers[i] = _memoryManager->createBuffer(
             bufferSize,
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             sharingMode,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            _uniformBuffers[i],
-            _allocations[i]);
+            VMA_MEMORY_USAGE_AUTO,
+            flags);
 
-        // Persistently map the memory for efficient updates
-        void* data = nullptr;
-        VK_RESULT_CHECK(vkDeviceAllocator->mapMemory(_allocations[i], 0, bufferSize, &data));
-        // Note: The mappedData field in the allocation is automatically set by the
-        // mapMemory function, so we don't need to store it separately
+        if (!_buffers[i].mappedData) {
+            _buffers[i].mappedData = _memoryManager->map(_buffers[i]);
+        }
     }
 }
 
 void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, gfx::TransformUBO& ubo)
 {
-    // Check if the index is valid
-    if (currentImage >= _allocations.size() || _allocations[currentImage].mappedData == nullptr) {
-        // Index out of range or buffer not mapped
+    updateUniformBufferRaw(currentImage, &ubo, sizeof(gfx::TransformUBO));
+}
+
+void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void* data, VkDeviceSize size)
+{
+    if (currentImage >= _buffers.size() || _buffers[currentImage].mappedData == nullptr || !data)
+        return;
+
+    if (size > _elementSize)
+    {
+        INK_ERROR << "updateUniformBuffer: write of " << size
+                  << " bytes exceeds the " << _elementSize << "-byte buffer";
         return;
     }
 
-    // PUT CAMERA VIEW IN OTHER FUNCTION OR CLASS SOON
-    // static auto startTime = std::chrono::high_resolution_clock::now();
-
-    // auto currentTime = std::chrono::high_resolution_clock::now();
-    // f32 time = std::chrono::duration<f32, std::chrono::seconds::period>(currentTime - startTime).count();
-
-    // ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    // ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f,0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    // glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
-
-    // Copy the new UBO data directly to the mapped memory
-    memcpy(_allocations[currentImage].mappedData, &ubo, sizeof(ubo));
-    // No need to call vkFlushMappedMemoryRanges if the memory is coherent
-    // (which we specified when creating the buffer)
+    std::memcpy(_buffers[currentImage].mappedData, data, static_cast<size_t>(size));
 }
 
 VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const
 {
-    if (index < _uniformBuffers.size()) {
-        return _uniformBuffers[index];
+    if (index < _buffers.size()) {
+        return _buffers[index].buffer;
     }
     return VK_NULL_HANDLE;
 }
 
 VkDeviceSize VkUniformBufferManager::getUniformBufferSize() const
 {
-    return sizeof(gfx::TransformUBO);
+    return _elementSize;
 }
 
 VkDescriptorSetLayoutBinding VkUniformBufferManager::getDescriptorSetLayoutBinding(u32 binding) const
 {
-    // Create a descriptor set layout binding for the uniform buffer
     VkDescriptorSetLayoutBinding layoutBinding{};
     layoutBinding.binding = binding;
     layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     layoutBinding.descriptorCount = 1;
-    layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // Used in vertex shader
+    layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     layoutBinding.pImmutableSamplers = nullptr;
     return layoutBinding;
 }
 
 VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(u32 index) const
 {
-    // Create a descriptor buffer info for the uniform buffer
     VkDescriptorBufferInfo bufferInfo{};
-    if (index < _uniformBuffers.size() && index < _allocations.size()) {
-        bufferInfo.buffer = _uniformBuffers[index];
-        bufferInfo.offset = _allocations[index].offset;
-        bufferInfo.range = sizeof(gfx::TransformUBO);
+    if (index < _buffers.size()) {
+        bufferInfo.buffer = _buffers[index].buffer;
+        // _buffers[index].offset is VMA's suballocation offset within a
+        // shared VkDeviceMemory block, not an offset into this VkBuffer —
+        // each element owns its own dedicated buffer, so this is always 0.
+        bufferInfo.offset = 0;
+        bufferInfo.range = _elementSize;
     }
     return bufferInfo;
 }
 
 void VkUniformBufferManager::cleanup()
 {
-    // Unmap memory, destroy buffers, and free memory
-    for (size_t i = 0; i < _uniformBuffers.size(); i++) {
-        if (i < _allocations.size() && _allocations[i].mappedData != nullptr) {
-            vkDeviceAllocator->unmapMemory(_allocations[i]);
-            // mappedData will be set to nullptr in unmapMemory
-        }
-
-        if (_uniformBuffers[i] != VK_NULL_HANDLE) {
-            if (i < _allocations.size()) {
-                vkDestroyBuffer(*_vkDevice, _uniformBuffers[i], vkHostAllocator->getCallbacks());
-                vkDeviceAllocator->freeMemory(_allocations[i]);
-            }
-            _uniformBuffers[i] = VK_NULL_HANDLE;
-        }
+    for (auto& buffer : _buffers) {
+        _memoryManager->destroyBuffer(buffer);
     }
-
-    // Clear the vectors
-    _uniformBuffers.clear();
-    _allocations.clear();
+    _buffers.clear();
 }
 
-}
+} // namespace vk
 } // namespace aura3d

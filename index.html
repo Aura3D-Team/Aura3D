@@ -24,19 +24,30 @@
   </head>
   <body>
     <canvas id="aura3d-canvas"></canvas>
-    <script type="module">
-      import init from './pkg/Aura3D.js';
-
-      async function run() {
-        try {
-          await init();
-          console.info('WASM initialized successfully!');
-        } catch (e) {
-          console.error('WASM initialization failed', e);
+    <script>
+      /*
+       * Emscripten generates a UMD module (not an ES module) by default.
+       * We load it via a classic <script> tag; the module self-initialises.
+       * The canvas element above is picked up by SDL3/Emscripten automatically
+       * when its id matches the Module.canvas override below.
+       */
+      var Module = {
+        canvas: (function() {
+          var canvas = document.getElementById('aura3d-canvas');
+          canvas.addEventListener('webglcontextlost', function(e) {
+            e.preventDefault();
+          }, false);
+          return canvas;
+        })(),
+        onRuntimeInitialized: function() {
+          console.info('[Aura3D] WASM runtime initialised.');
+        },
+        printErr: function(text) {
+          console.error('[Aura3D]', text);
         }
-      }
-
-      run();
+      };
     </script>
+    <!-- Emscripten-generated JS loader (output to pkg/ by CMake) -->
+    <script src="pkg/Aura3D.js"></script>
   </body>
 </html>

@@ -1,0 +1,44 @@
+{
+    "application": {
+        "name": "Aura3D Organization Logo",
+        "version": "1.0.0",
+        "headless": false
+    },
+    "window": {
+        "width": 1440,
+        "height": 1024,
+        "title": "Aura3D — Organization Logo",
+        "backend": "SDL3",
+        "resizable": false,
+        "fullscreen": false,
+        "vsync": true,
+        "fps_limit": 60
+    },
+    "renderer": {
+        "backend": "software",
+        "validation_layers": true
+    },
+    "graphics": {
+        "gpu_preference": "discrete",
+        "msaa_samples": 4
+    },
+    "paths": {
+        "shaders": "./resources/shaders/",
+        "textures": "./resources/textures/",
+        "models": "./resources/models/",
+        "logs": "./logs/"
+    },
+    "memory": {
+        "vma": {
+            "buffer_device_address": true,
+            "prefer_device_memory": true,
+            "persistently_map_upload_buffers": true,
+            "vulkan_api_version": "1.4",
+            "preferred_large_heap_block_size_mb": 128
+        }
+    },
+    "logging": {
+        "level": "info",
+        "write_to_file": true
+    }
+}

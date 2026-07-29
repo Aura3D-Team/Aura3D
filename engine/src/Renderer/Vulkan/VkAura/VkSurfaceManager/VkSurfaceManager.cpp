@@ -1,6 +1,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkSurfaceManager/VkSurfaceManager.h"
 
 #include <ink/ink.hpp>
+#include <wma/core/BuildConfig.hpp>
 
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
@@ -8,18 +9,18 @@
 namespace aura3d {
 namespace vk {
 
-VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window)
-    : _vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance), _windowBackend(windowBackend)
+VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window)
+    : _vkInstance(vkInstance), _windowBackend(windowBackend)
 {
     switch (windowBackend) {
-#ifdef WMA_ENABLE_GLFW
+#if WMA_HAS_GLFW
     case wma::WindowBackend::GLFW:
-        VK_RESULT_CHECK(glfwCreateWindowSurface(*_vkInstance, (GLFWwindow*)window, _vkHostAllocator->getCallbacks(), &_vkSurface));
+        VK_RESULT_CHECK(glfwCreateWindowSurface(*_vkInstance, (GLFWwindow*)window, nullptr, &_vkSurface));
         break;
 #endif
-#ifdef WMA_ENABLE_SDL
-    case wma::WindowBackend::SDL2:
-        if (!SDL_Vulkan_CreateSurface((SDL_Window*)window, *_vkInstance, &_vkSurface)) {
+#if WMA_HAS_SDL
+    case wma::WindowBackend::SDL3:
+        if (!SDL_Vulkan_CreateSurface((SDL_Window*)window, *_vkInstance, nullptr, &_vkSurface)) {
             throw AuraException("Fail to create SDL Window surface! SDL Error: " + std::string(SDL_GetError()));
         }
         break;
@@ -31,10 +32,7 @@ VkSurfaceManager::VkSurfaceManager(VkHostAllocator* vkHostAllocator, VkInstance*
 
 VkSurfaceManager::~VkSurfaceManager() {
     if (_vkSurface != VK_NULL_HANDLE) {
-        if (_windowBackend == wma::WindowBackend::SDL2)
-            vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
-        else
-            vkDestroySurfaceKHR(*_vkInstance, _vkSurface, _vkHostAllocator->getCallbacks());
+        vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
         INK_DEBUG << "VkSurface deleted";
     }
     _vkInstance = nullptr;

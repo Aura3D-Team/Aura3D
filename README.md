@@ -1,43 +1,99 @@
 # Aura3D
 
-High-performance configurable 2D/3D rendering engine. Pure code, no UI — the root of programming.
+A modular C++23 2D/3D rendering engine with three interchangeable graphics
+backends — **Vulkan**, **OpenGL**, and a **CPU software rasterizer** — behind
+one interface. Switch backends by editing `settings.json`; your game code
+never changes.
+
+Aura3D builds as a static library you link into your own executable. It owns
+windowing, input, the render loop, and GPU resource management; you write
+game logic on top of `aura3d::IRenderer` and the small set of helpers layered
+over it (`Camera`, `Material`, `ResourceManager`, `TextOverlay`, ...).
 
 ---
 
-### What Is Aura3D
+## Why three backends
 
-Aura3D is a **modular C++ rendering engine** that supports multiple graphics backends through a single unified interface. Switch between **Vulkan**, **OpenGL**, or **CPU software rendering** — and between **2D** and **3D** mode — by editing a single JSON config file. No code changes required.
+- **Vulkan** — the primary desktop/Android path. MSAA, push-constant
+  per-object transforms, a dedicated 2D overlay pipeline, GPU font rendering.
+- **OpenGL** — desktop GL and WebGL2 (via Emscripten) for WASM builds.
+- **CPU (software)** — a real triangle rasterizer (perspective-correct
+  interpolation, depth testing, Gouraud shading) with no GPU dependency at
+  all. Useful for headless testing, low-end targets, or simply understanding
+  what the GPU is doing.
 
-The engine builds as a **static library** that you link into your game or application. It handles all rendering infrastructure; you write the game logic.
+All three implement the same `aura3d::IRenderer` interface, so a scene
+written once renders identically (mesh, material, camera, lighting, 2D
+overlay, text) on whichever backend `settings.json` selects.
 
 ---
 
-### Configuration
+## Quick start
 
-All runtime behavior is controlled by `settings.json`:
+```cpp
+#include "aura/Core/Engine.h"
+#include "aura/Renderer/IRenderer.h"
+#include "aura/Core/MeshLoader/MeshLoader.h"
+#include "aura/Renderer/Material.h"
 
-```json
+using namespace aura3d;
+
+int main()
 {
-    "renderer": {
-        "backend": "vulkan",
-        "mode": "2d"
-    }
+    Engine engine("settings.json");
+    IRenderer* r = engine.getRenderer();
+
+    const MeshHandle cube = r->createMesh(MeshLoader::createCube());
+    Material mat;
+    mat.albedo = r->createCheckerboardTexture();
+    const MaterialHandle matH = r->createMaterial(mat);
+
+    r->setClearColor(0.05f, 0.05f, 0.08f, 1.0f);
+    r->setTransform({}); // model/view/proj — see docs/04-camera.md
+
+    r->run([&]() {
+        r->beginRenderPass();
+        r->bindMaterial(matH);
+        r->drawMesh(cube);
+        r->endRenderPass();
+    });
 }
 ```
 
-| Field               | Values                          | Description                           |
-|---------------------|---------------------------------|---------------------------------------|
-| `renderer.backend`  | `"vulkan"`, `"opengl"`, `"cpu"` | Which rendering backend to use        |
-| `renderer.mode`     | `"2d"`, `"3d"`                  | Orthographic (2D) or perspective (3D) |
-| `window.width`      | integer                         | Window width in pixels                |
-| `window.height`     | integer                         | Window height in pixels               |
-| `window.vsync`      | `true` / `false`                | Enable vertical sync                  |
-| `window.fullscreen` | `true` / `false`                | Start in fullscreen mode              |
-| `window.fps_limit`  | integer                         | Target FPS (ignored when vsync is on) |
+That's a complete, runnable program. For a camera, lighting, input, and a
+full scene, start with **[docs/01-getting-started.md](docs/01-getting-started.md)**.
 
 ---
 
-### Building
+## Documentation
+
+The [`docs/`](docs/) folder is a tutorial series that walks through every
+feature Aura3D has, in the order you'd actually reach for them building a
+game:
+
+| # | Doc | Covers |
+|---|-----|--------|
+| 1 | [Getting Started](docs/01-getting-started.md) | Build, run, first window |
+| 2 | [Project Configuration](docs/02-project-configuration.md) | Full `settings.json` reference |
+| 3 | [Engine & Renderer](docs/03-engine-and-renderer.md) | `Engine`, `IRenderer`, backend switching, the run loop |
+| 4 | [Camera](docs/04-camera.md) | Perspective/ortho projections, target vs. free-look |
+| 5 | [Meshes, Materials & Textures](docs/05-meshes-materials-textures.md) | Loading OBJ/images, `ResourceManager`, `Material` |
+| 6 | [Lighting](docs/06-lighting.md) | The directional light model |
+| 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch2D`, the overlay pipeline, `TextOverlay` |
+| 8 | [Input](docs/08-input.md) | Keyboard/mouse contexts and bindings |
+| 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
+| 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Android, WebAssembly |
+
+---
+
+## Building
+
+```bash
+cmake --preset linux-release
+cmake --build --preset linux-release
+```
+
+Or without presets:
 
 ```bash
 mkdir build && cd build
@@ -45,32 +101,34 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j$(nproc)
 ```
 
-#### CMake Options
+### CMake options
 
-| Option               | Default | Description                          |
-|----------------------|---------|--------------------------------------|
-| `AURA_ENABLE_VULKAN` | `ON`    | Compile with Vulkan backend support  |
-| `AURA_ENABLE_OPENGL` | `ON`    | Compile with OpenGL backend support  |
-| `AURA_ENABLE_CPU`    | `ON`    | Compile with CPU renderer support    |
-| `AURA_BUILD_SANDBOX` | `ON`    | Build the Sandbox test application   |
+| Option | Default | Description |
+|---|---|---|
+| `AURA_ENABLE_VULKAN` | `ON` | Compile the Vulkan backend |
+| `AURA_ENABLE_OPENGL` | `ON` | Compile the OpenGL backend |
+| `AURA_ENABLE_CPU` | `ON` | Compile the software (CPU) backend |
+| `AURA_BUILD_SANDBOX` | `ON` | Build the Sandbox demo app |
+| `AURA_BUILD_ORGLOGO` | `ON` | Build the OrgLogo demo app |
+| `AURA_BUILD_TESTS` | `OFF` | Build the automated test suite |
+| `AURA_ENABLE_LTO` | `ON` | Interprocedural optimization |
+| `AURA_NATIVE_OPTIMIZE` | `ON` | `-march=native` on desktop builds |
+| `AURA_WASM_ASYNCIFY` | `OFF` | Emscripten Asyncify (only if the app ever blocks synchronously) |
 
-Build with only the CPU renderer (no GPU dependencies):
+Build with only the CPU renderer (no GPU dependencies at all):
 
 ```bash
 cmake .. -DAURA_ENABLE_VULKAN=OFF -DAURA_ENABLE_OPENGL=OFF
 ```
 
----
+Android and WebAssembly have their own presets and prerequisites — see
+[docs/10-platform-builds.md](docs/10-platform-builds.md).
 
-### Using Aura3D as a Library
-
-After installing Aura3D, external projects can consume it with `find_package`:
+### Using Aura3D as a library
 
 ```bash
 cmake --install build --prefix /usr/local
 ```
-
-In your game's `CMakeLists.txt`:
 
 ```cmake
 find_package(Aura3D REQUIRED)
@@ -78,106 +136,43 @@ add_executable(MyGame main.cpp)
 target_link_libraries(MyGame PRIVATE Aura3D::Aura3D)
 ```
 
-Minimal game code:
-
-```cpp
-#include "aura/Core/Engine.h"
-#include "aura/Renderer/IRenderer.h"
-
-int main() {
-    Engine engine("settings.json");
-    aura3d::IRenderer* renderer = engine.getRenderer();
-
-    // renderer->is2D() / renderer->is3D() — query mode
-    // renderer->getBackendType() — query active backend
-    // renderer->getWindowManager()->process([&]() { ... }) — render loop
-
-    return 0;
-}
-```
-
 ---
 
-### Architecture
+## Repository layout
 
 ```
 Aura3D/
-├── apps/                     # Executables (games, tests)
-│   └── Sandbox/              # Example application
-│       ├── main.cpp
-│       └── settings.json     # Runtime configuration
-│
-├── engine/                   # The Engine Library
-│   ├── include/aura/         # PUBLIC HEADERS
-│   │   ├── aura.h            # Main version/name defines
-│   │   ├── Core/             # Engine, AuraCore, Settings, Font, Exception
-│   │   ├── Renderer/
-│   │   │   ├── IRenderer.h   # Abstract interface + RendererChoice/RendererMode enums
-│   │   │   ├── Software/     # CPU renderer + framebuffer manager
-│   │   │   ├── OpenGL/       # OpenGL renderer + GL shader/buffer managers
-│   │   │   └── Vulkan/       # Vulkan renderer + full VkAura subsystem
-│   │   └── Utils/            # Colors, math utilities, aligned allocator
-│   │
-│   └── src/                  # PRIVATE SOURCE (hidden from consumers)
-│       ├── Core/             # Config loader, settings implementation
-│       ├── Renderer/
-│       │   ├── Software/     # CPU rasterizer implementation
-│       │   ├── OpenGL/       # GL context + shader management
-│       │   └── Vulkan/       # Instance, device, swapchain, pipeline, memory, etc.
-│       └── Utils/            # Utility implementations
-│
-├── resources/                # Runtime assets
-│   └── shaders/
-│       ├── opengl/           # GLSL shaders
-│       └── vulkan/           # GLSL shaders (compiled to SPIR-V by CMake)
-│
-├── vendor/                   # Third-party (glad, microui)
-├── cmake/                    # CMake package config templates
-├── config.json               # Engine default config template
-└── CMakeLists.txt
+├── apps/
+│   ├── Sandbox/       # Interactive 3D demo: WASD+mouse camera, lit scene, FPS overlay
+│   └── OrgLogo/        # Minimal 2D demo: one textured quad, no camera movement
+├── docs/                # Tutorial series (see table above)
+├── engine/
+│   ├── include/aura/    # Public API — this is what your game includes
+│   └── src/             # Implementation, including the private per-backend managers
+├── resources/
+│   └── shaders/{opengl,vulkan}/
+├── vendor/               # stb (images/fonts), tinyobj, glad
+├── android/              # Gradle project wrapping the CMake build
+├── cmake/                # Platform.cmake, Dependencies.cmake, Install.cmake, Assets.cmake
+├── scripts/               # build_android.sh, build_wasm.sh
+├── CMakeLists.txt
+└── CMakePresets.json
 ```
 
-**Key design principles:**
-- **Public vs. Private**: Your game includes `engine/include` only. Internal headers (VkDeviceManager, etc.) stay hidden.
-- **Backend isolation**: Each renderer lives in its own directory. Working on OpenGL never touches Vulkan files.
-- **Conditional compilation**: Backends are guarded by `AURA_HAS_VULKAN`, `AURA_HAS_OPENGL`, `AURA_HAS_CPU` defines, set automatically by CMake options.
+**Design principles:**
+- **Public vs. private**: your game includes `engine/include/aura/` only.
+  Per-backend internals (`VkDeviceManager`, `GlTextureManager`, ...) are not
+  installed and stay out of your include path.
+- **Backend isolation**: each renderer lives in its own directory tree
+  (`engine/{include,src}/aura/Renderer/{Vulkan,OpenGL,Software}/`). Working on
+  one backend never touches another's files.
+- **Conditional compilation**: backends are gated by `AURA_HAS_VULKAN`,
+  `AURA_HAS_OPENGL`, `AURA_HAS_CPU` defines that CMake sets from the
+  `AURA_ENABLE_*` options above — an app can link Aura3D built with only the
+  backends it actually needs.
 
 ---
 
-### Renderer Interface
-
-All renderers implement `aura3d::IRenderer`:
-
-```cpp
-class IRenderer {
-public:
-    virtual void initialize() = 0;
-    virtual void handleWindowChanges() = 0;
-    virtual void cleanup() = 0;
-    virtual wma::IWindowManager* getWindowManager() = 0;
-    virtual RendererChoice getBackendType() const = 0;
-
-    RendererMode getMode() const;
-    bool is2D() const;
-    bool is3D() const;
-};
-```
-
-The `Engine` class reads `settings.json`, creates the correct renderer, and exposes it. Your application code queries `engine.getBackend()` and `engine.getMode()` to adapt behavior.
-
----
-
-### Roadmap
-
-- Unified math library (vectors, matrices, transforms)
-- Entity/component system decoupled from the renderer
-- Physics and scripting layers
-- Debug visualization tools for CPU/GPU backend comparison
-- Resource compiler for converting assets into engine-ready formats
-- 3D shader variants alongside existing 2D shaders
-
----
-
-### License
+## License
 
 See [LICENSE](LICENSE).

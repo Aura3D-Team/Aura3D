@@ -3,12 +3,13 @@
 #include <set>
 
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/Core/AuraSettings/AuraSettings.h"
 
 namespace aura3d {
 namespace vk {
 
-VkDeviceManager::VkDeviceManager(VkHostAllocator* vkHostAllocator, VkInstance* vkInstance, VkDeviceData vkDeviceData)
-    : vkHostAllocator(vkHostAllocator), _vkInstance(vkInstance), _vkDeviceCreationData(std::move(vkDeviceData)), _deviceInfo(),
+VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData)
+    : _vkInstance(vkInstance), _vkDeviceCreationData(std::move(vkDeviceData)), _deviceInfo(),
     _device(VK_NULL_HANDLE), _physicalDevice(VK_NULL_HANDLE),
     _physicaldeviceCount(0), _vkQueueManager(VkQueueManager())
 {
@@ -18,7 +19,7 @@ VkDeviceManager::VkDeviceManager(VkHostAllocator* vkHostAllocator, VkInstance* v
 VkDeviceManager::~VkDeviceManager() {
     if (_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(_device);
-        vkDestroyDevice(_device, vkHostAllocator->getCallbacks());
+        vkDestroyDevice(_device, nullptr);
         _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
@@ -60,9 +61,19 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         // Scoring the device
         u32 score = 0;
 
-        // Prefer discrete GPUs (dedicated graphics cards)
-        if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-            score += 1000;
+        // graphics.gpu_preference steers which device type wins the +1000 type
+        // bonus; "any" drops the type bonus entirely and lets capability alone
+        // (API version, image limits, geometry shader) decide.
+        const std::string gpuPreference = aura3d::AuraSettings::get()->getGpuPreference();
+        if (gpuPreference == "integrated") {
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+                score += 1000;
+            }
+        } else if (gpuPreference != "any") {
+            // Default: prefer discrete GPUs (dedicated graphics cards).
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                score += 1000;
+            }
         }
 
         if (deviceFeatures.geometryShader) {
@@ -106,8 +117,13 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         priority -= 0.05f;
     }
 
+    VkPhysicalDeviceVulkan12Features enabledVk12Features{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .bufferDeviceAddress = VK_TRUE //! Resolves your VUID-VkMemoryAllocateInfo-flags-03331 error
+    };
+
     const std::vector<VkDeviceQueueCreateInfo> vkDeviceQueueCreateInfos = _vkQueueManager.getDeviceQueueCreateInfos();
-    _deviceInfo.pNext = nullptr;
+    _deviceInfo.pNext = &enabledVk12Features;
     _deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     _deviceInfo.queueCreateInfoCount = static_cast<u32>(vkDeviceQueueCreateInfos.size());
     _deviceInfo.pQueueCreateInfos = vkDeviceQueueCreateInfos.data();
@@ -115,9 +131,9 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     _deviceInfo.ppEnabledLayerNames = _vkDeviceCreationData.vkEnabledLayers.data();
     _deviceInfo.enabledExtensionCount = static_cast<u32>(_vkDeviceCreationData.vkDeviceExtensions.size());
     _deviceInfo.ppEnabledExtensionNames = _vkDeviceCreationData.vkDeviceExtensions.data();
-    _deviceInfo.pEnabledFeatures = &_deviceFeatures;
+    _deviceInfo.pEnabledFeatures = nullptr; //! No need to be &_deviceFeatures;
 
-    result = vkCreateDevice(_physicalDevice, &_deviceInfo, vkHostAllocator->getCallbacks(), &_device);
+    result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
     VK_RESULT_CHECK(result);
 
     u32 familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);
@@ -169,6 +185,20 @@ VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> 
     }
 
     return requiredExtensions.empty() ? VK_SUCCESS : VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
+VkSampleCountFlagBits VkDeviceManager::getMaxUsableSampleCount() const
+{
+    const VkSampleCountFlags counts = _deviceProperties.limits.framebufferColorSampleCounts
+                                     & _deviceProperties.limits.framebufferDepthSampleCounts;
+
+    if (counts & VK_SAMPLE_COUNT_64_BIT) return VK_SAMPLE_COUNT_64_BIT;
+    if (counts & VK_SAMPLE_COUNT_32_BIT) return VK_SAMPLE_COUNT_32_BIT;
+    if (counts & VK_SAMPLE_COUNT_16_BIT) return VK_SAMPLE_COUNT_16_BIT;
+    if (counts & VK_SAMPLE_COUNT_8_BIT)  return VK_SAMPLE_COUNT_8_BIT;
+    if (counts & VK_SAMPLE_COUNT_4_BIT)  return VK_SAMPLE_COUNT_4_BIT;
+    if (counts & VK_SAMPLE_COUNT_2_BIT)  return VK_SAMPLE_COUNT_2_BIT;
+    return VK_SAMPLE_COUNT_1_BIT;
 }
 
 }

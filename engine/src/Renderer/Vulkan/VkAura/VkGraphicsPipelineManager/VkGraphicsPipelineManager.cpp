@@ -6,56 +6,29 @@
 namespace aura3d {
 namespace vk {
 
-VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
-                                                     std::string shader_vert_spv,
+VkGraphicsPipelineManager::VkGraphicsPipelineManager(std::string shader_vert_spv,
                                                      std::string shader_frag_spv,
                                                      VkDevice* device)
-    : VkPipelineManager(vkHostAllocator, device), vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
+    : VkPipelineManager(device), _shaderManager(VkShaderManager(device))
 {
     _shaderManager.createVertShaderModule(shader_vert_spv);
     _shaderManager.createFragShaderModule(shader_frag_spv);
-
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = _shaderManager.getVertShaderModule();
-    vertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = _shaderManager.getFragShaderModule();
-    fragShaderStageInfo.pName = "main";
-
-    _shaderStages = { vertShaderStageInfo, fragShaderStageInfo };
-
-    // Initialize default dynamic states
-    _dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-
-    DescriptorBindingInfo uboBinding;
-    uboBinding.binding = 0;
-    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboBinding.descriptorCount = 1;
-    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    addDescriptorBinding(0, uboBinding);
-
-    DescriptorBindingInfo samplerBinding;
-    samplerBinding.binding = 0;
-    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerBinding.descriptorCount = 1;
-    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    addDescriptorBinding(1, samplerBinding);
+_init();
 }
 
-VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
-                                                     const unsigned char* vertData, u32 vertSize,
+VkGraphicsPipelineManager::VkGraphicsPipelineManager(const unsigned char* vertData, u32 vertSize,
                                                      const unsigned char* fragData, u32 fragSize,
                                                      VkDevice* device)
-    : VkPipelineManager(vkHostAllocator, device), vkHostAllocator(vkHostAllocator), _shaderManager(VkShaderManager(vkHostAllocator, device))
+    : VkPipelineManager(device), _shaderManager(VkShaderManager(device))
 {
     _shaderManager.createVertShaderModuleFromMemory(vertData, vertSize);
     _shaderManager.createFragShaderModuleFromMemory(fragData, fragSize);
 
+    _init();
+}
+
+void VkGraphicsPipelineManager::_init()
+{
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -85,17 +58,54 @@ VkGraphicsPipelineManager::VkGraphicsPipelineManager(VkHostAllocator* vkHostAllo
     samplerBinding.descriptorCount = 1;
     samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     addDescriptorBinding(1, samplerBinding);
+
+    // set 2: directional light, read by the fragment stage.
+    DescriptorBindingInfo lightBinding;
+    lightBinding.binding = 0;
+    lightBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    lightBinding.descriptorCount = 1;
+    lightBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    addDescriptorBinding(2, lightBinding);
+
+    /*
+     * Per-draw transform. set 0 carries view/proj once per frame, while the
+     * model and normal matrices arrive as push constants immediately before each
+     * draw, which is what allows many objects with distinct transforms inside a
+     * single render pass. Two mat4s is exactly the 128 bytes Vulkan guarantees.
+     */
+    setPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantBlock));
 }
 
 VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
 {
     // Clean up descriptor set layouts
     for (auto& pair : _descriptorSetLayouts) {
-        vkDestroyDescriptorSetLayout(*_device, pair.second, vkHostAllocator->getCallbacks());
+        vkDestroyDescriptorSetLayout(*_device, pair.second, nullptr);
     }
 
     // Base class destructor will handle pipeline and pipeline layout
     INK_DEBUG << "Graphics Pipeline destroyed.";
+}
+
+void VkGraphicsPipelineManager::setPushConstantRange(VkShaderStageFlags stageFlags, u32 offset, u32 size)
+{
+    _pushConstantRange.stageFlags = stageFlags;
+    _pushConstantRange.offset = offset;
+    _pushConstantRange.size = size;
+    _hasPushConstants = size > 0;
+}
+
+void VkGraphicsPipelineManager::cmdPushConstants(VkCommandBuffer commandBuffer, const void* data)
+{
+    if (!_hasPushConstants || _pipelineLayout == VK_NULL_HANDLE || !data)
+        return;
+
+    vkCmdPushConstants(commandBuffer,
+                       _pipelineLayout,
+                       _pushConstantRange.stageFlags,
+                       _pushConstantRange.offset,
+                       _pushConstantRange.size,
+                       data);
 }
 
 void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const DescriptorBindingInfo& bindingInfo)
@@ -109,6 +119,19 @@ void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const Descrip
 
     // Add the binding to the set
     _descriptorSetLayoutInfos[setIndex].bindings.push_back(bindingInfo);
+}
+
+void VkGraphicsPipelineManager::resetInterface()
+{
+    for (auto& pair : _descriptorSetLayouts) 
+    {
+        vkDestroyDescriptorSetLayout(*_device, pair.second, nullptr);
+    }
+    _descriptorSetLayouts.clear();
+    _descriptorSetLayoutInfos.clear();
+
+    _pushConstantRange = {};
+    _hasPushConstants = false;
 }
 
 void VkGraphicsPipelineManager::createDescriptorSetLayouts()
@@ -143,7 +166,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         layoutInfo.pBindings = layoutBindings.data();
 
         VkDescriptorSetLayout layout;
-        VK_RESULT_CHECK(vkCreateDescriptorSetLayout(*_device, &layoutInfo, vkHostAllocator->getCallbacks(), &layout));
+        VK_RESULT_CHECK(vkCreateDescriptorSetLayout(*_device, &layoutInfo, nullptr, &layout));
 
         // Store the layout
         _descriptorSetLayouts[setInfo.setIndex] = layout;
@@ -169,16 +192,34 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         layouts[pair.first] = pair.second;
     }
 
+    if (_pipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(
+            *_device,
+            _pipelineLayout,
+            nullptr);
+
+        _pipelineLayout = VK_NULL_HANDLE;
+    }
+
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = static_cast<u32>(layouts.size());
     pipelineLayoutInfo.pSetLayouts = layouts.data();
 
-    // Create the pipeline layout
-    VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, vkHostAllocator->getCallbacks(), &_pipelineLayout));
+    if (_hasPushConstants)
+    {
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &_pushConstantRange;
+    }
 
-    INK_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts";
+    // Create the pipeline layout
+    VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout));
+
+    INK_DEBUG << "Created pipeline layout with " << layouts.size()
+              << " descriptor set layouts and "
+              << (_hasPushConstants ? _pushConstantRange.size : 0u) << " push-constant bytes";
 }
 
 VkDescriptorSetLayout VkGraphicsPipelineManager::getDescriptorSetLayout(u32 setIndex) const
@@ -195,8 +236,18 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
                                                const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
                                                const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray,
                                                u32 attributeDescriptionCount,
-                                               bool enableDepthTest)
+                                               const PipelineOptions& options)
 {
+    if (_pipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(
+            *_device,
+            _pipeline,
+            nullptr);
+
+        _pipeline = VK_NULL_HANDLE;
+    }
+
     if (_descriptorSetLayouts.empty()) {
         createDescriptorSetLayouts();
     }
@@ -253,8 +304,22 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    //! Screen-space overlay quads have no meaningful facing, so culling them
+    //! would drop whichever winding the batch happened to emit.
+    rasterizer.cullMode = options.cullBackFaces ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+    /*
+     * The dynamic viewport this pipeline is bound with (cmdIndexedDraw() /
+     * cmdDraw()) uses a negative height to flip Y into GLM's convention (see
+     * the comment there). That flip mirrors every triangle's 2D footprint in
+     * framebuffer space, which reverses the winding the rasterizer measures:
+     * geometry authored clockwise now arrives counter-clockwise on screen.
+     * VK_FRONT_FACE_COUNTER_CLOCKWISE compensates so cullBackFaces still
+     * culls the actual back faces instead of the front ones -- without it, a
+     * single-sided mesh like a ground plane is entirely invisible (its one
+     * visible face is exactly the one now getting culled), while a closed
+     * mesh like a cube just silently shows its inside instead of its outside.
+     */
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasSlopeFactor = 0.0f;
     rasterizer.depthBiasConstantFactor = 0.0f;
@@ -265,7 +330,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     VkPipelineMultisampleStateCreateInfo multisampling = {};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = options.sampleCount;
     multisampling.minSampleShading = 1.0f; // Optional
     multisampling.pSampleMask = nullptr; // Optional
     multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
@@ -277,13 +342,32 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
                                           VK_COLOR_COMPONENT_G_BIT |
                                           VK_COLOR_COMPONENT_B_BIT |
                                           VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD; // Optional
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD; // Optional
+    colorBlendAttachment.blendEnable = options.alphaBlend ? VK_TRUE : VK_FALSE;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    if (options.alphaBlend)
+    {
+        /*
+         * Straight (non-premultiplied) source-over:
+         *   rgb = src.rgb * src.a + dst.rgb * (1 - src.a)
+         *   a   = src.a         + dst.a   * (1 - src.a)
+         * The alpha channel accumulates rather than replacing, so stacking two
+         * translucent overlays leaves a sensible coverage value behind.
+         */
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    }
+    else
+    {
+        //! Ignored while blendEnable is false, but must still be valid values.
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    }
 
     // Color blend state
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
@@ -300,8 +384,8 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     // Depth stencil state (only meaningful when render pass has a depth attachment)
     VkPipelineDepthStencilStateCreateInfo depthStencil = {};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = enableDepthTest ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable = enableDepthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthTestEnable = options.depthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = options.depthTest ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
@@ -322,7 +406,7 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     pipelineInfo.basePipelineIndex = -1;
 
     // Create the graphics pipeline
-    VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, vkHostAllocator->getCallbacks(), &_pipeline));
+    VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &_pipeline));
 
     INK_DEBUG << "Graphics pipeline created";
 }
@@ -361,9 +445,21 @@ void VkGraphicsPipelineManager::cmdIndexedDraw(VkCommandBuffer commandBuffer,
     // Set dynamic viewport and scissor
     VkViewport viewport = {};
     viewport.x = 0.0f;
-    viewport.y = 0.0f;
+    /*
+     * Negative-height viewport (core since Vulkan 1.1 / VK_KHR_maintenance1):
+     * flips the NDC-to-framebuffer Y mapping so that NDC -1 lands at the
+     * *top* of the image, matching OpenGL/GLM's Y-up convention instead of
+     * Vulkan's native Y-down NDC. Without this, every mesh drawn with a
+     * GLM-built (Y-up) projection -- which is what Camera::perspective()/
+     * ortho() produce -- renders vertically mirrored: geometry below the
+     * camera (e.g. a floor) appears at the top of the screen instead of the
+     * bottom. Mirroring the image also mirrors the 2D winding the rasterizer
+     * measures for every triangle, which is why createPipeline() sets
+     * VK_FRONT_FACE_COUNTER_CLOCKWISE to compensate -- see the comment there.
+     */
+    viewport.y = static_cast<f32>(extent.height);
     viewport.width = static_cast<f32>(extent.width);
-    viewport.height = static_cast<f32>(extent.height);
+    viewport.height = -static_cast<f32>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -387,9 +483,10 @@ void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer,
     // Set dynamic viewport and scissor
     VkViewport viewport = {};
     viewport.x = 0.0f;
-    viewport.y = 0.0f;
+    //! Same Y-flip as cmdIndexedDraw(); see the comment there.
+    viewport.y = static_cast<f32>(extent.height);
     viewport.width = static_cast<f32>(extent.width);
-    viewport.height = static_cast<f32>(extent.height);
+    viewport.height = -static_cast<f32>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);

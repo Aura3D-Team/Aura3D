@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -28,10 +27,9 @@ class VkImageViewsManager {
 public:
     /**
      * @brief Constructs the manager.
-     * @param hostAllocator Host-side allocator whose callbacks are forwarded to Vulkan.
      * @param device        Logical device used to create and destroy image views.
      */
-    VkImageViewsManager(VkHostAllocator* hostAllocator, VkDevice* device);
+    VkImageViewsManager(VkDevice* device);
 
     /**
      * @brief Destroys all owned image views and releases internal state.
@@ -86,7 +84,33 @@ public:
     void cleanupDepthImageView();
 
     /**
-     * @brief Destroys all color views and the depth view, and clears internal state.
+     * @brief Creates the transient multisampled color VkImageView for @p image.
+     *
+     * If one already exists it is destroyed before creating the new one. Only
+     * used when MSAA is active; the swapchain color views above remain the
+     * resolve target in that case.
+     *
+     * @param image  The multisampled color VkImage to create a view for.
+     * @param format Swapchain color format (must match).
+     */
+    void createColorMsaaImageView(VkImage image, VkFormat format);
+
+    /**
+     * @brief Returns the MSAA color image view, or VK_NULL_HANDLE if not created.
+     */
+    VkImageView getColorMsaaImageView() const { return _colorMsaaImageView; }
+
+    /**
+     * @brief Destroys the MSAA color image view and resets it to VK_NULL_HANDLE.
+     *
+     * No-op if none was created. Call this before recreating swapchain
+     * resources during a resize.
+     */
+    void cleanupColorMsaaImageView();
+
+    /**
+     * @brief Destroys all color views, the depth view, and the MSAA color view,
+     *        and clears internal state.
      */
     void cleanup();
 
@@ -109,11 +133,11 @@ private:
                            u32 baseLayer, u32 layerCount);
 
 private:
-    VkHostAllocator* _hostAllocator;
     VkDevice*        _device;
 
     std::vector<VkImageView> _colorImageViews;
     VkImageView              _depthImageView = VK_NULL_HANDLE;
+    VkImageView              _colorMsaaImageView = VK_NULL_HANDLE;
 };
 
 }

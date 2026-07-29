@@ -7,6 +7,9 @@
 # Ignore compiled object files
 *.o
 *.obj
+# ...but *.obj also matches Wavefront OBJ mesh assets, which are real
+# checked-in files, not build output.
+!/tests/assets/*.obj
 
 # Ignore compiled binary executables
 *.exe

@@ -6,7 +6,6 @@
 #include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -14,7 +13,7 @@ namespace vk {
 class VkRenderSyncManager
 {
 public:
-    VkRenderSyncManager(VkHostAllocator* vkHostAllocator, VkDevice* device);
+    VkRenderSyncManager(VkDevice* device);
     ~VkRenderSyncManager();
 
     void create();
@@ -29,7 +28,6 @@ public:
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
     VkDevice* _device;
 
     VkFixedArray<VkSemaphore> _imageAvailableSemaphores;

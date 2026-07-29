@@ -4,11 +4,11 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <array>
 #include <vector>
 
 #include "aura/Core/AuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_ATTRIBUTE_DESCRIPTION_2D 3
@@ -17,6 +17,17 @@
 #define MAX_SHADER_MODULES 8
 #define MAX_DESCRIPTOR_SETS 4
 #define MAX_BINDING_COUNT 16
+
+//! Not every Vulkan header in the wild has 1.4's version macro yet (e.g. the
+//! Android NDK's bundled headers currently top out at 1.3) -- fall back to
+//! the newest one actually available rather than hard-requiring 1.4.
+#if defined(VK_API_VERSION_1_4)
+inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_4;
+#elif defined(VK_API_VERSION_1_3)
+inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_3;
+#else
+inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_2;
+#endif
 
 // Template array definitions
 template <typename T>
@@ -37,6 +48,46 @@ using BindingArray = std::array<T, MAX_BINDING_COUNT>;
 namespace aura3d {
 
 namespace vk {
+
+/**
+ * @brief Per-draw transform delivered through push constants.
+ *
+ * Sized to exactly the 128 bytes every Vulkan implementation guarantees, so it
+ * needs no device capability check. The normal matrix is widened to a mat4
+ * because std430/push-constant rules pad a mat3 to the same footprint anyway,
+ * and a mat4 avoids per-column alignment surprises.
+ */
+struct PushConstantBlock {
+    glm::mat4 model{1.0f};
+    glm::mat4 normalMatrix{1.0f};
+};
+
+static_assert(sizeof(PushConstantBlock) == 128,
+              "PushConstantBlock must fit the guaranteed 128-byte push-constant budget");
+
+/**
+ * @brief The fixed-function state that actually differs between the engine's
+ *        graphics pipelines.
+ *
+ * The defaults describe the unlit 2D overlay: no depth interaction, straight
+ * source-over blending, and no culling (screen-space quads have no meaningful
+ * facing). The 3D scene pipeline flips all three.
+ *
+ * At namespace scope rather than nested in VkGraphicsPipelineManager because a
+ * nested class' default member initializers are not usable inside the enclosing
+ * class' own declarations, which is where this is wanted as a defaulted
+ * parameter.
+ */
+struct PipelineOptions {
+    bool depthTest = false;     //! Enables both the depth test and depth writes.
+    bool alphaBlend = false;    //! src*srcAlpha + dst*(1-srcAlpha).
+    bool cullBackFaces = false; //! Discards clockwise-wound back faces.
+
+    //! Must match the sample count the render pass this pipeline is built
+    //! against was created with (VkRenderPassManager::createRenderPass) --
+    //! every pipeline bound within a subpass shares its multisample state.
+    VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
+};
 
 /**
  * @brief This struct represents Important data for VkInstance creation
@@ -86,9 +137,9 @@ struct QueueData {
  * present mode, and extent during swapchain creation.
  */
 struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR        capabilities; ///< Surface capabilities (min/max image count, extent, etc.).
-    std::vector<VkSurfaceFormatKHR> formats;      ///< Supported surface formats.
-    std::vector<VkPresentModeKHR>   presentModes; ///< Supported presentation modes.
+    VkSurfaceCapabilitiesKHR capabilities; //! Surface capabilities (min/max image count, extent, etc.).
+    std::vector<VkSurfaceFormatKHR> formats; //! Supported surface formats.
+    std::vector<VkPresentModeKHR> presentModes; //! Supported presentation modes.
 };
 
 
@@ -110,11 +161,11 @@ struct VkCommandPoolData {
  * Used when building VkDescriptorSetLayoutBinding entries for pipeline creation.
  */
 struct DescriptorBindingInfo {
-    u32                binding;             ///< Binding point in the shader.
-    VkDescriptorType   descriptorType;      ///< Type of descriptor (uniform buffer, sampler, etc.).
-    u32                descriptorCount;     ///< Number of descriptors at this binding.
-    VkShaderStageFlags stageFlags;          ///< Shader stages that access this binding.
-    const VkSampler*   pImmutableSamplers;  ///< Optional immutable samplers (may be nullptr).
+    u32 binding; //! Binding point in the shader.
+    VkDescriptorType descriptorType; //! Type of descriptor (uniform buffer, sampler, etc.).
+    u32 descriptorCount; //! Number of descriptors at this binding.
+    VkShaderStageFlags stageFlags; //! Shader stages that access this binding.
+    const VkSampler* pImmutableSamplers; //! Optional immutable samplers (may be nullptr).
 
     DescriptorBindingInfo() : binding(0), descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
         descriptorCount(1), stageFlags(VK_SHADER_STAGE_VERTEX_BIT),
@@ -128,8 +179,8 @@ struct DescriptorBindingInfo {
  * set identified by @c setIndex.
  */
 struct DescriptorSetLayoutInfo {
-    u32                                setIndex; ///< Set number used in the shader (layout(set = N)).
-    std::vector<DescriptorBindingInfo> bindings; ///< All bindings belonging to this set.
+    u32 setIndex; //! Set number used in the shader (layout(set = N)).
+    std::vector<DescriptorBindingInfo> bindings; //! All bindings belonging to this set.
 
     DescriptorSetLayoutInfo() : setIndex(0) {}
 };
@@ -142,60 +193,63 @@ struct DescriptorSetLayoutInfo {
  * aspect mask, mip levels, and array layers for each swapchain image view.
  */
 struct ImageViewData {
-    VkImageAspectFlags aspectMask;    ///< Aspect to expose (e.g. VK_IMAGE_ASPECT_COLOR_BIT).
-    u32 baseMipLevel;                 ///< First mip level accessible to the view.
-    u32 levelCount;                   ///< Number of mip levels accessible.
-    u32 baseArrayLayer;               ///< First array layer accessible.
-    u32 layerCount;                   ///< Number of array layers accessible.
+    VkImageAspectFlags aspectMask; //! Aspect to expose (e.g. VK_IMAGE_ASPECT_COLOR_BIT).
+    u32 baseMipLevel; //! First mip level accessible to the view.
+    u32 levelCount; //! Number of mip levels accessible.
+    u32 baseArrayLayer; //! First array layer accessible.
+    u32 layerCount; //! Number of array layers accessible.
 };
 
 /**
- * @brief Base metadata shared by all GPU buffer types.
- *
- * Stores the raw VkBuffer handle, its allocation ID inside VkDeviceAllocator,
- * and whether the underlying memory is persistently mapped for CPU writes.
+ * @brief Base metadata shared by all GPU buffer types managed through VMA.
  */
 struct AuraBufferInfo {
-    VkBuffer buffer      = VK_NULL_HANDLE; ///< Underlying Vulkan buffer handle.
-    u32 allocationId     = 0;              ///< Allocation ID registered in VkDeviceAllocator.
-    bool persistent      = false;          ///< True if the buffer memory is kept permanently mapped.
-    void* mappedPointer  = nullptr;        ///< CPU-visible mapped region (persistent uploads).
+    VkBuffer      buffer        = VK_NULL_HANDLE;
+    VmaAllocation allocation    = VK_NULL_HANDLE;
+    VkDeviceSize  memoryOffset  = 0;
+    bool          persistent    = false;
+    void*         mappedPointer = nullptr;
 };
 
 /**
  * @brief Metadata for a vertex buffer, extending AuraBufferInfo.
  */
 struct VertexBufferInfo : public AuraBufferInfo {
-    size_t vertexCount = 0;  ///< Number of vertices stored in the buffer.
-    bool   is2d        = true; ///< True for Vertex2d layout; false for Vertex3d layout.
+    size_t vertexCount = 0;  //! Number of vertices stored in the buffer.
 };
 
 /**
  * @brief Metadata for an index buffer, extending AuraBufferInfo.
  */
 struct IndexBufferInfo : public AuraBufferInfo {
-    u32 indexCount = 0; ///< Number of indices stored in the buffer.
+    u32 indexCount = 0; //! Number of indices stored in the buffer.
+    //! Width of each index, recorded at upload time and replayed by
+    //! vkCmdBindIndexBuffer so 32-bit meshes are not truncated.
+    VkIndexType indexType = VK_INDEX_TYPE_UINT16;
 };
 
 /**
- * @brief Aggregates the depth buffer image and its GPU memory allocation.
- *
- * Keeps the VkImage handle and the VkDeviceAllocator allocation together so
- * they are always created, destroyed, and tested as a unit. The associated
- * VkImageView is owned separately by VkImageViewsManager.
- *
- * Defaults to VK_FORMAT_D32_SFLOAT; only valid in 3D rendering mode.
+ * @brief Aggregates the depth buffer image and its VMA allocation.
  */
 struct DepthResources {
-    VkImage            image      = VK_NULL_HANDLE;    ///< Depth image handle.
-    VkDeviceAllocation allocation = {};                ///< Device memory backing the image.
-    VkFormat           format     = VK_FORMAT_D32_SFLOAT; ///< Depth format used for image and view creation.
+    VkImage       image      = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VkFormat      format     = VK_FORMAT_D32_SFLOAT;
 
-    /** @brief Returns true when the depth image has been allocated. */
     bool isValid() const { return image != VK_NULL_HANDLE; }
+    void reset() { image = VK_NULL_HANDLE; allocation = VK_NULL_HANDLE; }
+};
 
-    /** @brief Resets all fields to their null/empty defaults without freeing resources. */
-    void reset() { image = VK_NULL_HANDLE; allocation = {}; }
+/**
+ * @brief Aggregates the transient multisampled color image and its VMA
+ *        allocation, used only when MSAA (graphics.msaa_samples > 1) is active.
+ */
+struct MsaaColorResources {
+    VkImage image = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+
+    bool isValid() const { return image != VK_NULL_HANDLE; }
+    void reset() { image = VK_NULL_HANDLE; allocation = VK_NULL_HANDLE; }
 };
 
 }

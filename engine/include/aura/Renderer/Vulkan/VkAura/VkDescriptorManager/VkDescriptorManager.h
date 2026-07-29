@@ -6,7 +6,6 @@
 #include <vulkan/vulkan.h>
 
 #include "aura/aura.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -32,9 +31,11 @@ public:
     /**
      * Constructor - initializes the descriptor pool
      * @param vkDevice Pointer to the Vulkan logical device
-     * @param pool_size Number of descriptor sets to allocate in the pool
+     * @param pool_size Descriptors of each type to reserve. Every texture costs
+     *        one sampler descriptor per swapchain image, so this bounds how many
+     *        distinct textures a scene may bind.
      */
-    VkDescriptorManager(VkHostAllocator* vkHostAllocator, VkDevice* vkDevice, i32 pool_size = 20);
+    VkDescriptorManager(VkDevice* vkDevice, i32 pool_size = 256);
 
     /**
      * Destructor - cleans up resources
@@ -83,7 +84,6 @@ public:
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
     VkDevice* _vkDevice;                  // Pointer to the Vulkan device
 
     VkDescriptorPool _descriptorPool;      // The descriptor pool handle

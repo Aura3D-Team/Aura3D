@@ -8,18 +8,21 @@
         "width": 1920,
         "height": 1080,
         "title": "Aura Engine",
+        "backend": "SDL3",
         "resizable": true,
         "fullscreen": false,
-        "vsync": true,
-        "fps_limit": 144
+        "vsync": false,
+        "vsync_mode": "Immediate",
+        "fps_limit": 0
     },
     "renderer": {
-        "backend": "vulkan",
-        "mode": "2d",
-        "validation_layers": true,
+        "backend": "software",
+        "validation_layers": true
+    },
+    "graphics": {
         "gpu_preference": "discrete",
-        "max_frames_in_flight": 2,
-        "msaa_samples": 4
+        "msaa_samples": 0,
+        "cpu_threads": 0
     },
     "paths": {
         "shaders": "./resources/shaders/",
@@ -28,8 +31,13 @@
         "logs": "./logs/"
     },
     "memory": {
-        "vulkan_block_size_mb": 128,
-        "vulkan_small_allocation_mb": 8
+        "vma": {
+            "buffer_device_address": true,
+            "prefer_device_memory": true,
+            "persistently_map_upload_buffers": true,
+            "vulkan_api_version": "1.4",
+            "preferred_large_heap_block_size_mb": 128
+        }
     },
     "logging": {
         "level": "trace",

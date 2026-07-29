@@ -7,8 +7,8 @@
 namespace aura3d {
 namespace vk {
 
-VkSwapChainManager::VkSwapChainManager(VkHostAllocator* vkHostAllocator, VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
-    : vkHostAllocator(vkHostAllocator), _swapChainSupportDetails({}), _swapChainCreateInfo({}),
+VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
+    : _swapChainSupportDetails({}), _swapChainCreateInfo({}),
     _swapChain(VK_NULL_HANDLE), _device(device),
     _choosedSurfaceFormat(), _choosedPresentMode(),
     _choosedExtent(), _swapChainImages({})
@@ -61,7 +61,7 @@ VkExtent2D* VkSwapChainManager::getExtent2D()
 void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount)
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
-    _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, windowDetails->vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR);
+    _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, AuraSettings::get()->getVSyncMode());
     _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, windowDetails);
 
     u32 imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
@@ -121,7 +121,7 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
     _swapChainCreateInfo.clipped = VK_TRUE;
     _swapChainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, vkHostAllocator->getCallbacks(), &_swapChain));
+    VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, nullptr, &_swapChain));
 
     INK_DEBUG << "SwapChain successfuly created!";
     INK_DEBUG << "ImageCount: " << imageCount;
@@ -224,7 +224,7 @@ void VkSwapChainManager::transitionImageLayout(
 void VkSwapChainManager::cleanup()
 {
     if (_swapChain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(*_device, _swapChain, vkHostAllocator->getCallbacks());
+        vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
         INK_DEBUG << "VkSwapChain deleted";
     }
 
@@ -286,19 +286,47 @@ VkSurfaceFormatKHR VkSwapChainManager::_chooseSwapSurfaceFormat(const std::vecto
     return availableFormats[0];
 }
 
-VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VkPresentModeKHR vkPresentMode)
+VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VSyncMode mode)
 {
-    if (availablePresentModes.empty()) {
-        throw AuraException("No available present modes found.");
+    switch (mode)
+    {
+        case VSyncMode::AutoVsync:
+            // FifoRelaxed, then Fifo (always supported).
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
+                return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::AutoNoVsync:
+            // Immediate, then Mailbox, then Fifo (always supported).
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
+                return VK_PRESENT_MODE_IMMEDIATE_KHR;
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+                return VK_PRESENT_MODE_MAILBOX_KHR;
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::FifoRelaxed:
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
+                return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+            INK_WARN << "VK_PRESENT_MODE_FIFO_RELAXED_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::Immediate:
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
+                return VK_PRESENT_MODE_IMMEDIATE_KHR;
+            INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::Mailbox:
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+                return VK_PRESENT_MODE_MAILBOX_KHR;
+            INK_WARN << "VK_PRESENT_MODE_MAILBOX_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+            return VK_PRESENT_MODE_FIFO_KHR;
+
+        case VSyncMode::Fifo:
+            return VK_PRESENT_MODE_FIFO_KHR;
     }
 
-    for (const VkPresentModeKHR& presentMode : availablePresentModes) {
-        if (presentMode == vkPresentMode) {
-            return presentMode;
-        }
-    }
-
-    throw AuraException("Current vkPresentMode is not available: "+std::to_string(vkPresentMode));
+    return VK_PRESENT_MODE_FIFO_KHR;
 }
 
 }

@@ -2,57 +2,35 @@
 
 #include <cstring>
 #include <cmath>
-#include <algorithm> // For std::fill and std::transform
-#include <vector>    // For the temporary pixel buffer
+#include <algorithm>
+#include <future>
+#include <thread>
+#include <vector>
 
-#include "aura/Core/AuraException/AuraException.h"
+#include <ink/ThreadPool.h>
+#include <wma/managers/IWindowManager.hpp>
+#include <wma/rendering/SoftwareRenderer.hpp>
 
 namespace aura3d {
 namespace cpu {
 
 /**
- * Constructor - Initializes the framebuffer using the Pixel struct
- * @param config Configuration settings for width, height, and depth buffer usage
+ * Constructor - allocates the CPU colour/depth plane. Presentation is delegated
+ * to the wma window manager, so no backend (SDL/X11/Wayland) objects are owned
+ * here; wma::IWindowManager::lockFramebuffer() hands us the surface each frame.
+ * @param windowManager wma window created with GraphicsAPI::CPU.
+ * @param config        Width, height, depth-buffer and worker-count settings.
  */
-CpuFrameBufferManager::CpuFrameBufferManager(SDL_Window* window, Config config) :
+CpuFrameBufferManager::CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config) :
     settings(config),
     // Initialize framebuffer with Pixel objects: black color (0) and max depth (1.0f)
-    framebuffer(config.width* config.height, Pixel{0, 1.0f}),
-    _window(window),
-    _renderer(nullptr),
-    _texture(nullptr),
+    framebuffer(static_cast<size_t>(config.width) * static_cast<size_t>(config.height), Pixel{0, 1.0f}),
+    _windowManager(&windowManager),
+    _rasterPool(std::make_unique<ink::ThreadPool>(static_cast<size_t>(_workerCount))),
     _font(GetDefaultBitmapFont())
 {
-    // NOTE: The separate depthBuffer has been removed. Depth is now part of the Pixel struct.
-
-    _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED);
-    INK_ASSERT_MSG(_renderer != nullptr, "Renderer could not be created! SDL_Error: " + std::string(SDL_GetError()));
-
-    // Create texture that will be used to display our framebuffer
-    _texture = SDL_CreateTexture(
-        _renderer,
-        SDL_PIXELFORMAT_ARGB8888,  // Ensure this matches your framebuffer format
-        SDL_TEXTUREACCESS_STREAMING,
-        settings.width,
-        settings.height
-        );
-    INK_ASSERT_MSG(_texture != nullptr, "Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
-}
-
-/**
- * Destructor - Vector memory is automatically freed
- */
-CpuFrameBufferManager::~CpuFrameBufferManager()
-{
-    if (_texture != nullptr) {
-        SDL_DestroyTexture(_texture);
-        _texture = nullptr;
-    }
-
-    if (_renderer != nullptr) {
-        SDL_DestroyRenderer(_renderer);
-        _renderer = nullptr;
-    }
+    const unsigned count = std::thread::hardware_concurrency();
+    _workerCount = config.threadCount > 0 ? config.threadCount : count > 0 ? static_cast<i32>(count) : 1;
 }
 
 /**
@@ -69,32 +47,47 @@ void CpuFrameBufferManager::clear(u32 color)
 }
 
 /**
- * Renders the framebuffer to the screen using SDL
+ * Presents the colour plane through wma's software-render contract.
  *
  * Process:
- * 1. Extract just the RGB color data into a temporary, contiguous buffer.
- * 2. Copy that temporary buffer to the SDL texture.
- * 3. Clear the renderer.
- * 4. Copy texture to renderer.
- * 5. Present the renderer (display the result).
+ * 1. Acquire the backend's CPU-writable surface via lockFramebuffer().
+ * 2. Copy our packed ARGB8888 colours into it — honouring the surface pitch —
+ *    in parallel across CPU cores with wma::parallelFill(), the software
+ *    analogue of a GPU spreading pixel work across its execution units.
+ * 3. Hand the surface back with presentFramebuffer(), which blits it to screen.
+ *
+ * This works on every wma backend that supports GraphicsAPI::CPU, with no
+ * direct dependency on any windowing library.
  */
 void CpuFrameBufferManager::renderFramebuffer()
 {
-    // SDL_UpdateTexture expects a contiguous array of u32 colors, but our
-    // framebuffer is an array of Pixel structs (u32 rgb, f32 z).
-    // We must first copy the color data into a temporary buffer.
-    std::vector<u32> pixel_data(settings.width * settings.height);
-    std::transform(framebuffer.begin(), framebuffer.end(), pixel_data.begin(),
-                   [](const Pixel& p) { return p.rgb; });
+    if (_windowManager == nullptr)
+        return;
 
-    SDL_UpdateTexture(_texture, nullptr, pixel_data.data(), settings.width * sizeof(u32));
-    SDL_RenderClear(_renderer);
-    SDL_RenderCopy(_renderer, _texture, nullptr, nullptr);
-    SDL_RenderPresent(_renderer);
+    const wma::SoftwareFramebuffer target = _windowManager->lockFramebuffer();
+    if (!target.valid())
+        return;
+
+    // Our plane and the locked surface can momentarily disagree on size (a
+    // resize event not yet propagated through handleWindowChanges), so bound
+    // every sample to the plane we actually own.
+    const i32 planeWidth  = settings.width;
+    const i32 planeHeight = settings.height;
+
+    wma::parallelFill(target, [this, planeWidth, planeHeight](i32 x, i32 y) noexcept -> u32 {
+        if (x < planeWidth && y < planeHeight)
+            return framebuffer[static_cast<size_t>(y) * static_cast<size_t>(planeWidth)
+                             + static_cast<size_t>(x)].rgb;
+        return 0u;
+    });
+
+    _windowManager->presentFramebuffer();
 }
 
 /**
- * Resizes the framebuffer to new dimensions
+ * Resizes the CPU framebuffer to new dimensions. The backend surface tracks the
+ * window on its own (lockFramebuffer() always returns the current size), so
+ * only our own colour/depth plane needs reallocating here.
  * @param width New width in pixels
  * @param height New height in pixels
  */
@@ -111,29 +104,11 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height)
         return;
     }
 
-    // Clean up existing texture
-    if (_texture != nullptr) {
-        SDL_DestroyTexture(_texture);
-    }
-
-    // Create new texture with new dimensions
-    _texture = SDL_CreateTexture(
-        _renderer,
-        SDL_PIXELFORMAT_ARGB8888,
-        SDL_TEXTUREACCESS_STREAMING,
-        width, height
-        );
-
-    if (_texture == nullptr) {
-        throw aura3d::AuraException("Texture could not be created! SDL_Error: " + std::string(SDL_GetError()));
-    }
-
-    // Update settings first
     settings.width = width;
     settings.height = height;
 
     // Resize the framebuffer vector, initializing new pixels to black with max depth
-    framebuffer.assign(width * height, Pixel{0, 1.0f});
+    framebuffer.assign(static_cast<size_t>(width) * static_cast<size_t>(height), Pixel{0, 1.0f});
 }
 
 /**
@@ -340,6 +315,284 @@ void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point>& points, 
 
 
 /**
+ * Half-space (edge-function) triangle rasteriser.
+ *
+ * Pipeline per triangle
+ * 1. Compute screen-space bounding box (clamped to viewport).
+ * 2. Evaluate edge functions at each pixel centre (+0.5 sub-pixel bias).
+ * 3. Accept pixels whose barycentric weights are all ≥ 0 (handles both
+ *    CW and CCW winding by normalising with the signed area).
+ * 4. Depth test: discard fragment if z ≥ stored depth.
+ * 5. Perspective-correct interpolation of UV and vertex colour.
+ * 6. Nearest-neighbour texture sample (if texture != nullptr).
+ * 7. Modulate texture colour by vertex colour, write pixel + depth.
+ */ 
+void CpuFrameBufferManager::drawTriangle(const ScreenVertex& v0, const ScreenVertex& v1,
+                                         const ScreenVertex& v2, const Texture* texture)
+{
+    rasterizeTriangleSpan(v0, v1, v2, texture, 0, settings.height);
+}
+
+void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex& v0, const ScreenVertex& v1,
+                                                   const ScreenVertex& v2, const Texture* texture,
+                                                   i32 yStart, i32 yEnd)
+{
+    // bbox, additionally clipped to [yStart, yEnd) -- the caller's row-band.
+    const int xmin = std::max(0, (int)std::floor(std::min({v0.x, v1.x, v2.x})));
+    const int xmax = std::min(settings.width - 1, (int)std::ceil(std::max({v0.x, v1.x, v2.x})));
+    const int ymin = std::max(yStart, (int)std::floor(std::min({v0.y, v1.y, v2.y})));
+    const int ymax = std::min(yEnd - 1, (int)std::ceil(std::max({v0.y, v1.y, v2.y})));
+
+    if (xmin > xmax || ymin > ymax)
+        return;
+
+    // Signed area (2×) also serves as the edge-function denominator
+    //   area2 = edgeFn(v0, v1, v2)
+    //         = (v1.x−v0.x)·(v2.y−v0.y) − (v1.y−v0.y)·(v2.x−v0.x)
+    const float area2 = (v1.x - v0.x) * (v2.y - v0.y)
+                      - (v1.y - v0.y) * (v2.x - v0.x);
+
+    if (std::abs(area2) < 1e-6f) 
+        return;
+
+    const float invArea2 = 1.0f / area2;
+
+    // Pre-divide attributes by w for perspective-correct interpolation 
+    const glm::vec2 uv0w = v0.uv * v0.invW;
+    const glm::vec2 uv1w = v1.uv * v1.invW;
+    const glm::vec2 uv2w = v2.uv * v2.invW;
+    const glm::vec4 col0w = v0.color * v0.invW;
+    const glm::vec4 col1w = v1.color * v1.invW;
+    const glm::vec4 col2w = v2.color * v2.invW;
+
+    // Rasterise
+    for (int y = ymin; y <= ymax; ++y)
+    {
+        const float py = static_cast<float>(y) + 0.5f;
+
+        for (int x = xmin; x <= xmax; ++x)
+        {
+            const float px = static_cast<float>(x) + 0.5f;
+
+            // Edge functions:
+            //   w0 = edgeFn(v1, v2, p)  →  barycentric weight for v0
+            //   w1 = edgeFn(v2, v0, p)  →  barycentric weight for v1
+            //   w2 = edgeFn(v0, v1, p)  →  barycentric weight for v2
+            const float w0 = (v2.x - v1.x) * (py - v1.y) - (v2.y - v1.y) * (px - v1.x);
+            const float w1 = (v0.x - v2.x) * (py - v2.y) - (v0.y - v2.y) * (px - v2.x);
+            const float w2 = (v1.x - v0.x) * (py - v0.y) - (v1.y - v0.y) * (px - v0.x);
+
+            // Inside test — normalise by sign of area to handle both windings.
+            if (area2 > 0.0f) {
+                if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+            } else {
+                if (w0 > 0.0f || w1 > 0.0f || w2 > 0.0f) continue;
+            }
+
+            // Barycentric coordinates ∈ [0, 1],  b0+b1+b2 = 1
+            const float b0 = w0 * invArea2;
+            const float b1 = w1 * invArea2;
+            const float b2 = w2 * invArea2;
+
+            // Interpolated depth (linear in screen space is fine for NDC z)
+            const float z = b0 * v0.z + b1 * v1.z + b2 * v2.z;
+
+            // Depth test
+            const int idx = y * settings.width + x;
+            if (settings.useDepthBuffer && z >= framebuffer[idx].z) continue;
+
+            // Perspective-correct 1/w
+            const float invW = b0 * v0.invW + b1 * v1.invW + b2 * v2.invW;
+            if (invW <= 0.0f) continue;
+            const float perspW = 1.0f / invW;
+
+            // Reconstruct UV and colour
+            const glm::vec2 uv    = (b0 * uv0w  + b1 * uv1w  + b2 * uv2w)  * perspW;
+            const glm::vec4 vcolor= glm::clamp(
+                                        (b0 * col0w + b1 * col1w + b2 * col2w) * perspW,
+                                        0.0f, 1.0f);
+
+            // Texture sample (nearest-neighbour)
+            const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
+
+            // Unpack texel (ARGB8888 — matches SDL_PIXELFORMAT_ARGB8888)
+            const u8 ta = static_cast<u8>((texel >> 24) & 0xFFu);
+            const u8 tr = static_cast<u8>((texel >> 16) & 0xFFu);
+            const u8 tg = static_cast<u8>((texel >>  8) & 0xFFu);
+            const u8 tb = static_cast<u8>( texel        & 0xFFu);
+
+            // Modulate by vertex colour
+            const u8 fr = static_cast<u8>(static_cast<float>(tr) * vcolor.r);
+            const u8 fg = static_cast<u8>(static_cast<float>(tg) * vcolor.g);
+            const u8 fb = static_cast<u8>(static_cast<float>(tb) * vcolor.b);
+            const u8 fa = static_cast<u8>(static_cast<float>(ta) * vcolor.a);
+
+            const u32 finalColor =  (static_cast<u32>(fa) << 24)
+                                  | (static_cast<u32>(fr) << 16)
+                                  | (static_cast<u32>(fg) <<  8)
+                                  |  static_cast<u32>(fb);
+
+            // Write pixel and depth
+            framebuffer[idx].rgb = finalColor;
+            if (settings.useDepthBuffer) {
+                framebuffer[idx].z = z;
+            }
+        }
+    }
+}
+
+void CpuFrameBufferManager::drawTriangle2D(const ScreenVertex& v0, const ScreenVertex& v1,
+                                           const ScreenVertex& v2, const Texture* texture)
+{
+    rasterizeTriangle2DSpan(v0, v1, v2, texture, 0, settings.height);
+}
+
+void CpuFrameBufferManager::rasterizeTriangle2DSpan(const ScreenVertex& v0, const ScreenVertex& v1,
+                                                     const ScreenVertex& v2, const Texture* texture,
+                                                     i32 yStart, i32 yEnd)
+{
+    const int xmin = std::max(0, static_cast<int>(std::floor(std::min({v0.x, v1.x, v2.x}))));
+    const int xmax = std::min(settings.width - 1, static_cast<int>(std::ceil(std::max({v0.x, v1.x, v2.x}))));
+    const int ymin = std::max(yStart, static_cast<int>(std::floor(std::min({v0.y, v1.y, v2.y}))));
+    const int ymax = std::min(yEnd - 1, static_cast<int>(std::ceil(std::max({v0.y, v1.y, v2.y}))));
+
+    if (xmin > xmax || ymin > ymax)
+        return;
+
+    //! Twice the signed area, doubling as the edge-function denominator.
+    const float area2 = (v1.x - v0.x) * (v2.y - v0.y)
+                      - (v1.y - v0.y) * (v2.x - v0.x);
+
+    if (std::abs(area2) < 1e-6f)
+        return; //! Degenerate: zero-area triangle covers nothing.
+
+    const float invArea2 = 1.0f / area2;
+
+    for (int y = ymin; y <= ymax; ++y)
+    {
+        const float py = static_cast<float>(y) + 0.5f;
+
+        for (int x = xmin; x <= xmax; ++x)
+        {
+            const float px = static_cast<float>(x) + 0.5f;
+
+            const float w0 = (v2.x - v1.x) * (py - v1.y) - (v2.y - v1.y) * (px - v1.x);
+            const float w1 = (v0.x - v2.x) * (py - v2.y) - (v0.y - v2.y) * (px - v2.x);
+            const float w2 = (v1.x - v0.x) * (py - v0.y) - (v1.y - v0.y) * (px - v0.x);
+
+            //! Inside test, normalised by the area's sign so either winding works.
+            if (area2 > 0.0f) {
+                if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+            } else {
+                if (w0 > 0.0f || w1 > 0.0f || w2 > 0.0f) continue;
+            }
+
+            //! Affine barycentrics: orthographic projection means w is constant.
+            const float b0 = w0 * invArea2;
+            const float b1 = w1 * invArea2;
+            const float b2 = w2 * invArea2;
+
+            const glm::vec2 uv = b0 * v0.uv + b1 * v1.uv + b2 * v2.uv;
+            const glm::vec4 vcolor = glm::clamp(b0 * v0.color + b1 * v1.color + b2 * v2.color,
+                                                0.0f, 1.0f);
+
+            const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
+
+            //! ARGB8888, matching SDL_PIXELFORMAT_ARGB8888.
+            const float ta = static_cast<float>((texel >> 24) & 0xFFu) / 255.0f;
+            const float tr = static_cast<float>((texel >> 16) & 0xFFu);
+            const float tg = static_cast<float>((texel >>  8) & 0xFFu);
+            const float tb = static_cast<float>( texel        & 0xFFu);
+
+            //! Unlit: texel * vertex colour, exactly like the GPU 2D shader.
+            const float srcA = ta * vcolor.a;
+            if (srcA <= 0.0f)
+                continue; //! Fully transparent: nothing to composite.
+
+            const float srcR = tr * vcolor.r;
+            const float srcG = tg * vcolor.g;
+            const float srcB = tb * vcolor.b;
+
+            const int idx = y * settings.width + x;
+            const u32 dst = framebuffer[idx].rgb;
+
+            const float dstR = static_cast<float>((dst >> 16) & 0xFFu);
+            const float dstG = static_cast<float>((dst >>  8) & 0xFFu);
+            const float dstB = static_cast<float>( dst        & 0xFFu);
+
+            /*
+             * Source-over: out = src * a + dst * (1 - a). The same operation
+             * GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA performs on the GPU paths.
+             */
+            const float invA = 1.0f - srcA;
+            const u8 outR = static_cast<u8>(srcR * srcA + dstR * invA);
+            const u8 outG = static_cast<u8>(srcG * srcA + dstG * invA);
+            const u8 outB = static_cast<u8>(srcB * srcA + dstB * invA);
+
+            //! Colour plane only: the overlay never touches the depth buffer.
+            framebuffer[idx].rgb = 0xFF000000u
+                                 | (static_cast<u32>(outR) << 16)
+                                 | (static_cast<u32>(outG) <<  8)
+                                 |  static_cast<u32>(outB);
+        }
+    }
+}
+
+void CpuFrameBufferManager::dispatchRowBands(const std::function<void(i32 yStart, i32 yEnd)>& rasterizeBand)
+{
+    if (settings.height <= 0)
+        return;
+
+    const i32 bands = std::min(_workerCount, settings.height);
+    const i32 rowsPerBand = settings.height / bands;
+    const i32 remainder = settings.height % bands;
+
+    std::vector<std::future<void>> futures;
+    futures.reserve(static_cast<size_t>(bands));
+
+    i32 y = 0;
+    for (i32 b = 0; b < bands; ++b)
+    {
+        //! Distribute the remainder across the first `remainder` bands rather
+        //! than dumping it all on the last one, so no single thread is left
+        //! with a visibly taller slice than its neighbours.
+        const i32 bandRows = rowsPerBand + (b < remainder ? 1 : 0);
+        const i32 yStart = y;
+        const i32 yEnd = y + bandRows;
+        y = yEnd;
+
+        futures.push_back(_rasterPool->submit([&rasterizeBand, yStart, yEnd] {
+            rasterizeBand(yStart, yEnd);
+        }));
+    }
+
+    for (auto& f : futures)
+        f.get();
+}
+
+void CpuFrameBufferManager::drawTriangles(std::span<const ScreenTriangle> triangles, const Texture* texture)
+{
+    if (triangles.empty())
+        return;
+
+    dispatchRowBands([this, triangles, texture](i32 yStart, i32 yEnd) {
+        for (const ScreenTriangle& tri : triangles)
+            rasterizeTriangleSpan(tri.v0, tri.v1, tri.v2, texture, yStart, yEnd);
+    });
+}
+
+void CpuFrameBufferManager::drawTriangles2D(std::span<const ScreenTriangle> triangles, const Texture* texture)
+{
+    if (triangles.empty())
+        return;
+
+    dispatchRowBands([this, triangles, texture](i32 yStart, i32 yEnd) {
+        for (const ScreenTriangle& tri : triangles)
+            rasterizeTriangle2DSpan(tri.v0, tri.v1, tri.v2, texture, yStart, yEnd);
+    });
+}
+
+/**
  * Blends two colors according to an alpha value
  * @param c1 Background color
  * @param c2 Foreground color
@@ -377,7 +630,8 @@ void CpuFrameBufferManager::drawText(const std::string& text, Point p, u32 color
             continue;
         }
 
-        if (c < 0 || c > 127) c = '?';
+        if ((c < 0) || (c > 127))
+            c = '?';
 
         if (cursorX >= settings.width || p.y >= settings.height || cursorX + scaledWidth <= 0 || p.y + scaledHeight <= 0) {
             cursorX += scaledWidth + scaledSpacing;

@@ -8,8 +8,7 @@
 #include <unordered_map>
 
 #include "aura/aura.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
+#include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 
 namespace aura3d {
 namespace vk {
@@ -31,33 +30,19 @@ public:
      * including the image, memory allocation, view, and sampler.
      */
     struct TextureData {
-        VkImage image = VK_NULL_HANDLE;          // Vulkan image handle
-        VkDeviceAllocation* allocation = nullptr;     // Memory allocation information
-        VkImageView view = VK_NULL_HANDLE;        // Image view for shader access
-        VkSampler sampler = VK_NULL_HANDLE;       // Sampler for texture filtering
-        u32 width = 0;                       // Texture width in pixels
-        u32 height = 0;                      // Texture height in pixels
+        VkImage       image      = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
+        VkImageView   view       = VK_NULL_HANDLE;
+        VkSampler     sampler    = VK_NULL_HANDLE;
+        u32           width      = 0;
+        u32           height     = 0;
     };
 
-    /**
-     * @brief Constructs a texture manager
-     *
-     * @param device Pointer to the Vulkan logical device
-     * @param physicalDevice Pointer to the Vulkan physical device
-     * @param commandPool Command pool for texture operations
-     * @param graphicsQueue Queue for submitting texture commands
-     * @param bufferAllocator Memory allocator for texture resources
-     */
-    VkTextureManager(VkHostAllocator* vkHostAllocator,
-                     VkDeviceAllocator* vkDeviceAllocator,
+    VkTextureManager(VulkanMemoryManager* memoryManager,
                      VkDevice* device,
-                     VkPhysicalDevice* physicalDevice,
                      VkCommandPool commandPool,
                      VkQueue graphicsQueue);
 
-    /**
-     * @brief Destructor that cleans up all texture resources
-     */
     ~VkTextureManager();
 
     /**
@@ -75,6 +60,58 @@ public:
                                         u8 a = 255);
 
     /**
+     * @brief Uploads arbitrary RGBA8 pixel data through a staging buffer.
+     *
+     * The general upload path: createSolidColorTexture() is a 1x1 case of it.
+     *
+     * @param name Unique identifier for the texture; an existing entry is replaced.
+     * @param rgba Tightly packed @p width * @p height * 4 bytes, RGBA order.
+     * @param width Texture width in pixels.
+     * @param height Texture height in pixels.
+     * @return TextureData containing the created texture resources; a default
+     *         constructed value when the input is empty.
+     */
+    TextureData createTextureFromPixels(const std::string& name,
+                                        const u8* rgba,
+                                        u32 width,
+                                        u32 height);
+
+    /**
+     * @brief Allocates an empty texture whose texels are written later by
+     *        updateRegion().
+     *
+     * The image is created, cleared to transparent black and left in
+     * SHADER_READ_ONLY_OPTIMAL, so it is immediately safe to sample and to
+     * describe in a descriptor set. Because the VkImage, view and sampler never
+     * change afterwards, the descriptor sets pointing at it stay valid for the
+     * texture's whole life -- which is what makes an atlas that keeps growing
+     * affordable on this backend.
+     *
+     * @param name Unique identifier for the texture; an existing entry is replaced.
+     * @param width Texture width in pixels.
+     * @param height Texture height in pixels.
+     * @return TextureData for the new texture; a default value on failure.
+     */
+    TextureData createDynamicTexture(const std::string& name, u32 width, u32 height);
+
+    /**
+     * @brief Uploads RGBA8 texels into a sub-rectangle of an existing texture.
+     *
+     * Stages through a host-visible buffer and copies only the named rectangle,
+     * transitioning the image to TRANSFER_DST and back around the copy.
+     *
+     * @param name Identifier of the texture to update.
+     * @param x Left edge of the destination rectangle, in pixels.
+     * @param y Top edge of the destination rectangle, in pixels.
+     * @param width Rectangle width in pixels.
+     * @param height Rectangle height in pixels.
+     * @param rgba Tightly packed @p width * @p height * 4 bytes.
+     */
+    void updateRegion(const std::string& name,
+                      u32 x, u32 y, u32 width, u32 height,
+                      const u8* rgba);
+
+    /**
      * @brief Retrieves a texture by name
      *
      * @param name The identifier of the texture to retrieve
@@ -90,15 +127,10 @@ public:
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
-    VkDeviceAllocator* vkDeviceAllocator;
-
-    VkDevice* _device;                  // Logical Vulkan device
-    VkPhysicalDevice* _physicalDevice;  // Physical Vulkan device
-    VkCommandPool _commandPool;         // Command pool for operations
-    VkQueue _graphicsQueue;             // Graphics queue for submissions
-
-    // Storage for textures by name
+    VulkanMemoryManager* _memoryManager;
+    VkDevice* _device;
+    VkCommandPool _commandPool;
+    VkQueue _graphicsQueue;
     std::unordered_map<std::string, TextureData> _textures;
 
     /**
@@ -159,8 +191,20 @@ private:
      * @param height Height of the region to copy
      */
     void copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height);
+
+    /**
+     * @brief Copies a buffer into an offset sub-rectangle of an image.
+     *
+     * The whole-image copyBufferToImage() is the special case of this with a
+     * zero offset and the image's full extent.
+     */
+    void copyBufferToImageRegion(VkBuffer buffer, VkImage image,
+                                 u32 x, u32 y, u32 width, u32 height);
+
+    void destroyTextureData(TextureData& texture);
 };
 
-}
+} // namespace vk
 } // namespace aura3d
+
 #endif // VKTEXTUREMANAGER_H

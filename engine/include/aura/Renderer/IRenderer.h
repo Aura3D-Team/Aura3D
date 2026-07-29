@@ -3,14 +3,18 @@
 
 #pragma once
 
-#include <functional>
 #include <memory>
+#include <span>
+#include <string>
 #include <vector>
 
 #include <wma/wma.hpp>
 #include <glm/glm.hpp>
 
+#include "aura/Utils/PlatformCompat.h"
+
 #include "aura/Core/AuraCore.h"
+#include "aura/Renderer/Material.h"
 #include "aura/Renderer/RenderHandles.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
@@ -43,16 +47,6 @@ enum class RendererChoice
 };
 
 /**
- * @brief Strongly-typed enum representing the rendering target dimensions.
- */
-enum class RendererMode
-{
-#define X(name) name,
-    RENDERER_MODE_LIST
-#undef X
-};
-
-/**
  * @brief Converts a string representation to a RendererChoice enum.
  * * Case-insensitive. Also maps "CPU" to RendererChoice::SOFTWARE.
  * * @param[in] s The input string to parse.
@@ -75,49 +69,17 @@ inline bool RendererChoiceFromString(const std::string& s, RendererChoice& out)
 }
 
 /**
- * @brief Converts a string representation to a RendererMode enum.
- * * Case-insensitive. Valid values are "2d" and "3d".
- * * @param[in] s The input string to parse.
- * @param[out] out The destination enum variable.
- * @return true If the string matches a valid mode, false otherwise.
- */
-inline bool RendererModeFromString(const std::string& s, RendererMode& out)
-{
-    std::string low;
-    low.reserve(s.size());
-    for (const char c : s) low += std::tolower(c);
-
-    if (low == "2d") { out = RendererMode::MODE_2D; return true; }
-    if (low == "3d") { out = RendererMode::MODE_3D; return true; }
-
-    return false;
-}
-
-/**
  * @brief Converts a RendererChoice enum value to its exact string representation.
  * * @param[in] c The renderer enum value.
  * @return const char* A static string literal matching the enum identifier, or "UNKNOWN".
  */
 inline const char* RendererChoiceToString(RendererChoice c)
 {
-    switch (c) {
-    case RendererChoice::SOFTWARE: return "SOFTWARE";
-    case RendererChoice::OPENGL:   return "OPENGL";
-    case RendererChoice::VULKAN:   return "VULKAN";
-    }
-    return "UNKNOWN";
-}
-
-/**
- * @brief Converts a RendererMode enum value to a human-readable string.
- * * @param[in] m The renderer mode enum value.
- * @return const char* "2D", "3D", or "UNKNOWN".
- */
-inline const char* RendererModeToString(RendererMode m)
-{
-    switch (m) {
-    case RendererMode::MODE_2D: return "2D";
-    case RendererMode::MODE_3D: return "3D";
+    switch (c)
+    {
+        case RendererChoice::SOFTWARE: return "SOFTWARE";
+        case RendererChoice::OPENGL:   return "OPENGL";
+        case RendererChoice::VULKAN:   return "VULKAN";
     }
     return "UNKNOWN";
 }
@@ -134,10 +96,10 @@ public:
      /**
      * @brief Constructs the base IRenderer instance.
      * * @param[in] windowDetails Struct containing initial parameters like size and title.
-     * @param[in] mode Specifies if this context handles 2D or 3D operations.
+     * @param[in] mode Specifies if this context handles 3D operations.
      */
-    IRenderer(const wma::WindowDetails& windowDetails, RendererMode mode)
-        : _windowDetails(windowDetails), _mode(mode) {}
+    IRenderer(const wma::WindowDetails& windowDetails)
+        : _windowDetails(windowDetails) {}
 
     /**
      * @brief Virtual destructor ensuring safe polymorphic cleanups.
@@ -148,7 +110,7 @@ public:
      * @brief Configures underlying graphics libraries and hardware contexts using engine settings.
      * * @param[in] settings Pointer to the foundational application runtime configuration.
      */
-    virtual void initialize(const AuraSettings* settings) = 0;
+    virtual void initialize(AuraSettings* settings) = 0;
 
     /**
      * @brief Refreshes viewport contexts and internal buffers following user sizing adjustments.
@@ -159,13 +121,6 @@ public:
      * @brief Deallocates remaining graphics pipeline systems before shutdown.
      */
     virtual void cleanup() = 0;
-
-    /**
-     * @brief Generates a GPU vertex buffer optimized for 2D configurations.
-     * @param[in] vertices Array container of target 2D structural coordinate pieces.
-     * @return VertexBufferHandle Opaque pointer abstraction for pipeline binding.
-     */
-    virtual VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices) = 0;
 
     /**
      * @brief Generates a GPU vertex buffer optimized for 3D configurations.
@@ -197,6 +152,123 @@ public:
      * @return TextureHandle Opaque address binding reference tag.
      */
     virtual TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) = 0;
+
+    /**
+     * @brief Uploads tightly packed 8-bit RGBA pixels as a sampleable texture.
+     *
+     * This is the single texture-upload primitive each backend must provide;
+     * every other texture entry point in this interface funnels through it.
+     *
+     * @param[in] rgbaPixels Pointer to @p width * @p height * 4 bytes, RGBA order.
+     * @param[in] width Texture width in pixels.
+     * @param[in] height Texture height in pixels.
+     * @return TextureHandle Binding reference, or INVALID_HANDLE on failure.
+     */
+    virtual TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) = 0;
+
+    /**
+     * @brief Allocates an empty RGBA8 texture whose contents are meant to change.
+     *
+     * Distinct from createTextureFromPixels() because the backing store must
+     * stay writable for the resource's whole life: the texture is allocated
+     * once (and, on Vulkan, consumes descriptor-pool slots exactly once), then
+     * refreshed in place with updateTextureRegion(). That is what makes a glyph
+     * atlas that grows at runtime affordable -- recreating the texture per new
+     * character would exhaust the descriptor pool within minutes.
+     *
+     * The initial contents are transparent black.
+     *
+     * @param[in] width Texture width in pixels.
+     * @param[in] height Texture height in pixels.
+     * @return TextureHandle for the new texture, or INVALID_HANDLE on failure.
+     */
+    virtual TextureHandle createDynamicTexture(u32 width, u32 height) = 0;
+
+    /**
+     * @brief Overwrites a sub-rectangle of a texture in place.
+     *
+     * Only the named rectangle travels to the GPU, so adding one glyph to a
+     * 2048x2048 atlas costs a few hundred bytes rather than 16 MB.
+     *
+     * @param[in] handle Texture from createDynamicTexture().
+     * @param[in] x Left edge of the destination rectangle, in pixels.
+     * @param[in] y Top edge of the destination rectangle, in pixels.
+     * @param[in] width Rectangle width in pixels.
+     * @param[in] height Rectangle height in pixels.
+     * @param[in] rgbaPixels Tightly packed @p width * @p height * 4 bytes.
+     *
+     * @note A rectangle reaching outside the texture is rejected, not clamped.
+     */
+    virtual void updateTextureRegion(TextureHandle handle,
+                                     u32 x, u32 y,
+                                     u32 width, u32 height,
+                                     const u8* rgbaPixels) = 0;
+
+    /**
+     * @brief Loads a texture from disk (PNG/JPEG/TGA/BMP/...).
+     *
+     * Never throws and never fails: a missing or corrupt file logs a warning
+     * and yields the magenta/black checkerboard instead, so a broken asset is
+     * obvious on screen rather than fatal.
+     *
+     * @param[in] path Filesystem path to the image.
+     * @return TextureHandle for the decoded image, or for the fallback pattern.
+     */
+    virtual TextureHandle createTextureFromFile(const std::string& path);
+
+    /**
+     * @brief Generates the embedded magenta/black "missing texture" pattern.
+     *
+     * Requires no file I/O, so it is available on every platform.
+     * @param[in] size Edge length in pixels.
+     */
+    virtual TextureHandle createCheckerboardTexture(u32 size = 64);
+
+    /**
+     * @brief Uploads a CPU-side mesh as a GPU-resident vertex + index buffer pair.
+     * @param[in] mesh Geometry to upload; an empty mesh yields INVALID_HANDLE.
+     * @return MeshHandle referencing the uploaded pair.
+     */
+    virtual MeshHandle createMesh(const gfx::Mesh3D& mesh);
+
+    /**
+     * @brief Draws a whole mesh, replacing the bind-VB / bind-IB / drawIndexed triple.
+     *
+     * This is the primary draw path; the lower-level bind/draw calls remain
+     * available for advanced use.
+     *
+     * @param[in] mesh Mesh to draw.
+     * @param[in] texture Optional texture; INVALID_HANDLE keeps the current binding.
+     */
+    virtual void drawMesh(MeshHandle mesh, TextureHandle texture = INVALID_HANDLE);
+
+    /**
+     * @brief Registers a material so it can be bound by handle.
+     */
+    virtual MaterialHandle createMaterial(const Material& material);
+
+    /**
+     * @brief Makes @p handle the active material, binding its albedo texture.
+     */
+    virtual void bindMaterial(MaterialHandle handle);
+
+    /**
+     * @brief Sets the directional light consumed by the built-in shaders.
+     *
+     * Backends override this to push the data to the GPU; the base
+     * implementation records it so getLight() always reflects the last value.
+     */
+    virtual void setLight(const gfx::LightUBO& light);
+
+    /**
+     * @brief Returns the directional light currently in effect.
+     */
+    const gfx::LightUBO& getLight() const { return _light; }
+
+    /**
+     * @brief Returns the material bound by the most recent bindMaterial() call.
+     */
+    const Material& getCurrentMaterial() const { return _currentMaterial; }
 
     /**
      * @brief Prepares hardware commands to execute a synchronized drawing pass cycle.
@@ -257,6 +329,37 @@ public:
     virtual void draw(u32 vertexCount, u32 instanceCount = 1) = 0;
 
     /**
+     * @brief Submits one batch of unlit 2D geometry as a single draw call.
+     *
+     * Runs on a dedicated overlay pipeline, independent of the 3D scene:
+     *  - positions are window pixels with (0,0) at the top-left corner, mapped
+     *    to clip space by an orthographic projection the backend derives from
+     *    the current framebuffer size -- no camera is involved, so a caller
+     *    never has to fold a scene view/projection out of its coordinates;
+     *  - shading is unlit, @c texel * @c vertexColor, so overlays keep their
+     *    exact colour whatever the scene's light is doing;
+     *  - depth testing is off and straight alpha blending is on, so the batch
+     *    composites over everything already drawn this pass;
+     *  - the whole batch becomes one draw call, which is what makes a 500-glyph
+     *    string cost the same as a single quad.
+     *
+     * Vertex and index data are copied into backend-owned dynamic buffers, so
+     * the caller may reuse or destroy its arrays as soon as this returns.
+     *
+     * Must be called between beginRenderPass() and endRenderPass(), after the
+     * scene's own draws. Leaves no 2D state bound: the next 3D draw rebinds its
+     * own pipeline.
+     *
+     * @param[in] vertices Batch vertices in window-pixel space.
+     * @param[in] indices Triangle list into @p vertices.
+     * @param[in] texture Texture sampled by the batch; INVALID_HANDLE draws
+     *        untextured (vertex colour only).
+     */
+    virtual void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
+                             std::span<const u32> indices,
+                             TextureHandle texture) = 0;
+
+    /**
      * @brief Sets the clear color for target framebuffers.
      * @param[in] r Red element normalized value (0.0f - 1.0f).
      * @param[in] g Green element normalized value (0.0f - 1.0f).
@@ -269,7 +372,7 @@ public:
      * @brief Initializes execution loop parameters, executing callback functions inside standard frame limits.
      * * @param[in] onFrame Callable callback structure managing system updates per game tick iteration.
      */
-    void run(std::function<void()> onFrame);
+    void run(move_only_function<void()> onFrame);
 
     /**
      * @brief Fetches access coordinates belonging to the overarching client operating window instance.
@@ -289,24 +392,6 @@ public:
      */
     const wma::WindowDetails& getWindowDetails() const { return _windowDetails; }
 
-    /**
-     * @brief Inspects if the layout environment tracks 2D or 3D coordinate matrices.
-     * @return RendererMode Current spatial context.
-     */
-    RendererMode getMode() const { return _mode; }
-
-    /**
-     * @brief Utility query evaluating if the engine mode is explicitly configured for 2D graphics.
-     * @return true if mode is MODE_2D, false otherwise.
-     */
-    bool is2D() const { return _mode == RendererMode::MODE_2D; }
-
-    /**
-     * @brief Utility query evaluating if the engine mode is explicitly configured for 3D graphics.
-     * @return true if mode is MODE_3D, false otherwise.
-     */
-    bool is3D() const { return _mode == RendererMode::MODE_3D; }
-
 protected:
     /**
      * @brief Low-level window factory function implemented by specialized API backends.
@@ -315,9 +400,33 @@ protected:
      */
     virtual void createWindow(const char* title, const wma::WindowBackend& wBackend) = 0;
 
-    wma::WindowDetails _windowDetails;  /**< Copy of current platform dimension attributes. */
-    RendererMode _mode;                 /**< Active dimension format constraint setting. */
-    bool _running = false;              /**< Control status tracker managing main loop life. */
+    /**
+     * @struct MeshRecord
+     * @brief The vertex/index buffer pair a MeshHandle resolves to.
+     */
+    struct MeshRecord {
+        VertexBufferHandle vertexBuffer = INVALID_HANDLE;
+        IndexBufferHandle indexBuffer  = INVALID_HANDLE;
+        u32 indexCount   = 0;
+    };
+
+    //! Resolves a 1-based MeshHandle, or nullptr when it does not refer to a mesh.
+    const MeshRecord* getMesh(MeshHandle handle) const;
+
+    //! Resolves a 1-based MaterialHandle, or nullptr when unknown.
+    const Material* getMaterial(MaterialHandle handle) const;
+
+    //! Drops every mesh/material record. Backends call this from cleanup(),
+    //! since the underlying buffers die with the backend's own pools.
+    void clearSharedResources();
+
+    wma::WindowDetails _windowDetails;  //! Copy of current platform dimension attributes
+    bool _running = false;              //! Control status tracker managing main loop life
+
+    std::vector<MeshRecord> _meshes;    //! Mesh registry; handle == index + 1
+    std::vector<Material> _materials;   //! Material registry; handle == index + 1
+    gfx::LightUBO _light{};             //! Directional light for the built-in shaders
+    Material _currentMaterial{};        //! Material bound by the last bindMaterial()
 };
 
 } // namespace aura3d

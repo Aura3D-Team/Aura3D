@@ -7,6 +7,7 @@
 #ifdef USE_VULKAN_API
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #endif
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -33,14 +34,30 @@ struct TransformUBO {
 };
 
 /**
+ * @struct LightUBO
+ * @brief Directional light parameters shared by every backend.
+ *
+ * Field order and padding follow std140 so the struct can be memcpy'd straight
+ * into a uniform buffer: vec3+float pack into the first 16-byte slot, vec4
+ * occupies the second, and the trailing float is padded out to a third.
+ */
+struct LightUBO {
+    glm::vec3 direction = {0.5f, -1.0f, 0.3f}; //! Direction the light travels.
+    float intensity = 1.0f; //! Diffuse multiplier.
+    glm::vec4 color = {1.0f, 1.0f, 1.0f, 1.0f};
+    float ambient = 0.15f; //! Flat term added everywhere.
+    float _pad[3] = {0.0f, 0.0f, 0.0f}; //! std140 tail padding.
+};
+
+/**
  * @struct Vertex3d
  * @brief Base struct for 3D geometry.
  */
 struct Vertex3D {
-    glm::vec3 pos;      // (x, y, z)
-    glm::vec2 texCoord; // (u, v)
-    glm::vec4 color;    // (r, g, b, a)
-    glm::vec3 normal;   // (nx, ny, nz)
+    glm::vec3 pos; //! (x, y, z)
+    glm::vec2 texCoord; //! (u, v)
+    glm::vec4 color; //! (r, g, b, a)
+    glm::vec3 normal; //! (nx, ny, nz)
 };
 
 /**
@@ -48,9 +65,9 @@ struct Vertex3D {
  * @brief Base struct for 2D geometry (Sprites, UI).
  */
 struct Vertex2D {
-    glm::vec2 pos;      // (x, y)
-    glm::vec2 texCoord; // (u, v)
-    glm::vec4 color;    // (r, g, b, a)
+    glm::vec2 pos; //! (x, y)
+    glm::vec2 texCoord; //! (u, v)
+    glm::vec4 color; //! (r, g, b, a)
 };
 
 /**
@@ -93,11 +110,11 @@ struct FragmentInput2D {
  * @brief Data passed to the CPU fragment shader stage.
  */
 struct FragmentInput3D {
-    glm::vec3 worldPos;      // Interpolated position for lighting calculations
-    glm::vec2 texCoord;      // Interpolated U,V texturing channels
-    glm::vec4 color;         // Interpolated vertex colors
-    glm::vec3 normal;        // Interpolated surface normal vector
-    float perspectiveW;      // 1/W element for perspective-correct interpolation
+    glm::vec3 worldPos; //! Interpolated position for lighting calculations
+    glm::vec2 texCoord; //! Interpolated U,V texturing channels
+    glm::vec4 color; //! Interpolated vertex colors
+    glm::vec3 normal; //! Interpolated surface normal vector
+    float perspectiveW; //! 1/W element for perspective-correct interpolation
 };
 
 }

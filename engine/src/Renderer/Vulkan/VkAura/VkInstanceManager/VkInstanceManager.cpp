@@ -8,11 +8,9 @@
 namespace aura3d {
 namespace vk {
 
-VkInstanceManager::VkInstanceManager(VkHostAllocator* vkHostAllocator,
-                                     VkInstanceData vkInstanceData,
+VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData,
                                      bool enableValidationLayers)
-    : vkHosAllocator(vkHostAllocator),
-    _vkInstance(VK_NULL_HANDLE), _appInfo({}),
+    : _vkInstance(VK_NULL_HANDLE), _appInfo({}),
     _instanceInfo({}), _vkDebugger(nullptr),
     _vkValidationLayers(std::move(vkInstanceData.vkValidationLayers)), _vkInstanceExtensions(std::move(vkInstanceData.vkInstanceExtensions))
 {
@@ -24,7 +22,7 @@ VkInstanceManager::VkInstanceManager(VkHostAllocator* vkHostAllocator,
     validateInstanceExtensions();
     validateValidationLayers();
 
-    VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, vkHosAllocator->getCallbacks(), &_vkInstance));
+    VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance));
 
     if (vkDebuggerPreparationResult == VK_SUCCESS) {
         createDebuggerInstance(&_debugCreateInfo);
@@ -35,7 +33,7 @@ VkInstanceManager::~VkInstanceManager()
 {
     _vkDebugger.reset();
     if (_vkInstance != VK_NULL_HANDLE) {
-        vkDestroyInstance(_vkInstance, vkHosAllocator->getCallbacks());
+        vkDestroyInstance(_vkInstance, nullptr);
         _vkInstance = VK_NULL_HANDLE;
         INK_DEBUG << "VkInstance deleted";
     }
@@ -49,7 +47,7 @@ void VkInstanceManager::initializeAppInfo(const VkInstanceData& vkInstanceData) 
     _appInfo.applicationVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
     _appInfo.pEngineName = vkInstanceData.engineName;
     _appInfo.engineVersion = VK_MAKE_VERSION(vkInstanceData.appVersion[0], vkInstanceData.appVersion[1], vkInstanceData.appVersion[2]);
-    _appInfo.apiVersion = VK_API_VERSION_1_4;
+    _appInfo.apiVersion = kVulkanApiVersion;
 }
 
 void VkInstanceManager::initializeInstanceInfo() {

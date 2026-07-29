@@ -1,11 +1,8 @@
 #ifndef AURA_HPP
 #define AURA_HPP
 
-#pragma once
-
 #include <ink/ink_base.hpp>
 #include <ink/Inkogger.h>
-#include <ink/InkException.h>
 
 #define AURA_VERSION_MAJOR  0
 #define AURA_VERSION_MINOR  0

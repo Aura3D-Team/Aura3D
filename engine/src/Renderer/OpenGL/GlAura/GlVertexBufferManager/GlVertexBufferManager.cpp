@@ -10,53 +10,22 @@ namespace gl {
 GlVertexBufferManager::GlVertexBufferManager() = default;
 GlVertexBufferManager::~GlVertexBufferManager() { cleanup(); }
 
-static void setupVertexAttributes(bool is2d)
+static void setupVertexAttributes()
 {
-    if (is2d) {
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D), (void*)offsetof(gfx::Vertex2D, pos));
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D), (void*)offsetof(gfx::Vertex2D, texCoord));
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D), (void*)offsetof(gfx::Vertex2D, color));
-        glEnableVertexAttribArray(2);
-    } else {
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, pos));
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, texCoord));
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, color));
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, normal));
-        glEnableVertexAttribArray(3);
-    }
-}
-
-VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Vertex2D>&& vertices)
-{
-    auto handle = _nextHandle++;
-    GlVertexBufferData data;
-    data.is2d = true;
-    data.vertexCount = static_cast<u32>(vertices.size());
-
-    glGenVertexArrays(1, &data.vao);
-    glGenBuffers(1, &data.vbo);
-
-    glBindVertexArray(data.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, data.vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(gfx::Vertex2D), vertices.data(), GL_STATIC_DRAW);
-    setupVertexAttributes(true);
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    _buffers[handle] = data;
-    return handle;
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, pos));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, texCoord));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, color));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, normal));
+    glEnableVertexAttribArray(3);
 }
 
 VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
 {
     auto handle = _nextHandle++;
     GlVertexBufferData data;
-    data.is2d = false;
     data.vertexCount = static_cast<u32>(vertices.size());
 
     glGenVertexArrays(1, &data.vao);
@@ -65,7 +34,7 @@ VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Ve
     glBindVertexArray(data.vao);
     glBindBuffer(GL_ARRAY_BUFFER, data.vbo);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(gfx::Vertex3D), vertices.data(), GL_STATIC_DRAW);
-    setupVertexAttributes(false);
+    setupVertexAttributes();
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 

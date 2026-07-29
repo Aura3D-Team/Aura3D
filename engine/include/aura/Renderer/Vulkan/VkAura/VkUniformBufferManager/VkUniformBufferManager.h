@@ -8,8 +8,7 @@
 
 #include "aura/aura.h"
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkDeviceAllocator/VkDeviceAllocator.h"
+#include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 
 namespace aura3d {
 namespace vk {
@@ -24,30 +23,21 @@ namespace vk {
  */
 class VkUniformBufferManager {
 public:
-    /**
-     * @brief Constructor
-     * @param vkDevice Pointer to the Vulkan device
-     */
-    VkUniformBufferManager(VkHostAllocator* vkHostAllocator,
-                           VkDeviceAllocator* vkDeviceAllocator,
-                           VkDevice* vkDevice);
-
-    /**
-     * @brief Destructor - cleans up resources
-     */
+    VkUniformBufferManager(VulkanMemoryManager* memoryManager, VkDevice* vkDevice);
     ~VkUniformBufferManager();
 
     /**
      * @brief Creates uniform buffers (one per swapchain image)
      *
-     * @param physicalDevice Physical device handle
      * @param sharingMode Buffer sharing mode
      * @param count Number of buffers to create (typically matches swapchain image count)
+     * @param elementSize Bytes per buffer. Defaults to a TransformUBO, but any
+     *        blob works, which lets the same manager back the light UBO.
      */
     void createUniformBuffers(
-        VkPhysicalDevice physicalDevice,
         VkSharingMode sharingMode,
-        u32 count);
+        u32 count,
+        VkDeviceSize elementSize = sizeof(gfx::TransformUBO));
 
     /**
      * @brief Updates a uniform buffer with new transform data
@@ -56,6 +46,13 @@ public:
      * @param ubo Transform UBO data to upload
      */
     void updateUniformBuffer(u32 currentImage, gfx::TransformUBO& ubo);
+
+    /**
+     * @brief Uploads @p size bytes of @p data into buffer @p currentImage.
+     *
+     * Writes are rejected when they would overrun the configured element size.
+     */
+    void updateUniformBufferRaw(u32 currentImage, const void* data, VkDeviceSize size);
 
     /**
      * @brief Gets a uniform buffer handle
@@ -94,14 +91,13 @@ public:
     void cleanup();
 
 private:
-    VkHostAllocator* vkHostAllocator;
-    VkDeviceAllocator* vkDeviceAllocator;
-    VkDevice* _vkDevice; ///< Pointer to Vulkan device
-
-    std::vector<VkBuffer> _uniformBuffers;    ///< Uniform buffer handles
-    std::vector<VkDeviceAllocation> _allocations; ///< Memory allocations with mapping info
+    VulkanMemoryManager* _memoryManager;
+    VkDevice* _vkDevice;
+    std::vector<AllocatedBuffer> _buffers;
+    VkDeviceSize _elementSize = sizeof(gfx::TransformUBO);
 };
 
-}
+} // namespace vk
 } // namespace aura3d
+
 #endif // VKUNIFORMBUFFERMANAGER_H

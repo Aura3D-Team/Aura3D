@@ -4,8 +4,11 @@
 #pragma once
 
 #include <unordered_map>
-#include <vulkan/vulkan.h>
 #include <string>
+
+#ifdef AURA_HAS_VULKAN
+#include <vulkan/vulkan.h>
+#endif
 
 #include "aura/aura.h"
 
@@ -59,7 +62,9 @@ public:
      *
      * @param code Vulkan result code (`VkResult`) representing the error.
      */
+#ifdef AURA_HAS_VULKAN
     AuraException(const VkResult code);
+#endif
 
     /**
      * Copy constructor.
@@ -109,6 +114,7 @@ private:
     std::string _msg;
 };
 
+#ifdef AURA_HAS_VULKAN
 /**
  * Static map of Vulkan result codes (`VkResult`) to human-readable error messages.
  *
@@ -158,12 +164,14 @@ static const std::unordered_map<i64, const char*> vkResultToString = {
     { VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT, "Full-screen exclusive mode lost" },
     { VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR, "Invalid video std parameters" },
     { VK_ERROR_COMPRESSION_EXHAUSTED_EXT, "Compression exhausted" },
-    { VK_INCOMPATIBLE_SHADER_BINARY_EXT, "Incompatible shader binary" }
+    { VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT, "Incompatible shader binary" }
 };
 
 #define VK_RESULT_CHECK(result) \
 if (result != VK_SUCCESS)       \
     throw AuraException(result);  \
+
+#endif // AURA_HAS_VULKAN
 
 }
 

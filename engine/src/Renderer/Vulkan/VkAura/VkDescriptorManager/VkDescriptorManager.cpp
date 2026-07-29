@@ -6,24 +6,34 @@
 namespace aura3d {
 namespace vk {
 
-VkDescriptorManager::VkDescriptorManager(VkHostAllocator* vkHostAllocator,VkDevice* vkDevice, i32 pool_size) :
-    vkHostAllocator(vkHostAllocator), _vkDevice(vkDevice), _pool_size(pool_size)
+VkDescriptorManager::VkDescriptorManager(VkDevice* vkDevice, i32 pool_size) :
+    _vkDevice(vkDevice), _pool_size(pool_size)
 {
-    VkFixedArray<VkDescriptorPoolSize> poolSizes = {};
+    /*
+     * Sized per descriptor type, not per frame: every texture claims one
+     * combined-image-sampler set per swapchain image, and the transform and
+     * light UBOs claim one uniform-buffer set each per image.
+     */
+    std::array<VkDescriptorPoolSize, 2> poolSizes = {};
 
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = _pool_size;
+    poolSizes[0].descriptorCount = static_cast<u32>(_pool_size);
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = _pool_size;
+    poolSizes[1].descriptorCount = static_cast<u32>(_pool_size);
 
     _poolCreateInfo = {};
     _poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     _poolCreateInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
     _poolCreateInfo.pPoolSizes = poolSizes.data();
-    _poolCreateInfo.maxSets = _pool_size * 2;
+    _poolCreateInfo.maxSets = static_cast<u32>(_pool_size) * 2u;
 
-    VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, vkHostAllocator->getCallbacks(), &_descriptorPool));
+    VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, nullptr, &_descriptorPool));
+
+    //! pPoolSizes pointed at the local array above; do not leave a dangling
+    //! pointer behind on a member that outlives it.
+    _poolCreateInfo.pPoolSizes = nullptr;
+    _poolCreateInfo.poolSizeCount = 0;
 }
 
 /**
@@ -42,7 +52,7 @@ VkDescriptorManager::~VkDescriptorManager()
  */
 void VkDescriptorManager::cleanup()
 {
-    vkDestroyDescriptorPool(*_vkDevice, _descriptorPool, vkHostAllocator->getCallbacks());
+    vkDestroyDescriptorPool(*_vkDevice, _descriptorPool, nullptr);
 }
 
 /**

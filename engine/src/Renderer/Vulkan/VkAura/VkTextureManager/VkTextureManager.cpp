@@ -2,153 +2,226 @@
 
 #include <cstring>
 
-#include "aura/Renderer/Vulkan/VkAura/VkBufferManager/VkBufferManager.h"
 #include "aura/Core/AuraException/AuraException.h"
-#include "aura/aura.h"
 
 namespace aura3d {
 namespace vk {
 
-/**
- * Constructor - initializes the texture manager with required Vulkan resources
- */
-VkTextureManager::VkTextureManager(VkHostAllocator* vkHostAllocator,
-                                   VkDeviceAllocator* vkDeviceAllocator,
+VkTextureManager::VkTextureManager(VulkanMemoryManager* memoryManager,
                                    VkDevice* device,
-                                   VkPhysicalDevice* physicalDevice,
                                    VkCommandPool commandPool,
                                    VkQueue graphicsQueue)
-    : vkHostAllocator(vkHostAllocator), vkDeviceAllocator(vkDeviceAllocator),
-      _device(device), _physicalDevice(physicalDevice),
-      _commandPool(commandPool), _graphicsQueue(graphicsQueue)
+    : _memoryManager(memoryManager),
+      _device(device),
+      _commandPool(commandPool),
+      _graphicsQueue(graphicsQueue)
 {
-    // Constructor now correctly initializes member variables
 }
 
-/**
- * Destructor - ensures all texture resources are properly cleaned up
- */
-VkTextureManager::~VkTextureManager() {
+VkTextureManager::~VkTextureManager()
+{
     cleanup();
 }
 
-/**
- * Creates a 1x1 solid color texture with RGBA components
- * Uses staging buffer for data transfer to GPU-local memory
- */
-VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
-    const std::string& name, u8 r, u8 g, u8 b, u8 a) {
-    // Create a 1x1 texture with the given color
-    u32 width = 1;
-    u32 height = 1;
-    auto vkCallbacks = vkHostAllocator->getCallbacks();
+void VkTextureManager::destroyTextureData(TextureData& texture)
+{
+    if (texture.sampler != VK_NULL_HANDLE) {
+        vkDestroySampler(*_device, texture.sampler, nullptr);
+        texture.sampler = VK_NULL_HANDLE;
+    }
 
-    // Check if texture already exists and clean it up if so
+    if (texture.view != VK_NULL_HANDLE) {
+        vkDestroyImageView(*_device, texture.view, nullptr);
+        texture.view = VK_NULL_HANDLE;
+    }
+
+    if (texture.image != VK_NULL_HANDLE || texture.allocation != VK_NULL_HANDLE) {
+        AllocatedImage allocated{texture.image, texture.allocation};
+        _memoryManager->destroyImage(allocated);
+        texture.image = VK_NULL_HANDLE;
+        texture.allocation = VK_NULL_HANDLE;
+    }
+}
+
+VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
+    const std::string& name, u8 r, u8 g, u8 b, u8 a)
+{
+    const u8 pixel[4] = {r, g, b, a};
+    return createTextureFromPixels(name, pixel, 1, 1);
+}
+
+VkTextureManager::TextureData VkTextureManager::createTextureFromPixels(
+    const std::string& name, const u8* rgba, u32 width, u32 height)
+{
+    if (!rgba || width == 0 || height == 0)
+    {
+        INK_ERROR << "VkTextureManager: refusing to upload an empty texture: " << name;
+        return TextureData{};
+    }
+
     auto it = _textures.find(name);
     if (it != _textures.end()) {
-        // Destroy existing texture resources in correct order
-        if (it->second.sampler != VK_NULL_HANDLE) {
-            vkDestroySampler(*_device, it->second.sampler, vkCallbacks);
-        }
-        if (it->second.view != VK_NULL_HANDLE) {
-            vkDestroyImageView(*_device, it->second.view, vkCallbacks);
-        }
-        if (it->second.image != VK_NULL_HANDLE) {
-            vkDestroyImage(*_device, it->second.image, vkCallbacks);
-        }
-
-        // Free memory allocation using device allocator
-        if (it->second.allocation != nullptr) {
-            vkDeviceAllocator->freeMemory(*it->second.allocation);
-            delete it->second.allocation;
-        }
-
+        destroyTextureData(it->second);
         _textures.erase(it);
     }
 
-    // Initialize new texture data
-    TextureData textureData = {};
+    TextureData textureData{};
     textureData.width = width;
     textureData.height = height;
 
-    // Create a staging buffer for the pixel data
-    VkBuffer stagingBuffer;
-    VkDeviceAllocation stagingAllocation;
+    const VkDeviceSize imageBytes = static_cast<VkDeviceSize>(width) * height * 4u;
 
-    // Create staging buffer with the device allocator
-    VkBufferManager::createBuffer(
-        vkHostAllocator,
-        vkDeviceAllocator,
-        *_device,
-        *_physicalDevice,
-        4, // RGBA = 4 bytes
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_SHARING_MODE_EXCLUSIVE,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        stagingBuffer,
-        stagingAllocation
-        );
+    AllocatedBuffer staging = _memoryManager->createUploadBuffer(imageBytes, VK_SHARING_MODE_EXCLUSIVE);
+    void* data = staging.mappedData ? staging.mappedData : _memoryManager->map(staging);
+    std::memcpy(data, rgba, static_cast<size_t>(imageBytes));
+    if (!staging.mappedData) {
+        _memoryManager->unmap(staging);
+    }
 
-    // Copy pixel data to the staging buffer
-    u8 pixelData[4] = { r, g, b, a };
-    void* data = nullptr;
-    VK_RESULT_CHECK(vkDeviceAllocator->mapMemory(
-        stagingAllocation, 0, 4, &data
-        ));
-    std::memcpy(data, pixelData, 4);
-    vkDeviceAllocator->unmapMemory(stagingAllocation);
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = {width, height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 
-    // Create the image
-    createImage(width, height, VK_FORMAT_R8G8B8A8_UNORM, textureData.image);
+    AllocatedImage gpuImage = _memoryManager->createImage(imageInfo, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    textureData.image = gpuImage.image;
+    textureData.allocation = gpuImage.allocation;
 
-    // Allocate memory for the image
-    VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(*_device, textureData.image, &memRequirements);
-
-    // Allocate device-local memory for the image
-    textureData.allocation = new VkDeviceAllocation();
-    VK_RESULT_CHECK(vkDeviceAllocator->allocateMemory(
-        memRequirements,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        *textureData.allocation
-        ));
-
-    // Bind image memory
-    VK_RESULT_CHECK(vkBindImageMemory(
-        *_device,
-        textureData.image,
-        textureData.allocation->memory,
-        textureData.allocation->offset
-        ));
-
-    // Transition the image layout for copy operation
     transitionImageLayout(textureData.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-    // Copy data from the staging buffer to the image
-    copyBufferToImage(stagingBuffer, textureData.image, width, height);
-
-    // Transition the image layout for shader access
+    copyBufferToImage(staging.buffer, textureData.image, width, height);
     transitionImageLayout(textureData.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    // Create an image view
     textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
-
-    // Create a sampler
     textureData.sampler = createSampler();
 
-    // Clean up staging resources
-    vkDestroyBuffer(*_device, stagingBuffer, vkCallbacks);
-    vkDeviceAllocator->freeMemory(stagingAllocation);
-
-    // Store the texture
+    _memoryManager->destroyBuffer(staging);
     _textures[name] = textureData;
     return textureData;
 }
 
-/**
- * Retrieves a texture by name from the texture cache
- */
-const VkTextureManager::TextureData* VkTextureManager::getTexture(const std::string& name) const {
+VkTextureManager::TextureData VkTextureManager::createDynamicTexture(
+    const std::string& name, u32 width, u32 height)
+{
+    if (width == 0 || height == 0)
+    {
+        INK_ERROR << "VkTextureManager: refusing to allocate an empty dynamic texture: " << name;
+        return TextureData{};
+    }
+
+    auto it = _textures.find(name);
+    if (it != _textures.end()) {
+        destroyTextureData(it->second);
+        _textures.erase(it);
+    }
+
+    TextureData textureData{};
+    textureData.width = width;
+    textureData.height = height;
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = {width, height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+
+    AllocatedImage gpuImage = _memoryManager->createImage(imageInfo, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    textureData.image = gpuImage.image;
+    textureData.allocation = gpuImage.allocation;
+
+    /*
+     * Clear on the device rather than staging an all-zero buffer: a 2048x2048
+     * atlas would otherwise mean pushing 16 MB across the bus just to write
+     * zeroes. vkCmdClearColorImage does it without any host memory at all.
+     */
+    transitionImageLayout(textureData.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    const VkClearColorValue transparentBlack{{0.0f, 0.0f, 0.0f, 0.0f}};
+    VkImageSubresourceRange range{};
+    range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    range.baseMipLevel = 0;
+    range.levelCount = 1;
+    range.baseArrayLayer = 0;
+    range.layerCount = 1;
+
+    vkCmdClearColorImage(commandBuffer, textureData.image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &transparentBlack, 1, &range);
+
+    endSingleTimeCommands(commandBuffer);
+
+    transitionImageLayout(textureData.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
+    textureData.sampler = createSampler();
+
+    _textures[name] = textureData;
+    return textureData;
+}
+
+void VkTextureManager::updateRegion(const std::string& name,
+                                    u32 x, u32 y, u32 width, u32 height,
+                                    const u8* rgba)
+{
+    if (!rgba || width == 0 || height == 0)
+        return;
+
+    auto it = _textures.find(name);
+    if (it == _textures.end())
+    {
+        INK_ERROR << "VkTextureManager: updateRegion on an unknown texture: " << name;
+        return;
+    }
+
+    TextureData& textureData = it->second;
+    if (x + width > textureData.width || y + height > textureData.height)
+    {
+        INK_ERROR << "VkTextureManager: updateRegion rectangle exceeds the bounds of " << name;
+        return;
+    }
+
+    const VkDeviceSize regionBytes = static_cast<VkDeviceSize>(width) * height * 4u;
+
+    AllocatedBuffer staging = _memoryManager->createUploadBuffer(regionBytes, VK_SHARING_MODE_EXCLUSIVE);
+    void* data = staging.mappedData ? staging.mappedData : _memoryManager->map(staging);
+    std::memcpy(data, rgba, static_cast<size_t>(regionBytes));
+
+    if (!staging.mappedData)
+        _memoryManager->unmap(staging);
+
+    transitionImageLayout(textureData.image,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    copyBufferToImageRegion(staging.buffer, textureData.image, x, y, width, height);
+
+    transitionImageLayout(textureData.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    _memoryManager->destroyBuffer(staging);
+}
+
+const VkTextureManager::TextureData* VkTextureManager::getTexture(const std::string& name) const
+{
     auto it = _textures.find(name);
     if (it != _textures.end()) {
         return &it->second;
@@ -156,74 +229,16 @@ const VkTextureManager::TextureData* VkTextureManager::getTexture(const std::str
     return nullptr;
 }
 
-/**
- * Cleans up all texture resources in the correct order to avoid Vulkan validation errors
- */
-void VkTextureManager::cleanup() {
-    // Clean up all textures in the proper order
-    auto vkCallbacks = vkHostAllocator->getCallbacks();
+void VkTextureManager::cleanup()
+{
     for (auto& pair : _textures) {
-        TextureData& texture = pair.second;
-
-        // Destroy sampler
-        if (texture.sampler != VK_NULL_HANDLE) {
-            vkDestroySampler(*_device, texture.sampler, vkCallbacks);
-            texture.sampler = VK_NULL_HANDLE;
-        }
-
-        // Destroy image view
-        if (texture.view != VK_NULL_HANDLE) {
-            vkDestroyImageView(*_device, texture.view, vkCallbacks);
-            texture.view = VK_NULL_HANDLE;
-        }
-
-        // Destroy image
-        if (texture.image != VK_NULL_HANDLE) {
-            vkDestroyImage(*_device, texture.image, vkCallbacks);
-            texture.image = VK_NULL_HANDLE;
-        }
-
-        // Free memory allocation
-        if (texture.allocation != nullptr) {
-            vkDeviceAllocator->freeMemory(*texture.allocation);
-            delete texture.allocation;
-            texture.allocation = nullptr;
-        }
+        destroyTextureData(pair.second);
     }
-
     _textures.clear();
 }
 
-/**
- * Creates a Vulkan image with specified dimensions and format
- */
-void VkTextureManager::createImage(u32 width, u32 height, VkFormat format, VkImage& image) {
-    // Configure image creation parameters
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width = width;
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.format = format;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.flags = 0;
-
-    // Create the image - memory will be allocated separately
-    VK_RESULT_CHECK(vkCreateImage(*_device, &imageInfo, vkHostAllocator->getCallbacks(), &image))
-}
-
-/**
- * Creates an image view for a texture to be used in shader binding
- */
-VkImageView VkTextureManager::createImageView(VkImage image, VkFormat format) {
-    // Configure image view creation parameters
+VkImageView VkTextureManager::createImageView(VkImage image, VkFormat format)
+{
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
@@ -235,48 +250,38 @@ VkImageView VkTextureManager::createImageView(VkImage image, VkFormat format) {
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
 
-    // Create the image view
     VkImageView imageView;
-    VK_RESULT_CHECK(vkCreateImageView(*_device, &viewInfo, vkHostAllocator->getCallbacks(), &imageView))
-
+    VK_RESULT_CHECK(vkCreateImageView(*_device, &viewInfo, nullptr, &imageView));
     return imageView;
 }
 
-/**
- * Creates a sampler for texture filtering and addressing
- */
-VkSampler VkTextureManager::createSampler() {
-    // Configure sampler creation parameters
+VkSampler VkTextureManager::createSampler()
+{
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;              // Linear interpolation for magnification
-    samplerInfo.minFilter = VK_FILTER_LINEAR;              // Linear interpolation for minification
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // Wrap U coordinates
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // Wrap V coordinates
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT; // Wrap W coordinates
-    samplerInfo.anisotropyEnable = VK_FALSE;               // Disable anisotropic filtering
-    samplerInfo.maxAnisotropy = 1.0f;                      // Anisotropy level (not used)
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK; // Border color for clamp mode
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;        // Use normalized coordinates [0,1]
-    samplerInfo.compareEnable = VK_FALSE;                  // No comparison operation
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;          // Always pass comparison
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; // Linear mipmap interpolation
-    samplerInfo.mipLodBias = 0.0f;                         // No LOD bias
-    samplerInfo.minLod = 0.0f;                             // Minimum LOD level
-    samplerInfo.maxLod = 0.0f;                             // Maximum LOD level (0 = no mipmaps)
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
 
-    // Create the sampler
     VkSampler sampler;
-    VK_RESULT_CHECK(vkCreateSampler(*_device, &samplerInfo, vkHostAllocator->getCallbacks(), &sampler));
-
+    VK_RESULT_CHECK(vkCreateSampler(*_device, &samplerInfo, nullptr, &sampler));
     return sampler;
 }
 
-/**
- * Begins recording a one-time use command buffer
- */
-VkCommandBuffer VkTextureManager::beginSingleTimeCommands() {
-    // Allocate a command buffer from the command pool
+VkCommandBuffer VkTextureManager::beginSingleTimeCommands()
+{
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -286,128 +291,118 @@ VkCommandBuffer VkTextureManager::beginSingleTimeCommands() {
     VkCommandBuffer commandBuffer;
     vkAllocateCommandBuffers(*_device, &allocInfo, &commandBuffer);
 
-    // Begin recording commands
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // One-time use
-
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     return commandBuffer;
 }
 
-/**
- * Submits and cleans up a one-time use command buffer
- */
-void VkTextureManager::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
-    // End command recording
+void VkTextureManager::endSingleTimeCommands(VkCommandBuffer commandBuffer)
+{
     vkEndCommandBuffer(commandBuffer);
 
-    // Submit the command buffer
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    // Submit to queue and wait for completion
     vkQueueSubmit(_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(_graphicsQueue);
-
-    // Free the command buffer
     vkFreeCommandBuffers(*_device, _commandPool, 1, &commandBuffer);
 }
 
-/**
- * Transitions an image between layouts using appropriate memory barriers
- */
-void VkTextureManager::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
-    // Start a command buffer for the transition
+void VkTextureManager::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout)
+{
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
-    // Configure image memory barrier
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
     barrier.newLayout = newLayout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // No queue family transfer
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // No queue family transfer
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image;
-
-    // Configure subresource range
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
-    // Configure access masks and pipeline stages based on the transition
     VkPipelineStageFlags sourceStage;
     VkPipelineStageFlags destinationStage;
 
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        // Transitioning from initial state to transfer destination
-        barrier.srcAccessMask = 0;                         // No access needed before
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // Will be written to
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;      // Earliest possible stage
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;    // Transfer operations
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        // Transitioning from transfer destination to shader reading
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // Was written to
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;    // Will be read by shader
-        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;         // Transfer operations
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT; // Fragment shader reading
-    }
-    else {
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && 
+        newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } 
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) 
+    {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } 
+    else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+    {
+        //! Re-entering the transfer state to patch an already sampleable
+        //! texture, as the glyph atlas does whenever a new character appears.
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        sourceStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } 
+    else
+    {
         throw AuraException("Unsupported layout transition!");
     }
 
-    // Record the barrier command
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        sourceStage, destinationStage,  // Pipeline stages
-        0,                              // No dependency flags
-        0, nullptr,                     // No memory barriers
-        0, nullptr,                     // No buffer memory barriers
-        1, &barrier                     // One image memory barrier
-        );
-
-    // Submit the command buffer
+    vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
     endSingleTimeCommands(commandBuffer);
 }
 
-/**
- * Copies buffer data to an image using a command buffer
- */
-void VkTextureManager::copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height) {
-    // Start a command buffer for the copy
+void VkTextureManager::copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height)
+{
+    copyBufferToImageRegion(buffer, image, 0, 0, width, height);
+}
+
+void VkTextureManager::copyBufferToImageRegion(VkBuffer buffer, VkImage image,
+                                               u32 x, u32 y, u32 width, u32 height)
+{
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
-    // Configure the copy region
     VkBufferImageCopy region{};
-    region.bufferOffset = 0;                      // Start of buffer
-    region.bufferRowLength = 0;                   // Tightly packed (no padding)
-    region.bufferImageHeight = 0;                 // Tightly packed (no padding)
+    region.bufferOffset = 0;
+    /*
+     * Zero means "rows are tightly packed at imageExtent.width". That holds
+     * here because the caller stages exactly the sub-rectangle it wants to
+     * write, rather than a window into a larger image.
+     */
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;        // Base mip level
-    region.imageSubresource.baseArrayLayer = 0;  // First array layer
-    region.imageSubresource.layerCount = 1;      // Single layer
-    region.imageOffset = {0, 0, 0};              // Start at origin
-    region.imageExtent = {width, height, 1};     // 2D image extent
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {static_cast<i32>(x), static_cast<i32>(y), 0};
+    region.imageExtent = {width, height, 1};
 
-    // Record the copy command
-    vkCmdCopyBufferToImage(
-        commandBuffer,
-        buffer,                                  // Source buffer
-        image,                                   // Destination image
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,    // Image layout during copy
-        1,                                       // Region count
-        &region                                  // Region info
-        );
+    vkCmdCopyBufferToImage(commandBuffer,
+                           buffer,
+                           image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           1,
+                           &region);
 
-    // Submit the command buffer
     endSingleTimeCommands(commandBuffer);
 }
 
-}
+} // namespace vk
 } // namespace aura3d

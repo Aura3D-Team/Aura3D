@@ -8,8 +8,8 @@ namespace vk {
 std::unordered_map<std::thread::id, VkCommandPool> VkCommandManager::_threadCommandPools;
 std::mutex VkCommandManager::_poolMutex;
 
-VkCommandManager::VkCommandManager(VkHostAllocator* vkHostAllocator, VkDevice* device, u32 queueFamilyIndex)
-    : vkHostAllocator(vkHostAllocator), _device(device), _queueFamilyIndex(queueFamilyIndex) {
+VkCommandManager::VkCommandManager(VkDevice* device, u32 queueFamilyIndex)
+    : _device(device), _queueFamilyIndex(queueFamilyIndex) {
     // Command pools will now be created on demand for each thread
 }
 
@@ -18,7 +18,7 @@ VkCommandManager::~VkCommandManager() {
 
     // Destroy all command pools created by each thread
     for (auto& it : _threadCommandPools) {
-        vkDestroyCommandPool(*_device, it.second, vkHostAllocator->getCallbacks());
+        vkDestroyCommandPool(*_device, it.second, nullptr);
         INK_DEBUG << "CommandPool for thread " << it.first << " was deleted.";
     }
     _device = nullptr;
@@ -45,7 +45,7 @@ VkCommandPool VkCommandManager::getThreadCommandPool() {
         poolInfo.queueFamilyIndex = _queueFamilyIndex;
 
         VkCommandPool commandPool;
-        VK_RESULT_CHECK(vkCreateCommandPool(*_device, &poolInfo, vkHostAllocator->getCallbacks(), &commandPool));
+        VK_RESULT_CHECK(vkCreateCommandPool(*_device, &poolInfo, nullptr, &commandPool));
 
         _threadCommandPools[threadId] = commandPool;
         return commandPool;

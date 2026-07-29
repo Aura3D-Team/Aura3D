@@ -11,7 +11,6 @@
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkPipelineManager/VkPipelineManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkShader/ShaderManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkMemory/VkHostAllocator/VkHostAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -19,23 +18,48 @@ namespace vk {
 class VkGraphicsPipelineManager : public VkPipelineManager
 {
 public:
-    VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
-                              std::string shader_vert_spv,
+    VkGraphicsPipelineManager(std::string shader_vert_spv,
                               std::string shader_frag_spv,
                               VkDevice* device);
 
-    VkGraphicsPipelineManager(VkHostAllocator* vkHostAllocator,
-                              const unsigned char* vertData, u32 vertSize,
+    VkGraphicsPipelineManager(const unsigned char* vertData, u32 vertSize,
                               const unsigned char* fragData, u32 fragSize,
                               VkDevice* device);
 
     ~VkGraphicsPipelineManager();
 
-    // Add a descriptor binding to a specific set
+    //! Add a descriptor binding to a specific set
     void addDescriptorBinding(u32 setIndex,
                               const DescriptorBindingInfo& bindingInfo);
 
-    // Create descriptor set layouts from the specified bindings
+    /**
+     * @brief Declares a push-constant range on the pipeline layout.
+     *
+     * Must be called before createDescriptorSetLayouts(), which is what builds
+     * the layout. Vulkan guarantees at least 128 bytes.
+     */
+    void setPushConstantRange(VkShaderStageFlags stageFlags, u32 offset, u32 size);
+
+    /**
+     * @brief Records a push-constant write for the declared range.
+     */
+    void cmdPushConstants(VkCommandBuffer commandBuffer, const void* data);
+
+    /**
+     * @brief Discards every descriptor binding and push-constant range declared
+     *        so far, along with any layouts already built from them.
+     *
+     * The constructor installs the 3D scene interface (sets 0/1/2 and a 128-byte
+     * push-constant block). A pipeline whose shaders present a different
+     * interface -- the unlit 2D overlay declares only set 0 and a 64-byte
+     * range -- calls this first and then declares its own, rather than
+     * inheriting bindings its shaders never reference.
+     *
+     * Must be called before createDescriptorSetLayouts().
+     */
+    void resetInterface();
+
+    //! Create descriptor set layouts from the specified bindings
     void createDescriptorSetLayouts();
 
     void createPipeline(VkRenderPass renderPass,
@@ -43,12 +67,12 @@ public:
                         const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
                         const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray,
                         u32 attributeDescriptionCount = MAX_ATTRIBUTE_DESCRIPTION,
-                        bool enableDepthTest = false);
+                        const PipelineOptions& options = PipelineOptions{});
 
-    // Bind the pipeline and all descriptor sets to the command buffer
+    //! Bind the pipeline and all descriptor sets to the command buffer
     void cmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint);
 
-    // Bind specific descriptor sets to the command buffer
+    //! Bind specific descriptor sets to the command buffer
     void cmdBindDescriptorSets(VkCommandBuffer commandBuffer,
                                VkPipelineBindPoint bindPoint,
                                u32 firstSet,
@@ -65,7 +89,7 @@ public:
                         i32 vertexOffset,
                         u32 firstInstance);
 
-    // Draw vertices
+    //! Draw vertices
     void cmdDraw(VkCommandBuffer commandBuffer,
                  VkExtent2D extent,
                  u32 vertexCount,
@@ -73,21 +97,26 @@ public:
                  u32 firstVertex = 0,
                  u32 firstInstance = 0);
 
-    // Get pipeline layout (needed for descriptor set binding)
+    //! Get pipeline layout (needed for descriptor set binding)
     VkPipelineLayout getPipelineLayout() const { return _pipelineLayout; }
 
-    // Get descriptor set layout for a specific set
+    //! Get descriptor set layout for a specific set
     VkDescriptorSetLayout getDescriptorSetLayout(u32 setIndex) const;
 
 private:
-    VkHostAllocator* vkHostAllocator;
+    void _init();
+
     VkShaderManager _shaderManager;
     std::array<VkPipelineShaderStageCreateInfo, 2> _shaderStages;
     std::array<VkDynamicState, 2> _dynamicStates;
 
-    // Storage for descriptor set layouts
+    //! Storage for descriptor set layouts
     std::unordered_map<u32, DescriptorSetLayoutInfo> _descriptorSetLayoutInfos;
     std::unordered_map<u32, VkDescriptorSetLayout> _descriptorSetLayouts;
+
+    //! Optional push-constant range folded into the pipeline layout.
+    VkPushConstantRange _pushConstantRange{};
+    bool _hasPushConstants = false;
 };
 
 }

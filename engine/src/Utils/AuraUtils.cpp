@@ -1,6 +1,6 @@
 #include "aura/Utils/AuraUtils.h"
 
-#include <math.h>
+#include <cmath>
 #include <cstdio>
 
 namespace aura3d {
