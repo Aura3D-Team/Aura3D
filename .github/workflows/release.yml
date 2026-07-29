@@ -64,6 +64,45 @@ jobs:
       - name: Install
         run: cmake --install build/linux/release --prefix stage/aura3d-linux-x86_64
 
+      - name: Merge wma/ink into a self-contained static library
+        # libwma.a and libink.a in this image are themselves static, so fold
+        # their object files into libAura3D.a: a consumer of the release
+        # archive then only needs Vulkan/OpenGL/Threads (system libraries,
+        # not bundled) rather than separately building wma/ink for their
+        # platform. Extract each archive into its own subdirectory first so
+        # identically-named object files (e.g. two libraries each with a
+        # "Utils.cpp.o") don't collide when re-archived together.
+        run: |
+          FAT_LIB="$(pwd)/stage/aura3d-linux-x86_64/lib/libAura3D.a"
+          WMA_LIB="$(find /usr/local -name 'libwma.a' | head -1)"
+          INK_LIB="$(find /usr/local -name 'libink.a' | head -1)"
+
+          if [[ -z "$WMA_LIB" || -z "$INK_LIB" ]]; then
+            echo "❌  libwma.a/libink.a not found under /usr/local" >&2
+            exit 1
+          fi
+
+          MERGE_DIR="$(mktemp -d)"
+          n=0
+          for lib in "$FAT_LIB" "$WMA_LIB" "$INK_LIB"; do
+            dir="$MERGE_DIR/$n"
+            mkdir -p "$dir"
+            ar -x --output="$dir" "$lib"
+            n=$((n + 1))
+          done
+
+          ar -qc "$FAT_LIB.merged" $(find "$MERGE_DIR" -name '*.o')
+          ranlib "$FAT_LIB.merged"
+          mv "$FAT_LIB.merged" "$FAT_LIB"
+
+          # This staged Aura3DConfig.cmake no longer needs to find wma/ink
+          # separately -- their code is now inside libAura3D.a. Leave
+          # Vulkan/OpenGL/Threads find_dependency calls alone; those stay
+          # external. Does not touch cmake/Aura3DConfig.cmake.in, so a normal
+          # (non-release) `cmake --install` elsewhere is unaffected.
+          CONFIG="stage/aura3d-linux-x86_64/lib/cmake/Aura3D/Aura3DConfig.cmake"
+          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
+
       - name: Package
         run: |
           tar -C stage -czf aura3d-${{ github.ref_name }}-linux-x86_64.tar.gz \
@@ -118,6 +157,36 @@ jobs:
           mkdir -p "$STAGE/lib"
           cp build-android/libAura3D.a "$STAGE/lib/"
           cp -r engine/include "$STAGE/include"
+
+      - name: Merge wma/ink into a self-contained static library
+        # Same reasoning as the linux-release job: fold the (also static)
+        # arm64-v8a libwma.a/libink.a into libAura3D.a so embedding this
+        # release doesn't also require building wma/ink for Android. Use the
+        # NDK's own llvm-ar/llvm-ranlib rather than the host's, since these
+        # are arm64 ELF objects.
+        run: |
+          LLVM_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          FAT_LIB="$(pwd)/stage/aura3d-android-arm64-v8a/lib/libAura3D.a"
+          WMA_LIB="$(find /usr/local/android -name 'libwma.a' | head -1)"
+          INK_LIB="$(find /usr/local/android -name 'libink.a' | head -1)"
+
+          if [[ -z "$WMA_LIB" || -z "$INK_LIB" ]]; then
+            echo "❌  libwma.a/libink.a not found under /usr/local/android" >&2
+            exit 1
+          fi
+
+          MERGE_DIR="$(mktemp -d)"
+          n=0
+          for lib in "$FAT_LIB" "$WMA_LIB" "$INK_LIB"; do
+            dir="$MERGE_DIR/$n"
+            mkdir -p "$dir"
+            "$LLVM_BIN/llvm-ar" -x --output="$dir" "$lib"
+            n=$((n + 1))
+          done
+
+          "$LLVM_BIN/llvm-ar" -qc "$FAT_LIB.merged" $(find "$MERGE_DIR" -name '*.o')
+          "$LLVM_BIN/llvm-ranlib" "$FAT_LIB.merged"
+          mv "$FAT_LIB.merged" "$FAT_LIB"
 
       - name: Package
         run: |
