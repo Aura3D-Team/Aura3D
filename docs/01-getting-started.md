@@ -13,9 +13,16 @@ the smallest possible Aura3D program.
   their own READMEs)
 
 If you're building inside the project's `vulkan-dev` container, all of this
-is already installed. Otherwise see
+is already installed — build and run it from
+[Aura3D-Team/qt_dev](https://github.com/Aura3D-Team/qt_dev) (`image_tag="lts"`);
+see [11-using-releases.md#development-environment](11-using-releases.md#development-environment)
+for the exact commands. Otherwise see
 [10-platform-builds.md](10-platform-builds.md) for exact per-platform
 dependency lists.
+
+Just want to use Aura3D as a dependency rather than build it? See
+[11-using-releases.md](11-using-releases.md) instead — it covers consuming
+the prebuilt release archives directly.
 
 ## Build
 

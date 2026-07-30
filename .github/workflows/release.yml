@@ -235,7 +235,7 @@ jobs:
         run: |
           STAGE="stage/aura3d-wasm"
           mkdir -p "$STAGE"
-          cp build-wasm/pkg/Aura3D.js build-wasm/pkg/Aura3D.wasm "$STAGE/"
+          cp -r build-wasm/pkg "$STAGE/pkg"
           cp index.html "$STAGE/"
 
       - name: Package
