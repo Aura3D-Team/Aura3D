@@ -42,10 +42,11 @@ int main()
 
     // camera
     const wma::WindowDetails* wd = r->getWindowManager()->getWindowDetails();
-    const float aspect = static_cast<float>(wd->width) / static_cast<float>(wd->height);
+    int lastWindowWidth = wd->width;
+    int lastWindowHeight = wd->height;
 
     Camera camera = Camera::perspective({.fovDeg = 60.0f,
-                                         .aspect = aspect,
+                                         .aspect = static_cast<float>(lastWindowWidth) / static_cast<float>(lastWindowHeight),
                                          .nearZ  = 0.1f,
                                          .farZ   = 100.0f});
 
@@ -142,6 +143,17 @@ int main()
     constexpr float kMoveSpeed = 3.0f; // world units per second
 
     r->run([&]() {
+        // Window resize
+        if (wd->width != lastWindowWidth || wd->height != lastWindowHeight) 
+        {
+            lastWindowWidth = wd->width;
+            lastWindowHeight = wd->height;
+            camera.setPerspective({.fovDeg = 60.0f,
+                                   .aspect = static_cast<float>(lastWindowWidth) / static_cast<float>(lastWindowHeight),
+                                   .nearZ  = 0.1f,
+                                   .farZ   = 100.0f});
+        }
+
         const float elapsed = std::chrono::duration<float>(
             std::chrono::steady_clock::now() - startTime).count();
 

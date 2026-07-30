@@ -5,7 +5,7 @@
         "headless": false
     },
     "window": {
-        "width": 1920,
+        "width": 2560,
         "height": 1080,
         "title": "Aura Engine",
         "backend": "SDL3",
