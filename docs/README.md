@@ -27,6 +27,9 @@ straight to whatever you need — each chapter links to the ones it builds on.
    playable "collect the orbs" scene built from every chapter above.
 10. **[Platform Builds](10-platform-builds.md)** — Linux, Android, and
     WebAssembly: presets, scripts, per-platform backend restrictions.
+11. **[Using a Release](11-using-releases.md)** — consuming the prebuilt
+    release archives as a dependency, per platform, plus how to build the
+    `vulkan-dev` dev container from `qt_dev`.
 
 See also the [top-level README](../README.md) for the repository layout and
 CMake option reference, and `apps/Sandbox/main.cpp` / `apps/OrgLogo/main.cpp`

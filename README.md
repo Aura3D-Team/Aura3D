@@ -83,6 +83,7 @@ game:
 | 8 | [Input](docs/08-input.md) | Keyboard/mouse contexts and bindings |
 | 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
 | 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Android, WebAssembly |
+| 11 | [Using a Release](docs/11-using-releases.md) | Consuming prebuilt release archives; building the dev container |
 
 ---
 
@@ -126,6 +127,8 @@ Android and WebAssembly have their own presets and prerequisites — see
 
 ### Using Aura3D as a library
 
+Building from source:
+
 ```bash
 cmake --install build --prefix /usr/local
 ```
@@ -135,6 +138,10 @@ find_package(Aura3D REQUIRED)
 add_executable(MyGame main.cpp)
 target_link_libraries(MyGame PRIVATE Aura3D::Aura3D)
 ```
+
+Or skip building Aura3D entirely and use a prebuilt release archive instead
+— see [docs/11-using-releases.md](docs/11-using-releases.md) for Linux,
+Android, and WASM specifics.
 
 ---
 
