@@ -116,6 +116,14 @@ target_link_libraries(Aura3D
     Threads::Threads
 )
 
+if(EMSCRIPTEN)
+    # Emscripten compiles with exceptions disabled by default,
+    # which turns that internal catch into a fatal abort instead of a
+    # graceful fallback. Actually emit and support C++ exception unwinding
+    target_compile_options(Aura3D PUBLIC "-fexceptions")
+    target_link_options(Aura3D PUBLIC "-fexceptions")
+endif()
+
 ################################################################################
 # Backend wiring
 #

@@ -4,17 +4,22 @@
 # Prerequisites
 #   • EMSDK env var set (source $EMSDK/emsdk_env.sh)
 #   • wma and ink built with Emscripten and their CMake config available.
-#     Place them under $WASM_DEPS_PREFIX (default: /usr/local/wasm-deps).
+#     Place them under $WASM_DEPS_PREFIX (default: /usr/local/wasm, matching
+#     the arthurrl/vulkan-dev:lts container's layout -- see ci.yml/release.yml).
 #     Example:
-#       emcmake cmake -B build-wma-wasm <wma-src> -DCMAKE_INSTALL_PREFIX=/usr/local/wasm-deps
+#       emcmake cmake -B build-wma-wasm <wma-src> -DCMAKE_INSTALL_PREFIX=/usr/local/wasm
 #       cmake --build build-wma-wasm --target install
 #
 # Usage
 #   ./scripts/build_wasm.sh [--release] [--debug] [--serve]
 #   --release       RelWithDebInfo build (default)
-#   --debug         Debug build (larger output, source maps)
+#   --debug         Debug build (larger output, source maps, -sASSERTIONS=1
+#                   so aborts report a real message instead of "undefined")
 #   --serve         Start a local server after build (requires Python 3)
-#   --no-asyncify   Disable Asyncify (faster build/smaller output; may hang)
+#   --asyncify      Enable Asyncify (only needed if the app ever blocks
+#                   synchronously inside the frame callback; costs build
+#                   time/output size, and forces the main loop onto a
+#                   setTimeout-based scheduler instead of requestAnimationFrame)
 #   --prefix PATH   Override WASM deps prefix (wma, ink)
 set -euo pipefail
 
@@ -23,15 +28,15 @@ ROOT="$(dirname "$SCRIPT_DIR")"
 
 BUILD_TYPE="Release"
 SERVE=0
-ASYNCIFY="ON"
-WASM_DEPS_PREFIX="${WASM_DEPS_PREFIX:-/usr/local/wasm-deps}"
+ASYNCIFY="OFF"
+WASM_DEPS_PREFIX="${WASM_DEPS_PREFIX:-/usr/local/wasm}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --debug)        BUILD_TYPE="Debug"; shift ;;
     --release)      BUILD_TYPE="Release"; shift ;;
     --serve)        SERVE=1; shift ;;
-    --no-asyncify)  ASYNCIFY="OFF"; shift ;;
+    --asyncify)     ASYNCIFY="ON"; shift ;;
     --prefix)       WASM_DEPS_PREFIX="$2"; shift 2 ;;
     *)              shift ;;
   esac
@@ -63,10 +68,14 @@ BUILD_DIR="$ROOT/build/wasm-${BUILD_TYPE,,}"
 # CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH: the Emscripten toolchain file
 # defaults find_package() to searching only its own sysroot, which would
 # never see wma/ink installed under WASM_DEPS_PREFIX.
+#
+# CMAKE_PREFIX_PATH also includes /usr/local: nlohmann_json (pulled in
+# transitively by ink-config.cmake) is header-only and only installed under
+# the native prefix in this container, not under WASM_DEPS_PREFIX.
 emcmake cmake -S "$ROOT" -B "$BUILD_DIR" \
   -G Ninja \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DCMAKE_PREFIX_PATH="$WASM_DEPS_PREFIX" \
+  -DCMAKE_PREFIX_PATH="$WASM_DEPS_PREFIX;/usr/local" \
   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
   -DAURA_WASM_ASYNCIFY="$ASYNCIFY" \
   -DAURA_WASM_OUTPUT_NAME="Aura3D" \

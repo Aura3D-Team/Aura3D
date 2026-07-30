@@ -126,6 +126,24 @@ public:
     }
 
     /**
+     * @brief Rebuilds the projection matrix in place (e.g. on a window resize).
+     *
+     * Same math as @c perspective, but mutates this camera's @c _projection
+     * instead of returning a new one -- position/rotation/view state are
+     * untouched, so a live camera can pick up a new aspect ratio without
+     * losing where it is or which way it's looking.
+     *
+     * @param desc Frustum description (field of view, aspect ratio, near/far).
+     */
+    void setPerspective(const PerspectiveDesc& desc) noexcept
+    {
+        if (_clipSpace == ClipSpace::Vulkan)
+            _projection = glm::perspectiveRH_ZO(glm::radians(desc.fovDeg), desc.aspect, desc.nearZ, desc.farZ);
+        else
+            _projection = glm::perspectiveRH_NO(glm::radians(desc.fovDeg), desc.aspect, desc.nearZ, desc.farZ);
+    }
+
+    /**
      * @brief Factory method: builds a 2D / isometric orthographic camera.
      *
      * @par The math

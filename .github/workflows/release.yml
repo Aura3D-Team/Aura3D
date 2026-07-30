@@ -28,13 +28,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Extract CHANGELOG section
+        # Pulls the "## [X.Y.Z]" ... section up to the next "## [" heading
+        # (or EOF) out of CHANGELOG.md, keyed off the pushed tag (v0.1.0 ->
+        # 0.1.0)
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+
+          awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ ("\\[" ver "\\]")) { found=1; next }
+              next
+            }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+
+          if [[ ! -s release_notes.md ]]; then
+            echo "❌  No CHANGELOG.md section found for version $VERSION" >&2
+            exit 1
+          fi
+
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --notes-from-tag \
+            --notes-file release_notes.md \
             --draft
 
   linux-release:

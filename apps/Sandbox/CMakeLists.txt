@@ -32,6 +32,9 @@ if(EMSCRIPTEN)
         # unwind for.
         "-sEXIT_RUNTIME=0"
         "$<$<BOOL:${AURA_WASM_ASYNCIFY}>:-sASYNCIFY=1>"
+        # Debug builds trade size/speed for a real exception message instead
+        # of Emscripten's opaque "Aborted(undefined)".
+        "$<$<CONFIG:Debug>:-sASSERTIONS=1>"
     )
 endif()
 

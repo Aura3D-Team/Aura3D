@@ -16,24 +16,27 @@
       }
 
       canvas {
-        display: block;
         width: 100%;
         height: 100%;
       }
     </style>
   </head>
   <body>
-    <canvas id="aura3d-canvas"></canvas>
+    <!--
+      id must stay "canvas": SDL3's Emscripten video backend looks the
+      canvas up by the CSS selector "#canvas" independently of Module.canvas
+      below (that override only affects the JS/Emscripten side, not SDL3's
+      own emscripten_webgl_create_context call)
+    -->
+    <canvas id="canvas"></canvas>
     <script>
       /*
        * Emscripten generates a UMD module (not an ES module) by default.
        * We load it via a classic <script> tag; the module self-initialises.
-       * The canvas element above is picked up by SDL3/Emscripten automatically
-       * when its id matches the Module.canvas override below.
        */
       var Module = {
         canvas: (function() {
-          var canvas = document.getElementById('aura3d-canvas');
+          var canvas = document.getElementById('canvas');
           canvas.addEventListener('webglcontextlost', function(e) {
             e.preventDefault();
           }, false);

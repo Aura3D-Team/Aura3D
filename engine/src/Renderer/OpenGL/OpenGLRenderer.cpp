@@ -58,6 +58,12 @@ void OpenGLRenderer::loadOpenGLEntryPoints()
         throw std::runtime_error("OpenGLRenderer: SDL window handle is null");
     }
 
+    // wma's SDL backend already creates and makes current a GL context for
+    // the OpenGL path (SdlWindowManager::createWindow), so the common case
+    // here is "reuse what's already current" -- only create + MakeCurrent
+    // ourselves if nothing is current yet. A redundant second MakeCurrent
+    // call on an already-current context fails outright under Emscripten's
+    // SDL3 port (SDL_GetError() comes back empty, unlike a real GL error).
     SDL_GLContext context = SDL_GL_GetCurrentContext();
     if (!context) {
         context = SDL_GL_CreateContext(window);
@@ -65,11 +71,11 @@ void OpenGLRenderer::loadOpenGLEntryPoints()
             throw std::runtime_error(
                 std::string("OpenGLRenderer: failed to create GL context: ") + SDL_GetError());
         }
-    }
 
-    if (SDL_GL_MakeCurrent(window, context) != 0) {
-        throw std::runtime_error(
-            std::string("OpenGLRenderer: failed to make GL context current: ") + SDL_GetError());
+        if (SDL_GL_MakeCurrent(window, context) != 0) {
+            throw std::runtime_error(
+                std::string("OpenGLRenderer: failed to make GL context current: ") + SDL_GetError());
+        }
     }
 
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress))) {
@@ -301,6 +307,14 @@ void OpenGLRenderer::endFrame()
 void OpenGLRenderer::setTransform(const gfx::TransformUBO& ubo)
 {
     _currentTransform = ubo;
+
+    //! Callers set a new transform per object before each drawMesh (mirroring
+    //! the Vulkan backend's per-draw push constants), so this must upload
+    //! immediately, beginRenderPass's own upload only seeds the first draw
+    //! of the frame, and without this every draw call after the first reused
+    //! whatever transform was left over from the previous frame's last object.
+    if (_uniformMgr)
+        _uniformMgr->update(_currentTransform);
 }
 
 void OpenGLRenderer::setLight(const gfx::LightUBO& light)
