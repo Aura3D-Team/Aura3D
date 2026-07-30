@@ -5,6 +5,10 @@
 
 #include <filesystem>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/html5.h>
+#endif
+
 Engine::Engine(const std::string& configPath)
 {
     INK_CORE_LOGGER;
@@ -48,6 +52,23 @@ void Engine::_configureWindow()
         //! The display drives pacing; an extra limiter would only fight it
         _windowDetails.targetFPS = 0;
     }
+
+#ifdef __EMSCRIPTEN__
+    // settings.json's window.width/height describe a fixed native window;
+    // on the web there is no "window", only whatever CSS size the canvas
+    // actually has in the browser viewport (index.html's canvas is styled
+    // width:100%/height:100%). Override with the real viewport size here so
+    // wma creates a window matching it from the very first frame, instead
+    // of blindly creating whatever fixed size the config asked for -- SDL3
+    // is the only window backend that works on Emscripten, and "#canvas"
+    // is its default (and this project's only) canvas selector.
+    double cssWidth = 0.0, cssHeight = 0.0;
+    if (emscripten_get_element_css_size("#canvas", &cssWidth, &cssHeight) == EMSCRIPTEN_RESULT_SUCCESS
+        && cssWidth > 0.0 && cssHeight > 0.0) {
+        _windowDetails.width = static_cast<int>(cssWidth);
+        _windowDetails.height = static_cast<int>(cssHeight);
+    }
+#endif
 }
 
 void Engine::_createRenderer()
@@ -77,6 +98,7 @@ void Engine::_createRenderer()
                                  : aura3d::Camera::ClipSpace::OpenGL);
 
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
+    INK_INFO << "Window backend: " << aura3d::WindowBackendToString(config->getWindowBackend());
 
     _renderer->initialize(aura3d::AuraSettings::get());
 
