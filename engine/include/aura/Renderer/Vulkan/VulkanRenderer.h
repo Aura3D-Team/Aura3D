@@ -93,6 +93,7 @@ protected:
 private:
     void setupInput();
     void createCoreObjects(bool enableValidation);
+    void recreateSurfaceAndSwapchain();
     void createResourceManagers();
     void buildSwapchainResources();
     void destroySwapchainResources();

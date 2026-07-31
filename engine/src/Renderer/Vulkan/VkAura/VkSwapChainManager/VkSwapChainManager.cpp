@@ -115,7 +115,15 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
         INK_DEBUG << "VK_SHARING_MODE_EXCLUSIVE";
     }
 
-    _swapChainCreateInfo.preTransform = _swapChainSupportDetails.capabilities.currentTransform;
+    // currentTransform reflects the device's physical orientation relative to
+    // its natural one (e.g. Android reporting a 90-degree rotation when the
+    // app forces landscape on a portrait-native device). Setting preTransform
+    // to match it means "I will pre-rotate my own rendered content to
+    // compensate
+    _swapChainCreateInfo.preTransform =
+        (_swapChainSupportDetails.capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+            ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+            : _swapChainSupportDetails.capabilities.currentTransform;
     _swapChainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     _swapChainCreateInfo.presentMode = _choosedPresentMode;
     _swapChainCreateInfo.clipped = VK_TRUE;
@@ -138,9 +146,32 @@ u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::Window
     u32 imageIndex = UINT32_MAX;
     VkResult result = vkAcquireNextImageKHR(*_device, _swapChain, UINT64_MAX, imageSemaphore, VK_NULL_HANDLE, &imageIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR ||
-        result == VK_SUBOPTIMAL_KHR ||
-        windowFlags->resized) {
+    if (result == VK_ERROR_SURFACE_LOST_KHR) 
+    {
+        windowFlags->surfaceLost = true;
+        return imageIndex;
+    }
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        // A stale swapchain never repairs itself: nothing else observes
+        // VK_ERROR_OUT_OF_DATE_KHR here, so unless a real
+        // SDL_EVENT_WINDOW_RESIZED happens to fire too, this would otherwise
+        // skip every frame forever (black screen, no recovery) instead of
+        // driving the resized rebuild path in beginFrame().
+        windowFlags->resized = true;
+        return imageIndex;
+    }
+
+    if (result == VK_SUBOPTIMAL_KHR || windowFlags->resized) 
+    {
+        // VK_SUBOPTIMAL_KHR is advisory, not an error imageIndex is still
+        // valid and the frame still renders fine. On this app's landscape-
+        // locked Android surfaces this is the *permanent* steady state (see
+        // createSwapChain()'s preTransform, which always prefers IDENTITY
+        // over the surface's actual currentTransform), so treating it as
+        // "needs a rebuild" would force a swapchain rebuild on literally
+        // every frame and never let a single one actually present.
         return imageIndex;
     };
 
@@ -149,7 +180,7 @@ u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::Window
     return imageIndex;
 }
 
-void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex)
+void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex, wma::WindowFlags* windowFlags)
 {
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -160,7 +191,17 @@ void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* rend
     presentInfo.pImageIndices = &imageIndex;
     // presentInfo.pResults = nullptr; // Optional
 
-    vkQueuePresentKHR(queue, &presentInfo);
+    VkResult result = vkQueuePresentKHR(queue, &presentInfo);
+
+    // The Android ANativeWindow backing the surface can be torn down mid-frame
+    // when the Activity is backgrounded. Unlike acquireNextImage(), a lost/out
+    // -of-date surface caught here was previously dropped on the floor, so the
+    // next frame kept issuing Vulkan calls against a dead surface instead of
+    // going through a recovery path in beginFrame().
+    if (result == VK_ERROR_SURFACE_LOST_KHR)
+        windowFlags->surfaceLost = true;
+    else if (result == VK_ERROR_OUT_OF_DATE_KHR)
+        windowFlags->resized = true;
 }
 
 void VkSwapChainManager::transitionImageLayout(
@@ -225,6 +266,14 @@ void VkSwapChainManager::cleanup()
 {
     if (_swapChain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
+        // Without this, a second cleanup() call before a successful
+        // createSwapChain() rebuild (e.g. recreateSurfaceAndSwapchain()'s
+        // retry loop, when initSwapChainSupportDetails() keeps throwing and
+        // never gets far enough to recreate the swapchain) destroys the same
+        // already-freed handle again a double-free the Scudo allocator
+        // aborts on (observed on-device during repeated surface-lost
+        // recovery attempts).
+        _swapChain = VK_NULL_HANDLE;
         INK_DEBUG << "VkSwapChain deleted";
     }
 

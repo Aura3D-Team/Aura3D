@@ -22,11 +22,16 @@
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
 
         <!--
-            SDLActivity bootstraps the SDL3 native library (libmain.so).
-            It handles the surface lifecycle, touch input, and calls SDL_main().
+            MainActivity (extends SDL3's org.libsdl.app.SDLActivity, copied in
+            from SDL 3.4.10's android-project template; see
+            android/app/src/main/java/org/libsdl/app/) bootstraps the native
+            library (libmain.so): it handles the surface lifecycle, touch
+            input, and calls SDL_main(). The override only exists because
+            Aura3D links SDL3 statically into libmain.so rather than as a
+            separate libSDL3.so; see MainActivity's own comment.
         -->
         <activity
-            android:name="org.libsdl.app.SDLActivity"
+            android:name="com.aura3d.sandbox.MainActivity"
             android:exported="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize"
             android:resizeableActivity="false"

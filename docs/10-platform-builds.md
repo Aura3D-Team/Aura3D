@@ -65,6 +65,106 @@ produces.
 ```
 finds APKs under `android/app/build/outputs/apk/`.
 
+### Installing on a real device: signed vs. unsigned APKs
+
+`assembleDebug` is signed automatically with Android's default debug
+keystore. `assembleRelease` is **not** signed by default (`android/app/build.gradle`'s
+`release {}` block has no `signingConfig`) — installing
+`app-release-unsigned.apk` via `adb install` fails outright with
+`INSTALL_PARSE_FAILED_NO_CERTIFICATES`. For device testing during
+development, install the debug APK instead:
+
+```bash
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Debugging on a real device over Wi-Fi (no USB, no emulator)
+
+Useful when the dev environment is a container without USB passthrough or
+`/dev/kvm` (so the Android emulator isn't an option either) — wireless ADB
+only needs the phone and the machine running `adb` to be on the same
+network.
+
+**One-time pairing**, on the phone: Settings → Developer options (tap
+"Build number" 7 times under About phone if this isn't visible yet) →
+Wireless debugging → **Pair device with pairing code**. This shows an IP,
+a port, and a 6-digit code — note that this pairing port is *different*
+from the port used to actually connect (below).
+
+```bash
+adb pair <ip>:<pairing-port>   # enter the 6-digit code when prompted
+```
+
+**Connecting** (each session — the main Wireless debugging screen shows a
+separate IP:port for this, not the pairing one):
+
+```bash
+adb connect <ip>:<connect-port>
+adb devices                     # confirm it shows up as "device", not "unauthorized"
+```
+
+**Installing and launching:**
+
+```bash
+adb install -r path/to/app.apk
+adb shell am force-stop com.aura3d.sandbox        # kill a previous run first
+adb shell am start -n com.aura3d.sandbox/.MainActivity
+```
+
+**Reading logs** — `-c` clears the buffer so you only see what happens
+next, `-d` dumps once and exits rather than streaming:
+
+```bash
+adb logcat -c
+adb shell am start -n com.aura3d.sandbox/.MainActivity
+adb logcat -d -s SDL:V                             # SDL's own lifecycle/JNI log lines
+adb logcat -d | grep -iE 'fatal|aura3d::|libc\+\+abi|assert'   # crash signal + backtrace
+```
+
+A crash backtrace (tag `DEBUG`, one frame per line, `pc <offset> <library>
+(<demangled symbol>+<offset>)`) is usually enough to identify which Aura3D
+function crashed without needing a debugger attached.
+
+**Screenshot** (handy for visually confirming a fix without a monitor/capture
+card on hand):
+
+```bash
+adb exec-out screencap -p > screen.png
+```
+
+**Inspecting a native library's exported symbols** — useful for diagnosing
+JNI/dlsym lookup failures (e.g. confirming `SDL_main` is present and
+unmangled, not C++ name-mangled):
+
+```bash
+$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm -D path/to/libmain.so | grep -i main
+```
+
+**Disconnecting when you're done:**
+
+```bash
+adb disconnect <ip>:<connect-port>   # drop one device
+adb disconnect                        # drop every network-attached device
+```
+
+`disconnect` only closes the TCP connection — the pairing survives, so the
+next session just needs `adb connect` again (no re-pairing with a code)
+provided the phone keeps Wireless debugging enabled. Note the phone's
+connect **port changes** each time Wireless debugging is toggled off/on (or
+after a reboot), so check the current one on the Wireless debugging screen
+rather than assuming the previous port still applies.
+
+To also shut down the local `adb` server (releases port 5037; the next `adb`
+command starts a fresh one automatically):
+
+```bash
+adb kill-server
+```
+
+Turning off **Wireless debugging** on the phone disconnects it from that side
+too, and is worth doing when you're finished — it leaves the debug channel
+open to the local network otherwise.
+
 ## WebAssembly
 
 Prerequisites: Emscripten activated (`source $EMSDK/emsdk_env.sh`),

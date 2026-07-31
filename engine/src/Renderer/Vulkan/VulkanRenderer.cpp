@@ -11,6 +11,31 @@
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Renderer/Vulkan/VkAura/EmbeddedSpirv.h"
 
+// INK_* logging writes to stdout/stderr, which never reaches `adb logcat` on
+// Android, so it is useless for diagnosing on-device issues (e.g. the
+// minimize/rotate/resume surface-recovery path) there. Route through
+// __android_log_print instead but only for Android debug builds: NDEBUG is
+// defined by CMake's default Release/RelWithDebInfo flags but not Debug, so
+// this compiles away entirely (and __android_log_print is never linked) for
+// anything but a debug APK.
+#if defined(__ANDROID__) && !defined(NDEBUG)
+#include <android/log.h>
+#define AURA_DIAG(...) __android_log_print(ANDROID_LOG_DEBUG, "Aura3D", __VA_ARGS__)
+// For call sites that would otherwise fire every frame: logs only every
+// `n`th call. The counter is `static` inside a block-scoped do/while, so
+// each macro *expansion site* gets its own independent counter even though
+// they share a variable name no __LINE__/__COUNTER__ trick needed.
+#define AURA_DIAG_EVERY(n, ...)                                 \
+    do {                                                        \
+        static u32 s_auraDiagThrottleCounter = 0;                \
+        if ((s_auraDiagThrottleCounter++ % (n)) == 0)             \
+            AURA_DIAG(__VA_ARGS__);                              \
+    } while (0)
+#else
+#define AURA_DIAG(...) ((void)0)
+#define AURA_DIAG_EVERY(n, ...) ((void)0)
+#endif
+
 namespace aura3d {
 namespace vk {
 
@@ -109,6 +134,10 @@ void VulkanRenderer::initialize(AuraSettings* settings)
     setupInput();
     createCoreObjects(enableValidation);
 
+    // Only actually request it from VMA if the device genuinely supports it
+    // (see VkDeviceManager::supportsBufferDeviceAddress)
+    _vmaConfig.bufferDeviceAddress = _vmaConfig.bufferDeviceAddress && _vkDeviceManager->supportsBufferDeviceAddress();
+
     _msaaSamples = resolveSampleCount(settings->getMsaaSamples(), _vkDeviceManager->getMaxUsableSampleCount());
 
     createResourceManagers();
@@ -139,6 +168,14 @@ void VulkanRenderer::createCoreObjects(bool enableValidation)
 
     _vkInstance = std::make_unique<VkInstanceManager>(_vkInstanceData, enableValidation);
     _vkDeviceManager = std::make_unique<VkDeviceManager>(_vkInstance->getVkInstance(), _vkDeviceData);
+
+    // A window handle isn't necessarily safe to build a surface from the moment
+    // it exists, on Android the OS can have released the underlying native
+    // window already, and the platform driver crashes on it rather than
+    // failing cleanly. wma owns that platform knowledge; see
+    // IWindowManager::waitUntilWindowReady.
+    if (!_windowManagerApi->waitUntilWindowReady())
+        throw std::runtime_error("VulkanRenderer: window never became ready for surface creation");
 
     _vkSurfaceManager = std::make_unique<VkSurfaceManager>(
         _vkInstance->getVkInstance(),
@@ -524,6 +561,34 @@ void VulkanRenderer::handleWindowChanges()
     _vkRenderSyncManager->create();
 }
 
+void VulkanRenderer::recreateSurfaceAndSwapchain()
+{
+    vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
+
+    destroySwapchainResources();
+
+    _vkSurfaceManager.reset();
+    _vkSurfaceManager = std::make_unique<VkSurfaceManager>(
+        _vkInstance->getVkInstance(),
+        _windowManagerApi->getBackendType(),
+        _windowManagerApi->getWindowInstance());
+
+    _vkSwapChainManager->initSwapChainSupportDetails(
+        *_vkDeviceManager->getPhysicalDevice(),
+        *_vkSurfaceManager->getSurface());
+    buildSwapchainResources();
+    createUniformBuffers();
+    createDescriptorSets();
+
+    for (const auto& entry : _texNames) 
+    {
+        updateTextureDescriptorSets(entry.first);
+        updateOverlay2DTextureDescriptorSets(entry.first);
+    }
+
+    _vkRenderSyncManager->create();
+}
+
 void VulkanRenderer::cleanup()
 {
     if (_vkDeviceManager && _vkDeviceManager->getDevice())
@@ -702,24 +767,107 @@ void VulkanRenderer::beginFrame()
     _renderPassActive = false;
 
     auto* windowFlags = _windowManagerApi->getWindowFlags();
-    if (!windowFlags || !_pipelineReady) return;
+    if (!windowFlags) 
+        return;
 
-    _vkRenderSyncManager->waitForFences(_currentFrame);
-
-    if (windowFlags->resized) {
-        while (windowFlags->resized) {
-            windowFlags->resized = false;
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-        handleWindowChanges();
+    // While backgrounded (Android onPause/minimize), the ANativeWindow can be
+    // torn down at any moment. Skip Vulkan entirely rather than racing
+    // acquire/present against a surface mid-teardown: vkAcquireNextImageKHR is
+    // called with an unbounded timeout below, and blocking in it here would
+    // stall this thread for as long as Android keeps the app backgrounded --
+    // which is also the thread nativePause() on the UI thread is waiting on,
+    // turning a normal minimize into an ANR-driven kill.
+    if (windowFlags->minimized)
+    {
+        AURA_DIAG_EVERY(120, "beginFrame: bailing, windowFlags->minimized == true");
         return;
     }
+
+    if (windowFlags->surfaceLost)
+    {
+        AURA_DIAG("surfaceLost: entering recovery");
+        windowFlags->surfaceLost = false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        if (!_windowManagerApi->isSurfaceAvailable()) {
+            AURA_DIAG("surfaceLost: isSurfaceAvailable() == false, bailing this frame");
+            return;
+        }
+
+        if (!_windowManagerApi->waitUntilWindowReady()) {
+            AURA_DIAG("surfaceLost: waitUntilWindowReady() TIMED OUT, bailing this frame WITHOUT rebuilding");
+            return;
+        }
+
+        try
+        {
+            recreateSurfaceAndSwapchain();
+            AURA_DIAG("surfaceLost: recreateSurfaceAndSwapchain() OK");
+        }
+        catch (const AuraException& e)
+        {
+            // The freshly (re)created VkSurfaceKHR can still be bound to an
+            // ANativeWindow/BufferQueue that Android is mid-abandoning
+            // waitUntilWindowReady() only checks the window pointer is
+            // stable, not that Vulkan can actually query it yet. Retry via
+            // the same surfaceLost path next frame instead of letting this
+            // escape the render loop and abort the process.
+            INK_ERROR << "recreateSurfaceAndSwapchain failed, will retry: " << e.what();
+            AURA_DIAG("surfaceLost: recreateSurfaceAndSwapchain() THREW: %s", e.what());
+            windowFlags->surfaceLost = true;
+        }
+
+        return;
+    }
+
+    if (windowFlags->resized) 
+    {
+        AURA_DIAG("resized: entering handleWindowChanges()");
+        windowFlags->resized = false;
+        // Debounce delay
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        try
+        {
+            handleWindowChanges();
+            AURA_DIAG("resized: handleWindowChanges() OK");
+        }
+        catch (const AuraException& e)
+        {
+            // A plain resize can reuse a VkSurfaceKHR whose backing window
+            // already died out from under it e.g. the transient portrait
+            // relayout Android does mid-resume on an orientation-locked
+            // Activity, which fires a resize without ever tripping
+            // surfaceLost first. Only surfaceLost's path actually rebuilds
+            // the surface (not just the swapchain), so route recovery
+            // through it rather than letting the exception reach the top of
+            // the render loop and abort the process.
+            INK_ERROR << "handleWindowChanges failed, forcing surface recreation: " << e.what();
+            AURA_DIAG("resized: handleWindowChanges() THREW: %s", e.what());
+            windowFlags->surfaceLost = true;
+        }
+
+        return;
+    }
+
+    if (!_pipelineReady) 
+    {
+        AURA_DIAG_EVERY(120, "beginFrame: bailing, pipelineReady=false (no recovery flag set, waiting)");
+        return;
+    }
+
+    _vkRenderSyncManager->waitForFences(_currentFrame);
 
     u32 imageIndex = _vkSwapChainManager->acquireNextImage(
         _vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
         windowFlags);
 
-    if (imageIndex >= _imagesCount) return;
+    if (imageIndex >= _imagesCount) 
+    {
+        AURA_DIAG_EVERY(60, "acquireNextImage: imageIndex=%u >= _imagesCount=%u, skipping frame (resized now=%d surfaceLost now=%d)",
+            imageIndex, _imagesCount, (int)windowFlags->resized, (int)windowFlags->surfaceLost);
+        return;
+    }
 
     _currentImageIndex = imageIndex;
     _frameBegun = true;
@@ -777,7 +925,8 @@ void VulkanRenderer::endFrame()
     _vkSwapChainManager->presentBackToSwapChain(
         graphicsQueue,
         &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentFrame],
-        _currentImageIndex);
+        _currentImageIndex,
+        _windowManagerApi->getWindowFlags());
 
     _frameBegun = false;
     _renderPassActive = false;

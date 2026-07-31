@@ -117,9 +117,33 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         priority -= 0.05f;
     }
 
+    // Query actual support before requesting it: not every device (Android
+    // GPUs in particular) supports Vulkan 1.2's bufferDeviceAddress, and
+    // without validation layers to catch a bad request at vkCreateDevice,
+    // some drivers silently accept it without truly enabling the feature --
+    // VMA (told to use VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT) then
+    // asserts/aborts the first time it actually needs it. See
+    // supportsBufferDeviceAddress()'s doc comment.
+    VkPhysicalDeviceVulkan12Features supportedVk12Features{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES
+    };
+    VkPhysicalDeviceFeatures2 supportedFeatures2{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &supportedVk12Features
+    };
+    vkGetPhysicalDeviceFeatures2(_physicalDevice, &supportedFeatures2);
+    _bufferDeviceAddressSupported = supportedVk12Features.bufferDeviceAddress == VK_TRUE;
+
+    if (!_bufferDeviceAddressSupported) {
+        INK_WARN << "Physical device does not support bufferDeviceAddress; "
+                    "VulkanMemoryManager will not request it either.";
+    }
+
     VkPhysicalDeviceVulkan12Features enabledVk12Features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-        .bufferDeviceAddress = VK_TRUE //! Resolves your VUID-VkMemoryAllocateInfo-flags-03331 error
+        //! Resolves your VUID-VkMemoryAllocateInfo-flags-03331 error -- but
+        //! only when the device actually supports it (see above).
+        .bufferDeviceAddress = _bufferDeviceAddressSupported ? VK_TRUE : VK_FALSE
     };
 
     const std::vector<VkDeviceQueueCreateInfo> vkDeviceQueueCreateInfos = _vkQueueManager.getDeviceQueueCreateInfos();

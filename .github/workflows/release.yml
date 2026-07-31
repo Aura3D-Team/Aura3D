@@ -180,6 +180,17 @@ jobs:
           cp build-android/libAura3D.a "$STAGE/lib/"
           cp -r engine/include "$STAGE/include"
 
+      - name: Build Sandbox debug APK (bundled example)
+        run: |
+          cd android
+          ./gradlew assembleDebug -PANDROID_DEPS_PREFIX=/usr/local/android
+          cd ..
+
+          STAGE="stage/aura3d-android-arm64-v8a/examples"
+          mkdir -p "$STAGE"
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+            "$STAGE/aura3d-sandbox-debug.apk"
+
       - name: Merge wma/ink into a self-contained static library
         # Same reasoning as the linux-release job: fold the (also static)
         # arm64-v8a libwma.a/libink.a into libAura3D.a so embedding this

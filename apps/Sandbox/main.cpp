@@ -56,16 +56,99 @@ int main()
     float camPitch = -8.0f;
     camera.setRotation(camYaw, camPitch);
 
+    bool moveForward = false, moveBack = false, moveLeft = false, moveRight = false;
+    bool moveUp = false, moveDown = false;
+
     constexpr float kMouseSensitivity = 0.1f;
+
+#ifdef __ANDROID__
+    // Twin-stick touch controls: left thumb walks, right thumb looks, both at
+    // the same time. This needs wma's TouchListener rather than its
+    // MouseListener -- SDL can synthesize mouse events from touch, but a mouse
+    // has one cursor, so every finger collapses into a single stream and only
+    // one stick could ever be active at a time.
+    //
+    // Relative mouse mode (setCursorEnabled(false)) is deliberately *not* used
+    // here: there is no cursor to hide or unbound, and it would only interfere.
+    wma::TouchListener& touch = windowManager->getTouchListener();
+
+    // Each stick tracks the specific finger that claimed it, by fingerId, so
+    // lifting one thumb never disturbs the other -- and a third finger is
+    // ignored rather than hijacking a stick already in use.
+    constexpr wma::TouchFingerId kNoFinger = -1;
+    wma::TouchFingerId lookFinger = kNoFinger;
+    wma::TouchFingerId moveFinger = kNoFinger;
+    double moveOriginX = 0.0;
+    double moveOriginY = 0.0;
+
+    constexpr float kTouchLookSensitivity = 0.25f;
+    constexpr double kMoveDeadZonePx = 24.0;
+
+    auto clearMovement = [&]() {
+        moveForward = moveBack = moveLeft = moveRight = false;
+    };
+
+    touch.setDownAction(wma::TouchInputCallback::from(
+        [&](const wma::WMATouchPoint& p) {
+            // wd->width is live, so the split follows orientation changes.
+            const bool isLookZone = p.x > (static_cast<double>(wd->width) * 0.5);
+            if (isLookZone) 
+            {
+                if (lookFinger == kNoFinger)
+                    lookFinger = p.fingerId;
+            } 
+            if (moveFinger == kNoFinger) 
+            {
+                moveFinger = p.fingerId;
+                // Where the thumb lands becomes the stick's centre.
+                moveOriginX = p.x;
+                moveOriginY = p.y;
+            }
+        }));
+
+    touch.setMoveAction(wma::TouchInputCallback::from(
+        [&](const wma::WMATouchPoint& p) {
+            if (p.fingerId == lookFinger) 
+            {
+                camYaw += static_cast<float>(p.deltaX) * kTouchLookSensitivity;
+                camPitch += static_cast<float>(p.deltaY) * kTouchLookSensitivity;
+                camera.setRotation(camYaw, camPitch);
+            } 
+            if (p.fingerId == moveFinger) 
+            {
+                // Virtual thumbstick: displacement from the origin picks a
+                // direction, with a dead zone so a resting thumb doesn't creep.
+                // Y is up (see wma's SDLTouchListener), so dragging up walks
+                // forward.
+                const double dx = p.x - moveOriginX;
+                const double dy = moveOriginY - p.y;
+                moveRight = dx > kMoveDeadZonePx;
+                moveLeft = dx < -kMoveDeadZonePx;
+                moveForward = dy > kMoveDeadZonePx;
+                moveBack = dy < -kMoveDeadZonePx;
+            }
+        }));
+
+    touch.setUpAction(wma::TouchInputCallback::from(
+        [&](const wma::WMATouchPoint& p) {
+            if (p.fingerId == lookFinger) 
+            {
+                lookFinger = kNoFinger;
+            } 
+            if (p.fingerId == moveFinger) 
+            {
+                moveFinger = kNoFinger;
+                clearMovement();
+            }
+        }));
+#else
     mouse.setCursorEnabled(false);
     mouse.setMoveAction(wma::MouseAction{[&](const wma::WMAMousePosition& pos) {
         camYaw += static_cast<float>(pos.deltaX) * kMouseSensitivity;
         camPitch += static_cast<float>(pos.deltaY) * kMouseSensitivity;
         camera.setRotation(camYaw, camPitch);
     }});
-
-    bool moveForward = false, moveBack = false, moveLeft = false, moveRight = false;
-    bool moveUp = false, moveDown = false;
+#endif
 
     auto bindHeld = [&keyboard](wma::Key key, bool& flag) {
         keyboard.addKeyAction(key, wma::KeyAction{

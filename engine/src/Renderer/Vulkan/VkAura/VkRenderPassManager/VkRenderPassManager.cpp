@@ -197,8 +197,14 @@ void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer) {
 
 void VkRenderPassManager::cleanup()
 {
-    if (_renderPass != VK_NULL_HANDLE)
+    if (_renderPass != VK_NULL_HANDLE) 
+    {
         vkDestroyRenderPass(*_device, _renderPass, nullptr);
+        // See VkSwapChainManager::cleanup() without nulling this, a
+        // second cleanup() before the render pass is recreated (a failed
+        // swapchain-recovery retry) double-destroys the same handle.
+        _renderPass = VK_NULL_HANDLE;
+    }
 }
 
 }

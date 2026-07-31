@@ -80,13 +80,20 @@ public:
     /**
      * @brief Validates and filters validation layers for compatibility.
      *
-     * Checks that each requested validation layer in `_vkValidationLayers` is supported by
-     * the Vulkan implementation. If unsupported layers are found, a warning is logged, and
-     * the function throws `AuraException`.
+     * A no-op if @p enableValidationLayers is false. Otherwise checks that
+     * each requested validation layer in `_vkValidationLayers` is supported
+     * by the Vulkan implementation; if not (e.g. VK_LAYER_KHRONOS_validation
+     * is a desktop Vulkan SDK component that isn't present system-wide on
+     * Android -- it has to be specially bundled into the APK, which most
+     * apps, including this one, don't do), this logs a warning and clears
+     * the layer list rather than throwing: validation layers are a debug
+     * aid, and their absence shouldn't be fatal any more than a missing
+     * texture is (see ResourceManager's fallback-to-checkerboard behavior).
      *
-     * @throws AuraException if any required validation layers are not available.
+     * @param enableValidationLayers Whether validation layers were requested
+     *        at all (AuraSettings::getValidationLayers()).
      */
-    void validateValidationLayers();
+    void validateValidationLayers(bool enableValidationLayers);
 
     /**
      * @brief Prepares the debug messenger configuration if validation layers are enabled.

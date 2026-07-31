@@ -20,7 +20,7 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData,
     VkResult vkDebuggerPreparationResult = prepareVkDebugger(enableValidationLayers);
 
     validateInstanceExtensions();
-    validateValidationLayers();
+    validateValidationLayers(enableValidationLayers);
 
     VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance));
 
@@ -65,9 +65,23 @@ void VkInstanceManager::validateInstanceExtensions() {
     _instanceInfo.ppEnabledExtensionNames = _vkInstanceExtensions.data();
 }
 
-void VkInstanceManager::validateValidationLayers() {
+void VkInstanceManager::validateValidationLayers(bool enableValidationLayers) {
+    if (!enableValidationLayers) 
+    {
+        _vkValidationLayers.clear();
+        return;
+    }
+
     VkResult result = _checkValidationLayerSupport(_vkValidationLayers);
-    VK_RESULT_CHECK(result);
+    if (result != VK_SUCCESS) 
+    {
+        INK_WARN << "Requested validation layer(s) not present on this device "
+                    "(VK_LAYER_KHRONOS_validation must be specially bundled into "
+                    "an Android APK -- it isn't present system-wide like it is with "
+                    "a desktop Vulkan SDK install); continuing without validation.";
+        _vkValidationLayers.clear();
+        return;
+    }
 
     _instanceInfo.enabledLayerCount = static_cast<u32>(_vkValidationLayers.size());
     _instanceInfo.ppEnabledLayerNames = _vkValidationLayers.data();

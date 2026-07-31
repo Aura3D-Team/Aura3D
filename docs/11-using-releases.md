@@ -12,7 +12,7 @@ Each release ships three archives — one per platform, from
 | Archive | Contents | What it is |
 |---|---|---|
 | `aura3d-vX.Y.Z-linux-x86_64.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | A library to link into your own app |
-| `aura3d-vX.Y.Z-android-arm64-v8a.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h` | A library to embed in your own Android app |
+| `aura3d-vX.Y.Z-android-arm64-v8a.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `examples/aura3d-sandbox-debug.apk` | A library to embed in your own Android app, plus a ready-to-install debug build of the Sandbox demo |
 | `aura3d-vX.Y.Z-wasm.tar.gz` | `index.html`, `pkg/{Aura3D.js,Aura3D.wasm,settings.json,resources/}` | The compiled **Sandbox demo**, ready to run in a browser — not a linkable library (see [WebAssembly](#webassembly) below) |
 
 On Linux and Android, `libAura3D.a` already has `libwma`/`libink`'s object
@@ -69,6 +69,20 @@ built with, and a mismatch here is an ABI break, not a warning.
 
 **To run**: any device/emulator with Vulkan support (Android's Vulkan is
 part of the OS image, not something a user installs separately).
+
+**Trying it without building anything first**: `examples/aura3d-sandbox-debug.apk`
+is a debug build of the Sandbox demo, signed with Android's default debug
+keystore, so it installs with no signing setup on your end:
+
+```bash
+adb install -r examples/aura3d-sandbox-debug.apk
+adb shell am start -n com.aura3d.sandbox/.MainActivity
+```
+
+Useful for confirming Aura3D actually renders on your device before writing
+any code against the library, and for reading its logs (see
+[10-platform-builds.md](10-platform-builds.md#android)'s "Reading logs"
+section) if it doesn't.
 
 ## WebAssembly
 

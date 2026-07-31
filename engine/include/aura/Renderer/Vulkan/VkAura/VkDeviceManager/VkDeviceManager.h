@@ -81,6 +81,25 @@ public:
      */
     [[nodiscard]] VkSampleCountFlagBits getMaxUsableSampleCount() const;
 
+    /**
+     * @brief Whether the selected physical device actually supports the
+     * Vulkan 1.2 bufferDeviceAddress feature.
+     *
+     * Checked via vkGetPhysicalDeviceFeatures2 before requesting it at
+     * device-creation time, requesting a feature a device doesn't support
+     * isn't reliably rejected by every driver at vkCreateDevice (especially
+     * without validation layers, which aren't available on Android unless
+     * specially bundled into the APK), so blindly trusting a "true" from
+     * settings.json here would leave VulkanMemoryManager creating its
+     * allocator with VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT set for
+     * a device that never actually turned the feature on -- VMA then
+     * asserts/aborts the first time it needs it, rather than the failure
+     * surfacing as a clean Vulkan error at device-creation time.
+     *
+     * @return true if bufferDeviceAddress was both supported and enabled.
+     */
+    [[nodiscard]] bool supportsBufferDeviceAddress() const { return _bufferDeviceAddressSupported; }
+
 private:
     VkInstance* _vkInstance; ///< Vulkan instance pointer used bind the best device
 
@@ -91,6 +110,7 @@ private:
     VkPhysicalDevice _physicalDevice;  ///< Handle to the selected Vulkan physical device
     VkPhysicalDeviceProperties _deviceProperties; ///< Store best physical device properties
     VkPhysicalDeviceFeatures _deviceFeatures; ///< Store best physical device features
+    bool _bufferDeviceAddressSupported = false; ///< See supportsBufferDeviceAddress()
     u32 _physicaldeviceCount;  ///< Number of available physical devices
 
     VkQueueManager _vkQueueManager; ///< Queue manager to create queues in a organized way.

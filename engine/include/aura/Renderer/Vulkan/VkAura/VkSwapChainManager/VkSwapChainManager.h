@@ -118,7 +118,7 @@ public:
 
     u32 acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags* windowFlags);
 
-    void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex);
+    void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex, wma::WindowFlags* windowFlags);
 
     void transitionImageLayout(
         VkCommandBuffer commandBuffer,

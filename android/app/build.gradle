@@ -6,7 +6,15 @@ plugins {
 // this, AGP defaults to whatever side-by-side NDK version it prefers and
 // tries to auto-download it, which fails wherever the SDK directory isn't
 // writable (e.g. a shared/read-only SDK install).
-def ndkVersionPinned = "27.1.12297006"
+//
+// Must match the NDK that scripts/build_android.sh uses (via
+// $ANDROID_NDK_HOME) to build the prebuilt wma/ink/SDL3 static libs this app
+// links against otherwise the app's own build (this file) and its
+// dependencies are built with different toolchains. It also needs to be NDK
+// r28+: 16 KB ELF page alignment only became the linker default starting in
+// r28, and anything built with r27 (libmain.so *and* the bundled
+// libc++_shared.so) fails Android's 16 KB-page compatibility check.
+def ndkVersionPinned = "28.0.13004108"
 
 // wma/ink/SDL3 for Android are prebuilt outside this Gradle project (see
 // scripts/build_android.sh) and installed under a single prefix; forward it

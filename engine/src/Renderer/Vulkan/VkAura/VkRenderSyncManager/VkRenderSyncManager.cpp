@@ -64,11 +64,19 @@ VkFixedArray<VkFence>& VkRenderSyncManager::getInFlightFences()
 
 void VkRenderSyncManager::cleanup()
 {
+    // Handles are nulled after destroying (vkDestroy* are no-ops on
+    // VK_NULL_HANDLE per spec) so a second cleanup() before create() runs
+    // again e.g. a failed swapchain-recovery retry that never reaches
+    // create() doesn't double-destroy the same semaphore/fence.
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], nullptr);
         vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], nullptr);
         vkDestroyFence(*_device, _inFlightFences[i], nullptr);
+
+        _imageAvailableSemaphores[i] = VK_NULL_HANDLE;
+        _renderFinishedSemaphores[i] = VK_NULL_HANDLE;
+        _inFlightFences[i] = VK_NULL_HANDLE;
     }
 }
 

@@ -12,6 +12,9 @@ namespace vk {
 VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window)
     : _vkInstance(vkInstance), _windowBackend(windowBackend)
 {
+    if (!window)
+        throw AuraException("VkSurfaceManager: window handle is null");
+
     switch (windowBackend) {
 #if WMA_HAS_GLFW
     case wma::WindowBackend::GLFW:

@@ -256,11 +256,8 @@ void OpenGLRenderer::beginFrame()
     auto* flags = _windowManagerApi->getWindowFlags();
 
     if (flags->resized) {
-        wma::WindowFlags* wf = flags;
-        while (wf->resized) {
-            wf->resized = false;
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
+        flags->resized = false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         handleWindowChanges();
     }
 }

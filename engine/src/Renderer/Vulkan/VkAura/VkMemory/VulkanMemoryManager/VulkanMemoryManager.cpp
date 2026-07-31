@@ -13,6 +13,7 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 #include <string_view>
@@ -67,6 +68,18 @@ VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(AuraSettings* settin
 
     const std::string apiVersion = json->getPath<std::string>("/memory/vma/vulkan_api_version", "1.4");
     cfg.vulkanApiVersion = parseVulkanApiVersion(apiVersion);
+
+    // Clamp to whatever VMA was actually compiled to support: VMA_VULKAN_VERSION
+    // (auto-detected by vk_mem_alloc.h above from the Vulkan headers available
+    // at compile time) can be lower than settings.json's configured version --
+    // Android's bundled Vulkan headers, for instance, don't define 1.4, so a
+    // "1.4" here would otherwise pass a version to vmaCreateAllocator that VMA
+    // asserts on: "vulkanApiVersion >= VK_API_VERSION_1_4 but required Vulkan
+    // version is disabled by preprocessor macros."
+    constexpr u32 vmaMajor = VMA_VULKAN_VERSION / 1000000;
+    constexpr u32 vmaMinor = (VMA_VULKAN_VERSION / 1000) % 1000;
+    const u32 vmaCompiledApiVersion = VK_MAKE_API_VERSION(0, vmaMajor, vmaMinor, 0);
+    cfg.vulkanApiVersion = std::min(cfg.vulkanApiVersion, vmaCompiledApiVersion);
 
     return cfg;
 }

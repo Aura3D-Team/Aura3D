@@ -26,7 +26,7 @@ ROOT="$(dirname "$SCRIPT_DIR")"
 ABI="arm64-v8a"
 BUILD_APK=0
 BUILD_TYPE="Release"
-ANDROID_DEPS_PREFIX="${ANDROID_DEPS_PREFIX:-/usr/local}"
+ANDROID_DEPS_PREFIX="${ANDROID_DEPS_PREFIX:-/usr/local/android}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
