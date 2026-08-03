@@ -243,6 +243,36 @@ public:
     virtual void drawMesh(MeshHandle mesh, TextureHandle texture = INVALID_HANDLE);
 
     /**
+     * @struct DrawItem
+     * @brief One drawable submitted through drawMeshes(): what to draw, with
+     *        which surface, and where.
+     */
+    struct DrawItem {
+        MeshHandle mesh = INVALID_HANDLE;
+        //! INVALID_HANDLE leaves whatever bindMaterial()/bindTexture() last selected.
+        MaterialHandle material = INVALID_HANDLE;
+        glm::mat4 model{1.0f};
+    };
+
+    /**
+     * @brief Draws a batch of meshes given up front, rather than one
+     *        setTransform/bindMaterial/drawMesh triple at a time.
+     *
+     * Semantically identical to that loop -- items are drawn in order, and the
+     * base implementation is literally that loop -- but handing the whole list
+     * over at once lets a backend do things a stateful, one-call-at-a-time API
+     * cannot. The Vulkan backend splits the list across worker threads that
+     * record into separate command buffers, which is only possible because no
+     * item depends on renderer state left behind by the previous one.
+     *
+     * Prefer this for scene submission at high object counts; the per-item
+     * calls remain available and unchanged.
+     *
+     * @param[in] items Drawables for this frame, drawn in the given order.
+     */
+    virtual void drawMeshes(std::span<const DrawItem> items);
+
+    /**
      * @brief Registers a material so it can be bound by handle.
      */
     virtual MaterialHandle createMaterial(const Material& material);
@@ -427,6 +457,14 @@ protected:
     std::vector<Material> _materials;   //! Material registry; handle == index + 1
     gfx::LightUBO _light{};             //! Directional light for the built-in shaders
     Material _currentMaterial{};        //! Material bound by the last bindMaterial()
+
+    /*
+     * Transform from the last setTransform(). Lives here rather than being
+     * duplicated in each backend because drawMeshes() needs to vary only the
+     * model matrix while preserving the caller's view/proj. Every backend's
+     * setTransform() override assigns it.
+     */
+    gfx::TransformUBO _currentTransform{};
 };
 
 } // namespace aura3d

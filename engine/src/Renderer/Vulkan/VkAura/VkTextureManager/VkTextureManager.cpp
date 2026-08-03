@@ -43,26 +43,19 @@ void VkTextureManager::destroyTextureData(TextureData& texture)
     }
 }
 
-VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
-    const std::string& name, u8 r, u8 g, u8 b, u8 a)
+VkTextureManager::TextureId VkTextureManager::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 {
     const u8 pixel[4] = {r, g, b, a};
-    return createTextureFromPixels(name, pixel, 1, 1);
+    return createTextureFromPixels(pixel, 1, 1);
 }
 
-VkTextureManager::TextureData VkTextureManager::createTextureFromPixels(
-    const std::string& name, const u8* rgba, u32 width, u32 height)
+VkTextureManager::TextureId VkTextureManager::createTextureFromPixels(
+    const u8* rgba, u32 width, u32 height)
 {
     if (!rgba || width == 0 || height == 0)
     {
-        INK_ERROR << "VkTextureManager: refusing to upload an empty texture: " << name;
-        return TextureData{};
-    }
-
-    auto it = _textures.find(name);
-    if (it != _textures.end()) {
-        destroyTextureData(it->second);
-        _textures.erase(it);
+        INK_ERROR << "VkTextureManager: refusing to upload an empty texture";
+        return kInvalidTextureId;
     }
 
     TextureData textureData{};
@@ -103,23 +96,16 @@ VkTextureManager::TextureData VkTextureManager::createTextureFromPixels(
     textureData.sampler = createSampler();
 
     _memoryManager->destroyBuffer(staging);
-    _textures[name] = textureData;
-    return textureData;
+    _textures.push_back(textureData);
+    return static_cast<TextureId>(_textures.size());
 }
 
-VkTextureManager::TextureData VkTextureManager::createDynamicTexture(
-    const std::string& name, u32 width, u32 height)
+VkTextureManager::TextureId VkTextureManager::createDynamicTexture(u32 width, u32 height)
 {
     if (width == 0 || height == 0)
     {
-        INK_ERROR << "VkTextureManager: refusing to allocate an empty dynamic texture: " << name;
-        return TextureData{};
-    }
-
-    auto it = _textures.find(name);
-    if (it != _textures.end()) {
-        destroyTextureData(it->second);
-        _textures.erase(it);
+        INK_ERROR << "VkTextureManager: refusing to allocate an empty dynamic texture";
+        return kInvalidTextureId;
     }
 
     TextureData textureData{};
@@ -173,28 +159,27 @@ VkTextureManager::TextureData VkTextureManager::createDynamicTexture(
     textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
     textureData.sampler = createSampler();
 
-    _textures[name] = textureData;
-    return textureData;
+    _textures.push_back(textureData);
+    return static_cast<TextureId>(_textures.size());
 }
 
-void VkTextureManager::updateRegion(const std::string& name,
+void VkTextureManager::updateRegion(TextureId id,
                                     u32 x, u32 y, u32 width, u32 height,
                                     const u8* rgba)
 {
     if (!rgba || width == 0 || height == 0)
         return;
 
-    auto it = _textures.find(name);
-    if (it == _textures.end())
+    if (id == kInvalidTextureId || id > _textures.size())
     {
-        INK_ERROR << "VkTextureManager: updateRegion on an unknown texture: " << name;
+        INK_ERROR << "VkTextureManager: updateRegion on an unknown texture id " << id;
         return;
     }
 
-    TextureData& textureData = it->second;
+    TextureData& textureData = _textures[id - 1];
     if (x + width > textureData.width || y + height > textureData.height)
     {
-        INK_ERROR << "VkTextureManager: updateRegion rectangle exceeds the bounds of " << name;
+        INK_ERROR << "VkTextureManager: updateRegion rectangle exceeds the bounds of texture " << id;
         return;
     }
 
@@ -220,19 +205,17 @@ void VkTextureManager::updateRegion(const std::string& name,
     _memoryManager->destroyBuffer(staging);
 }
 
-const VkTextureManager::TextureData* VkTextureManager::getTexture(const std::string& name) const
+const VkTextureManager::TextureData* VkTextureManager::getTexture(TextureId id) const noexcept
 {
-    auto it = _textures.find(name);
-    if (it != _textures.end()) {
-        return &it->second;
-    }
-    return nullptr;
+    if (id == kInvalidTextureId || id > _textures.size())
+        return nullptr;
+    return &_textures[id - 1];
 }
 
 void VkTextureManager::cleanup()
 {
-    for (auto& pair : _textures) {
-        destroyTextureData(pair.second);
+    for (TextureData& texture : _textures) {
+        destroyTextureData(texture);
     }
     _textures.clear();
 }

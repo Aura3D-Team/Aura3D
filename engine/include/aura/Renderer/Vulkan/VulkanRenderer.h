@@ -25,6 +25,12 @@
 #include "aura/Renderer/Vulkan/VkAura/VkCommandManager/VkCommandManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkRenderSyncManager/VkRenderSyncManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkCommandRecordingContext/VkCommandRecordingContext.h"
+
+//! Forward-declared to keep ink/ThreadPool.h (and its <thread>/<mutex>
+//! transitive includes) out of every translation unit that includes this
+//! header -- same reasoning as CpuFrameBufferManager.
+namespace ink { class ThreadPool; }
 
 namespace aura3d {
 namespace vk {
@@ -59,6 +65,17 @@ public:
     void bindTexture(TextureHandle handle) override;
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
+
+    /**
+     * @brief Records @p items across worker threads, each into its own
+     *        secondary command buffer.
+     *
+     * Produces exactly the draw order the base implementation would: the list
+     * is split into contiguous chunks, and endRenderPass() replays the chunks'
+     * buffers in order. Falls back to recording inline on the calling thread
+     * for batches too small for the hand-off to pay for itself.
+     */
+    void drawMeshes(std::span<const DrawItem> items) override;
     void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
                      std::span<const u32> indices,
                      TextureHandle texture) override;
@@ -105,11 +122,34 @@ private:
     void setupCommandBuffers();
     void createUniformBuffers();
     void createDescriptorSets();
+
+    /**
+     * @brief Makes a newly created texture samplable by both pipelines.
+     *
+     * The single entry point every texture-creation path uses: writes the
+     * texture into the 3D and overlay bindless tables, or warns once and
+     * leaves it on the fallback slot if the table is full.
+     */
+    void publishTexture(TextureHandle textureHandle);
+
+    //! Writes @p textureHandle's view/sampler into the 3D pipeline's bindless
+    //! texture array at textureArrayIndexOf(textureHandle). Allocation of the
+    //! array itself (_bindlessTextureSet3D) happens once, in createDescriptorSets().
     void updateTextureDescriptorSets(TextureHandle textureHandle);
     void updateLightUniformBuffers();
     //! Records the per-draw state (transform push constants, UBO/light/texture
     //! descriptor sets) shared by drawIndexed() and draw().
     void bindDrawState(VkCommandBuffer cmd);
+
+    /**
+     * @brief Snapshots the descriptor sets, pipeline and extent every draw in
+     *        the current frame shares.
+     *
+     * Taken once per batch and handed to the workers by const reference: the
+     * whole set is fixed for the frame, so nothing here can change under a
+     * thread that is mid-recording.
+     */
+    [[nodiscard]] SceneBindings sceneBindings() const;
 
     /**
      * @brief Builds the unlit 2D overlay pipeline against the current render
@@ -121,8 +161,9 @@ private:
     void createOverlay2DPipeline();
 
     /**
-     * @brief Allocates a descriptor set per swapchain image binding @p handle
-     *        to the overlay pipeline's set 0.
+     * @brief Writes @p handle's view/sampler into the overlay pipeline's own
+     *        bindless texture array (_bindlessTextureSet2D) at
+     *        textureArrayIndexOf(handle).
      *
      * Separate from updateTextureDescriptorSets(): the two pipelines have
      * different layouts, so a set allocated for one cannot be bound to the other.
@@ -172,12 +213,73 @@ private:
     VkFixedArray<AllocatedBuffer> _overlay2DIndexBuffers{};
     VkFixedArray<VkDeviceSize> _overlay2DVertexCapacity{};
     VkFixedArray<VkDeviceSize> _overlay2DIndexCapacity{};
-    //! Overlay-layout sets, keyed by texture and indexed by swapchain image.
-    std::unordered_map<TextureHandle, std::vector<VkDescriptorSet>> _tex2dDescSets;
-    //! 1x1 opaque white, substituted when a batch asks for no texture.
-    TextureHandle _white2DTexture = INVALID_HANDLE;
+    //! Persistent bindless texture array bound at the overlay pipeline's set 0
+    //! (see _bindlessTextureSet3D below for why this is a single set rather
+    //! than one per texture).
+    VkDescriptorSet _bindlessTextureSet2D = VK_NULL_HANDLE;
+    //! 1x1 opaque white, at texture-array slot 0 (see textureArrayIndexOf()).
+    //! Substituted when a batch asks for no texture, and shared with the 3D
+    //! path as the fallback for bindTexture(INVALID_HANDLE).
+    TextureHandle _fallbackTexture = INVALID_HANDLE;
 
     VkFixedArray<VkCommandBuffer> _cmdBuffers;
+
+    /*
+     * The render pass is begun with VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS,
+     * so no draw may be recorded into the primary buffer -- Vulkan has no
+     * mixed mode within a subpass instance. Draws go into these secondary
+     * buffers instead, and endRenderPass() replays them into the primary with
+     * a single vkCmdExecuteCommands, in this declaration order (scene first,
+     * overlay composited on top).
+     *
+     * Scene and overlay are kept apart rather than sharing one buffer because
+     * only the scene half is parallelizable: splitting it across worker
+     * threads means several scene buffers and still exactly one overlay,
+     * replayed last.
+     */
+    VkCommandBuffer _sceneCmd = VK_NULL_HANDLE;
+
+    /*
+     * Secondary buffers produced by drawMeshes()' worker threads this frame,
+     * replayed by endRenderPass() between _sceneCmd and _overlayCmd. Kept as a
+     * member and only ever cleared (never shrunk) so a steady-state frame
+     * reuses the same allocation.
+     */
+    std::vector<VkCommandBuffer> _chunkCmds;
+
+    //! Scratch for endRenderPass()' vkCmdExecuteCommands argument. A member
+    //! purely so the per-frame replay costs no allocation.
+    std::vector<VkCommandBuffer> _replayList;
+
+    /*
+     * One context per worker, reused for the renderer's lifetime. Held by
+     * pointer because a context owns a bind cache that must not be copied or
+     * moved while a worker is recording through it.
+     */
+    std::vector<std::unique_ptr<VkCommandRecordingContext>> _recordingContexts;
+
+    //! Draw list for the batch being recorded: handles resolved once on the
+    //! submitting thread so workers touch no renderer-owned lookup table.
+    //! Retained across frames to keep the per-frame path allocation-free.
+    std::vector<ResolvedDraw> _resolvedDraws;
+
+    /*
+     * Workers for drawMeshes(). Sized from graphics.cpu_threads, the same
+     * setting (and same auto-detect-when-0 convention) the software renderer's
+     * rasteriser uses -- only one backend is ever live per run, so the two
+     * cannot contend for it.
+     */
+    std::unique_ptr<ink::ThreadPool> _recordPool;
+    u32 _recordWorkerCount = 1;
+    //! Begun on the frame's first drawBatch2D(), so a frame without an overlay
+    //! costs nothing.
+    VkCommandBuffer _overlayCmd = VK_NULL_HANDLE;
+    //! Whether the overlay pipeline and its texture set are already bound in
+    //! _overlayCmd. Unlike _recorded this needs no invalidation from the scene
+    //! path: the two record into different command buffers and cannot disturb
+    //! each other's bindings.
+    bool _overlayStateBound = false;
+
     u32 _currentFrame = 0;
     u32 _currentImageIndex = 0;
     u32 _imagesCount = 0;
@@ -199,27 +301,100 @@ private:
 
     VertexBufferHandle _nextVbHandle = 1;
     IndexBufferHandle _nextIbHandle = 1;
-    TextureHandle _nextTexHandle = 1;
 
+    /*
+     * Buffer managers are still keyed by a synthetic "vb_N"/"ib_N" string.
+     * These maps hold that name so creation and cleanup can reach it; nothing
+     * on the draw path may touch them -- see _vbByHandle/_ibByHandle below,
+     * which is what a draw actually resolves through. Textures no longer need
+     * an equivalent: VkTextureManager issues dense ids directly, and the
+     * renderer adopts the id as the public TextureHandle.
+     */
     std::unordered_map<VertexBufferHandle, std::string> _vbNames;
     std::unordered_map<IndexBufferHandle, std::string> _ibNames;
-    std::unordered_map<TextureHandle, std::string> _texNames;
+
+    /*
+     * Handle-indexed mirrors of the *Names maps above (handle - 1 == index).
+     * The maps stay the naming authority used by creation and swapchain
+     * rebuilds, but the draw path must not touch them: resolving a buffer
+     * through them costs an integer hash lookup to obtain a std::string, then
+     * a second, string-hashing lookup inside the buffer manager -- per draw,
+     * per buffer. These vectors hold the already-resolved handles so a draw is
+     * a bounds check and an indexed load.
+     */
+    std::vector<VertexBufferInfo> _vbByHandle;
+    std::vector<IndexBufferInfo> _ibByHandle;
 
     std::vector<VkDescriptorSet> _descSets; //! set 0: transform, per image
     std::vector<VkDescriptorSet> _lightDescSets; //! set 2: light, per image
 
     /*
-     * set 1: one descriptor set per swapchain image, per texture. Keyed by
-     * handle rather than kept as a single array so that bindTexture() actually
-     * selects a texture: sharing one array across every texture would make the
-     * last-created one win for all draws.
+     * set 1: a single bindless combined-image-sampler array (MAX_BINDLESS_TEXTURES
+     * elements), bound once and never rebuilt per-texture or per-resize. A
+     * texture is selected per-draw via a push-constant array index (see
+     * bindDrawState()/textureArrayIndexOf()) instead of swapping which
+     * descriptor set is bound -- this is what let the old one-set-per-texture-
+     * per-image-per-pipeline scheme (which exhausted a 256-descriptor pool
+     * around the 42nd texture) go away entirely.
      */
-    std::unordered_map<TextureHandle, std::vector<VkDescriptorSet>> _texDescSets;
+    VkDescriptorSet _bindlessTextureSet3D = VK_NULL_HANDLE;
+
+    //! Slots in each bindless table, resolved from the device's
+    //! update-after-bind limits at createResourceManagers() time
+    //! (VkDeviceManager::maxBindlessTextures()). Both pipeline layouts, the
+    //! descriptor pool and textureArrayIndexOf()'s bounds check all read this
+    //! one value, so they cannot drift apart.
+    u32 _bindlessTextureCapacity = 0;
+
+    //! Bind cache for _sceneCmd, the buffer the immediate-mode draw path
+    //! records into. Defined in VkCommandRecordingContext.h so the batched path
+    //! uses the identical type, one instance per command buffer.
+    RecordedState _recorded;
+
+    /*
+     * Handle -> resolved-record accessors. Handles are dense 1-based counters,
+     * so the lookup is a bounds check plus an indexed load; each returns
+     * nullptr for a handle that was never created (or was created and failed),
+     * which is exactly the "skip this bind" case the draw path already had.
+     */
+    [[nodiscard]] const VertexBufferInfo* vertexBufferOf(VertexBufferHandle handle) const noexcept
+    {
+        const size_t index = static_cast<size_t>(handle) - 1;
+        return (handle != INVALID_HANDLE && index < _vbByHandle.size()) ? &_vbByHandle[index] : nullptr;
+    }
+
+    [[nodiscard]] const IndexBufferInfo* indexBufferOf(IndexBufferHandle handle) const noexcept
+    {
+        const size_t index = static_cast<size_t>(handle) - 1;
+        return (handle != INVALID_HANDLE && index < _ibByHandle.size()) ? &_ibByHandle[index] : nullptr;
+    }
+
+    /**
+     * @brief Maps a TextureHandle to its slot in the bindless texture table.
+     *
+     * Slot 0 is _fallbackTexture, written before any draw can happen (see
+     * initialize()), and is returned for two distinct cases that must both
+     * stay in-bounds rather than sampling an arbitrary element:
+     *  - INVALID_HANDLE: bindTexture() was never called, or drawBatch2D() was
+     *    handed no texture.
+     *  - A handle beyond _bindlessTextureCapacity: the scene created more
+     *    textures than this device's table can hold. Sampling out of range is
+     *    undefined behaviour in the shader, so such a draw is rendered with
+     *    the fallback texture instead. createTextureFromPixels() already logs
+     *    the overflow once at creation time, which is where it is actionable.
+     */
+    [[nodiscard]] u32 textureArrayIndexOf(TextureHandle handle) const noexcept
+    {
+        if (!isValidHandle(handle))
+            return 0u;
+
+        const u32 slot = static_cast<u32>(handle) - 1u;
+        return (slot < _bindlessTextureCapacity) ? slot : 0u;
+    }
 
     VertexBufferHandle _currentVertexBuffer = INVALID_HANDLE;
     IndexBufferHandle _currentIndexBuffer = INVALID_HANDLE;
     TextureHandle _currentTexture = INVALID_HANDLE;
-    gfx::TransformUBO _currentTransform;
 
     f32 _clearR = 0.05f;
     f32 _clearG = 0.05f;

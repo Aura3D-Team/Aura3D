@@ -81,6 +81,16 @@ public:
                                u32 dynamicOffsetCount = 0,
                                const u32* pDynamicOffsets = nullptr);
 
+    /**
+     * @brief Record the dynamic viewport and scissor covering @p extent.
+     *
+     * Dynamic state is sticky for the rest of the command buffer, so this
+     * belongs once per render pass rather than in front of every draw. The
+     * cmdIndexedDraw()/cmdDraw() overloads taking an extent still call it for
+     * callers that do not track their own state.
+     */
+    static void cmdSetViewportAndScissor(VkCommandBuffer commandBuffer, VkExtent2D extent) noexcept;
+
     void cmdIndexedDraw(VkCommandBuffer commandBuffer,
                         VkExtent2D extent,
                         u32 indexCount,
@@ -99,6 +109,9 @@ public:
 
     //! Get pipeline layout (needed for descriptor set binding)
     VkPipelineLayout getPipelineLayout() const { return _pipelineLayout; }
+
+    //! The pipeline object itself, so callers can detect a redundant rebind.
+    [[nodiscard]] VkPipeline getPipeline() const noexcept { return _pipeline; }
 
     //! Get descriptor set layout for a specific set
     VkDescriptorSetLayout getDescriptorSetLayout(u32 setIndex) const;

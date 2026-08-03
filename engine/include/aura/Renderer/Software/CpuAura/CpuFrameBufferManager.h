@@ -282,6 +282,9 @@ private:
     //! applied). Declared before _rasterPool so it is initialized first --
     //! the pool's size depends on it -- and reused by every dispatchRowBands()
     //! call so the number of bands always matches the pool's actual size.
+    //! Both of those only hold because it is assigned in the constructor's
+    //! initializer list; assigning it in the body runs after _rasterPool is
+    //! already built and silently pins the pool to one thread.
     i32 _workerCount = 1;
 
     //! Backs drawTriangles()/drawTriangles2D(). Owned here (rather than shared

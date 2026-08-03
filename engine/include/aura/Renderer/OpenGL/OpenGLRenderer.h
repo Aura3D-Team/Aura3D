@@ -94,7 +94,6 @@ private:
     VertexBufferHandle _currentVertexBuffer = INVALID_HANDLE;
     IndexBufferHandle _currentIndexBuffer  = INVALID_HANDLE;
     TextureHandle _currentTexture = INVALID_HANDLE;
-    gfx::TransformUBO _currentTransform;
     f32 _clearR = 0.05f, _clearG = 0.05f, _clearB = 0.05f, _clearA = 1.0f;
 };
 

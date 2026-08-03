@@ -29,10 +29,20 @@ public:
                           VkFormat depthFormat = VK_FORMAT_D32_SFLOAT,
                           VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT);
 
+    /**
+     * @brief Begins the render pass on @p commandBuffer.
+     *
+     * @param useSecondaryCommandBuffers Selects how the subpass' commands will
+     *        be supplied. When true, every draw must come from a secondary
+     *        command buffer replayed with vkCmdExecuteCommands and recording a
+     *        draw directly into @p commandBuffer becomes invalid -- Vulkan
+     *        offers no mixed mode within one subpass instance.
+     */
     void beginRenderPass(VkCommandBuffer commandBuffer,
                          VkFramebuffer framebuffer,
                          VkExtent2D swapChainExtent,
-                         const VkClearValue* clearColorValue = nullptr);
+                         const VkClearValue* clearColorValue = nullptr,
+                         bool useSecondaryCommandBuffers = false);
 
     bool hasDepth() const { return _hasDepth; }
 

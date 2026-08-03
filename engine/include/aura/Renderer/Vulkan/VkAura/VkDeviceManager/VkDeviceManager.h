@@ -100,6 +100,39 @@ public:
      */
     [[nodiscard]] bool supportsBufferDeviceAddress() const { return _bufferDeviceAddressSupported; }
 
+    /**
+     * @brief Whether the selected physical device supports the three Vulkan 1.2
+     * descriptor-indexing features the bindless texture array (VulkanRenderer's
+     * set 1) needs: descriptorBindingPartiallyBound, runtimeDescriptorArray and
+     * descriptorBindingSampledImageUpdateAfterBind.
+     *
+     * Always true once the constructor returns: unlike bufferDeviceAddress,
+     * there is no fallback path for this feature set, so _setBestDevice()
+     * throws AuraException immediately if the selected device lacks one
+     * rather than leaving a VkDeviceManager whose caller can be surprised
+     * by it later. Kept as a query (rather than just documenting the
+     * precondition) so callers can still assert/log the reason explicitly.
+     *
+     * @return true if all three features were supported and enabled.
+     */
+    [[nodiscard]] bool supportsBindlessTextures() const { return _bindlessTexturesSupported; }
+
+    /**
+     * @brief Number of texture slots the bindless table may actually declare
+     *        on this device.
+     *
+     * kDesiredBindlessTextures clamped by every update-after-bind limit a
+     * combined-image-sampler array consumes. This is the *only* correct size
+     * to build the descriptor set layout, size the descriptor pool, or bounds
+     * check a texture index against -- using the unclamped constant instead
+     * fails at vkCreateDescriptorSetLayout on any device whose limits are
+     * lower than it (mobile drivers, in practice).
+     *
+     * Guaranteed >= kMinBindlessTextures: a device that cannot host even
+     * that is rejected at selection time.
+     */
+    [[nodiscard]] u32 maxBindlessTextures() const { return _maxBindlessTextures; }
+
 private:
     VkInstance* _vkInstance; ///< Vulkan instance pointer used bind the best device
 
@@ -111,6 +144,8 @@ private:
     VkPhysicalDeviceProperties _deviceProperties; ///< Store best physical device properties
     VkPhysicalDeviceFeatures _deviceFeatures; ///< Store best physical device features
     bool _bufferDeviceAddressSupported = false; ///< See supportsBufferDeviceAddress()
+    bool _bindlessTexturesSupported = false; ///< See supportsBindlessTextures()
+    u32 _maxBindlessTextures = 0; ///< See maxBindlessTextures()
     u32 _physicaldeviceCount;  ///< Number of available physical devices
 
     VkQueueManager _vkQueueManager; ///< Queue manager to create queues in a organized way.
@@ -135,6 +170,18 @@ private:
      * @return VkResult Result format for vulkan error code.
      */
     VkResult _checkDeviceExtensionSupport(std::vector<const char*> exts) const;
+
+    /**
+     * @brief Resolves maxBindlessTextures() against the selected device's
+     *        update-after-bind descriptor limits.
+     *
+     * Called once from _setBestDevice(), after the physical device is chosen
+     * and its descriptor-indexing feature support confirmed.
+     *
+     * @return The clamped slot count, always >= kMinBindlessTextures.
+     * @throws AuraException if the device's limits cannot host even that.
+     */
+    [[nodiscard]] u32 _queryMaxBindlessTextures() const;
 };
 
 }

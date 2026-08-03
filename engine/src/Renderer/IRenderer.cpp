@@ -87,6 +87,31 @@ void IRenderer::drawMesh(MeshHandle mesh, TextureHandle texture)
     drawIndexed(record->indexCount);
 }
 
+void IRenderer::drawMeshes(std::span<const DrawItem> items)
+{
+    /*
+     * The straightforward serial reading of the batch, and the definition of
+     * what any overriding backend must reproduce. A backend that records the
+     * items concurrently is still expected to produce this exact draw order.
+     *
+     * setTransform() takes a full TransformUBO, so the caller's view/proj have
+     * to be preserved while only the model matrix varies per item; the last
+     * value the caller set is read back here rather than being re-derived.
+     */
+    gfx::TransformUBO transform = _currentTransform;
+
+    for (const DrawItem& item : items)
+    {
+        transform.model = item.model;
+        setTransform(transform);
+
+        if (isValidHandle(item.material))
+            bindMaterial(item.material);
+
+        drawMesh(item.mesh);
+    }
+}
+
 MaterialHandle IRenderer::createMaterial(const Material& material)
 {
     _materials.push_back(material);

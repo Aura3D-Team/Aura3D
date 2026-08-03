@@ -192,6 +192,29 @@ top-level `index.html` copied alongside — open that (via the `--serve`
 server, or any static file server; `file://` won't work for WASM fetches)
 to run in a browser.
 
+### The server must send COOP/COEP headers
+
+`ink` propagates `-pthread`, so Emscripten emits a **shared**
+`WebAssembly.Memory`. A shared memory requires `SharedArrayBuffer`, and every
+current browser only exposes that to a *cross-origin isolated* page. The
+server therefore has to send both of these on every response:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+`--serve` already does this. A plain `python3 -m http.server` does **not**, and
+neither do most static hosts by default — without the headers the module
+throws while instantiating its memory and the canvas just stays blank, with
+nothing obviously wrong in the console. If a deployed build shows a blank
+canvas, check these headers first.
+
+On GitHub Pages, which cannot set custom headers, the usual workaround is a
+service worker that re-serves responses with the headers attached (e.g.
+`coi-serviceworker`); anything you control directly (nginx, Caddy, CloudFront,
+S3 + Lambda\@Edge) can just add them.
+
 `AURA_WASM_ASYNCIFY` (default `OFF`) only matters if your app ever blocks
 synchronously inside the frame callback (a blocking network call, a modal
 dialog); the render loop itself (`windowManager->process()`) already hands

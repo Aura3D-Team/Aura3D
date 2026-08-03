@@ -1,40 +1,18 @@
 #include "aura/Renderer/Vulkan/VulkanRenderer.h"
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstring>
+#include <future>
 #include <thread>
 
 #include <glm/ext/matrix_clip_space.hpp>
+#include <ink/ThreadPool.h>
 
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Renderer/Vulkan/VkAura/EmbeddedSpirv.h"
-
-// INK_* logging writes to stdout/stderr, which never reaches `adb logcat` on
-// Android, so it is useless for diagnosing on-device issues (e.g. the
-// minimize/rotate/resume surface-recovery path) there. Route through
-// __android_log_print instead but only for Android debug builds: NDEBUG is
-// defined by CMake's default Release/RelWithDebInfo flags but not Debug, so
-// this compiles away entirely (and __android_log_print is never linked) for
-// anything but a debug APK.
-#if defined(__ANDROID__) && !defined(NDEBUG)
-#include <android/log.h>
-#define AURA_DIAG(...) __android_log_print(ANDROID_LOG_DEBUG, "Aura3D", __VA_ARGS__)
-// For call sites that would otherwise fire every frame: logs only every
-// `n`th call. The counter is `static` inside a block-scoped do/while, so
-// each macro *expansion site* gets its own independent counter even though
-// they share a variable name no __LINE__/__COUNTER__ trick needed.
-#define AURA_DIAG_EVERY(n, ...)                                 \
-    do {                                                        \
-        static u32 s_auraDiagThrottleCounter = 0;                \
-        if ((s_auraDiagThrottleCounter++ % (n)) == 0)             \
-            AURA_DIAG(__VA_ARGS__);                              \
-    } while (0)
-#else
-#define AURA_DIAG(...) ((void)0)
-#define AURA_DIAG_EVERY(n, ...) ((void)0)
-#endif
 
 namespace aura3d {
 namespace vk {
@@ -74,6 +52,34 @@ namespace {
     return attributes;
 }
 
+/**
+ * @brief Inverse-transpose of @p model's upper-left 3x3, for transforming normals.
+ *
+ * Mathematically identical to `transpose(inverse(mat3(model)))` but built from
+ * the cofactor form directly: three cross products and one dot, instead of
+ * glm's general inverse followed by a full transpose copy. Non-invertible
+ * input (a zero-scaled object) yields the identity rather than infinities,
+ * which keeps a degenerate transform from poisoning the push constant.
+ */
+[[nodiscard]] glm::mat3 normalMatrixOf(const glm::mat4& model) noexcept
+{
+    const glm::vec3 c0(model[0]);
+    const glm::vec3 c1(model[1]);
+    const glm::vec3 c2(model[2]);
+
+    //! Columns of the cofactor matrix == columns of transpose(inverse(A)) * det.
+    const glm::vec3 cof0 = glm::cross(c1, c2);
+    const glm::vec3 cof1 = glm::cross(c2, c0);
+    const glm::vec3 cof2 = glm::cross(c0, c1);
+
+    const f32 determinant = glm::dot(c0, cof0);
+    if (std::abs(determinant) < 1e-8f)
+        return glm::mat3(1.0f);
+
+    const f32 invDeterminant = 1.0f / determinant;
+    return glm::mat3(cof0 * invDeterminant, cof1 * invDeterminant, cof2 * invDeterminant);
+}
+
 //! Largest power-of-two sample count that is both <= `requested` and
 //! supported by the device. Falls back to 1x for a nonsensical or
 //! unsupported request rather than rejecting it.
@@ -87,6 +93,49 @@ namespace {
             resolved = candidate;
     }
     return resolved;
+}
+
+/**
+ * @brief Declares the 3D scene pipeline interface: set 0 transform UBO, set 1
+ *        bindless texture array, set 2 light UBO, and the model/normalMatrix
+ *        push constant.
+ *
+ * The constructor's own _init() declares set 1 as a single, non-bindless
+ * sampler; this replaces it. Used both by createResourceManagers() (the
+ * pipeline built by default) and setupPipeline() (a hot-swapped custom
+ * pipeline), so that either path's set 1 stays layout-compatible with the
+ * persistent _bindlessTextureSet3D allocated once in createDescriptorSets() --
+ * binding a descriptor set to a structurally different layout is invalid.
+ */
+void declareScene3DInterface(VkGraphicsPipelineManager& pipeline, u32 bindlessTextureCapacity)
+{
+    pipeline.resetInterface();
+
+    DescriptorBindingInfo uboBinding;
+    uboBinding.binding = 0;
+    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboBinding.descriptorCount = 1;
+    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pipeline.addDescriptorBinding(0, uboBinding);
+
+    DescriptorBindingInfo bindlessSampler3D;
+    bindlessSampler3D.binding = 0;
+    bindlessSampler3D.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindlessSampler3D.descriptorCount = bindlessTextureCapacity;
+    bindlessSampler3D.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindlessSampler3D.bindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
+                                    | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    pipeline.addDescriptorBinding(1, bindlessSampler3D);
+
+    // set 2: directional light, read by the fragment stage.
+    DescriptorBindingInfo lightBinding;
+    lightBinding.binding = 0;
+    lightBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    lightBinding.descriptorCount = 1;
+    lightBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pipeline.addDescriptorBinding(2, lightBinding);
+
+    pipeline.setPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantBlock));
 }
 
 } // namespace
@@ -144,6 +193,18 @@ void VulkanRenderer::initialize(AuraSettings* settings)
     buildSwapchainResources();
     createUniformBuffers();
     createDescriptorSets();
+
+    /*
+     * Reserves texture-array slot 0 (TextureHandle 1, guaranteed since this is
+     * the very first texture created) for a fallback opaque-white texture.
+     * bindTexture(INVALID_HANDLE) and drawBatch2D()'s untextured-batch case
+     * both resolve to this same slot (see textureArrayIndexOf()), so a draw
+     * that never bound a texture samples a slot that is always written,
+     * instead of one descriptorBindingPartiallyBound only permits leaving
+     * unwritten -- not dynamically sampling.
+     */
+    _fallbackTexture = createSolidColorTexture(255, 255, 255, 255);
+
     setupCommandBuffers();
 
     _isInitialized = true;
@@ -180,7 +241,8 @@ void VulkanRenderer::createCoreObjects(bool enableValidation)
     _vkSurfaceManager = std::make_unique<VkSurfaceManager>(
         _vkInstance->getVkInstance(),
         _windowManagerApi->getBackendType(),
-        _windowManagerApi->getWindowInstance());
+        _windowManagerApi->getWindowInstance(),
+        _windowManagerApi->getNativeDisplayHandle());
 
     _memoryManager->initialize(
         *_vkInstance->getVkInstance(),
@@ -199,36 +261,47 @@ void VulkanRenderer::createResourceManagers()
 {
     VkDevice* dev = _vkDeviceManager->getDevice();
 
+    //! Resolved against this device's update-after-bind limits, not the
+    //! kDesiredBindlessTextures constant -- see maxBindlessTextures(). Cached
+    //! here so the pipeline layouts, the pool and the per-draw bounds check in
+    //! textureArrayIndexOf() can never disagree about the table's size.
+    _bindlessTextureCapacity = _vkDeviceManager->maxBindlessTextures();
+
     _vkSwapChainManager = std::make_unique<VkSwapChainManager>(
         *_vkDeviceManager->getPhysicalDevice(), dev, *_vkSurfaceManager->getSurface());
     _vkImageViewsManager = std::make_unique<VkImageViewsManager>(dev);
     _vkRenderPassManager = std::make_unique<VkRenderPassManager>(dev);
     _vkFrameBuffersManager = std::make_unique<VkFrameBuffersManager>(dev);
-    _vkDescriptorManager = std::make_unique<VkDescriptorManager>(dev);
+    _vkDescriptorManager = std::make_unique<VkDescriptorManager>(dev, _bindlessTextureCapacity);
 
     _vkGraphicsPipelineManager = std::make_unique<VkGraphicsPipelineManager>(
         vk_vert_3d, vk_vert_3d_len, vk_frag_3d, vk_frag_3d_len, dev);
+    declareScene3DInterface(*_vkGraphicsPipelineManager, _bindlessTextureCapacity);
 
     _vkOverlay2DPipelineManager = std::make_unique<VkGraphicsPipelineManager>(
         vk_vert_2d, vk_vert_2d_len, vk_frag_2d, vk_frag_2d_len, dev);
 
     /*
      * Replace the 3D interface the constructor installed. The overlay shaders
-     * reference exactly one descriptor -- the sampler in set 0 -- and take their
-     * projection from a 64-byte push constant, so declaring the scene's UBO and
-     * light sets here would build a layout whose bindings nothing ever fills.
+     * reference exactly one descriptor -- a bindless texture array in set 0,
+     * same reasoning as the 3D pipeline above -- and take their projection
+     * (plus a texture-array index) from a push constant, so declaring the
+     * scene's UBO and light sets here would build a layout whose bindings
+     * nothing ever fills.
      */
     _vkOverlay2DPipelineManager->resetInterface();
 
     DescriptorBindingInfo overlaySampler;
     overlaySampler.binding = 0;
     overlaySampler.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    overlaySampler.descriptorCount = 1;
+    overlaySampler.descriptorCount = _bindlessTextureCapacity;
     overlaySampler.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    overlaySampler.bindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
+                                 | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
     _vkOverlay2DPipelineManager->addDescriptorBinding(0, overlaySampler);
 
     _vkOverlay2DPipelineManager->setPushConstantRange(
-        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4));
+        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Overlay2DPushConstants));
 
     _vkVertexBufferManager = std::make_unique<VkVertexBufferManager>(_memoryManager.get(), dev);
     _vkIndexBufferManager = std::make_unique<VkIndexBufferManager>(_memoryManager.get(), dev);
@@ -243,12 +316,41 @@ void VulkanRenderer::createResourceManagers()
         _queueDataFromExclusiveFlags.front()->queues.front());
 
     _vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(dev);
+
+    /*
+     * Recording workers. graphics.cpu_threads == 0 means "match the machine",
+     * the same convention the software rasteriser uses for the same setting.
+     * One context per worker, allocated once here: a context owns a bind cache
+     * tied to the buffer it is recording, so they are never shared or resized
+     * mid-frame.
+     */
+    const int configuredThreads = AuraSettings::get()->getCpuThreads();
+    const unsigned detected = std::thread::hardware_concurrency();
+    _recordWorkerCount = configuredThreads > 0
+                             ? static_cast<u32>(configuredThreads)
+                             : (detected > 0 ? detected : 1u);
+
+    _recordingContexts.clear();
+    _recordingContexts.reserve(_recordWorkerCount);
+    for (u32 i = 0; i < _recordWorkerCount; ++i)
+        _recordingContexts.push_back(std::make_unique<VkCommandRecordingContext>());
+
+    //! Only worth a pool at all beyond one worker; drawMeshes() records inline
+    //! when there is none.
+    if (_recordWorkerCount > 1)
+        _recordPool = std::make_unique<ink::ThreadPool>(static_cast<size_t>(_recordWorkerCount));
+
+    INK_VERBOSE << "Command recording workers: " << _recordWorkerCount;
 }
 
 void VulkanRenderer::setupPipeline(const std::string& vertShaderPath, const std::string& fragShaderPath)
 {
     _vkGraphicsPipelineManager = std::make_unique<VkGraphicsPipelineManager>(
         vertShaderPath, fragShaderPath, _vkDeviceManager->getDevice());
+    //! Must match createResourceManagers()'s pipeline exactly: set 1 has to
+    //! stay layout-compatible with the already-allocated, persistent
+    //! _bindlessTextureSet3D, which this custom pipeline does not reallocate.
+    declareScene3DInterface(*_vkGraphicsPipelineManager, _bindlessTextureCapacity);
     if (_isInitialized) {
         createDescriptorSets();
     }
@@ -319,6 +421,17 @@ void VulkanRenderer::createDescriptorSets()
     if (!_vkGraphicsPipelineManager) return;
 
     _vkGraphicsPipelineManager->createDescriptorSetLayouts();
+
+    //! Allocated exactly once: destroySwapchainResources() no longer frees
+    //! this (only _descSets/_lightDescSets are resize-sensitive), so every
+    //! later call here from handleWindowChanges()/recreateSurfaceAndSwapchain()
+    //! finds it already non-null and leaves it -- and every texture already
+    //! written into it -- untouched.
+    if (_bindlessTextureSet3D == VK_NULL_HANDLE) {
+        _bindlessTextureSet3D = _vkDescriptorManager->allocateDescriptorSet(
+            _vkGraphicsPipelineManager->getDescriptorSetLayout(1));
+    }
+
     _descSets.resize(_imagesCount);
     _lightDescSets.resize(_imagesCount);
 
@@ -363,6 +476,12 @@ void VulkanRenderer::createOverlay2DPipeline()
 
     _vkOverlay2DPipelineManager->createDescriptorSetLayouts();
 
+    //! Allocated exactly once -- see the matching comment in createDescriptorSets().
+    if (_bindlessTextureSet2D == VK_NULL_HANDLE) {
+        _bindlessTextureSet2D = _vkDescriptorManager->allocateDescriptorSet(
+            _vkOverlay2DPipelineManager->getDescriptorSetLayout(0));
+    }
+
     const std::vector<VkVertexInputBindingDescription> bindings = { overlay2DBindingDescription() };
     const auto attributes = overlay2DAttributeDescriptions();
 
@@ -389,60 +508,80 @@ void VulkanRenderer::createOverlay2DPipeline()
         overlayOptions);
 }
 
+void VulkanRenderer::publishTexture(TextureHandle textureHandle)
+{
+    if (!isValidHandle(textureHandle))
+        return;
+
+    /*
+     * A handle past the table's end cannot be sampled (see
+     * textureArrayIndexOf(), which substitutes the fallback slot rather than
+     * reading out of bounds). Creation is the only place that knows *which*
+     * texture overflowed, so it is the only place the warning is actionable
+     * -- and it is emitted once here rather than per-draw, which would flood
+     * the log at frame rate.
+     *
+     * Deliberately a plain range test rather than a comparison against
+     * _fallbackTexture: the fallback is itself published from inside its own
+     * createSolidColorTexture() call, before initialize() has assigned
+     * _fallbackTexture, so any check reading that member here sees
+     * INVALID_HANDLE and would wrongly reject slot 0 -- leaving the one slot
+     * every unbound draw samples permanently unwritten.
+     */
+    const u32 slot = static_cast<u32>(textureHandle) - 1u;
+    if (slot >= _bindlessTextureCapacity)
+    {
+        INK_WARN << "Bindless texture table full (" << _bindlessTextureCapacity
+                 << " slots); texture " << textureHandle
+                 << " will render with the fallback texture.";
+        return;
+    }
+
+    updateTextureDescriptorSets(textureHandle);
+    updateOverlay2DTextureDescriptorSets(textureHandle);
+}
+
 void VulkanRenderer::updateOverlay2DTextureDescriptorSets(TextureHandle textureHandle)
 {
-    if (!_vkOverlay2DPipelineManager) 
+    if (!_vkOverlay2DPipelineManager || _bindlessTextureSet2D == VK_NULL_HANDLE)
         return;
 
-    auto nameIt = _texNames.find(textureHandle);
-    if (nameIt == _texNames.end()) 
+    const auto* texture = _vkTextureManager->getTexture(textureHandle);
+    if (!texture)
         return;
 
-    const auto* texture = _vkTextureManager->getTexture(nameIt->second);
-    if (!texture) 
-        return;
-
-    VkDescriptorSetLayout layout = _vkOverlay2DPipelineManager->getDescriptorSetLayout(0);
-    if (layout == VK_NULL_HANDLE) 
-        return;
-
-    std::vector<VkDescriptorSet> sets(_imagesCount);
-    for (u32 i = 0; i < _imagesCount; ++i)
-    {
-        sets[i] = _vkDescriptorManager->allocateDescriptorSet(layout);
-        _vkDescriptorManager->updateCombinedImageSamplerDescriptorSet(sets[i], 0, texture->view, texture->sampler);
-    }
-    _tex2dDescSets[textureHandle] = std::move(sets);
+    _vkDescriptorManager->updateTextureArrayElement(
+        _bindlessTextureSet2D, 0, textureArrayIndexOf(textureHandle), texture->view, texture->sampler);
 }
 
 void VulkanRenderer::updateTextureDescriptorSets(TextureHandle textureHandle)
 {
-    if (!_pipelineReady || !_vkGraphicsPipelineManager) return;
+    if (!_pipelineReady || !_vkGraphicsPipelineManager || _bindlessTextureSet3D == VK_NULL_HANDLE) return;
 
-    auto nameIt = _texNames.find(textureHandle);
-    if (nameIt == _texNames.end()) return;
-
-    const auto* texture = _vkTextureManager->getTexture(nameIt->second);
+    const auto* texture = _vkTextureManager->getTexture(textureHandle);
     if (!texture) return;
 
-    std::vector<VkDescriptorSet> sets(_imagesCount);
-    for (u32 i = 0; i < _imagesCount; ++i) 
-    {
-        sets[i] = _vkDescriptorManager->allocateDescriptorSet(
-            _vkGraphicsPipelineManager->getDescriptorSetLayout(1));
-        _vkDescriptorManager->updateCombinedImageSamplerDescriptorSet(
-            sets[i], 0, texture->view, texture->sampler);
-    }
-    _texDescSets[textureHandle] = std::move(sets);
+    _vkDescriptorManager->updateTextureArrayElement(
+        _bindlessTextureSet3D, 0, textureArrayIndexOf(textureHandle), texture->view, texture->sampler);
 }
 
 void VulkanRenderer::destroySwapchainResources()
 {
     _pipelineReady = false;
-    _descSets.clear();
-    _lightDescSets.clear();
-    _texDescSets.clear();
-    _tex2dDescSets.clear();
+
+    /*
+     * Only the per-image transform/light sets are actually invalidated by a
+     * resize (the swapchain image count can change) -- explicitly freeing
+     * just those back to the pool, rather than destroying and recreating the
+     * whole VkDescriptorManager as before, is what lets the persistent
+     * bindless texture-array sets (_bindlessTextureSet3D/2D) -- and every
+     * texture already written into them -- survive a resize untouched. No
+     * per-texture descriptor work is needed here at all anymore; compare the
+     * old handleWindowChanges()/recreateSurfaceAndSwapchain(), which used to
+     * redo it for every live texture.
+     */
+    _vkDescriptorManager->freeDescriptorSets(_descSets);
+    _vkDescriptorManager->freeDescriptorSets(_lightDescSets);
 
     _vkFrameBuffersManager->cleanup();
     _vkImageViewsManager->cleanup();
@@ -451,8 +590,6 @@ void VulkanRenderer::destroySwapchainResources()
     _vkRenderSyncManager->cleanup();
     destroyDepthResources();
     destroyMsaaColorResources();
-
-    _vkDescriptorManager = std::make_unique<VkDescriptorManager>(_vkDeviceManager->getDevice());
 }
 
 void VulkanRenderer::createDepthResources()
@@ -549,14 +686,10 @@ void VulkanRenderer::handleWindowChanges()
         *_vkSurfaceManager->getSurface());
     buildSwapchainResources();
     createUniformBuffers();
+    //! No per-texture descriptor work needed here: the bindless texture-array
+    //! sets are untouched by destroySwapchainResources() (see its comment),
+    //! so every texture created before this resize is still correctly bound.
     createDescriptorSets();
-
-    //! Every texture needs fresh per-image sets on both pipelines: the old pool
-    //! was destroyed with the swapchain resources.
-    for (const auto& entry : _texNames) {
-        updateTextureDescriptorSets(entry.first);
-        updateOverlay2DTextureDescriptorSets(entry.first);
-    }
 
     _vkRenderSyncManager->create();
 }
@@ -571,20 +704,16 @@ void VulkanRenderer::recreateSurfaceAndSwapchain()
     _vkSurfaceManager = std::make_unique<VkSurfaceManager>(
         _vkInstance->getVkInstance(),
         _windowManagerApi->getBackendType(),
-        _windowManagerApi->getWindowInstance());
+        _windowManagerApi->getWindowInstance(),
+        _windowManagerApi->getNativeDisplayHandle());
 
     _vkSwapChainManager->initSwapChainSupportDetails(
         *_vkDeviceManager->getPhysicalDevice(),
         *_vkSurfaceManager->getSurface());
     buildSwapchainResources();
     createUniformBuffers();
+    //! No per-texture descriptor work needed here either -- see handleWindowChanges().
     createDescriptorSets();
-
-    for (const auto& entry : _texNames) 
-    {
-        updateTextureDescriptorSets(entry.first);
-        updateOverlay2DTextureDescriptorSets(entry.first);
-    }
 
     _vkRenderSyncManager->create();
 }
@@ -594,19 +723,30 @@ void VulkanRenderer::cleanup()
     if (_vkDeviceManager && _vkDeviceManager->getDevice())
         vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
 
+    /*
+     * Before anything Vulkan is torn down. Destroying the pool joins its
+     * worker threads, and those threads own command pools registered in
+     * VkCommandManager -- letting the manager (and the device under it) go
+     * first would leave them holding handles to a destroyed device.
+     */
+    _recordPool.reset();
+    _recordingContexts.clear();
+    _chunkCmds.clear();
+    _replayList.clear();
+    _resolvedDraws.clear();
+
     clearSharedResources();
 
     _descSets.clear();
     _lightDescSets.clear();
-    _texDescSets.clear();
-    _tex2dDescSets.clear();
+    _bindlessTextureSet3D = VK_NULL_HANDLE;
+    _bindlessTextureSet2D = VK_NULL_HANDLE;
     _vbNames.clear();
     _ibNames.clear();
-    _texNames.clear();
     _pipelineReady = false;
     _renderPassActive = false;
     _frameBegun = false;
-    _white2DTexture = INVALID_HANDLE;
+    _fallbackTexture = INVALID_HANDLE;
 
     //! Before the allocator shuts down below, since these hold VMA allocations.
     destroyOverlay2DBuffers();
@@ -659,6 +799,9 @@ VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>
         false);
 
     _vbNames[handle] = name;
+    //! Resolve once here so the draw path never has to (see _vbByHandle).
+    _vbByHandle.resize(handle);
+    _vbByHandle[handle - 1] = _vkVertexBufferManager->getVertexBuffer(name);
     return handle;
 }
 
@@ -676,6 +819,9 @@ IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16>&& indices)
         false);
 
     _ibNames[handle] = name;
+    //! Resolve once here so the draw path never has to (see _ibByHandle).
+    _ibByHandle.resize(handle);
+    _ibByHandle[handle - 1] = _vkIndexBufferManager->getIndexBuffer(name);
     return handle;
 }
 
@@ -694,6 +840,9 @@ IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u32>&& indices)
     );
 
     _ibNames[handle] = name;
+    //! Resolve once here so the draw path never has to (see _ibByHandle).
+    _ibByHandle.resize(handle);
+    _ibByHandle[handle - 1] = _vkIndexBufferManager->getIndexBuffer(name);
     return handle;
 }
 
@@ -711,13 +860,13 @@ TextureHandle VulkanRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 
         return INVALID_HANDLE;
     }
 
-    auto handle = _nextTexHandle++;
-    std::string name = "tex_" + std::to_string(handle);
+    //! The manager issues the dense id itself, and the renderer adopts it as
+    //! the public handle -- so a handle indexes straight into its storage.
+    const TextureHandle handle = _vkTextureManager->createTextureFromPixels(rgbaPixels, width, height);
+    if (handle == VkTextureManager::kInvalidTextureId)
+        return INVALID_HANDLE;
 
-    _vkTextureManager->createTextureFromPixels(name, rgbaPixels, width, height);
-    _texNames[handle] = name;
-    updateTextureDescriptorSets(handle);
-    updateOverlay2DTextureDescriptorSets(handle);
+    publishTexture(handle);
     return handle;
 }
 
@@ -729,11 +878,9 @@ TextureHandle VulkanRenderer::createDynamicTexture(u32 width, u32 height)
         return INVALID_HANDLE;
     }
 
-    auto handle = _nextTexHandle++;
-    std::string name = "tex_" + std::to_string(handle);
-
-    _vkTextureManager->createDynamicTexture(name, width, height);
-    _texNames[handle] = name;
+    const TextureHandle handle = _vkTextureManager->createDynamicTexture(width, height);
+    if (handle == VkTextureManager::kInvalidTextureId)
+        return INVALID_HANDLE;
 
     /*
      * Descriptor sets are allocated once, here, and never again: the image,
@@ -741,8 +888,7 @@ TextureHandle VulkanRenderer::createDynamicTexture(u32 width, u32 height)
      * later updateTextureRegion() calls need no descriptor work. That is what
      * keeps a growing glyph atlas from draining the descriptor pool.
      */
-    updateTextureDescriptorSets(handle);
-    updateOverlay2DTextureDescriptorSets(handle);
+    publishTexture(handle);
     return handle;
 }
 
@@ -751,14 +897,7 @@ void VulkanRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
 {
     if (!_vkTextureManager) return;
 
-    auto nameIt = _texNames.find(handle);
-    if (nameIt == _texNames.end())
-    {
-        INK_ERROR << "VulkanRenderer: updateTextureRegion on an unknown texture";
-        return;
-    }
-
-    _vkTextureManager->updateRegion(nameIt->second, x, y, width, height, rgbaPixels);
+    _vkTextureManager->updateRegion(handle, x, y, width, height, rgbaPixels);
 }
 
 void VulkanRenderer::beginFrame()
@@ -779,30 +918,25 @@ void VulkanRenderer::beginFrame()
     // turning a normal minimize into an ANR-driven kill.
     if (windowFlags->minimized)
     {
-        AURA_DIAG_EVERY(120, "beginFrame: bailing, windowFlags->minimized == true");
         return;
     }
 
     if (windowFlags->surfaceLost)
     {
-        AURA_DIAG("surfaceLost: entering recovery");
         windowFlags->surfaceLost = false;
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         if (!_windowManagerApi->isSurfaceAvailable()) {
-            AURA_DIAG("surfaceLost: isSurfaceAvailable() == false, bailing this frame");
             return;
         }
 
         if (!_windowManagerApi->waitUntilWindowReady()) {
-            AURA_DIAG("surfaceLost: waitUntilWindowReady() TIMED OUT, bailing this frame WITHOUT rebuilding");
             return;
         }
 
         try
         {
             recreateSurfaceAndSwapchain();
-            AURA_DIAG("surfaceLost: recreateSurfaceAndSwapchain() OK");
         }
         catch (const AuraException& e)
         {
@@ -813,16 +947,14 @@ void VulkanRenderer::beginFrame()
             // the same surfaceLost path next frame instead of letting this
             // escape the render loop and abort the process.
             INK_ERROR << "recreateSurfaceAndSwapchain failed, will retry: " << e.what();
-            AURA_DIAG("surfaceLost: recreateSurfaceAndSwapchain() THREW: %s", e.what());
             windowFlags->surfaceLost = true;
         }
 
         return;
     }
 
-    if (windowFlags->resized) 
+    if (windowFlags->resized)
     {
-        AURA_DIAG("resized: entering handleWindowChanges()");
         windowFlags->resized = false;
         // Debounce delay
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -830,7 +962,6 @@ void VulkanRenderer::beginFrame()
         try
         {
             handleWindowChanges();
-            AURA_DIAG("resized: handleWindowChanges() OK");
         }
         catch (const AuraException& e)
         {
@@ -843,16 +974,14 @@ void VulkanRenderer::beginFrame()
             // through it rather than letting the exception reach the top of
             // the render loop and abort the process.
             INK_ERROR << "handleWindowChanges failed, forcing surface recreation: " << e.what();
-            AURA_DIAG("resized: handleWindowChanges() THREW: %s", e.what());
             windowFlags->surfaceLost = true;
         }
 
         return;
     }
 
-    if (!_pipelineReady) 
+    if (!_pipelineReady)
     {
-        AURA_DIAG_EVERY(120, "beginFrame: bailing, pipelineReady=false (no recovery flag set, waiting)");
         return;
     }
 
@@ -862,10 +991,8 @@ void VulkanRenderer::beginFrame()
         _vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
         windowFlags);
 
-    if (imageIndex >= _imagesCount) 
+    if (imageIndex >= _imagesCount)
     {
-        AURA_DIAG_EVERY(60, "acquireNextImage: imageIndex=%u >= _imagesCount=%u, skipping frame (resized now=%d surfaceLost now=%d)",
-            imageIndex, _imagesCount, (int)windowFlags->resized, (int)windowFlags->surfaceLost);
         return;
     }
 
@@ -873,10 +1000,23 @@ void VulkanRenderer::beginFrame()
     _frameBegun = true;
 
     _vkRenderSyncManager->resetFences(_currentFrame);
-    _vkCommandManager->resetCommandPool();
+
+    /*
+     * Safe only because the fence wait above has already retired this frame
+     * slot's previous submission: the reset recycles every command buffer in
+     * the frame's pools, on every thread that recorded into them.
+     */
+    _vkCommandManager->resetRenderPools(_currentFrame);
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
     VkCommandManager::beginCommandBuffer(cmd);
+
+    //! A reset pool discards every recorded bind, so nothing may be assumed
+    //! still bound in the command buffer that starts here.
+    _recorded.reset();
+    _sceneCmd = VK_NULL_HANDLE;
+    _overlayCmd = VK_NULL_HANDLE;
+    _overlayStateBound = false;
 }
 
 void VulkanRenderer::beginRenderPass()
@@ -887,15 +1027,42 @@ void VulkanRenderer::beginRenderPass()
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
     VkClearValue clearColor = { { {_clearR, _clearG, _clearB, _clearA} } };
 
+    VkFramebuffer framebuffer = _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex];
+
     _vkRenderPassManager->beginRenderPass(
         cmd,
-        _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex],
+        framebuffer,
         *_vkSwapChainManager->getExtent2D(),
-        &clearColor);
+        &clearColor,
+        /*useSecondaryCommandBuffers=*/true);
 
     _renderPassActive = true;
 
-    _vkGraphicsPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
+    /*
+     * Every draw this pass records goes here rather than into the primary
+     * buffer above, which the SECONDARY_COMMAND_BUFFERS contents mode
+     * forbids. Begun eagerly (rather than on the first draw) so the draw path
+     * stays a straight-line record with no per-draw "is the buffer open yet"
+     * branch; an empty secondary buffer is legal and costs a begin/end pair.
+     */
+    _sceneCmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
+    VkCommandManager::beginSecondaryCommandBuffer(
+        _sceneCmd, *_vkRenderPassManager->getRenderPass(), framebuffer);
+
+    /*
+     * No pipeline pre-bind here: bindDrawState() binds it lazily in front of
+     * the pass's first actual draw (and every draw after resolves to a no-op
+     * against the cached VkPipeline, see RecordedState). Binding it
+     * unconditionally on every beginRenderPass() -- even a pass with zero
+     * draws, e.g. one full frame of nothing but the 2D overlay -- was a
+     * guaranteed-redundant vkCmdBindPipeline the state cache had no way to
+     * know had already happened.
+     *
+     * A freshly begun secondary buffer inherits no bindings whatsoever, so the
+     * cache has to start empty regardless of what the last one left bound.
+     */
+    _recorded.reset();
+
     _vkUniformBufferManager->updateUniformBuffer(
         _currentImageIndex, const_cast<gfx::TransformUBO&>(_currentTransform));
 }
@@ -903,9 +1070,49 @@ void VulkanRenderer::beginRenderPass()
 void VulkanRenderer::endRenderPass()
 {
     if (!_frameBegun || !_renderPassActive) return;
+
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
+
+    /*
+     * Replay order is array order, and it is the whole reason the overlay is
+     * recorded separately: it must composite over the scene, so its buffer
+     * goes last.
+     */
+    std::vector<VkCommandBuffer>& secondaries = _replayList;
+    secondaries.clear();
+
+    if (_sceneCmd != VK_NULL_HANDLE)
+    {
+        VkCommandManager::endCommandBuffer(_sceneCmd);
+        secondaries.push_back(_sceneCmd);
+    }
+
+    //! drawMeshes()' worker chunks, already ended by their contexts, in the
+    //! order the batch was split -- which is what makes the threaded result
+    //! identical to recording the same list serially.
+    for (VkCommandBuffer chunkCmd : _chunkCmds)
+    {
+        if (chunkCmd != VK_NULL_HANDLE)
+            secondaries.push_back(chunkCmd);
+    }
+
+    if (_overlayCmd != VK_NULL_HANDLE)
+    {
+        VkCommandManager::endCommandBuffer(_overlayCmd);
+        secondaries.push_back(_overlayCmd);
+    }
+
+    //! vkCmdExecuteCommands requires a non-zero count.
+    if (!secondaries.empty())
+        vkCmdExecuteCommands(cmd, static_cast<u32>(secondaries.size()), secondaries.data());
+
     VkRenderPassManager::endRenderPass(cmd);
     _renderPassActive = false;
+
+    _sceneCmd = VK_NULL_HANDLE;
+    _overlayCmd = VK_NULL_HANDLE;
+    _overlayStateBound = false;
+    _chunkCmds.clear();
 }
 
 void VulkanRenderer::endFrame()
@@ -940,88 +1147,210 @@ void VulkanRenderer::bindTexture(TextureHandle handle) { _currentTexture = handl
 
 void VulkanRenderer::bindDrawState(VkCommandBuffer cmd)
 {
-    _vkGraphicsPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-
-    //! set 0 - view/projection, refreshed once per frame in beginRenderPass().
-    if (_currentImageIndex < _descSets.size())
-    {
-        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
-            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &_descSets[_currentImageIndex], 0, nullptr);
-    }
-
-    // set 1 - the texture selected by the last bindTexture().
-    auto texIt = _texDescSets.find(_currentTexture);
-    if (texIt != _texDescSets.end() && _currentImageIndex < texIt->second.size())
-    {
-        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
-            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 1, 1, &texIt->second[_currentImageIndex], 0, nullptr);
-    }
-
-    // set 2 - directional light.
-    if (_currentImageIndex < _lightDescSets.size())
-    {
-        _vkGraphicsPipelineManager->cmdBindDescriptorSets(
-            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 2, 1, &_lightDescSets[_currentImageIndex], 0, nullptr);
-    }
-
     /*
-     * Per-draw transform. The model matrix travels as a push constant rather
-     * than in the UBO, because the UBO is only written once per frame: pushing
-     * here is what lets several objects with different transforms share a
-     * single render pass.
+     * Immediate-mode draws (bindVertexBuffer/bindTexture/setTransform then
+     * drawIndexed) resolve the renderer's current selection into the same
+     * ResolvedDraw the batched path builds, then share one bind implementation
+     * with it. Keeping a single copy of that logic is what stops the two paths'
+     * redundancy filters from disagreeing with what was actually recorded.
      */
-    PushConstantBlock pushConstants;
-    pushConstants.model = _currentTransform.model;
-    pushConstants.normalMatrix =
-        glm::mat4(glm::transpose(glm::inverse(glm::mat3(_currentTransform.model))));
-    _vkGraphicsPipelineManager->cmdPushConstants(cmd, &pushConstants);
+    ResolvedDraw draw;
+    draw.model = _currentTransform.model;
+    draw.textureIndex = textureArrayIndexOf(_currentTexture);
+
+    if (const VertexBufferInfo* vb = vertexBufferOf(_currentVertexBuffer))
+        draw.vertexBuffer = vb->buffer;
+
+    if (const IndexBufferInfo* ib = indexBufferOf(_currentIndexBuffer))
+    {
+        draw.indexBuffer = ib->buffer;
+        draw.indexType = ib->indexType;
+    }
+
+    aura3d::vk::bindDrawState(cmd, _recorded, sceneBindings(), draw);
+}
+
+SceneBindings VulkanRenderer::sceneBindings() const
+{
+    SceneBindings bindings;
+    bindings.pipeline = _vkGraphicsPipelineManager.get();
+    bindings.textureTable = _bindlessTextureSet3D;
+    bindings.extent = *_vkSwapChainManager->getExtent2D();
+
+    if (_currentImageIndex < _descSets.size())
+        bindings.transformSet = _descSets[_currentImageIndex];
+
+    if (_currentImageIndex < _lightDescSets.size())
+        bindings.lightSet = _lightDescSets[_currentImageIndex];
+
+    return bindings;
 }
 
 void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 {
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady) 
+    if (!_frameBegun || !_renderPassActive || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
         return;
 
-    VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
+    //! The subpass was begun in SECONDARY_COMMAND_BUFFERS mode, so this must
+    //! record into the scene secondary buffer, never into _cmdBuffers.
+    VkCommandBuffer cmd = _sceneCmd;
     bindDrawState(cmd);
 
-    auto vbIt = _vbNames.find(_currentVertexBuffer);
-    if (vbIt != _vbNames.end()) {
-        auto vb = _vkVertexBufferManager->getVertexBuffer(vbIt->second);
-        // vb.memoryOffset is VMA's suballocation offset within a shared
-        // VkDeviceMemory block, not an offset into this VkBuffer — each mesh
-        // owns its own dedicated buffer, so the bind offset is always 0.
-        VkDeviceSize vertexOffset = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vb.buffer, &vertexOffset);
-    }
-
-    auto ibIt = _ibNames.find(_currentIndexBuffer);
-    if (ibIt != _ibNames.end()) {
-        auto ib = _vkIndexBufferManager->getIndexBuffer(ibIt->second);
-        vkCmdBindIndexBuffer(cmd, ib.buffer, 0, ib.indexType);
-    }
-
-    _vkGraphicsPipelineManager->cmdIndexedDraw(
-        cmd, *_vkSwapChainManager->getExtent2D(), indexCount, instanceCount, 0, 0, 0);
+    //! Viewport/scissor were recorded once by bindDrawState(), so this is the
+    //! bare vkCmdDrawIndexed rather than the extent-taking convenience overload.
+    vkCmdDrawIndexed(cmd, indexCount, instanceCount, 0, 0, 0);
 }
 
 void VulkanRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady) 
+    if (!_frameBegun || !_renderPassActive || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
         return;
 
-    VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
+    //! See drawIndexed(): the pass records through secondary buffers.
+    VkCommandBuffer cmd = _sceneCmd;
     bindDrawState(cmd);
 
-    auto vbIt = _vbNames.find(_currentVertexBuffer);
-    if (vbIt != _vbNames.end()) {
-        auto vb = _vkVertexBufferManager->getVertexBuffer(vbIt->second);
-        VkDeviceSize vertexOffset = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vb.buffer, &vertexOffset);
+    vkCmdDraw(cmd, vertexCount, instanceCount, 0, 0);
+}
+
+void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
+{
+    if (!_frameBegun || !_renderPassActive || !_pipelineReady || items.empty())
+        return;
+
+    /*
+     * Resolve every handle up front, on this thread. Two reasons, both
+     * load-bearing: the workers then never read _meshes/_materials/_vbByHandle
+     * (containers this thread may grow between frames), and the inner
+     * recording loop becomes a linear walk over a compact POD array instead of
+     * a chain of handle lookups. Resolution is a few array loads per item --
+     * cheap next to the vkCmd* calls it feeds, which is the work worth
+     * spreading across threads.
+     */
+    _resolvedDraws.clear();
+    _resolvedDraws.reserve(items.size());
+
+    for (const DrawItem& item : items)
+    {
+        const MeshRecord* mesh = getMesh(item.mesh);
+        if (!mesh)
+            continue;
+
+        const VertexBufferInfo* vb = vertexBufferOf(mesh->vertexBuffer);
+        const IndexBufferInfo* ib = indexBufferOf(mesh->indexBuffer);
+        if (!vb || !ib)
+            continue;
+
+        //! An item without its own material inherits whatever bindMaterial()/
+        //! bindTexture() last selected, matching the base implementation.
+        TextureHandle texture = _currentTexture;
+        if (isValidHandle(item.material))
+        {
+            if (const Material* material = getMaterial(item.material))
+                texture = material->albedo;
+        }
+
+        ResolvedDraw& draw = _resolvedDraws.emplace_back();
+        draw.model = item.model;
+        draw.vertexBuffer = vb->buffer;
+        draw.indexBuffer = ib->buffer;
+        draw.indexType = ib->indexType;
+        draw.indexCount = mesh->indexCount;
+        draw.textureIndex = textureArrayIndexOf(texture);
     }
 
-    _vkGraphicsPipelineManager->cmdDraw(
-        cmd, *_vkSwapChainManager->getExtent2D(), vertexCount, instanceCount, 0, 0);
+    if (_resolvedDraws.empty())
+        return;
+
+    const SceneBindings bindings = sceneBindings();
+    VkRenderPass renderPass = *_vkRenderPassManager->getRenderPass();
+    VkFramebuffer framebuffer = _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex];
+
+    /*
+     * Thresholds picked from measurement, not intuition (release build,
+     * validation off, RTX 4060 / 22 logical cores, Sandbox stress scene):
+     *
+     *      objects   serial   16 workers
+     *        2 000    232us        135us
+     *       20 000   2408us        926us   (2.6x)
+     *
+     * The fan-out has a fixed cost of roughly 100-200us -- waking the pool,
+     * one secondary command buffer begin/end per chunk, and a full state
+     * rebind per chunk since a secondary buffer inherits no bindings. Below a
+     * few hundred draws that cost is the entire budget, and at 2 000 objects
+     * with only 2-4 workers the threaded path measured *slower* than serial.
+     * So: stay inline unless the batch is genuinely large, and when it is,
+     * use every worker rather than a token few.
+     */
+    constexpr size_t kMinDrawsToThread = 512;
+    constexpr size_t kMinDrawsPerChunk = 128;
+
+    const size_t maxChunks = _resolvedDraws.size() / kMinDrawsPerChunk;
+    const size_t chunkCount = (_resolvedDraws.size() < kMinDrawsToThread)
+                                  ? 1
+                                  : std::min<size_t>(_recordWorkerCount, std::max<size_t>(maxChunks, 1));
+
+    if (chunkCount <= 1 || !_recordPool)
+    {
+        for (const ResolvedDraw& draw : _resolvedDraws)
+        {
+            aura3d::vk::bindDrawState(_sceneCmd, _recorded, bindings, draw);
+            vkCmdDrawIndexed(_sceneCmd, draw.indexCount, 1, 0, 0, 0);
+        }
+        return;
+    }
+
+    /*
+     * Contiguous chunks, remainder spread over the first few rather than
+     * dumped on the last, so no worker gets a visibly longer slice. Chunk
+     * order is preserved in _chunkCmds and replayed in that order by
+     * endRenderPass(), which is what makes the parallel result identical to
+     * the serial one.
+     */
+    const size_t perChunk = _resolvedDraws.size() / chunkCount;
+    const size_t remainder = _resolvedDraws.size() % chunkCount;
+
+    const size_t firstChunkCmd = _chunkCmds.size();
+    _chunkCmds.resize(firstChunkCmd + chunkCount);
+
+    std::vector<std::future<void>> futures;
+    futures.reserve(chunkCount);
+
+    size_t offset = 0;
+    for (size_t chunk = 0; chunk < chunkCount; ++chunk)
+    {
+        const size_t count = perChunk + (chunk < remainder ? 1 : 0);
+        const std::span<const ResolvedDraw> slice(_resolvedDraws.data() + offset, count);
+        offset += count;
+
+        VkCommandRecordingContext* context = _recordingContexts[chunk].get();
+        VkCommandBuffer* slot = &_chunkCmds[firstChunkCmd + chunk];
+
+        futures.push_back(_recordPool->submit(
+            [this, context, slot, slice, &bindings, renderPass, framebuffer] {
+                /*
+                 * Allocated on the worker thread on purpose: the buffer must
+                 * come from a pool owned by the thread that records into it,
+                 * and VkCommandManager keys its pools by thread id to
+                 * guarantee exactly that.
+                 */
+                VkCommandBuffer cmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
+                *slot = cmd;
+                context->recordChunk(cmd, renderPass, framebuffer, bindings, slice);
+            }));
+    }
+
+    //! Blocks until the whole batch is recorded: the buffers have to be closed
+    //! before endRenderPass() can replay them, and `bindings` is captured by
+    //! reference so it must outlive every worker.
+    for (std::future<void>& future : futures)
+        future.get();
+
+    /*
+     * The scene buffer's cache describes only what *it* recorded. Nothing was
+     * added to it here -- the chunks are separate buffers -- so it stays valid
+     * and a later immediate-mode draw can still skip redundant binds.
+     */
 }
 
 void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes, VkDeviceSize indexBytes)
@@ -1090,18 +1419,13 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     if (vertices.empty() || indices.empty())
         return;
 
-    //! An untextured batch still samples, so stand in an opaque white texel.
-    TextureHandle sampled = texture;
-    if (!isValidHandle(sampled))
-    {
-        if (!isValidHandle(_white2DTexture))
-            _white2DTexture = createSolidColorTexture(255, 255, 255, 255);
-        sampled = _white2DTexture;
-    }
+    //! An untextured batch still samples, so stand in an opaque white texel --
+    //! the same reserved fallback slot 0 bindTexture(INVALID_HANDLE) uses (see
+    //! textureArrayIndexOf()), guaranteed populated since initialize().
+    const TextureHandle sampled = isValidHandle(texture) ? texture : _fallbackTexture;
 
-    auto texIt = _tex2dDescSets.find(sampled);
-    if (texIt == _tex2dDescSets.end() || _currentImageIndex >= texIt->second.size())
-        return; //! No overlay-layout descriptor set for this texture.
+    if (_bindlessTextureSet2D == VK_NULL_HANDLE)
+        return; //! Overlay pipeline never finished setting up.
 
     const VkDeviceSize vertexBytes = static_cast<VkDeviceSize>(vertices.size_bytes());
     const VkDeviceSize indexBytes = static_cast<VkDeviceSize>(indices.size_bytes());
@@ -1116,12 +1440,38 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     std::memcpy(vertexBuffer.mappedData, vertices.data(), static_cast<size_t>(vertexBytes));
     std::memcpy(indexBuffer.mappedData, indices.data(), static_cast<size_t>(indexBytes));
 
-    VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
+    /*
+     * Opened on the frame's first batch and reused by every batch after, so a
+     * frame with no overlay never pays for one. Separate from _sceneCmd
+     * because endRenderPass() has to replay it *after* the scene for the
+     * overlay to composite on top.
+     */
+    if (_overlayCmd == VK_NULL_HANDLE)
+    {
+        _overlayCmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
+        VkCommandManager::beginSecondaryCommandBuffer(
+            _overlayCmd,
+            *_vkRenderPassManager->getRenderPass(),
+            _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex]);
+        _overlayStateBound = false;
+    }
+
+    VkCommandBuffer cmd = _overlayCmd;
     const VkExtent2D extent = *_vkSwapChainManager->getExtent2D();
 
-    _vkOverlay2DPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-    _vkOverlay2DPipelineManager->cmdBindDescriptorSets(
-        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &texIt->second[_currentImageIndex], 0, nullptr);
+    /*
+     * Pipeline and texture table are identical for every batch in the frame,
+     * and nothing else records into this buffer, so they are bound once.
+     * Bindless is what makes that true: before it, a batch switching texture
+     * meant rebinding a descriptor set here.
+     */
+    if (!_overlayStateBound)
+    {
+        _vkOverlay2DPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
+        _vkOverlay2DPipelineManager->cmdBindDescriptorSets(
+            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &_bindlessTextureSet2D, 0, nullptr);
+        _overlayStateBound = true;
+    }
 
     /*
      * Window pixels -> clip space. cmdIndexedDraw() sets a negative-height
@@ -1130,12 +1480,14 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
      * OpenGL overlay path uses for that reason. _ZO because Vulkan's depth
      * range is [0,1]; the actual depth is irrelevant with the test disabled.
      */
-    const glm::mat4 projection = glm::orthoRH_ZO(
+    Overlay2DPushConstants pushConstants;
+    pushConstants.projection = glm::orthoRH_ZO(
         0.0f, static_cast<f32>(extent.width),
         static_cast<f32>(extent.height), 0.0f,
         0.0f, 1.0f);
+    pushConstants.textureIndex = textureArrayIndexOf(sampled);
 
-    _vkOverlay2DPipelineManager->cmdPushConstants(cmd, &projection);
+    _vkOverlay2DPipelineManager->cmdPushConstants(cmd, &pushConstants);
 
     const VkDeviceSize vertexOffset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, &vertexOffset);
@@ -1146,9 +1498,11 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
         cmd, extent, static_cast<u32>(indices.size()), 1, 0, 0, 0);
 
     /*
-     * No state is restored here: every 3D draw re-binds the scene pipeline and
-     * its descriptor sets in bindDrawState(), so the overlay cannot leak into
-     * one.
+     * _recorded is deliberately left alone. It tracks bindings in _sceneCmd,
+     * and this function records into _overlayCmd -- a different command
+     * buffer, whose binds cannot disturb the scene's. Invalidating it here (as
+     * this did while both shared the primary buffer) would only force the next
+     * 3D draw into a pointless full rebind.
      */
 }
 

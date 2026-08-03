@@ -68,7 +68,6 @@ private:
     VertexBufferHandle _boundVertexBuffer = INVALID_HANDLE;
     IndexBufferHandle _boundIndexBuffer = INVALID_HANDLE;
     TextureHandle _boundTexture = INVALID_HANDLE;
-    gfx::TransformUBO  _currentTransform;
 };
 
 } // namespace cpu

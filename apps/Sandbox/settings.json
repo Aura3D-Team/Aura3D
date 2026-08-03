@@ -8,7 +8,7 @@
         "width": 1920,
         "height": 1080,
         "title": "Aura Engine",
-        "backend": "SDL3",
+        "backend": "X11",
         "resizable": true,
         "fullscreen": false,
         "vsync": false,
@@ -16,7 +16,7 @@
         "fps_limit": 0
     },
     "renderer": {
-        "backend": "software",
+        "backend": "vulkan",
         "validation_layers": true
     },
     "graphics": {

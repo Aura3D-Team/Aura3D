@@ -4,6 +4,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vector>
 
 #include "aura/aura.h"
 
@@ -31,11 +32,17 @@ public:
     /**
      * Constructor - initializes the descriptor pool
      * @param vkDevice Pointer to the Vulkan logical device
-     * @param pool_size Descriptors of each type to reserve. Every texture costs
-     *        one sampler descriptor per swapchain image, so this bounds how many
-     *        distinct textures a scene may bind.
+     * @param bindlessTextureCapacity Slots in each of the two persistent
+     *        bindless texture-array sets (3D + overlay). Must be the value
+     *        VkDeviceManager::maxBindlessTextures() resolved against the real
+     *        device, never kDesiredBindlessTextures directly -- the pool has
+     *        to reserve exactly what the descriptor set layouts declare.
+     * @param pool_size Uniform-buffer descriptors to reserve (the transform
+     *        and light UBO sets, one pair per swapchain image, freed and
+     *        reallocated on every resize -- see VulkanRenderer::destroySwapchainResources).
+     *        Texture count does not scale this pool at all anymore.
      */
-    VkDescriptorManager(VkDevice* vkDevice, i32 pool_size = 256);
+    VkDescriptorManager(VkDevice* vkDevice, u32 bindlessTextureCapacity, i32 pool_size = 256);
 
     /**
      * Destructor - cleans up resources
@@ -65,6 +72,27 @@ public:
                                                  u32 binding,
                                                  VkImageView imageView,
                                                  VkSampler sampler);
+
+    /**
+     * Writes one element of a bindless combined-image-sampler array binding
+     * (VulkanRenderer's set 1 texture array), rather than element 0 of an
+     * ordinary single-descriptor binding. The pool this set was allocated
+     * from must have been created with UPDATE_AFTER_BIND (see the
+     * constructor) so this remains valid even while a previously-recorded
+     * command buffer still references the set.
+     * @param arrayElement Index into the array binding (a TextureHandle - 1).
+     */
+    void updateTextureArrayElement(VkDescriptorSet descriptorSet, u32 binding, u32 arrayElement,
+                                   VkImageView imageView, VkSampler sampler);
+
+    /**
+     * Frees every set in @p sets back to the pool (requires
+     * VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT, set by the
+     * constructor) and clears the vector. Used for the per-image transform/
+     * light sets, which are freed and reallocated on every swapchain resize
+     * rather than accumulating in the pool across the renderer's lifetime.
+     */
+    void freeDescriptorSets(std::vector<VkDescriptorSet>& sets);
 
     /**
      * Binds a descriptor set to a command buffer

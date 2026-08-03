@@ -14,6 +14,26 @@
 namespace aura3d {
 namespace cpu {
 
+namespace {
+
+/**
+ * @brief Resolves Config::threadCount, applying auto-detection for 0.
+ *
+ * A free function rather than constructor-body code because _rasterPool's
+ * initializer needs the resolved value: member initializers run before the
+ * body, so anything assigned in the body arrives too late to size the pool.
+ */
+[[nodiscard]] i32 resolveWorkerCount(i32 configured) noexcept
+{
+    if (configured > 0)
+        return configured;
+
+    const unsigned detected = std::thread::hardware_concurrency();
+    return detected > 0 ? static_cast<i32>(detected) : 1;
+}
+
+} // namespace
+
 /**
  * Constructor - allocates the CPU colour/depth plane. Presentation is delegated
  * to the wma window manager, so no backend (SDL/X11/Wayland) objects are owned
@@ -26,11 +46,18 @@ CpuFrameBufferManager::CpuFrameBufferManager(wma::IWindowManager& windowManager,
     // Initialize framebuffer with Pixel objects: black color (0) and max depth (1.0f)
     framebuffer(static_cast<size_t>(config.width) * static_cast<size_t>(config.height), Pixel{0, 1.0f}),
     _windowManager(&windowManager),
+    /*
+     * Resolved here, in the initializer list, and not in the body: _rasterPool
+     * is constructed from it on the very next line. Assigning _workerCount in
+     * the constructor body instead left the pool permanently sized to
+     * _workerCount's default of 1, so dispatchRowBands() split the frame into
+     * hardware_concurrency() bands and then fed all of them to a single
+     * worker -- correct output, zero parallelism.
+     */
+    _workerCount(resolveWorkerCount(config.threadCount)),
     _rasterPool(std::make_unique<ink::ThreadPool>(static_cast<size_t>(_workerCount))),
     _font(GetDefaultBitmapFont())
 {
-    const unsigned count = std::thread::hardware_concurrency();
-    _workerCount = config.threadCount > 0 ? config.threadCount : count > 0 ? static_cast<i32>(count) : 1;
 }
 
 /**
