@@ -24,3 +24,28 @@ if(ANDROID)
     # frames up in VulkanRenderer::beginFrame(), still aborted the process).
     set(AURA_ENABLE_LTO OFF CACHE BOOL "" FORCE)
 endif()
+
+if(WIN32 AND NOT EMSCRIPTEN)
+    message(STATUS "[Aura3D] Target platform: Windows  Compiler=${CMAKE_CXX_COMPILER_ID}")
+
+    # <windows.h>'s min/max macros collide with std::min/std::max (Camera,
+    # VkAura's extent-clamping, ...) -- both ink and wma already keep this off
+    # their own targets, but Aura3D pulls in <windows.h> too via glad.c's WGL
+    # loader path when AURA_ENABLE_OPENGL is on, so the same guard applies
+    # here. WIN32_LEAN_AND_MEAN additionally keeps the winsock/GDI surface
+    # (unused by this engine) out of the build. Applies to every target in
+    # the tree, including consumers that pull in <windows.h> themselves.
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+
+    if(MSVC)
+        # /EHsc: standard C++ exception unwinding (off by default under
+        # cl.exe; AuraException and VK_RESULT_CHECK -- plus ink and wma
+        # underneath -- all throw). /utf-8: source and execution charset,
+        # matching GCC/Clang defaults.
+        # /Zc:__cplusplus: cl.exe reports __cplusplus as 199711L regardless
+        # of the active /std: flag unless this is set, which trips ink's
+        # `#if __cplusplus < 202100L` C++23 guard even when
+        # CMAKE_CXX_STANDARD 23 has correctly selected -std:c++latest.
+        add_compile_options(/EHsc /utf-8 /Zc:__cplusplus)
+    endif()
+endif()

@@ -94,12 +94,12 @@ int main()
         [&](const wma::WMATouchPoint& p) {
             // wd->width is live, so the split follows orientation changes.
             const bool isLookZone = p.x > (static_cast<double>(wd->width) * 0.5);
-            if (isLookZone) 
+            if (isLookZone)
             {
                 if (lookFinger == kNoFinger)
                     lookFinger = p.fingerId;
-            } 
-            if (moveFinger == kNoFinger) 
+            }
+            if (moveFinger == kNoFinger)
             {
                 moveFinger = p.fingerId;
                 // Where the thumb lands becomes the stick's centre.
@@ -110,13 +110,13 @@ int main()
 
     touch.setMoveAction(wma::TouchInputCallback::from(
         [&](const wma::WMATouchPoint& p) {
-            if (p.fingerId == lookFinger) 
+            if (p.fingerId == lookFinger)
             {
                 camYaw += static_cast<float>(p.deltaX) * kTouchLookSensitivity;
                 camPitch += static_cast<float>(p.deltaY) * kTouchLookSensitivity;
                 camera.setRotation(camYaw, camPitch);
-            } 
-            if (p.fingerId == moveFinger) 
+            }
+            if (p.fingerId == moveFinger)
             {
                 // Virtual thumbstick: displacement from the origin picks a
                 // direction, with a dead zone so a resting thumb doesn't creep.
@@ -133,11 +133,11 @@ int main()
 
     touch.setUpAction(wma::TouchInputCallback::from(
         [&](const wma::WMATouchPoint& p) {
-            if (p.fingerId == lookFinger) 
+            if (p.fingerId == lookFinger)
             {
                 lookFinger = kNoFinger;
-            } 
-            if (p.fingerId == moveFinger) 
+            }
+            if (p.fingerId == moveFinger)
             {
                 moveFinger = kNoFinger;
                 clearMovement();
@@ -285,7 +285,7 @@ int main()
 
     r->run([&]() {
         // Window resize
-        if (wd->width != lastWindowWidth || wd->height != lastWindowHeight) 
+        if (wd->width != lastWindowWidth || wd->height != lastWindowHeight)
         {
             lastWindowWidth = wd->width;
             lastWindowHeight = wd->height;
@@ -349,8 +349,11 @@ int main()
         // to reduce: pure CPU time spent recording draw commands. Frame rate
         // is the wrong signal for it -- a scene can be GPU-bound and show no
         // FPS change while this number falls sharply.
+#ifdef NGEBUD
         const auto recordStart = std::chrono::steady_clock::now();
+#endif
         r->drawMeshes(drawItems);
+#ifdef NGEBUD
         recordNanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
                            std::chrono::steady_clock::now() - recordStart).count();
 
@@ -362,6 +365,7 @@ int main()
             recordNanos = 0;
             recordSamples = 0;
         }
+#endif
 
         // The 2D pipeline supplies its own orthographic projection, so the
         // overlay needs nothing from the scene camera and leaves the scene's

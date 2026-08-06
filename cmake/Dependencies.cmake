@@ -8,6 +8,17 @@ if(ANDROID)
     set(_AURA_PLATFORM "android")
 elseif(EMSCRIPTEN)
     set(_AURA_PLATFORM "wasm")
+elseif(WIN32)
+    # Mirrors the linux/debug|release branch below, for this project's own
+    # windows-debug/windows-release presets (single-config Ninja generator,
+    # so CMAKE_BUILD_TYPE is known here). libwma has the matching
+    # windows-debug/windows-release presets on its own side; libink has no
+    # Windows presets of its own (see docs/10-platform-builds.md#windows).
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(_AURA_PLATFORM "windows/debug")
+    else()
+        set(_AURA_PLATFORM "windows/release")
+    endif()
 else()
     # libink/libwma's linux presets install to linux/debug or linux/release
     # (single-config Ninja generator, so CMAKE_BUILD_TYPE is known here).

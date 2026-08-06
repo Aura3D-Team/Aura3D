@@ -82,7 +82,7 @@ game:
 | 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch2D`, the overlay pipeline, `TextOverlay` |
 | 8 | [Input](docs/08-input.md) | Keyboard/mouse contexts and bindings |
 | 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
-| 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Android, WebAssembly |
+| 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Windows, Android, WebAssembly |
 | 11 | [Using a Release](docs/11-using-releases.md) | Consuming prebuilt release archives; building the dev container |
 
 ---
@@ -122,7 +122,9 @@ Build with only the CPU renderer (no GPU dependencies at all):
 cmake .. -DAURA_ENABLE_VULKAN=OFF -DAURA_ENABLE_OPENGL=OFF
 ```
 
-Android and WebAssembly have their own presets and prerequisites — see
+Windows (`cmake --preset windows-release`, needs vcpkg — see
+[docs/10-platform-builds.md#windows](docs/10-platform-builds.md#windows)),
+Android, and WebAssembly have their own presets and prerequisites — see
 [docs/10-platform-builds.md](docs/10-platform-builds.md).
 
 ### Using Aura3D as a library
@@ -141,7 +143,7 @@ target_link_libraries(MyGame PRIVATE Aura3D::Aura3D)
 
 Or skip building Aura3D entirely and use a prebuilt release archive instead
 — see [docs/11-using-releases.md](docs/11-using-releases.md) for Linux,
-Android, and WASM specifics.
+Windows, Android, and WASM specifics.
 
 ---
 

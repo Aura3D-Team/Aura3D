@@ -145,3 +145,114 @@ jobs:
 
       - name: Build
         run: cmake --build build-android --parallel
+
+  windows-build:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Aura3D
+        uses: actions/checkout@v4
+        with:
+          path: aura3d
+
+      - name: Checkout ink
+        # windows-latest has no vulkan-dev container to pull prebuilt
+        # ink/wma from (unlike the Linux/Android/WASM jobs above), so
+        # build+install both dependencies from source here into a shared
+        # local prefix; Aura3D's own Configure step below points
+        # CMAKE_PREFIX_PATH at it.
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: ink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: wma
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v4
+
+      - name: Install dependencies (vcpkg)
+        # windows-latest ships vcpkg preinstalled at $VCPKG_INSTALLATION_ROOT.
+        # nlohmann_json is ink's dependency; SDL3/GLFW are wma's;
+        # vulkan-headers/vulkan-loader are Aura3D's own (AURA_ENABLE_VULKAN
+        # defaults ON). OpenGL needs no package here -- opengl32.lib ships
+        # with the Windows SDK that msvc-dev-cmd already put on PATH. The
+        # static triplet matches the /MT-equivalent static-library build all
+        # three libraries produce.
+        run: >
+          vcpkg install
+          nlohmann-json:x64-windows-static
+          sdl3:x64-windows-static
+          glfw3:x64-windows-static
+          vulkan-headers:x64-windows-static
+          vulkan-loader:x64-windows-static
+
+      - name: Configure ink
+        run: >
+          cmake -S ink -B ink/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DINK_BUILD_TESTS=OFF
+          -DINK_NATIVE_OPTIMIZE=OFF
+
+      - name: Build ink
+        run: cmake --build ink/build --parallel
+
+      - name: Install ink
+        run: cmake --install ink/build --prefix deps
+
+      - name: Configure wma
+        # WMA_ENABLE_X11/WAYLAND are Linux-only (cmake/Dependencies.cmake
+        # forces them off on Windows) so only SDL3/GLFW are requested here.
+        run: >
+          cmake -S wma -B wma/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DWMA_BUILD_EXAMPLES=OFF
+          -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_SDL=ON
+          -DWMA_ENABLE_GLFW=OFF
+
+      - name: Build wma
+        run: cmake --build wma/build --parallel
+
+      - name: Install wma
+        run: cmake --install wma/build --prefix deps
+
+      - name: Configure Aura3D
+        # deps/ now holds both ink and wma installed to the same prefix, so
+        # one CMAKE_PREFIX_PATH entry resolves both find_package() calls.
+        run: >
+          cmake -S aura3d -B aura3d/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DAURA_BUILD_SANDBOX=ON
+          -DAURA_BUILD_TESTS=ON
+
+      - name: Build Aura3D
+        run: cmake --build aura3d/build --parallel
+
+      - name: Run tests
+        # Every suite here only exercises loader/parsing code paths that
+        # don't need a live GL context or VkDevice (see tests/CMakeLists.txt
+        # and each suite's own file-level comment), so this passes with no
+        # GPU on the runner, same as the Linux jobs above.
+        run: ctest --test-dir aura3d/build --output-on-failure

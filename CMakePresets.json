@@ -31,6 +31,26 @@
       }
     },
     {
+      "name": "windows-debug",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/windows/debug",
+      "installDir": "$env{LOCAL_PREFIX}/windows/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "$env{LOCAL_PREFIX}/windows/debug"
+      }
+    },
+    {
+      "name": "windows-release",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/windows/release",
+      "installDir": "$env{LOCAL_PREFIX}/windows/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "$env{LOCAL_PREFIX}/windows/release"
+      }
+    },
+    {
       "name": "android",
       "inherits": "base",
       "binaryDir": "${sourceDir}/build/android",
@@ -59,6 +79,8 @@
   "buildPresets": [
     {"name": "linux-debug", "configurePreset": "linux-debug"},
     {"name": "linux-release", "configurePreset": "linux-release"},
+    {"name": "windows-debug", "configurePreset": "windows-debug"},
+    {"name": "windows-release", "configurePreset": "windows-release"},
     {"name": "android", "configurePreset": "android"},
     {"name": "wasm", "configurePreset": "wasm"}
   ]
