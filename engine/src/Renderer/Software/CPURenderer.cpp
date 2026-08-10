@@ -194,7 +194,15 @@ void CPURenderer::beginRenderPass()
 
 void CPURenderer::endRenderPass()
 {
-    // Nothing: present happens in endFrame.
+    /*
+     * The frame's whole triangle queue is rasterised here, in one parallel
+     * dispatch. This is the pass boundary in exactly the sense the GPU
+     * backends use it -- the point past which no further geometry can arrive --
+     * which is what makes it the right place to stop deferring. Present still
+     * happens in endFrame().
+     */
+    if (_frameBufferManager)
+        _frameBufferManager->flush();
 }
 
 void CPURenderer::endFrame()
@@ -346,14 +354,13 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     const u32 triCount  = safeCount / 3;
 
     /*
-     * Project every triangle first and rasterise the whole list in one
-     * dispatchRowBands() call, rather than one dispatch per triangle: with the
-     * list in hand, the framebuffer can be split into row-bands once and every
-     * core rasterises across the full mesh concurrently, instead of the work
-     * staying serialised on this thread one triangle at a time.
+     * Project the whole draw call, then hand the list over as one batch. The
+     * manager queues it and rasterises every batch of the frame in a single
+     * parallel dispatch (see CpuFrameBufferManager::flush), so the thread-pool
+     * fan-out is paid once per frame rather than once per draw call.
      */
-    std::vector<ScreenTriangle> triangles;
-    triangles.reserve(triCount);
+    _projectedTriangles.clear();
+    _projectedTriangles.reserve(triCount);
 
     for (u32 t = 0; t < triCount; ++t)
     {
@@ -372,10 +379,14 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
         if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
             continue;
 
-        triangles.push_back({sv0, sv1, sv2});
+        //! Matches the GPU backends' back-face culling; see isFrontFacing().
+        if (!isFrontFacing(sv0, sv1, sv2))
+            continue;
+
+        _projectedTriangles.push_back({sv0, sv1, sv2});
     }
 
-    _frameBufferManager->drawTriangles(triangles, texture);
+    _frameBufferManager->submitTriangles(_projectedTriangles, texture);
 
     (void)instanceCount;
 }
@@ -400,8 +411,8 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     const u32 safeCount = std::min(vertexCount, static_cast<u32>(verts.size()));
     const u32 triCount  = safeCount / 3;
 
-    std::vector<ScreenTriangle> triangles;
-    triangles.reserve(triCount);
+    _projectedTriangles.clear();
+    _projectedTriangles.reserve(triCount);
 
     for (u32 t = 0; t < triCount; ++t)
     {
@@ -412,10 +423,14 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
         if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
             continue;
 
-        triangles.push_back({sv0, sv1, sv2});
+        //! Matches the GPU backends' back-face culling; see isFrontFacing().
+        if (!isFrontFacing(sv0, sv1, sv2))
+            continue;
+
+        _projectedTriangles.push_back({sv0, sv1, sv2});
     }
 
-    _frameBufferManager->drawTriangles(triangles, texture);
+    _frameBufferManager->submitTriangles(_projectedTriangles, texture);
 
     (void)instanceCount;
 }
@@ -447,8 +462,8 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     };
 
     const size_t triCount = indices.size() / 3;
-    std::vector<ScreenTriangle> triangles;
-    triangles.reserve(triCount);
+    _projectedTriangles.clear();
+    _projectedTriangles.reserve(triCount);
 
     for (size_t t = 0; t < triCount; ++t)
     {
@@ -459,12 +474,18 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
         if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())
             continue;
 
-        triangles.push_back({toScreenVertex(vertices[i0]),
-                             toScreenVertex(vertices[i1]),
-                             toScreenVertex(vertices[i2])});
+        /*
+         * No back-face test here, matching the GPU overlay pipelines, which
+         * disable culling outright (see overlayOptions.cullBackFaces). UI
+         * quads carry no meaningful winding and a glyph must draw whichever
+         * way its two triangles happen to be wound.
+         */
+        _projectedTriangles.push_back({toScreenVertex(vertices[i0]),
+                                       toScreenVertex(vertices[i1]),
+                                       toScreenVertex(vertices[i2])});
     }
 
-    _frameBufferManager->drawTriangles2D(triangles, sampled);
+    _frameBufferManager->submitTriangles2D(_projectedTriangles, sampled);
 }
 
 } // namespace cpu

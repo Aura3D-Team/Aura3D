@@ -173,41 +173,79 @@ private:
     VkCommandBuffer beginSingleTimeCommands();
 
     /**
-     * @brief Ends and submits a single-use command buffer
+     * @brief Ends @p commandBuffer, submits it, and waits for it to retire.
      *
-     * @param commandBuffer The command buffer to submit
+     * Waits on a dedicated fence rather than vkQueueWaitIdle: the latter blocks
+     * until *every* submission on the graphics queue has drained, which on the
+     * glyph-atlas path (updateRegion() during a live frame) means a texture
+     * patch stalls the frame already in flight. A fence waits for this
+     * submission alone and leaves the rest of the queue running.
+     *
+     * @param commandBuffer The command buffer to submit.
      */
     void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
     /**
-     * @brief Transitions an image between layouts
+     * @brief Records an image layout transition into @p cmd.
      *
-     * @param image The image to transition
-     * @param oldLayout Current layout of the image
-     * @param newLayout Target layout for the image
+     * Records only -- submission is the caller's business, which is what lets
+     * an upload put its two transitions and the copy between them into a single
+     * command buffer instead of three separately submitted ones.
      */
-    void transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void recordLayoutTransition(VkCommandBuffer cmd, VkImage image,
+                                VkImageLayout oldLayout, VkImageLayout newLayout) const;
 
     /**
-     * @brief Copies data from a buffer to an image
+     * @brief Records a buffer -> image sub-rectangle copy into @p cmd.
      *
-     * @param buffer Source buffer containing pixel data
-     * @param image Destination image
-     * @param width Width of the region to copy
-     * @param height Height of the region to copy
+     * A whole-image upload is this with a zero offset and the image's extent.
      */
-    void copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height);
+    void recordCopyBufferToImageRegion(VkCommandBuffer cmd, VkBuffer buffer, VkImage image,
+                                       u32 x, u32 y, u32 width, u32 height) const;
 
     /**
-     * @brief Copies a buffer into an offset sub-rectangle of an image.
+     * @brief Returns a host-visible staging buffer of at least @p bytes,
+     *        together with a pointer to write into.
      *
-     * The whole-image copyBufferToImage() is the special case of this with a
-     * zero offset and the image's full extent.
+     * One buffer is kept and handed out repeatedly rather than created and
+     * destroyed per upload: a VMA allocation plus a map/unmap pair costs more
+     * than the memcpy it exists to serve, and the glyph atlas performs one
+     * upload per newly seen character. The buffer only ever grows, so a scene
+     * settles on its largest texture and stops allocating.
+     *
+     * Reusing a single buffer is safe precisely because every upload path here
+     * is synchronous: endSingleTimeCommands() waits for the copy to retire
+     * before returning, so the GPU is provably finished reading the staging
+     * memory before the next caller can overwrite it.
+     *
+     * @param bytes Required capacity.
+     * @return Mapped write pointer, or nullptr if the allocation failed.
      */
-    void copyBufferToImageRegion(VkBuffer buffer, VkImage image,
-                                 u32 x, u32 y, u32 width, u32 height);
+    [[nodiscard]] void* acquireStagingBuffer(VkDeviceSize bytes);
+
+    //! Unmaps (when this class did the mapping) and destroys the staging
+    //! buffer, resetting every field that describes it. Safe on an empty one.
+    void releaseStagingBuffer();
 
     void destroyTextureData(TextureData& texture);
+
+    //! Reused by every upload; see acquireStagingBuffer(). Freed by cleanup().
+    AllocatedBuffer _staging{};
+    VkDeviceSize _stagingCapacity = 0;
+    //! Write pointer for _staging, established once when it is created.
+    void* _stagingMapped = nullptr;
+    //! True when _stagingMapped came from an explicit map() this class must
+    //! balance, rather than from VMA's persistent mapping.
+    bool _stagingManuallyMapped = false;
+
+    /**
+     * @brief Fence endSingleTimeCommands() waits on, created once on first use.
+     *
+     * A single fence suffices because uploads through this manager are strictly
+     * serialized -- each waits for its own submission before returning -- so
+     * there is never more than one in flight to track.
+     */
+    VkFence _uploadFence = VK_NULL_HANDLE;
 };
 
 } // namespace vk

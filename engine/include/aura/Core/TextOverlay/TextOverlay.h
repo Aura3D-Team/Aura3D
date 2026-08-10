@@ -12,6 +12,7 @@
 
 #include "aura/Core/AuraFont/FontAtlas.h"
 #include "aura/Renderer/IRenderer.h"
+#include "aura/Utils/AlignedVector.h"
 
 namespace aura3d {
 
@@ -140,9 +141,24 @@ private:
     glm::vec4 _color{1.0f};
     bool _usingTrueType = false;
 
-    //! Retained across calls so a steady-state overlay never reallocates.
-    std::vector<gfx::Vertex2D> _vertices;
-    std::vector<u32> _indices;
+    /*
+     * Retained across calls so a steady-state overlay never reallocates, and
+     * over-aligned rather than plain std::vector because of what happens to
+     * them next: every frame the whole batch is memcpy'd into write-combined
+     * mapped device memory (Vulkan) or handed to glBufferSubData (OpenGL).
+     * Both copy fastest from a source aligned to the widest vector register,
+     * and a default-aligned heap block leaves the copy a scalar prologue to
+     * grind through before it can use full-width loads.
+     *
+     * gfx::Vertex2D is exactly 32 bytes, so a 32-byte-aligned base makes every
+     * vertex in the batch individually aligned too, not just the first.
+     */
+    static_assert(sizeof(gfx::Vertex2D) == 32,
+                  "Vertex2D must stay 32 bytes for the aligned batch storage "
+                  "below to align every vertex, not merely the array's base.");
+
+    AlignedVector<gfx::Vertex2D> _vertices;
+    AlignedVector<u32> _indices;
 };
 
 } // namespace aura3d

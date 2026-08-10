@@ -4,9 +4,22 @@
 #pragma once
 
 #define GLM_FORCE_RADIANS
-#ifdef USE_VULKAN_API
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#endif
+
+/*
+ * Deliberately *not* GLM_FORCE_DEPTH_ZERO_TO_ONE. That macro is a global switch
+ * over every glm projection helper, but this engine ships three backends whose
+ * clip spaces disagree -- Vulkan wants z in [0,1], OpenGL and the software
+ * rasteriser want [-1,1] -- and only one of them is chosen at *runtime*, from
+ * settings.json. A compile-time global therefore cannot express the right
+ * answer for a binary that can switch backends with switchBackend().
+ *
+ * The depth convention is picked per projection instead, at the one place that
+ * builds one: Camera::setClipSpace() selects between glm::perspectiveRH_ZO and
+ * glm::perspectiveRH_NO (and the ortho pair) from the live backend. Defining
+ * the macro here would silently re-map the _NO variants too, so the OpenGL and
+ * CPU paths would end up with Vulkan depth and z-fight against their own
+ * [-1,1] rasterisers.
+ */
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

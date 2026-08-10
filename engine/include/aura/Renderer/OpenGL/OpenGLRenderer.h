@@ -83,6 +83,15 @@ private:
     GLuint _overlay2DProgram = 0;
     GLint _overlay2DProjLoc = -1;    //! Cached uniform location of uProj.
     GLint _overlay2DSamplerLoc = -1; //! Cached uniform location of textureSampler.
+
+    /*
+     * Location of the 3D program's textureSampler, resolved once at link time.
+     * Queried per bindTexture() before -- glGetUniformLocation hashes the name
+     * string inside the driver on every call, which is a real cost when it
+     * happens once per textured object per frame. The value it sets (unit 0)
+     * is program state and never changes, so nothing re-writes it per draw.
+     */
+    GLint _sampler3DLoc = -1;
     GLuint _overlay2DVao = 0;
     GLuint _overlay2DVbo = 0;
     GLuint _overlay2DEbo = 0;

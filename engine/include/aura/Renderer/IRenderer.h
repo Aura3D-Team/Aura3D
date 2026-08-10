@@ -226,10 +226,31 @@ public:
 
     /**
      * @brief Uploads a CPU-side mesh as a GPU-resident vertex + index buffer pair.
+     *
+     * Copies @p mesh's arrays, because the backends take ownership of what they
+     * upload and the caller keeps its own copy. Prefer the rvalue overload when
+     * the mesh is not needed afterwards -- a loaded model is typically several
+     * megabytes of vertices, and that copy is pure waste when the source is
+     * about to be destroyed anyway.
+     *
      * @param[in] mesh Geometry to upload; an empty mesh yields INVALID_HANDLE.
      * @return MeshHandle referencing the uploaded pair.
      */
     virtual MeshHandle createMesh(const gfx::Mesh3D& mesh);
+
+    /**
+     * @brief Uploads a mesh the caller is finished with, moving its arrays
+     *        into the backend rather than copying them.
+     *
+     * Not virtual, and deliberately so: it forwards to the same
+     * createVertexBuffer/createIndexBuffer pair every backend already
+     * overrides, so there is nothing backend-specific left for it to
+     * customise.
+     *
+     * @param[in,out] mesh Geometry to upload; left empty on return.
+     * @return MeshHandle referencing the uploaded pair.
+     */
+    MeshHandle createMesh(gfx::Mesh3D&& mesh);
 
     /**
      * @brief Draws a whole mesh, replacing the bind-VB / bind-IB / drawIndexed triple.

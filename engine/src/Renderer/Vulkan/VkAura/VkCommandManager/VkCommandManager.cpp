@@ -5,8 +5,18 @@
 namespace aura3d {
 namespace vk {
 
+namespace {
+
+//! Source of the per-instance ids _threadPools()' cache is keyed by. Never
+//! reused, unlike the object addresses it stands in for.
+std::atomic<u64> g_nextManagerId{1};
+
+} // namespace
+
 VkCommandManager::VkCommandManager(VkDevice* device, u32 queueFamilyIndex)
-    : _device(device), _queueFamilyIndex(queueFamilyIndex) {
+    : _device(device),
+      _queueFamilyIndex(queueFamilyIndex),
+      _managerId(g_nextManagerId.fetch_add(1, std::memory_order_relaxed)) {
     // Command pools are created on demand, per thread, on first use.
 }
 
@@ -47,6 +57,31 @@ VkCommandPool VkCommandManager::_createPool(VkCommandPoolCreateFlags flags) cons
 
 VkCommandManager::ThreadPools& VkCommandManager::_threadPools()
 {
+    /*
+     * Per-thread memo of the last resolved pool set, ahead of the map lookup.
+     *
+     * Every worker in a threaded drawMeshes() calls this once per chunk per
+     * frame, and they all arrive at the same instant -- so the map lookup is
+     * not merely a hash, it is N threads serialising on one mutex at exactly
+     * the moment they were spun up to run concurrently. The memo removes both:
+     * a hit touches no shared state at all.
+     *
+     * Keyed by _managerId rather than `this` because a destroyed manager's
+     * address can be reused by a new one (switchBackend() does precisely
+     * that), which would resurrect a pointer into freed pools. Ids come from a
+     * monotonic counter and are never recycled, so a stale entry can only ever
+     * miss -- never match the wrong manager.
+     *
+     * The cached reference stays valid for the manager's lifetime:
+     * unordered_map does not invalidate references to existing elements on
+     * rehash, and ThreadPools is separately heap-allocated on top of that.
+     */
+    thread_local u64 cachedManagerId = 0;
+    thread_local ThreadPools* cachedPools = nullptr;
+
+    if (cachedManagerId == _managerId && cachedPools != nullptr)
+        return *cachedPools;
+
     const std::thread::id threadId = std::this_thread::get_id();
 
     std::lock_guard<std::mutex> lock(_poolMutex);
@@ -54,6 +89,8 @@ VkCommandManager::ThreadPools& VkCommandManager::_threadPools()
     if (!pools)
         pools = std::make_unique<ThreadPools>();
 
+    cachedManagerId = _managerId;
+    cachedPools = pools.get();
     return *pools;
 }
 

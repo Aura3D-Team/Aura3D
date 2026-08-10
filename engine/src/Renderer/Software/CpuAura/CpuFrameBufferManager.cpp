@@ -565,17 +565,34 @@ void CpuFrameBufferManager::rasterizeTriangle2DSpan(const ScreenVertex& v0, cons
     }
 }
 
-void CpuFrameBufferManager::dispatchRowBands(const std::function<void(i32 yStart, i32 yEnd)>& rasterizeBand)
+namespace {
+
+/*
+ * Bands per worker thread.
+ *
+ * One band per worker is the minimum that keeps the rows disjoint, but it
+ * balances badly: geometry is rarely spread evenly down the screen, so the
+ * band holding the subject waits for nothing while the bands holding empty
+ * sky finish immediately and idle. Cutting finer than the worker count lets
+ * the pool hand a free thread the next outstanding band, which costs one task
+ * submission per extra band and recovers most of that lost time.
+ */
+constexpr i32 kBandsPerWorker = 4;
+
+} // namespace
+
+void CpuFrameBufferManager::updateBandRanges()
 {
+    _bandRanges.clear();
+
     if (settings.height <= 0)
         return;
 
-    const i32 bands = std::min(_workerCount, settings.height);
+    const i32 bands = std::min(_workerCount * kBandsPerWorker, settings.height);
     const i32 rowsPerBand = settings.height / bands;
     const i32 remainder = settings.height % bands;
 
-    std::vector<std::future<void>> futures;
-    futures.reserve(static_cast<size_t>(bands));
+    _bandRanges.reserve(static_cast<size_t>(bands));
 
     i32 y = 0;
     for (i32 b = 0; b < bands; ++b)
@@ -584,39 +601,154 @@ void CpuFrameBufferManager::dispatchRowBands(const std::function<void(i32 yStart
         //! than dumping it all on the last one, so no single thread is left
         //! with a visibly taller slice than its neighbours.
         const i32 bandRows = rowsPerBand + (b < remainder ? 1 : 0);
-        const i32 yStart = y;
-        const i32 yEnd = y + bandRows;
-        y = yEnd;
+        _bandRanges.push_back({y, y + bandRows});
+        y += bandRows;
+    }
+}
 
-        futures.push_back(_rasterPool->submit([&rasterizeBand, yStart, yEnd] {
-            rasterizeBand(yStart, yEnd);
+void CpuFrameBufferManager::dispatchRowBands(
+    const std::function<void(i32 band, i32 yStart, i32 yEnd)>& rasterizeBand)
+{
+    if (_bandRanges.empty())
+        return;
+
+    _bandFutures.clear();
+    _bandFutures.reserve(_bandRanges.size());
+
+    for (size_t b = 0; b < _bandRanges.size(); ++b)
+    {
+        const BandRange range = _bandRanges[b];
+        const i32 band = static_cast<i32>(b);
+
+        _bandFutures.push_back(_rasterPool->submit([&rasterizeBand, band, range] {
+            rasterizeBand(band, range.yStart, range.yEnd);
         }));
     }
 
-    for (auto& f : futures)
+    for (auto& f : _bandFutures)
         f.get();
 }
 
-void CpuFrameBufferManager::drawTriangles(std::span<const ScreenTriangle> triangles, const Texture* texture)
+void CpuFrameBufferManager::binQueuedTriangles()
 {
-    if (triangles.empty())
+    _bandBins.resize(_bandRanges.size());
+    for (std::vector<u32>& bin : _bandBins)
+        bin.clear();
+
+    if (_bandRanges.empty())
         return;
 
-    dispatchRowBands([this, triangles, texture](i32 yStart, i32 yEnd) {
-        for (const ScreenTriangle& tri : triangles)
-            rasterizeTriangleSpan(tri.v0, tri.v1, tri.v2, texture, yStart, yEnd);
-    });
+    /*
+     * Bands are contiguous and ordered, so the band a row belongs to is found
+     * by walking forward from the previous triangle's band rather than
+     * searching. In practice the whole loop is two comparisons per triangle.
+     */
+    const i32 bandCount = static_cast<i32>(_bandRanges.size());
+
+    for (u32 index = 0; index < _queuedTriangles.size(); ++index)
+    {
+        const ScreenTriangle& tri = _queuedTriangles[index];
+
+        const float minYf = std::min({tri.v0.y, tri.v1.y, tri.v2.y});
+        const float maxYf = std::max({tri.v0.y, tri.v1.y, tri.v2.y});
+
+        //! Matches the row range rasterizeTriangleSpan() derives from the same
+        //! vertices, so a triangle is never binned away from a row it covers.
+        const i32 minY = std::max(0, static_cast<i32>(std::floor(minYf)));
+        const i32 maxY = std::min(settings.height - 1, static_cast<i32>(std::ceil(maxYf)));
+
+        if (minY > maxY)
+            continue; //! Entirely above or below the framebuffer.
+
+        for (i32 band = 0; band < bandCount; ++band)
+        {
+            const BandRange range = _bandRanges[band];
+            if (range.yStart > maxY)
+                break; //! Bands are ordered; nothing further can overlap.
+            if (range.yEnd > minY)
+                _bandBins[band].push_back(index);
+        }
+    }
 }
 
-void CpuFrameBufferManager::drawTriangles2D(std::span<const ScreenTriangle> triangles, const Texture* texture)
+void CpuFrameBufferManager::submitTriangles(std::span<const ScreenTriangle> triangles,
+                                            const Texture* texture)
 {
     if (triangles.empty())
         return;
 
-    dispatchRowBands([this, triangles, texture](i32 yStart, i32 yEnd) {
-        for (const ScreenTriangle& tri : triangles)
-            rasterizeTriangle2DSpan(tri.v0, tri.v1, tri.v2, texture, yStart, yEnd);
+    QueuedBatch batch;
+    batch.texture = texture;
+    batch.overlay = false;
+    batch.first = static_cast<u32>(_queuedTriangles.size());
+    batch.count = static_cast<u32>(triangles.size());
+
+    _queuedTriangles.insert(_queuedTriangles.end(), triangles.begin(), triangles.end());
+    _queuedBatches.push_back(batch);
+}
+
+void CpuFrameBufferManager::submitTriangles2D(std::span<const ScreenTriangle> triangles,
+                                              const Texture* texture)
+{
+    if (triangles.empty())
+        return;
+
+    QueuedBatch batch;
+    batch.texture = texture;
+    batch.overlay = true;
+    batch.first = static_cast<u32>(_queuedTriangles.size());
+    batch.count = static_cast<u32>(triangles.size());
+
+    _queuedTriangles.insert(_queuedTriangles.end(), triangles.begin(), triangles.end());
+    _queuedBatches.push_back(batch);
+}
+
+void CpuFrameBufferManager::flush()
+{
+    if (_queuedTriangles.empty())
+    {
+        _queuedBatches.clear();
+        return;
+    }
+
+    updateBandRanges();
+    binQueuedTriangles();
+
+    dispatchRowBands([this](i32 band, i32 yStart, i32 yEnd) {
+        const std::vector<u32>& bin = _bandBins[static_cast<size_t>(band)];
+
+        /*
+         * Walk the band's (ascending) triangle indices and the batch list
+         * together. Batches partition _queuedTriangles into contiguous ranges
+         * in submission order, so one linear pass visits every triangle in
+         * exactly the order it was submitted -- which is what keeps the
+         * blended 2D overlay compositing on top of the scene rather than
+         * under it -- while carrying each triangle's texture and mode along
+         * without storing them per triangle.
+         */
+        size_t cursor = 0;
+
+        for (const QueuedBatch& batch : _queuedBatches)
+        {
+            const u32 end = batch.first + batch.count;
+
+            while (cursor < bin.size() && bin[cursor] < end)
+            {
+                const ScreenTriangle& tri = _queuedTriangles[bin[cursor]];
+
+                if (batch.overlay)
+                    rasterizeTriangle2DSpan(tri.v0, tri.v1, tri.v2, batch.texture, yStart, yEnd);
+                else
+                    rasterizeTriangleSpan(tri.v0, tri.v1, tri.v2, batch.texture, yStart, yEnd);
+
+                ++cursor;
+            }
+        }
     });
+
+    //! clear() keeps the capacity: the next frame reuses these allocations.
+    _queuedTriangles.clear();
+    _queuedBatches.clear();
 }
 
 /**

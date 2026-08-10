@@ -3,10 +3,11 @@
 
 #pragma once
 
+#include <future>
+#include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
-#include <string>
-#include <memory>
 
 #include "aura/Renderer/IRenderer.h"
 #include "aura/Renderer/Vulkan/VkAura/VkInstanceManager/VkInstanceManager.h"
@@ -271,6 +272,15 @@ private:
      */
     std::unique_ptr<ink::ThreadPool> _recordPool;
     u32 _recordWorkerCount = 1;
+
+    /*
+     * Join handles for the chunk tasks drawMeshes() fans out. A member, and
+     * only ever cleared, so a steady-state frame reuses the allocation rather
+     * than building a fresh vector of futures per frame. Never outlives the
+     * drawMeshes() call that fills it -- every future is waited on before that
+     * function returns.
+     */
+    std::vector<std::future<void>> _recordFutures;
     //! Begun on the frame's first drawBatch2D(), so a frame without an overlay
     //! costs nothing.
     VkCommandBuffer _overlayCmd = VK_NULL_HANDLE;

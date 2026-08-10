@@ -51,18 +51,30 @@ TextureHandle IRenderer::createCheckerboardTexture(u32 size)
 
 MeshHandle IRenderer::createMesh(const gfx::Mesh3D& mesh)
 {
-    if (mesh.empty()) 
+    //! The caller keeps its mesh, so its arrays are copied here and the copies
+    //! are what gets moved onward.
+    return createMesh(gfx::Mesh3D{mesh.vertices, mesh.indices});
+}
+
+MeshHandle IRenderer::createMesh(gfx::Mesh3D&& mesh)
+{
+    if (mesh.empty())
     {
         INK_WARN << "createMesh: refusing to upload an empty mesh";
         return INVALID_HANDLE;
     }
 
     MeshRecord record;
-    record.indexCount   = static_cast<u32>(mesh.indices.size());
-    record.vertexBuffer = createVertexBuffer(std::vector<gfx::Vertex3D>(mesh.vertices));
-    record.indexBuffer  = createIndexBuffer(std::vector<u32>(mesh.indices));
+    record.indexCount = static_cast<u32>(mesh.indices.size());
 
-    if (!isValidHandle(record.vertexBuffer) || !isValidHandle(record.indexBuffer)) 
+    /*
+     * Moved, not copied. createVertexBuffer/createIndexBuffer already take
+     * their arrays by rvalue reference
+     */
+    record.vertexBuffer = createVertexBuffer(std::move(mesh.vertices));
+    record.indexBuffer  = createIndexBuffer(std::move(mesh.indices));
+
+    if (!isValidHandle(record.vertexBuffer) || !isValidHandle(record.indexBuffer))
     {
         INK_ERROR << "createMesh: backend failed to allocate the buffer pair";
         return INVALID_HANDLE;

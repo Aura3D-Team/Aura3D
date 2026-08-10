@@ -175,9 +175,22 @@ void VkQueueManager::submitCmdIntoQueue(VkQueue queue,
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = renderFinishedSemaphore;
 
+    /*
+     * Submit and return. There is no vkQueueWaitIdle here.
+     *
+     * This function used to end with one, which made every frame fully
+     * serial: the CPU stopped dead until the GPU had finished the frame it
+     * had just been handed, so the two never worked at the same time.
+     *
+     * What actually enforces correctness, and is sufficient on its own:
+     *   - `fence`, waited on in beginFrame() before this frame slot's command
+     *     buffers and per-frame resources are touched again;
+     *   - `imageAvailableSemaphore`, which holds colour-attachment output back
+     *     until the swapchain image is really available;
+     *   - `renderFinishedSemaphore`, which holds the present back until
+     *     rendering has finished.
+     */
     VK_RESULT_CHECK(vkQueueSubmit(queue, 1, &submitInfo, fence));
-
-    VK_RESULT_CHECK(vkQueueWaitIdle(queue));
 }
 
 }

@@ -277,9 +277,11 @@ int main()
 
     const auto startTime = std::chrono::steady_clock::now();
 
+#ifdef AURA_PROFILE_DRAW_RECORDING
     //! Rolling accumulator for the drawMeshes() timing reported below.
     long long recordNanos = 0;
     int recordSamples = 0;
+#endif
 
     constexpr float kMoveSpeed = 3.0f; // world units per second
 
@@ -349,11 +351,11 @@ int main()
         // to reduce: pure CPU time spent recording draw commands. Frame rate
         // is the wrong signal for it -- a scene can be GPU-bound and show no
         // FPS change while this number falls sharply.
-#ifdef NGEBUD
+#ifdef AURA_PROFILE_DRAW_RECORDING
         const auto recordStart = std::chrono::steady_clock::now();
 #endif
         r->drawMeshes(drawItems);
-#ifdef NGEBUD
+#ifdef AURA_PROFILE_DRAW_RECORDING
         recordNanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
                            std::chrono::steady_clock::now() - recordStart).count();
 

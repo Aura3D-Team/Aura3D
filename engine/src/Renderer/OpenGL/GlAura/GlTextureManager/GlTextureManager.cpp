@@ -42,6 +42,9 @@ TextureHandle GlTextureManager::createTextureFromPixels(const u8* rgba, u32 widt
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
     glBindTexture(GL_TEXTURE_2D, 0);
+    //! Uploading made this texture current on the active unit and then unbound
+    //! it, both behind bind()'s back; drop the cache rather than let it lie.
+    invalidateBindings();
 
     _textures[handle] = data;
     return handle;
@@ -80,6 +83,9 @@ TextureHandle GlTextureManager::createDynamicTexture(u32 width, u32 height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glBindTexture(GL_TEXTURE_2D, 0);
+    //! Uploading made this texture current on the active unit and then unbound
+    //! it, both behind bind()'s back; drop the cache rather than let it lie.
+    invalidateBindings();
 
     _textures[handle] = data;
     return handle;
@@ -111,15 +117,43 @@ void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 widt
                     static_cast<GLsizei>(width), static_cast<GLsizei>(height),
                     GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     glBindTexture(GL_TEXTURE_2D, 0);
+    invalidateBindings();
+}
+
+void GlTextureManager::invalidateBindings() noexcept
+{
+    _boundToUnit.fill(0);
 }
 
 void GlTextureManager::bind(TextureHandle handle, GLuint unit)
 {
     auto it = _textures.find(handle);
-    if (it != _textures.end()) {
+    if (it == _textures.end())
+        return;
+
+    const GLuint texture = it->second.texture;
+
+    //! Beyond the tracked range there is nothing to compare against, so bind
+    //! unconditionally rather than guess.
+    if (unit >= kTrackedUnits)
+    {
         glActiveTexture(GL_TEXTURE0 + unit);
-        glBindTexture(GL_TEXTURE_2D, it->second.texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        _activeUnit = unit;
+        return;
     }
+
+    if (_boundToUnit[unit] == texture)
+        return;
+
+    if (_activeUnit != unit)
+    {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        _activeUnit = unit;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, texture);
+    _boundToUnit[unit] = texture;
 }
 
 GlTextureData* GlTextureManager::get(TextureHandle handle)
@@ -135,6 +169,8 @@ void GlTextureManager::cleanup()
     }
     _textures.clear();
     _nextHandle = 1;
+    //! The names just went away; nothing cached about them is meaningful.
+    invalidateBindings();
 }
 
 } // namespace gl

@@ -110,19 +110,43 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
     subpass.pDepthStencilAttachment = enableDepth ? &depthAttachmentRef : nullptr;
     subpass.pResolveAttachments = useMsaa ? &resolveAttachmentRef : nullptr;
 
-    // Dependencies
+    /*
+     * Dependencies.
+     *
+     * The colour attachment is a different swapchain image each frame, but the
+     * depth buffer is a single image every frame renders into. Once the CPU is
+     * allowed to run ahead of the GPU, that makes consecutive frames' render
+     * passes overlap on one resource, and the entry dependency has to order
+     * this frame's depth clear after the *previous* frame's depth writes.
+     *
+     * Ordering only against reads (BOTTOM_OF_PIPE + MEMORY_READ, which is what
+     * this did) does not do that: the previous frame's last depth write
+     * happens in LATE_FRAGMENT_TESTS, and nothing named it. Synchronization
+     * validation reports it as
+     * "WRITE_AFTER_WRITE: vkCmdBeginRenderPass ... previously written at the
+     * end of subpass 0 by the attachment storeOp". Adding a depth-buffer per
+     * frame in flight would also fix it, at the cost of a full extra
+     * depth/stencil surface; the dependency is free.
+     */
     VkSubpassDependency attachmentDependencyBegin = {};
     attachmentDependencyBegin.srcSubpass = VK_SUBPASS_EXTERNAL;
     attachmentDependencyBegin.dstSubpass = 0;
-    attachmentDependencyBegin.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    attachmentDependencyBegin.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    attachmentDependencyBegin.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    attachmentDependencyBegin.srcAccessMask = 0;
     attachmentDependencyBegin.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     attachmentDependencyBegin.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-    if (enableDepth) 
+    if (enableDepth)
     {
-        attachmentDependencyBegin.dstStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        attachmentDependencyBegin.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        //! Both fragment-test stages on the source side: EARLY is where a
+        //! depth clear/attachment load writes, LATE where the store does.
+        attachmentDependencyBegin.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                                                | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        attachmentDependencyBegin.srcAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        attachmentDependencyBegin.dstStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                                                | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        attachmentDependencyBegin.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+                                                 | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
     }
 
     VkSubpassDependency attachmentDependencyEnd = {};
@@ -131,11 +155,15 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
     attachmentDependencyEnd.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     attachmentDependencyEnd.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     attachmentDependencyEnd.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    attachmentDependencyEnd.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    attachmentDependencyEnd.dstAccessMask = 0;
 
-    if (enableDepth) 
+    if (enableDepth)
     {
-        attachmentDependencyEnd.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        //! LATE_FRAGMENT_TESTS, not EARLY: the depth storeOp at the end of the
+        //! subpass writes there, and that is the write the next frame's pass
+        //! must be ordered against.
+        attachmentDependencyEnd.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                                              | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         attachmentDependencyEnd.srcAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     }
 

@@ -17,6 +17,9 @@ IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u16>&& ind
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, data.ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(u16), indices.data(), GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    //! Creation leaves the element target unbound; keep the cache honest about
+    //! that rather than letting it claim a buffer that is no longer current.
+    _boundEbo = 0;
 
     _buffers[handle] = data;
     return handle;
@@ -33,6 +36,9 @@ IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u32>&& ind
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, data.ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(u32), indices.data(), GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    //! Creation leaves the element target unbound; keep the cache honest about
+    //! that rather than letting it claim a buffer that is no longer current.
+    _boundEbo = 0;
 
     _buffers[handle] = data;
     return handle;
@@ -41,9 +47,15 @@ IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u32>&& ind
 void GlIndexBufferManager::bind(IndexBufferHandle handle)
 {
     auto it = _buffers.find(handle);
-    if (it != _buffers.end()) {
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, it->second.ebo);
-    }
+    if (it == _buffers.end())
+        return;
+
+    const GLuint ebo = it->second.ebo;
+    if (ebo == _boundEbo)
+        return;
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    _boundEbo = ebo;
 }
 
 GlIndexBufferData* GlIndexBufferManager::get(IndexBufferHandle handle)
@@ -59,6 +71,7 @@ void GlIndexBufferManager::cleanup()
     }
     _buffers.clear();
     _nextHandle = 1;
+    _boundEbo = 0;
 }
 
 } // namespace gl

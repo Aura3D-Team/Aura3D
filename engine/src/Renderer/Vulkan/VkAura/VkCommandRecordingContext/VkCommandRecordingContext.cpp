@@ -8,38 +8,6 @@
 namespace aura3d {
 namespace vk {
 
-namespace {
-
-/**
- * @brief Inverse-transpose of @p model's upper-left 3x3, for transforming normals.
- *
- * Mathematically identical to `transpose(inverse(mat3(model)))` but built from
- * the cofactor form directly: three cross products and one dot, instead of
- * glm's general inverse followed by a full transpose copy. Non-invertible
- * input (a zero-scaled object) yields the identity rather than infinities,
- * which keeps a degenerate transform from poisoning the push constant.
- */
-[[nodiscard]] glm::mat3 normalMatrixOf(const glm::mat4& model) noexcept
-{
-    const glm::vec3 c0(model[0]);
-    const glm::vec3 c1(model[1]);
-    const glm::vec3 c2(model[2]);
-
-    //! Columns of the cofactor matrix == columns of transpose(inverse(A)) * det.
-    const glm::vec3 cof0 = glm::cross(c1, c2);
-    const glm::vec3 cof1 = glm::cross(c2, c0);
-    const glm::vec3 cof2 = glm::cross(c0, c1);
-
-    const f32 determinant = glm::dot(c0, cof0);
-    if (std::abs(determinant) < 1e-8f)
-        return glm::mat3(1.0f);
-
-    const f32 invDeterminant = 1.0f / determinant;
-    return glm::mat3(cof0 * invDeterminant, cof1 * invDeterminant, cof2 * invDeterminant);
-}
-
-} // namespace
-
 void bindDrawState(VkCommandBuffer cmd,
                    RecordedState& state,
                    const SceneBindings& bindings,

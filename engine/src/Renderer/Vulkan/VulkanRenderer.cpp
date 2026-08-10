@@ -13,6 +13,7 @@
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Renderer/Vulkan/VkAura/EmbeddedSpirv.h"
+#include "aura/Core/Profiling/FrameProfiler.h"
 
 namespace aura3d {
 namespace vk {
@@ -50,34 +51,6 @@ namespace {
     attributes[2].offset = offsetof(gfx::Vertex2D, color);
 
     return attributes;
-}
-
-/**
- * @brief Inverse-transpose of @p model's upper-left 3x3, for transforming normals.
- *
- * Mathematically identical to `transpose(inverse(mat3(model)))` but built from
- * the cofactor form directly: three cross products and one dot, instead of
- * glm's general inverse followed by a full transpose copy. Non-invertible
- * input (a zero-scaled object) yields the identity rather than infinities,
- * which keeps a degenerate transform from poisoning the push constant.
- */
-[[nodiscard]] glm::mat3 normalMatrixOf(const glm::mat4& model) noexcept
-{
-    const glm::vec3 c0(model[0]);
-    const glm::vec3 c1(model[1]);
-    const glm::vec3 c2(model[2]);
-
-    //! Columns of the cofactor matrix == columns of transpose(inverse(A)) * det.
-    const glm::vec3 cof0 = glm::cross(c1, c2);
-    const glm::vec3 cof1 = glm::cross(c2, c0);
-    const glm::vec3 cof2 = glm::cross(c0, c1);
-
-    const f32 determinant = glm::dot(c0, cof0);
-    if (std::abs(determinant) < 1e-8f)
-        return glm::mat3(1.0f);
-
-    const f32 invDeterminant = 1.0f / determinant;
-    return glm::mat3(cof0 * invDeterminant, cof1 * invDeterminant, cof2 * invDeterminant);
 }
 
 //! Largest power-of-two sample count that is both <= `requested` and
@@ -387,14 +360,23 @@ void VulkanRenderer::createUniformBuffers()
 {
     const VkSharingMode sharingMode = _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode;
 
-    _vkUniformBufferManager->createUniformBuffers(sharingMode, _imagesCount);
+    /*
+     * One set per frame in flight, not per swapchain image.
+     *
+     * These are written by the CPU every frame, so what has to be guaranteed
+     * is that the GPU is finished reading the copy being overwritten and
+     * the only thing that guarantees that here is the per-frame fence waited
+     * on at the top of beginFrame(). That fence is indexed by frame slot, so
+     * the buffers it protects must be too.
+     */
+    _vkUniformBufferManager->createUniformBuffers(sharingMode, MAX_FRAMES_IN_FLIGHT);
 
-    for (u32 i = 0; i < _imagesCount; ++i) 
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         _vkUniformBufferManager->updateUniformBuffer(i, const_cast<gfx::TransformUBO&>(_currentTransform));
     }
 
-    _vkLightUniformBufferManager->createUniformBuffers(sharingMode, _imagesCount, sizeof(gfx::LightUBO));
+    _vkLightUniformBufferManager->createUniformBuffers(sharingMode, MAX_FRAMES_IN_FLIGHT, sizeof(gfx::LightUBO));
 
     updateLightUniformBuffers();
 }
@@ -404,7 +386,10 @@ void VulkanRenderer::updateLightUniformBuffers()
     if (!_vkLightUniformBufferManager) 
         return;
 
-    for (u32 i = 0; i < _imagesCount; ++i) 
+    //! Every frame slot's copy, for the reason given in createUniformBuffers():
+    //! the light is set rarely and read every frame, so all slots are refreshed
+    //! rather than tracking which ones are stale.
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         _vkLightUniformBufferManager->updateUniformBufferRaw(i, &_light, sizeof(gfx::LightUBO));
     }
@@ -432,10 +417,11 @@ void VulkanRenderer::createDescriptorSets()
             _vkGraphicsPipelineManager->getDescriptorSetLayout(1));
     }
 
-    _descSets.resize(_imagesCount);
-    _lightDescSets.resize(_imagesCount);
+    //! Per frame in flight, matching the buffers they describe.
+    _descSets.resize(MAX_FRAMES_IN_FLIGHT);
+    _lightDescSets.resize(MAX_FRAMES_IN_FLIGHT);
 
-    for (u32 i = 0; i < _imagesCount; ++i) {
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         _descSets[i] = _vkDescriptorManager->allocateDescriptorSet(
             _vkGraphicsPipelineManager->getDescriptorSetLayout(0));
 
@@ -674,7 +660,7 @@ void VulkanRenderer::destroyMsaaColorResources()
 void VulkanRenderer::setupCommandBuffers()
 {
     _cmdBuffers = _vkCommandManager->createCommandBuffer();
-    _vkRenderSyncManager->create();
+    _vkRenderSyncManager->create(_imagesCount);
 }
 
 void VulkanRenderer::handleWindowChanges()
@@ -691,7 +677,7 @@ void VulkanRenderer::handleWindowChanges()
     //! so every texture created before this resize is still correctly bound.
     createDescriptorSets();
 
-    _vkRenderSyncManager->create();
+    _vkRenderSyncManager->create(_imagesCount);
 }
 
 void VulkanRenderer::recreateSurfaceAndSwapchain()
@@ -715,7 +701,7 @@ void VulkanRenderer::recreateSurfaceAndSwapchain()
     //! No per-texture descriptor work needed here either -- see handleWindowChanges().
     createDescriptorSets();
 
-    _vkRenderSyncManager->create();
+    _vkRenderSyncManager->create(_imagesCount);
 }
 
 void VulkanRenderer::cleanup()
@@ -985,11 +971,18 @@ void VulkanRenderer::beginFrame()
         return;
     }
 
-    _vkRenderSyncManager->waitForFences(_currentFrame);
+    {
+        AURA_FRAME_SCOPE(FramePhase::WaitFence);
+        _vkRenderSyncManager->waitForFences(_currentFrame);
+    }
 
-    u32 imageIndex = _vkSwapChainManager->acquireNextImage(
-        _vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
-        windowFlags);
+    u32 imageIndex = 0;
+    {
+        AURA_FRAME_SCOPE(FramePhase::Acquire);
+        imageIndex = _vkSwapChainManager->acquireNextImage(
+            _vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
+            windowFlags);
+    }
 
     if (imageIndex >= _imagesCount)
     {
@@ -1021,6 +1014,8 @@ void VulkanRenderer::beginFrame()
 
 void VulkanRenderer::beginRenderPass()
 {
+    AURA_FRAME_SCOPE(FramePhase::BeginPass);
+
     _renderPassActive = false;
     if (!_frameBegun || !_pipelineReady) return;
 
@@ -1064,11 +1059,13 @@ void VulkanRenderer::beginRenderPass()
     _recorded.reset();
 
     _vkUniformBufferManager->updateUniformBuffer(
-        _currentImageIndex, const_cast<gfx::TransformUBO&>(_currentTransform));
+        _currentFrame, const_cast<gfx::TransformUBO&>(_currentTransform));
 }
 
 void VulkanRenderer::endRenderPass()
 {
+    AURA_FRAME_SCOPE(FramePhase::EndPass);
+
     if (!_frameBegun || !_renderPassActive) return;
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
@@ -1123,17 +1120,27 @@ void VulkanRenderer::endFrame()
     VkCommandManager::endCommandBuffer(cmd);
 
     VkQueue graphicsQueue = _queueDataFromExclusiveFlags.front()->queues.front();
-    VkQueueManager::submitCmdIntoQueue(
-        graphicsQueue, &cmd,
-        &_vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
-        &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentFrame],
-        _vkRenderSyncManager->getInFlightFences()[_currentFrame]);
+    {
+        AURA_FRAME_SCOPE(FramePhase::Submit);
+        VkQueueManager::submitCmdIntoQueue(
+            graphicsQueue, &cmd,
+            &_vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
+            //! Per image, not per frame slot: this one is consumed by the
+            //! present below, whose completion the frame fence does not cover.
+            &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentImageIndex],
+            _vkRenderSyncManager->getInFlightFences()[_currentFrame]);
+    }
 
-    _vkSwapChainManager->presentBackToSwapChain(
-        graphicsQueue,
-        &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentFrame],
-        _currentImageIndex,
-        _windowManagerApi->getWindowFlags());
+    {
+        AURA_FRAME_SCOPE(FramePhase::Present);
+        _vkSwapChainManager->presentBackToSwapChain(
+            graphicsQueue,
+            &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentImageIndex],
+            _currentImageIndex,
+            _windowManagerApi->getWindowFlags());
+    }
+
+    AURA_FRAME_END();
 
     _frameBegun = false;
     _renderPassActive = false;
@@ -1177,11 +1184,11 @@ SceneBindings VulkanRenderer::sceneBindings() const
     bindings.textureTable = _bindlessTextureSet3D;
     bindings.extent = *_vkSwapChainManager->getExtent2D();
 
-    if (_currentImageIndex < _descSets.size())
-        bindings.transformSet = _descSets[_currentImageIndex];
+    if (_currentFrame < _descSets.size())
+        bindings.transformSet = _descSets[_currentFrame];
 
-    if (_currentImageIndex < _lightDescSets.size())
-        bindings.lightSet = _lightDescSets[_currentImageIndex];
+    if (_currentFrame < _lightDescSets.size())
+        bindings.lightSet = _lightDescSets[_currentFrame];
 
     return bindings;
 }
@@ -1215,6 +1222,8 @@ void VulkanRenderer::draw(u32 vertexCount, u32 instanceCount)
 
 void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
 {
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+
     if (!_frameBegun || !_renderPassActive || !_pipelineReady || items.empty())
         return;
 
@@ -1313,8 +1322,14 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     const size_t firstChunkCmd = _chunkCmds.size();
     _chunkCmds.resize(firstChunkCmd + chunkCount);
 
-    std::vector<std::future<void>> futures;
-    futures.reserve(chunkCount);
+    /*
+     * _recordFutures is a member cleared (never shrunk) between frames, so the
+     * steady-state frame reuses one allocation instead of building a fresh
+     * vector of chunkCount std::futures -- each of which carries a shared
+     * state -- on every single frame.
+     */
+    _recordFutures.clear();
+    _recordFutures.reserve(chunkCount);
 
     size_t offset = 0;
     for (size_t chunk = 0; chunk < chunkCount; ++chunk)
@@ -1326,7 +1341,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
         VkCommandRecordingContext* context = _recordingContexts[chunk].get();
         VkCommandBuffer* slot = &_chunkCmds[firstChunkCmd + chunk];
 
-        futures.push_back(_recordPool->submit(
+        _recordFutures.push_back(_recordPool->submit(
             [this, context, slot, slice, &bindings, renderPass, framebuffer] {
                 /*
                  * Allocated on the worker thread on purpose: the buffer must
@@ -1343,7 +1358,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     //! Blocks until the whole batch is recorded: the buffers have to be closed
     //! before endRenderPass() can replay them, and `bindings` is captured by
     //! reference so it must outlive every worker.
-    for (std::future<void>& future : futures)
+    for (std::future<void>& future : _recordFutures)
         future.get();
 
     /*
@@ -1413,6 +1428,8 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
                                  std::span<const u32> indices,
                                  TextureHandle texture)
 {
+    AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
+
     if (!_frameBegun || !_renderPassActive || !_pipelineReady || !_vkOverlay2DPipelineManager)
         return;
 

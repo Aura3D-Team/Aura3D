@@ -10,6 +10,18 @@
 
 #include "aura/Core/AuraCore.h"
 
+/**
+ * @brief Frames the CPU may record ahead of the GPU.
+ *
+ * Every per-frame resource is replicated this many times -- command buffers,
+ * fences, semaphores, the transform/light uniform buffers and their descriptor
+ * sets, the overlay's vertex/index buffers -- so that recording frame N+1
+ * never touches memory frame N is still being rendered from. The per-frame
+ * fence waited on in beginFrame() is what enforces that, and it is indexed by
+ * frame slot, so anything the CPU rewrites per frame must be indexed by frame
+ * slot too (not by swapchain image, whose index acquire hands back before the
+ * presentation engine has actually released it).
+ */
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_ATTRIBUTE_DESCRIPTION_2D 3
 #define MAX_ATTRIBUTE_DESCRIPTION_3D 4

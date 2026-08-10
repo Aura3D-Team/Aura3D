@@ -39,6 +39,6 @@
     },
     "logging": {
         "level": "info",
-        "write_to_file": true
+        "write_to_file": false
     }
 }

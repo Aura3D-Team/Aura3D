@@ -65,6 +65,13 @@ private:
     std::vector<std::vector<u32>> _indexBufferPool;
     std::vector<std::vector<cpu::Texture>> _texturePool;
 
+    /*
+     * Staging area the vertex stage projects into before handing a whole draw
+     * call to the framebuffer manager. A member, cleared but never shrunk, so
+     * the per-draw path allocates nothing once a scene reaches steady state
+     */
+    std::vector<cpu::ScreenTriangle> _projectedTriangles;
+
     VertexBufferHandle _boundVertexBuffer = INVALID_HANDLE;
     IndexBufferHandle _boundIndexBuffer = INVALID_HANDLE;
     TextureHandle _boundTexture = INVALID_HANDLE;

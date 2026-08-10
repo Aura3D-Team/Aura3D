@@ -26,6 +26,18 @@ option(AURA_ENABLE_CPU    "Compile the software (CPU) backend"    ON)
 option(AURA_ENABLE_LTO      "Enable link-time optimization"       ON)
 option(AURA_NATIVE_OPTIMIZE "Tune codegen for the host CPU"       ON)
 
+# Reports the CPU time drawMeshes() spends recording, averaged over 240 frames.
+# OFF by default: it is a profiling aid, not something a normal run should pay
+# a steady_clock read per frame for
+option(AURA_PROFILE_DRAW_RECORDING "Instrument and log drawMeshes() recording time" OFF)
+
+# Per-phase frame timing (wait/acquire/record/submit/present) from the render
+# loop itself. OFF by default -- it costs two clock reads per phase per frame,
+# which is material at several thousand FPS. See FrameProfiler.h: with this
+# off the scopes expand to nothing, so there is no counter and no branch left
+# in the build.
+option(AURA_PROFILE_FRAME "Instrument and log per-phase frame timing" OFF)
+
 # WASM (Emscripten) output. Only meaningful for the Sandbox target when
 # EMSCRIPTEN; see apps/Sandbox/CMakeLists.txt for how these are consumed.
 option(AURA_WASM_ASYNCIFY "Enable Emscripten Asyncify (needed if the app ever blocks synchronously; costs size/speed)" OFF)
@@ -165,6 +177,12 @@ endif()
 
 if(AURA_ENABLE_CPU)
     target_compile_definitions(Aura3D PUBLIC AURA_HAS_CPU)
+endif()
+
+# PUBLIC: FrameProfiler.h is a public header, so the macro must agree between
+# the library's own translation units and any consumer that includes it
+if(AURA_PROFILE_FRAME)
+    target_compile_definitions(Aura3D PUBLIC AURA_PROFILE_FRAME)
 endif()
 
 ################################################################################

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <atomic>
 #include <memory>
 #include <unordered_map>
 #include <mutex>
@@ -179,6 +180,16 @@ private:
 
     VkDevice* _device;
     u32 _queueFamilyIndex; /**< The queue family index for command pool allocation. */
+
+    /**
+     * @brief Process-unique id for this manager, assigned at construction.
+     *
+     * Identifies the instance in _threadPools()' thread_local cache. An
+     * address cannot serve: a manager destroyed by switchBackend() can be
+     * replaced by a new one at the same address, and a cache keyed on that
+     * would hand back pools belonging to the dead VkDevice.
+     */
+    u64 _managerId;
 
     /*
      * Per-instance, not static: a static map would be shared by every

@@ -11,8 +11,10 @@ VkRenderSyncManager::VkRenderSyncManager(VkDevice* device) :
     // Empty
 }
 
-void VkRenderSyncManager::create()
+void VkRenderSyncManager::create(u32 imageCount)
 {
+    cleanup();
+
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     semaphoreInfo.pNext = nullptr;
@@ -22,11 +24,18 @@ void VkRenderSyncManager::create()
     fenceInfo.pNext = nullptr;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
+    //! Bound to the CPU's run-ahead: one per frame slot.
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_imageAvailableSemaphores[i]));
-        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]));
         VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, nullptr, &_inFlightFences[i]));
+    }
+
+    //! Bound to presentation instead: one per swapchain image.
+    _renderFinishedSemaphores.resize(imageCount, VK_NULL_HANDLE);
+    for (u32 i = 0; i < imageCount; ++i)
+    {
+        VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]));
     }
 }
 
@@ -52,7 +61,7 @@ VkFixedArray<VkSemaphore>& VkRenderSyncManager::getImageAvailableSemaphores()
     return _imageAvailableSemaphores;
 }
 
-VkFixedArray<VkSemaphore>& VkRenderSyncManager::getRenderFinishedSemaphores()
+std::vector<VkSemaphore>& VkRenderSyncManager::getRenderFinishedSemaphores()
 {
     return _renderFinishedSemaphores;
 }
@@ -71,13 +80,20 @@ void VkRenderSyncManager::cleanup()
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], nullptr);
-        vkDestroySemaphore(*_device, _renderFinishedSemaphores[i], nullptr);
         vkDestroyFence(*_device, _inFlightFences[i], nullptr);
 
         _imageAvailableSemaphores[i] = VK_NULL_HANDLE;
-        _renderFinishedSemaphores[i] = VK_NULL_HANDLE;
         _inFlightFences[i] = VK_NULL_HANDLE;
     }
+
+    for (VkSemaphore& semaphore : _renderFinishedSemaphores)
+    {
+        vkDestroySemaphore(*_device, semaphore, nullptr);
+        semaphore = VK_NULL_HANDLE;
+    }
+    //! Cleared, not just nulled: create() sizes this from the new swapchain's
+    //! image count, which a rebuild can change.
+    _renderFinishedSemaphores.clear();
 }
 
 }

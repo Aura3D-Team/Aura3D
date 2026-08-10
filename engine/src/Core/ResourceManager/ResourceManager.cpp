@@ -44,8 +44,10 @@ MeshHandle ResourceManager::loadMesh(const std::string& path)
     }
 
     // loadOBJ falls back to a cube rather than failing, mirroring the texture path.
-    const gfx::Mesh3D mesh = MeshLoader::loadOBJ(path);
-    const MeshHandle handle = _renderer->createMesh(mesh);
+    //! Moved into the renderer: the cache stores the resulting handle, never
+    //! the geometry, so nothing here needs the arrays after the upload.
+    gfx::Mesh3D mesh = MeshLoader::loadOBJ(path);
+    const MeshHandle handle = _renderer->createMesh(std::move(mesh));
     _meshCache.emplace(path, handle);
 
     INK_DEBUG << "ResourceManager: cached mesh '" << path << "' as handle " << handle;

@@ -7,6 +7,7 @@
 set(AURA_TEST_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 
 set(AURA_TEST_SUITES
+    test_cpu_raster
     test_font_atlas
     test_image_loader
     test_mesh_loader

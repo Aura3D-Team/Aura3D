@@ -64,6 +64,16 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
     _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, AuraSettings::get()->getVSyncMode());
     _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, windowDetails);
 
+    /*
+     * minImageCount + 1: one image being presented, one to render into.
+     *
+     * Deliberately not more. Extra images were measured against this on the
+     * non-vsync path, where vkAcquireNextImageKHR blocking is the frame's
+     * single largest cost and more buffers looked like the obvious fix.
+     * The wait is the GPU and the compositor doing real per-frame work, not a shortage of
+     * slots to queue into, so additional images would only add memory and
+     * latency for no throughput.
+     */
     u32 imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
 
     if (_swapChainSupportDetails.capabilities.maxImageCount > 0
@@ -81,24 +91,22 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
     _swapChainCreateInfo.imageArrayLayers = std::min(layerCount, _swapChainSupportDetails.capabilities.maxImageArrayLayers);
     _swapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-    // if (_swapChainSupportDetails.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
-    //     _swapChainCreateInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    // }
-
     VkDeviceData* vkDeviceCreationData = vkDeviceManager->getDeviceCreationData();
     VkQueueFlags& exclusiveQueueFlag = vkDeviceCreationData->exclusiveQueueFlags;
     std::vector<VkQueueFlags>& concurrentQueueFlags = vkDeviceCreationData->concurrentQueueFlags;
 
     std::vector<u32> queueFamilyIndices;
 
-    if (exclusiveQueueFlag != 0) {
+    if (exclusiveQueueFlag != 0)
         queueFamilyIndices.push_back(VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), exclusiveQueueFlag));
-    }
 
-    if (!concurrentQueueFlags.empty()) {
+
+    if (!concurrentQueueFlags.empty()) 
+    {
         _swapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
 
-        for (const u32& concurrentFlag : concurrentQueueFlags) {
+        for (const u32& concurrentFlag : concurrentQueueFlags) 
+        {
             queueFamilyIndices.push_back(VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), concurrentFlag));
         }
 
@@ -107,7 +115,8 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
 
         INK_DEBUG << "VK_SHARING_MODE_CONCURRENT";
     }
-    else {
+    else 
+    {
         _swapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         _swapChainCreateInfo.queueFamilyIndexCount = static_cast<u32>(queueFamilyIndices.size());
         _swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices.data();

@@ -12,6 +12,10 @@ target_link_libraries(Sandbox
     Aura3D::Aura3D
 )
 
+if(AURA_PROFILE_DRAW_RECORDING)
+    target_compile_definitions(Sandbox PRIVATE AURA_PROFILE_DRAW_RECORDING)
+endif()
+
 if(EMSCRIPTEN)
     # index.html at the repo root expects the glue script at exactly
     # pkg/Aura3D.js (see build_wasm.sh, which stages index.html next to

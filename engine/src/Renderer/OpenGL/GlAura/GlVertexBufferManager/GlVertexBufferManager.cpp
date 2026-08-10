@@ -42,17 +42,25 @@ VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Ve
     return handle;
 }
 
-void GlVertexBufferManager::bind(VertexBufferHandle handle)
+bool GlVertexBufferManager::bind(VertexBufferHandle handle)
 {
     auto it = _buffers.find(handle);
-    if (it != _buffers.end()) {
-        glBindVertexArray(it->second.vao);
-    }
+    if (it == _buffers.end())
+        return false;
+
+    const u32 vao = it->second.vao;
+    if (vao == _boundVao)
+        return false;
+
+    glBindVertexArray(vao);
+    _boundVao = vao;
+    return true;
 }
 
 void GlVertexBufferManager::unbind()
 {
     glBindVertexArray(0);
+    _boundVao = 0;
 }
 
 GlVertexBufferData* GlVertexBufferManager::get(VertexBufferHandle handle)
@@ -69,6 +77,7 @@ void GlVertexBufferManager::cleanup()
     }
     _buffers.clear();
     _nextHandle = 1;
+    _boundVao = 0;
 }
 
 } // namespace gl
