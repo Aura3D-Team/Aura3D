@@ -106,7 +106,7 @@ VkCommandPool VkCommandManager::getThreadCommandPool()
 VkFixedArray<VkCommandBuffer> VkCommandManager::createCommandBuffer()
 {
     ThreadPools& pools = _threadPools();
-    VkFixedArray<VkCommandBuffer> commandBuffers = {};
+    VkFixedArray<VkCommandBuffer> commandBuffers(GetMaxFramesInFlight(), VK_NULL_HANDLE);
 
     /*
      * One allocation per frame, each from that frame's own pool, rather than
@@ -114,7 +114,7 @@ VkFixedArray<VkCommandBuffer> VkCommandManager::createCommandBuffer()
      * be able to recycle exactly one of these without disturbing the other,
      * which is only true if they come from different pools.
      */
-    for (u32 frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+    for (u32 frame = 0; frame < commandBuffers.size(); ++frame) {
         RenderPool& renderPool = pools.render[frame];
         if (renderPool.pool == VK_NULL_HANDLE)
             renderPool.pool = _createPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
@@ -133,7 +133,7 @@ VkFixedArray<VkCommandBuffer> VkCommandManager::createCommandBuffer()
 
 VkCommandBuffer VkCommandManager::acquireSecondaryCommandBuffer(u32 frameIndex)
 {
-    if (frameIndex >= MAX_FRAMES_IN_FLIGHT)
+    if (frameIndex >= GetMaxFramesInFlight())
         throw AuraException("acquireSecondaryCommandBuffer: frame index out of range");
 
     ThreadPools& pools = _threadPools();
@@ -163,7 +163,7 @@ VkCommandBuffer VkCommandManager::acquireSecondaryCommandBuffer(u32 frameIndex)
 
 void VkCommandManager::resetRenderPools(u32 frameIndex)
 {
-    if (frameIndex >= MAX_FRAMES_IN_FLIGHT)
+    if (frameIndex >= GetMaxFramesInFlight())
         throw AuraException("resetRenderPools: frame index out of range");
 
     /*

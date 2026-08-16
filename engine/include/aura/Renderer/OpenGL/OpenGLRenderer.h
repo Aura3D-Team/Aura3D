@@ -21,7 +21,7 @@ public:
     OpenGLRenderer(const wma::WindowDetails& windowDetails);
     virtual ~OpenGLRenderer();
 
-    void initialize(AuraSettings* settings) override;
+    void initialize(AuraSettings* settings, const JobSystem* jobs) override;
     void handleWindowChanges() override;
     void cleanup() override;
 

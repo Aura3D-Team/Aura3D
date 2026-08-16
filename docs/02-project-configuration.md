@@ -47,10 +47,19 @@ nothing, so this doc is deliberately exact about which is which.
         "msaa_samples": 4,
         "cpu_threads": 0
     },
+    "audio": {
+        "backend": "auto",
+        "master_volume": 1.0,
+        "sample_rate": 48000,
+        "channels": 2,
+        "buffer_frames": 1024,
+        "max_voices": 32
+    },
     "paths": {
         "shaders": "./resources/shaders/",
         "textures": "./resources/textures/",
         "models": "./resources/models/",
+        "audio": "./resources/audio/",
         "logs": "./logs/"
     },
     "memory": {
@@ -104,6 +113,21 @@ nothing, so this doc is deliberately exact about which is which.
 | `msaa_samples` | int | 1 | Requested MSAA sample count (`1`, `2`, `4`, `8`, ...). Clamped down to the largest count the selected device actually supports for both color and depth attachments. `1` disables MSAA. Only the Vulkan backend implements this — OpenGL and the CPU backend always render at 1x regardless of this value. Vulkan only. |
 | `cpu_threads` | int | 0 | Worker threads the CPU (software) backend's row-band rasterizer splits a frame across. `0` auto-detects via `std::thread::hardware_concurrency()`; a positive value pins the count instead — useful to leave headroom for other processes, or to force single-threaded rendering for profiling. CPU backend only; ignored by Vulkan and OpenGL. |
 
+## `audio` — live
+
+Independent of `window.backend`: GLFW, X11 and Wayland are display protocols
+with no audio API, so the two settings never constrain each other. See
+[14-audio.md](14-audio.md).
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `backend` | string | `"auto"` | `"auto"`, `"alsa"`, `"sdl3"`, or `"null"` (`"sdl"`, `"none"` and `"silent"` are accepted spellings). `"auto"` resolves through libwma: ALSA on desktop Linux, SDL3 on Windows/Android/WASM/Apple. A backend this build of libwma does not have, or an unrecognized value, falls back to `"auto"` with a warning. If the chosen backend cannot open a device, libwma degrades automatically (ALSA → SDL3 → Null), so audio never fails outright — a machine with no sound hardware gets a silent device. |
+| `master_volume` | float | 1.0 | Overall output gain, clamped to `[0, 1]` and applied after every per-voice gain. |
+| `sample_rate` | int | 48000 | Requested output rate. The device may grant something else; `AudioEngine::sampleRate()` reports what it actually got. Clips are resampled to it once at load. |
+| `channels` | int | 2 | Requested output channels. Stereo panning needs 2; a mono device plays spatial voices unpanned. |
+| `buffer_frames` | int | 1024 | Frames per device callback — the latency dial (~21 ms at 48 kHz). Lower means tighter timing and more risk of dropouts under load. Treated as a hint: SDL3 in particular picks its own period size. |
+| `max_voices` | int | 32 | Voices that can sound simultaneously. Beyond it `play()` returns `INVALID_HANDLE` and drops the sound rather than cutting off one already audible. Fixed at startup — the mixer never allocates. |
+
 ## `paths` — live
 
 | Key | Type | Default | Notes |
@@ -111,6 +135,7 @@ nothing, so this doc is deliberately exact about which is which.
 | `shaders` | string | `./resources/shaders/` | Read by `AuraSettings::getShadersPath()`; not currently consumed by the built-in pipelines (they embed their SPIR-V/GLSL — see [10-platform-builds.md](10-platform-builds.md)), but available for your own shader loading. |
 | `textures` | string | `./resources/textures/` | Convention used by `ResourceManager::loadTexture` callers — see `apps/Sandbox/main.cpp`'s `settings->getTexturesPath() + "crate.png"`. |
 | `models` | string | `./resources/models/` | Same convention for `ResourceManager::loadMesh`. |
+| `audio` | string | `./resources/audio/` | Same convention for `ResourceManager::loadSound` — see `apps/Sandbox/main.cpp`'s `settings->getAudioPath() + "orb_hum.wav"`. Generate the Sandbox's own audio with `scripts/gen_sandbox_audio.py`. |
 | `logs` | string | `./logs/` | Directory the log file is written into when `logging.write_to_file` is `true`. Created automatically if missing. |
 
 ## `memory.vma` — live (Vulkan only)
@@ -125,6 +150,28 @@ Configuration for the Vulkan Memory Allocator (VMA), read directly by
 | `persistently_map_upload_buffers` | bool | `true` | |
 | `vulkan_api_version` | string | `"1.4"` | Parsed into the `VmaAllocatorCreateInfo::vulkanApiVersion` VMA expects. |
 | `preferred_large_heap_block_size_mb` | int | 128 | |
+
+## `debug` — live (`AURA_ENABLE_DEBUG_MODE` builds only)
+
+Read by `aura3d::DebugModeConfig::fromSettings`, and ignored entirely in a
+normal build — `Engine::debugMode()` returns `nullptr` there, so nothing looks
+at these keys. Every one of them can be overridden by an environment variable,
+which is what lets one built binary serve several CI jobs; see
+[15-debug-benchmark-mode.md](15-debug-benchmark-mode.md) for the full
+explanation of each and for how to read the report they produce.
+
+| Key | Type | Default | Env override | Notes |
+|---|---|---|---|---|
+| `report_path` | string | `"aura3d-benchmark.json"` | `AURA_DEBUG_REPORT` | Where the JSON report is written. |
+| `label` | string | `""` | `AURA_DEBUG_LABEL` | Free-form tag copied into the report (a commit SHA, a scene name). |
+| `warmup_frames` | int | 60 | `AURA_DEBUG_WARMUP` | Frames discarded before sampling starts. |
+| `sample_capacity` | int | 20000 | — | Ring capacity for raw samples, ~96 bytes each. |
+| `target_frames` | int | 0 | `AURA_DEBUG_FRAMES` | Capture this many, then flush. 0 runs until the application stops. |
+| `frame_budget_ms` | float | 16.667 | `AURA_DEBUG_BUDGET_MS` | What a frame must stay under to count as on budget. |
+| `max_over_budget_ratio` | float | 0.05 | — | Fraction of over-budget frames above which the verdict fails. |
+| `leak_slope_bytes_per_frame` | float | 1024.0 | — | Retained growth per frame above which a leak is called. |
+| `auto_flush_interval_frames` | int | 0 | — | Write an interim report every N frames; 0 writes only at the end. |
+| `exit_on_complete` | bool | `false` | `AURA_DEBUG_EXIT` | End the process once `target_frames` are captured. For headless runs. |
 
 ## `logging` — live
 

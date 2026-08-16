@@ -37,6 +37,28 @@
     X(X11)                  \
     X(WAYLAND)
 
+/**
+ * @brief List of audio backends wma can play sound through.
+ *
+ * Mirrors @c wma::AudioBackend, and like WINDOW_BACKEND_LIST it owns only the
+ * string<->enum mapping for a type the engine does not control — keep the two
+ * in sync by hand.
+ *
+ * Deliberately a separate axis from WINDOW_BACKEND_LIST: GLFW, X11 and Wayland
+ * are display protocols with no audio API, so `window.backend` and
+ * `audio.backend` are configured independently and only SDL3 appears in both.
+ */
+/*
+ * Two arguments, unlike the lists above: wma::AudioBackend's enumerators are
+ * PascalCase (Alsa, Sdl3, Null) rather than the all-caps WindowBackend uses, so
+ * stringifying the enumerator does not give a token that a case-folded config
+ * value can be compared against. The second column carries that uppercase form.
+ */
+#define AUDIO_BACKEND_LIST \
+    X(Alsa, "ALSA")        \
+    X(Sdl3, "SDL3")        \
+    X(Null, "NULL")
+
 namespace aura3d {
 
 /**
@@ -65,6 +87,42 @@ inline const char* WindowBackendToString(wma::WindowBackend backend)
     {
 #define X(name) case wma::WindowBackend::name: return #name;
         WINDOW_BACKEND_LIST
+#undef X
+    }
+    return "UNKNOWN";
+}
+
+/**
+ * @brief Converts a string representation to a wma::AudioBackend. Case-insensitive.
+ * @return true if the string matches a known backend, false otherwise.
+ */
+inline bool AudioBackendFromString(const std::string& s, wma::AudioBackend& out)
+{
+    std::string up;
+    up.reserve(s.size());
+    for (const char c : s) up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+#define X(name, upper) if (up == upper) { out = wma::AudioBackend::name; return true; }
+    AUDIO_BACKEND_LIST
+#undef X
+
+    //! Spellings a config file is likely to use that the enumerators do not
+    //! cover. "SDL" without the version number is the common one.
+    if (up == "SDL")                    { out = wma::AudioBackend::Sdl3; return true; }
+    if (up == "NONE" || up == "SILENT") { out = wma::AudioBackend::Null; return true; }
+
+    return false;
+}
+
+/**
+ * @brief Converts a wma::AudioBackend to its exact string representation.
+ */
+inline const char* AudioBackendToString(wma::AudioBackend backend)
+{
+    switch (backend)
+    {
+#define X(name, upper) case wma::AudioBackend::name: return #name;
+        AUDIO_BACKEND_LIST
 #undef X
     }
     return "UNKNOWN";
@@ -156,8 +214,15 @@ public:
     //! Renderer
     std::string getRendererBackend()  const;  //! default "vulkan"
     bool        getValidationLayers() const;  //! default true in debug builds
-    //! Informational only: MAX_FRAMES_IN_FLIGHT (VkAuraCore.h) is a compile-time
-    //! constant, so this value is not propagated to the Vulkan renderer.
+    //! Frames the CPU may record ahead of the GPU (Vulkan only). Every
+    //! per-frame GPU resource -- command buffers, fences, semaphores, the
+    //! transform/light UBOs and their descriptor sets, the overlay's
+    //! vertex/index buffers -- is sized to this at renderer init; see
+    //! aura3d::vk::GetMaxFramesInFlight() (VkAuraCore.h), which is what every
+    //! one of those actually reads. Raising it trades a little latency and
+    //! per-frame-resource memory for more CPU/GPU overlap; see the WaitFence
+    //! phase in a AURA_PROFILE_FRAME report before assuming it will help --
+    //! it targets only that phase, not Acquire or Present.
     int         getMaxFramesInFlight() const; //! default 2
 
     //! Graphics (device selection & visual quality; Vulkan-only)
@@ -171,10 +236,33 @@ public:
     //! other processes, or to force single-threaded rendering for profiling).
     int getCpuThreads() const;
 
+    //! Audio
+    /**
+     * @brief Platform API sound is played through.
+     *
+     * Default "auto", which resolves through wma::getDefaultAudioBackend() —
+     * ALSA on desktop Linux, SDL3 everywhere else. An unrecognized value falls
+     * back to that same default with a warning, matching getRendererBackend().
+     *
+     * Independent of window.backend: the two are separate axes, and a value
+     * here never constrains which windowing backend can be used.
+     */
+    wma::AudioBackend getAudioBackend() const;
+    f32  getMasterVolume()     const;         //! default 1.0, clamped to [0, 1]
+    int  getAudioSampleRate()  const;         //! default 48000
+    int  getAudioChannels()    const;         //! default 2 (stereo)
+    //! Frames the device buffers per callback: the latency dial. Default 1024
+    //! (~21 ms at 48 kHz). Lower means tighter timing and more risk of dropouts.
+    int  getAudioBufferFrames() const;
+    //! Voices that can sound simultaneously. Default 32; further play() calls
+    //! are dropped rather than stealing an audible voice.
+    int  getAudioMaxVoices()   const;
+
     //! Paths
     std::string getShadersPath()  const;      //! default "./resources/shaders/"
     std::string getTexturesPath() const;      //! default "./resources/textures/"
     std::string getModelsPath()   const;      //! default "./resources/models/"
+    std::string getAudioPath()    const;      //! default "./resources/audio/"
     std::string getLogsPath()     const;      //! default "./logs/"
 
     //! Logging

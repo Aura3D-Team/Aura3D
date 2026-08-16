@@ -61,16 +61,19 @@ private:
     VkDevice* _device;
 
     /*
-     * Value-initialized to VK_NULL_HANDLE. std::array of a handle type is
-     * otherwise left indeterminate, and cleanup() runs before the first
-     * create() (it is called from there to keep create() idempotent across
-     * swapchain rebuilds) -- so without this it would hand vkDestroy* a stack
-     * garbage handle, which validation catches as
-     * VUID-vkDestroySemaphore-semaphore-parameter.
+     * Sized and value-initialized to VK_NULL_HANDLE right here in the
+     * constructor's member-initializer list, not left to create() -- cleanup()
+     * runs before the first create() (it is called from there to keep
+     * create() idempotent across swapchain rebuilds), and it indexes these by
+     * a compile-time-known frame count. A default-constructed std::vector is
+     * empty, unlike the std::array<T, MAX_FRAMES_IN_FLIGHT> this used to be,
+     * so without the constructor doing this explicitly that first cleanup()
+     * would index off the end of an empty vector instead of finding N
+     * harmless VK_NULL_HANDLEs.
      */
-    VkFixedArray<VkSemaphore> _imageAvailableSemaphores{};
+    VkFixedArray<VkSemaphore> _imageAvailableSemaphores;
     std::vector<VkSemaphore> _renderFinishedSemaphores;
-    VkFixedArray<VkFence> _inFlightFences{};
+    VkFixedArray<VkFence> _inFlightFences;
 };
 
 }

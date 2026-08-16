@@ -3,11 +3,15 @@ name: Release
 # Triggered by pushing a version tag, e.g.:
 #   git tag v0.1.0 && git push origin v0.1.0
 #
-# Builds libAura3D.a/Aura3D.lib (+ public headers) for Linux, Android, and
-# Windows, and the WASM pkg/ output, then attaches one archive per platform
+# Builds libAura3D.a/Aura3D.lib (+ public headers) for Linux, Android, macOS
+# and Windows, and the WASM pkg/ output, then attaches one archive per platform
 # to a GitHub Release. These are separate binaries for separate
-# toolchains/ABIs -- there is no single artifact that covers all four (see
+# toolchains/ABIs -- there is no single artifact that covers all five (see
 # docs/10-platform-builds.md).
+#
+# iOS is intentionally absent: ci.yml builds it to prove the Metal backend
+# compiles for the device, but a distributable .app needs a signing identity
+# this workflow does not hold.
 
 on:
   push:
@@ -295,6 +299,133 @@ jobs:
           path: aura3d-${{ github.ref_name }}-wasm.tar.gz
           retention-days: 1
 
+  macos-release:
+    name: Package macOS
+    needs: create-release
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    # Metal-only, arm64: cmake/Platform.cmake forces AURA_ENABLE_METAL ON and
+    # Vulkan/OpenGL OFF on APPLE. See ci.yml's macos-build job, whose dependency
+    # chain this mirrors.
+    steps:
+      - name: Checkout Aura3D
+        uses: actions/checkout@v4
+        with:
+          path: aura3d
+
+      - name: Checkout ink
+        # macos-latest has no vulkan-dev container to pull prebuilt ink/wma
+        # from (unlike the Linux/Android/WASM jobs above), so build+install
+        # both dependencies from source here into a shared local prefix --
+        # same approach as ci.yml's macos-build job and windows-release below.
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: ink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: wma
+
+      - name: Install dependencies (Homebrew)
+        # Same package set as ci.yml's macos-build job -- see its Install
+        # dependencies step for why each one is here.
+        run: brew install ninja sdl3 nlohmann-json
+
+      - name: Configure ink
+        run: >
+          cmake -S ink -B ink/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DINK_BUILD_TESTS=OFF
+          -DINK_NATIVE_OPTIMIZE=OFF
+
+      - name: Build ink
+        run: cmake --build ink/build --parallel
+
+      - name: Install ink
+        run: cmake --install ink/build --prefix deps
+
+      - name: Configure wma
+        run: >
+          cmake -S wma -B wma/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DWMA_BUILD_EXAMPLES=OFF
+          -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_SDL=ON
+          -DWMA_ENABLE_GLFW=OFF
+
+      - name: Build wma
+        run: cmake --build wma/build --parallel
+
+      - name: Install wma
+        run: cmake --install wma/build --prefix deps
+
+      - name: Configure Aura3D
+        # AURA_NATIVE_OPTIMIZE=OFF for the same reason as the other release
+        # jobs: a binary that leaves this runner must not carry -march=native
+        # baked in for this specific CPU.
+        run: >
+          cmake -S aura3d -B aura3d/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DAURA_BUILD_TESTS=OFF
+          -DAURA_NATIVE_OPTIMIZE=OFF
+
+      - name: Build Aura3D
+        run: cmake --build aura3d/build --parallel
+
+      - name: Install Aura3D
+        run: cmake --install aura3d/build --prefix stage/aura3d-macos-arm64
+
+      - name: Merge wma/ink/threading into a self-contained static library
+        # Same reasoning as the linux-release job (including folding in
+        # libthreading.a -- see its Merge step comment for why that one's
+        # needed alongside libwma.a/libink.a). Apple's libtool is used rather
+        # than ar: it merges member objects from every input archive directly
+        # into -o and, unlike ar, renames colliding member names itself, so
+        # this needs no extract-into-separate-directories dance. The output is
+        # written to a sibling file and moved over libAura3D.a afterwards,
+        # since an archive cannot be both an input and the -o target.
+        #
+        # Nothing Metal-specific is merged: Metal/QuartzCore/Foundation are
+        # system frameworks, linked by the consumer (Aura3DConfig.cmake carries
+        # the -framework flags through the exported target), and metal-cpp is
+        # header-only.
+        run: |
+          FAT_LIB="stage/aura3d-macos-arm64/lib/libAura3D.a"
+
+          libtool -static -o "${FAT_LIB}.merged" \
+            "${FAT_LIB}" deps/lib/libwma.a deps/lib/libink.a deps/lib/libthreading.a
+          mv "${FAT_LIB}.merged" "${FAT_LIB}"
+
+          # This staged Aura3DConfig.cmake no longer needs to find wma/ink
+          # separately -- their code is now inside libAura3D.a. Leave the
+          # Threads find_dependency alone; that stays external. Does not touch
+          # cmake/Aura3DConfig.cmake.in, so a normal (non-release)
+          # `cmake --install` elsewhere is unaffected. BSD sed needs an explicit
+          # (empty) -i suffix, unlike the GNU sed the Linux/Windows jobs use.
+          CONFIG="stage/aura3d-macos-arm64/lib/cmake/Aura3D/Aura3DConfig.cmake"
+          sed -i '' '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
+
+      - name: Package
+        run: |
+          tar -C stage -czf aura3d-${{ github.ref_name }}-macos-arm64.tar.gz \
+            aura3d-macos-arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: aura3d-${{ github.ref_name }}-macos-arm64.tar.gz
+          retention-days: 1
+
   windows-release:
     name: Package Windows
     needs: create-release
@@ -445,7 +576,7 @@ jobs:
 
   publish-release:
     name: Publish release
-    needs: [linux-release, android-release, wasm-release, windows-release]
+    needs: [linux-release, android-release, wasm-release, windows-release, macos-release]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts

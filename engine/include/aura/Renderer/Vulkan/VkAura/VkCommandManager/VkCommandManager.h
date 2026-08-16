@@ -90,7 +90,7 @@ public:
      * the frame's buffers to the pool and rewinds the hand-out cursor, so a
      * steady-state frame stops allocating entirely after the first few.
      *
-     * @param frameIndex Frame in flight being recorded, < MAX_FRAMES_IN_FLIGHT.
+     * @param frameIndex Frame in flight being recorded, < GetMaxFramesInFlight().
      * @return A secondary command buffer in the initial state, ready to begin.
      */
     VkCommandBuffer acquireSecondaryCommandBuffer(u32 frameIndex);
@@ -160,8 +160,15 @@ private:
     //! Every pool belonging to one thread: the frame-agnostic upload pool plus
     //! one render pool per frame in flight.
     struct ThreadPools {
+        //! Sizes `render` to the configured frame count up front: it is
+        //! indexed directly by frame slot (see createCommandBuffer(),
+        //! acquireSecondaryCommandBuffer()) with no resize anywhere else, so
+        //! a default-constructed (empty) vector would make the very first
+        //! access on a freshly-created thread's pool set go out of bounds.
+        ThreadPools() : render(GetMaxFramesInFlight()) {}
+
         VkCommandPool upload = VK_NULL_HANDLE;
-        VkFixedArray<RenderPool> render{};
+        VkFixedArray<RenderPool> render;
     };
 
     /**

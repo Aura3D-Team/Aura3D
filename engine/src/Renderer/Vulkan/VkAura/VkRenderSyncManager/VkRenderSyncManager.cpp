@@ -6,7 +6,9 @@ namespace aura3d {
 namespace vk {
 
 VkRenderSyncManager::VkRenderSyncManager(VkDevice* device) :
-    _device(device)
+    _device(device),
+    _imageAvailableSemaphores(GetMaxFramesInFlight(), VK_NULL_HANDLE),
+    _inFlightFences(GetMaxFramesInFlight(), VK_NULL_HANDLE)
 {
     // Empty
 }
@@ -24,8 +26,10 @@ void VkRenderSyncManager::create(u32 imageCount)
     fenceInfo.pNext = nullptr;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    //! Bound to the CPU's run-ahead: one per frame slot.
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    //! Bound to the CPU's run-ahead: one per frame slot. Already sized by the
+    //! constructor, so this just (re)fills what create() and cleanup() agree
+    //! is the frame count.
+    for (size_t i = 0; i < _imageAvailableSemaphores.size(); i++)
     {
         VK_RESULT_CHECK(vkCreateSemaphore(*_device, &semaphoreInfo, nullptr, &_imageAvailableSemaphores[i]));
         VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, nullptr, &_inFlightFences[i]));
@@ -77,7 +81,7 @@ void VkRenderSyncManager::cleanup()
     // VK_NULL_HANDLE per spec) so a second cleanup() before create() runs
     // again e.g. a failed swapchain-recovery retry that never reaches
     // create() doesn't double-destroy the same semaphore/fence.
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    for (size_t i = 0; i < _imageAvailableSemaphores.size(); i++)
     {
         vkDestroySemaphore(*_device, _imageAvailableSemaphores[i], nullptr);
         vkDestroyFence(*_device, _inFlightFences[i], nullptr);

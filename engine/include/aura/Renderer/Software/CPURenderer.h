@@ -16,7 +16,7 @@ public:
     CPURenderer(const wma::WindowDetails& windowDetails);
     virtual ~CPURenderer();
 
-    void initialize(aura3d::AuraSettings* settings) override;
+    void initialize(aura3d::AuraSettings* settings, const JobSystem* jobs) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
@@ -59,6 +59,11 @@ private:
 private:
     std::unique_ptr<wma::IWindowManager>   _windowManagerApi;
     std::unique_ptr<CpuFrameBufferManager> _frameBufferManager;
+
+    //! Set once, in initialize(), before createWindow() builds
+    //! _frameBufferManager from it. Non-owning: Engine's JobSystem outlives
+    //! every renderer, including this one across a backend switch.
+    const JobSystem* _jobs = nullptr;
 
     u32 _clearColorU32 = 0;
     std::vector<std::vector<gfx::Vertex3D>> _vertexBufferPool3d;

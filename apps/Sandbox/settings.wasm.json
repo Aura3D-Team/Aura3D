@@ -18,10 +18,19 @@
         "gpu_preference": "discrete",
         "msaa_samples": 0
     },
+    "audio": {
+        "backend": "auto",
+        "master_volume": 1.0,
+        "sample_rate": 48000,
+        "channels": 2,
+        "buffer_frames": 1024,
+        "max_voices": 32
+    },
     "paths": {
         "shaders": "./resources/shaders/",
         "textures": "./resources/textures/",
         "models": "./resources/models/",
+        "audio": "./resources/audio/",
         "logs": "./logs/"
     },
     "memory": {

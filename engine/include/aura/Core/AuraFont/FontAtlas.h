@@ -140,6 +140,31 @@ public:
     /// Kerning adjustment to apply between @p left and @p right, in pixels.
     [[nodiscard]] float kerning(char32_t left, char32_t right) const noexcept;
 
+    /**
+     * @brief Reserves (once) a fully opaque cell and returns the UV of its centre.
+     *
+     * The atlas is a coverage map, so every texel a glyph did not touch samples
+     * as transparent -- there is no UV a batch can use to draw a plain filled
+     * rectangle. This carves out one small always-opaque cell for exactly that.
+     *
+     * What it buys is draw calls: a 2D batcher that mixes solid quads with text
+     * (a UI, in practice) would otherwise need one texture for its rectangles
+     * and this atlas for its glyphs, and therefore at least one
+     * IRenderer::drawBatch2D() call per switch between them. Given this UV, the
+     * rectangles sample the atlas too and the whole thing collapses into a
+     * single batch whatever the interleaving.
+     *
+     * The cell is 4x4 and the returned UV addresses its centre, so bilinear
+     * filtering only ever reaches texels inside it, never a neighbouring
+     * glyph's. It is allocated on the first call and cached thereafter; call it
+     * early (while the atlas is still empty) if a caller cannot tolerate
+     * failure.
+     *
+     * @return The UV to give every vertex of a solid quad, or nullopt when the
+     *         atlas is too full to place the cell.
+     */
+    [[nodiscard]] std::optional<glm::vec2> solidTexelUv() noexcept;
+
     [[nodiscard]] float lineHeight() const noexcept { return _lineHeight; }
     [[nodiscard]] float ascent() const noexcept { return _ascent; }
     [[nodiscard]] float descent() const noexcept { return _descent; }
@@ -193,6 +218,9 @@ private:
     std::vector<u8> _scratch;         //! RGBA staging for the pending upload.
 
     std::unordered_map<char32_t, GlyphInfo> _glyphs;
+
+    //! Cached result of solidTexelUv(); empty until the first call places it.
+    std::optional<glm::vec2> _solidUv;
 
     //! Shelf allocator cursor.
     u32 _shelfX = 0;

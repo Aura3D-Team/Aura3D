@@ -32,9 +32,8 @@
 namespace aura3d {
 namespace gfx {
 
-////////////////////////////////////
-//// Geometry
-////////////////////////////////////
+/// Geometry
+
 /**
  * @struct TransformUBO
  * @brief Uniform buffer object (UBO).

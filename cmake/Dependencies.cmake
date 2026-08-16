@@ -8,6 +8,19 @@ if(ANDROID)
     set(_AURA_PLATFORM "android")
 elseif(EMSCRIPTEN)
     set(_AURA_PLATFORM "wasm")
+elseif(APPLE)
+    # Mirrors the windows/linux branches below, for this project's own
+    # macos-debug/macos-release/ios presets. iOS gets its own prefix rather than
+    # sharing macOS's: ink/wma installed there are cross-compiled for arm64-apple-ios
+    # and are not linkable into a macOS build (or vice versa), so one prefix for
+    # both would silently pick the wrong slice.
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(_AURA_PLATFORM "ios")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(_AURA_PLATFORM "macos/debug")
+    else()
+        set(_AURA_PLATFORM "macos/release")
+    endif()
 elseif(WIN32)
     # Mirrors the linux/debug|release branch below, for this project's own
     # windows-debug/windows-release presets (single-config Ninja generator,

@@ -6,6 +6,7 @@
 
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkCountingAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -21,7 +22,7 @@ VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceDa
 VkDeviceManager::~VkDeviceManager() {
     if (_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(_device);
-        vkDestroyDevice(_device, nullptr);
+        vkDestroyDevice(_device, hostAllocationCallbacks());
         _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
@@ -194,7 +195,9 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     _deviceInfo.ppEnabledExtensionNames = _vkDeviceCreationData.vkDeviceExtensions.data();
     _deviceInfo.pEnabledFeatures = nullptr; //! No need to be &_deviceFeatures;
 
-    result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
+    //! Paired with the vkDestroyDevice in the destructor; see
+    //! hostAllocationCallbacks() for why neither site is #ifdef'd.
+    result = vkCreateDevice(_physicalDevice, &_deviceInfo, hostAllocationCallbacks(), &_device);
     VK_RESULT_CHECK(result);
 
     u32 familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);

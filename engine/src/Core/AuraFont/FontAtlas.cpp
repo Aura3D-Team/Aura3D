@@ -1,6 +1,7 @@
 #include "aura/Core/AuraFont/FontAtlas.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -364,6 +365,32 @@ float FontAtlas::kerning(char32_t left, char32_t right) const noexcept
                                                   static_cast<int>(left),
                                                   static_cast<int>(right));
     return static_cast<float>(raw) * _scale;
+}
+
+std::optional<glm::vec2> FontAtlas::solidTexelUv() noexcept
+{
+    if (_solidUv)
+        return _solidUv;
+
+    //! 4x4 rather than 1x1 so the centre UV stays clear of the cell's own edge
+    //! texels: a bilinear tap there would otherwise reach into the guard band.
+    constexpr u32 kCellSize = 4;
+
+    const auto origin = reserveCell(kCellSize, kCellSize);
+    if (!origin)
+        return std::nullopt;
+
+    std::array<u8, kCellSize * kCellSize> opaque{};
+    opaque.fill(255);
+
+    blitCoverage(opaque.data(), kCellSize, *origin, kCellSize, kCellSize);
+    markDirty(origin->x, origin->y, kCellSize, kCellSize);
+
+    _solidUv = glm::vec2{
+        (static_cast<float>(origin->x) + 0.5f * kCellSize) / static_cast<float>(_desc.width),
+        (static_cast<float>(origin->y) + 0.5f * kCellSize) / static_cast<float>(_desc.height)};
+
+    return _solidUv;
 }
 
 std::optional<glm::uvec2> FontAtlas::reserveCell(u32 w, u32 h) noexcept

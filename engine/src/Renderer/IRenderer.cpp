@@ -1,6 +1,7 @@
 #include "aura/Renderer/IRenderer.h"
 
 #include "aura/Core/ImageLoader/ImageLoader.h"
+#include "aura/Core/Profiling/FrameProfiler.h"
 
 namespace aura3d {
 
@@ -109,7 +110,15 @@ void IRenderer::drawMeshes(std::span<const DrawItem> items)
      * setTransform() takes a full TransformUBO, so the caller's view/proj have
      * to be preserved while only the model matrix varies per item; the last
      * value the caller set is read back here rather than being re-derived.
+     *
+     * Scoped as RecordScene here rather than in each backend: this body *is*
+     * the scene-recording phase for OpenGL and the software rasteriser, which
+     * both inherit it. VulkanRenderer overrides drawMeshes() and opens its own
+     * RecordScene scope around the threaded version, so the phase means the
+     * same thing on all three and is never double-counted.
      */
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+
     gfx::TransformUBO transform = _currentTransform;
 
     for (const DrawItem& item : items)

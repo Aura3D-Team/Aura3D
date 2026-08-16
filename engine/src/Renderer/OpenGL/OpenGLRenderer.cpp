@@ -10,6 +10,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "aura/aura.h"
+#include "aura/Core/Profiling/FrameProfiler.h"
 
 namespace aura3d {
 namespace gl {
@@ -25,9 +26,12 @@ OpenGLRenderer::~OpenGLRenderer()
     cleanup();
 }
 
-void OpenGLRenderer::initialize(AuraSettings* settings)
+void OpenGLRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
 {
     if (_isInitialized) return;
+
+    //! Unused: this backend has no CPU-side worker pool of its own to share.
+    (void)jobs;
 
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
     loadOpenGLEntryPoints();
@@ -286,9 +290,11 @@ void OpenGLRenderer::beginFrame()
 
 void OpenGLRenderer::beginRenderPass()
 {
+    AURA_FRAME_SCOPE(FramePhase::BeginPass);
+
     //! cleanup() can run mid-frame (the ESC key action calls it), which drops
     //! the managers while the frame loop is still executing.
-    if (!_uniformMgr) 
+    if (!_uniformMgr)
         return;
 
     glClearColor(_clearR, _clearG, _clearB, _clearA);
@@ -306,7 +312,9 @@ void OpenGLRenderer::endRenderPass()
      * here mirrors the Vulkan backend's vkCmdEndRenderPass and unbinds the VAO
      * so state does not leak into whatever the caller does next.
      */
-    if (!_vertexMgr) 
+    AURA_FRAME_SCOPE(FramePhase::EndPass);
+
+    if (!_vertexMgr)
         return;
 
     _vertexMgr->unbind();
@@ -315,12 +323,29 @@ void OpenGLRenderer::endRenderPass()
 
 void OpenGLRenderer::endFrame()
 {
-    if (!_windowManagerApi) return;
+    /*
+     * Present is where a vsynced GL frame actually spends its wall time: the
+     * driver blocks inside SDL_GL_SwapWindow until the display is ready for the
+     * buffer, so the whole pipeline's backpressure lands on this one scope and
+     * nowhere else. WaitFence/Acquire/Submit stay at zero for this backend --
+     * GL has no explicit counterpart to any of them, and reporting zero says
+     * exactly that rather than inventing an attribution.
+     */
+    if (_windowManagerApi)
+    {
+        AURA_FRAME_SCOPE(FramePhase::Present);
 
-    auto* window = static_cast<SDL_Window*>(_windowManagerApi->getWindowInstance());
-    if (window) {
-        SDL_GL_SwapWindow(window);
+        auto* window = static_cast<SDL_Window*>(_windowManagerApi->getWindowInstance());
+        if (window) {
+            SDL_GL_SwapWindow(window);
+        }
     }
+
+    //! Outside the scope above so the present is closed and counted before the
+    //! frame is, and unconditional so a frame still closes when the window
+    //! manager has already gone (a cleanup() mid-loop) rather than stalling the
+    //! sample stream on a backend that is shutting down.
+    AURA_FRAME_END();
 }
 
 void OpenGLRenderer::setTransform(const gfx::TransformUBO& ubo)
@@ -402,6 +427,8 @@ void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
                                  std::span<const u32> indices,
                                  TextureHandle texture)
 {
+    AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
+
     if (!_overlay2DProgram || !_textureMgr || vertices.empty() || indices.empty())
         return;
 

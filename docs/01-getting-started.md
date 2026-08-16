@@ -37,8 +37,12 @@ This produces, under `build/linux/release/`:
   a lit scene with three objects, live FPS counter)
 - `apps/OrgLogo/OrgLogo` — a minimal 2D demo (one textured quad, no camera
   movement) — the simplest possible complete Aura3D program
+- `apps/UIPlayground/UIPlayground` — `aura3d::ui` driving a live scene: UI
+  panels spawn and remove textured 3D objects and tweak a procedurally
+  animated 2D sprite in real time (see
+  [12-immediate-mode-ui.md](12-immediate-mode-ui.md))
 
-Run either from its own directory, since both load `settings.json` and
+Run any of them from its own directory, since each loads `settings.json` and
 `resources/` relative to the working directory:
 
 ```bash

@@ -11,12 +11,21 @@
 #include <wma/wma.hpp>
 #include <glm/glm.hpp>
 
-#include "aura/Utils/PlatformCompat.h"
+#include "aura/Platform/PlatformCompat.h"
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Renderer/Material.h"
 #include "aura/Renderer/RenderHandles.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+
+//! Forward-declared, not included: only initialize()'s parameter type needs
+//! the name, and every backend but the software rasteriser ignores it, so
+//! there is no reason to pull JobSystem.h into a header this widely included.
+namespace aura3d { class JobSystem; }
+
+//! Likewise: gpuDebugSource() returns a pointer, so the interface's definition
+//! is only needed by the backends that implement it and by the report writer.
+namespace aura3d { class IGpuDebugSource; }
 
 /**
  * @brief List of available graphics backend renderers.
@@ -26,6 +35,7 @@
     X(SOFTWARE)       \
     X(OPENGL)         \
     X(VULKAN)         \
+    X(METAL)          \
 
 /**
  * @brief List of supported dimensions/modes for rendering.
@@ -80,6 +90,7 @@ inline const char* RendererChoiceToString(RendererChoice c)
         case RendererChoice::SOFTWARE: return "SOFTWARE";
         case RendererChoice::OPENGL:   return "OPENGL";
         case RendererChoice::VULKAN:   return "VULKAN";
+        case RendererChoice::METAL:    return "METAL";
     }
     return "UNKNOWN";
 }
@@ -109,8 +120,14 @@ public:
     /**
      * @brief Configures underlying graphics libraries and hardware contexts using engine settings.
      * * @param[in] settings Pointer to the foundational application runtime configuration.
+     * @param[in] jobs The engine's shared worker pool (see JobSystem), constructed before any
+     *            renderer and outliving every backend switch. Only the software rasteriser uses
+     *            it today -- to dispatch rasterisation and presentation across the same pool
+     *            JobSystem already owns rather than building one of its own -- but it is handed
+     *            to every backend uniformly so that stays an implementation detail of CPURenderer,
+     *            not a special case Engine has to know about.
      */
-    virtual void initialize(AuraSettings* settings) = 0;
+    virtual void initialize(AuraSettings* settings, const JobSystem* jobs) = 0;
 
     /**
      * @brief Refreshes viewport contexts and internal buffers following user sizing adjustments.
@@ -442,6 +459,22 @@ public:
      * @return const wma::WindowDetails& Constant reference containing dimension attributes.
      */
     const wma::WindowDetails& getWindowDetails() const { return _windowDetails; }
+
+    /**
+     * @brief GPU allocation and timing counters, when this backend keeps them.
+     *
+     * Consumed by aura3d::DebugMode to fill the report's `gpu` section. The
+     * default returns nullptr, which is the honest answer for a backend with no
+     * device to measure (the software rasteriser) or no query mechanism wired
+     * up yet (OpenGL); only VulkanRenderer overrides it, and only in a build
+     * with AURA_ENABLE_DEBUG_MODE.
+     *
+     * Declared unconditionally so that application and report code needs no
+     * `#ifdef` around a null check that is already the normal case.
+     *
+     * @return Owned by the renderer and valid until it is destroyed, or nullptr.
+     */
+    [[nodiscard]] virtual const IGpuDebugSource* gpuDebugSource() const noexcept { return nullptr; }
 
 protected:
     /**

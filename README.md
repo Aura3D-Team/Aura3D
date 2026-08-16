@@ -84,6 +84,10 @@ game:
 | 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
 | 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Windows, Android, WebAssembly |
 | 11 | [Using a Release](docs/11-using-releases.md) | Consuming prebuilt release archives; building the dev container |
+| 12 | [Immediate-Mode UI](docs/12-immediate-mode-ui.md) | `aura3d::ui`: panels, buttons, checkboxes, sliders; a complete tool app |
+| 13 | [How AuraUI Works](docs/13-auraui-internals.md) | UI internals: widget identity, interaction state, single-batch geometry |
+| 14 | [Audio](docs/14-audio.md) | `AudioEngine`: clips, one-shots, looping music, 3D positional sound |
+| 15 | [Debug & Benchmark Mode](docs/15-debug-benchmark-mode.md) | CPU/GPU allocation tracking, per-phase frame timing, the JSON metrics report |
 
 ---
 
@@ -109,12 +113,15 @@ cmake --build . -j$(nproc)
 | `AURA_ENABLE_VULKAN` | `ON` | Compile the Vulkan backend |
 | `AURA_ENABLE_OPENGL` | `ON` | Compile the OpenGL backend |
 | `AURA_ENABLE_CPU` | `ON` | Compile the software (CPU) backend |
+| `AURA_ENABLE_UI` | `ON` | Compile the built-in immediate-mode UI (`aura3d::ui`) |
 | `AURA_BUILD_SANDBOX` | `ON` | Build the Sandbox demo app |
 | `AURA_BUILD_ORGLOGO` | `ON` | Build the OrgLogo demo app |
 | `AURA_BUILD_TESTS` | `OFF` | Build the automated test suite |
 | `AURA_ENABLE_LTO` | `ON` | Interprocedural optimization |
 | `AURA_NATIVE_OPTIMIZE` | `ON` | `-march=native` on desktop builds |
 | `AURA_WASM_ASYNCIFY` | `OFF` | Emscripten Asyncify (only if the app ever blocks synchronously) |
+| `AURA_PROFILE_FRAME` | `OFF` | Per-phase frame timing, logged periodically |
+| `AURA_ENABLE_DEBUG_MODE` | `OFF` | CPU/GPU allocation tracking + JSON benchmark report ([docs](docs/15-debug-benchmark-mode.md)); implies `AURA_PROFILE_FRAME` |
 
 Build with only the CPU renderer (no GPU dependencies at all):
 
@@ -152,8 +159,9 @@ Windows, Android, and WASM specifics.
 ```
 Aura3D/
 ├── apps/
-│   ├── Sandbox/       # Interactive 3D demo: WASD+mouse camera, lit scene, FPS overlay
-│   └── OrgLogo/        # Minimal 2D demo: one textured quad, no camera movement
+│   ├── Sandbox/       # Interactive 3D demo: WASD+mouse camera, lit scene, FPS overlay, Tab-toggled UI panel
+│   ├── OrgLogo/        # Minimal 2D demo: one textured quad, no camera movement
+│   └── UIPlayground/   # aura3d::ui + textures: spawn/remove textured 3D objects and tweak a live-animated sprite through UI panels
 ├── docs/                # Tutorial series (see table above)
 ├── engine/
 │   ├── include/aura/    # Public API — this is what your game includes
@@ -178,7 +186,10 @@ Aura3D/
 - **Conditional compilation**: backends are gated by `AURA_HAS_VULKAN`,
   `AURA_HAS_OPENGL`, `AURA_HAS_CPU` defines that CMake sets from the
   `AURA_ENABLE_*` options above — an app can link Aura3D built with only the
-  backends it actually needs.
+  backends it actually needs. `AURA_HAS_UI` gates the UI module the same way.
+- **Backend-agnostic subsystems**: anything built on the public `IRenderer`
+  API alone — `TextOverlay`, `aura3d::ui` — lives outside the backend trees
+  and works on every backend without a line of per-backend code.
 
 ---
 

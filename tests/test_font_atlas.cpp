@@ -123,6 +123,52 @@ void testGlyphCachingIsStable()
     AURA_CHECK(!atlas->dirty(), "a cache hit does not dirty the atlas");
 }
 
+void testSolidTexelReservation()
+{
+    auto atlas = FontAtlas::builtinBitmap(smallAtlas());
+    if (!atlas) return;
+
+    const auto uv = atlas->solidTexelUv();
+    AURA_CHECK(uv.has_value(), "an empty atlas can reserve its solid texel");
+    if (!uv) return;
+
+    AURA_CHECK(uv->x > 0.0f && uv->x < 1.0f && uv->y > 0.0f && uv->y < 1.0f,
+               "the solid texel's UV addresses somewhere inside the atlas");
+
+    AURA_CHECK(atlas->dirty(), "reserving the solid texel queues its upload");
+
+    // What the UV is *for*: a quad sampling it must come out fully opaque, so
+    // that a solid rectangle drawn through the glyph atlas looks like a solid
+    // rectangle rather than a faint one.
+    const auto pending = atlas->takeDirtyUpload();
+    AURA_CHECK(pending.has_value(), "the reserved cell arrives as an upload");
+    if (pending) {
+        bool allOpaque = !pending->rgba.empty();
+        for (std::size_t i = 3; i < pending->rgba.size(); i += 4) {
+            if (pending->rgba[i] != 255) {
+                allOpaque = false;
+                break;
+            }
+        }
+        AURA_CHECK(allOpaque, "every texel of the reserved cell is fully opaque");
+    }
+
+    // The reservation happens once: a 2D batcher asks for this every frame, and
+    // handing out a fresh cell each time would fill the atlas within seconds.
+    const auto again = atlas->solidTexelUv();
+    AURA_CHECK(again.has_value() && *again == *uv, "the solid texel is reserved once and cached");
+    AURA_CHECK(!atlas->dirty(), "a repeat request rasterizes nothing");
+
+    // The cell is reserved, not merely written: glyphs packed afterwards must
+    // not be handed the same region and overwrite it.
+    for (char32_t c = U'A'; c <= U'Z'; ++c)
+        (void)atlas->glyph(c);
+
+    const auto third = atlas->solidTexelUv();
+    AURA_CHECK(third.has_value() && *third == *uv,
+               "glyphs rasterized later do not disturb the solid texel");
+}
+
 void testDirtyRegionTracking()
 {
     auto atlas = FontAtlas::builtinBitmap(smallAtlas());
@@ -243,6 +289,7 @@ int main()
     testUtf8Decoding();
     testBitmapFallbackMetrics();
     testGlyphCachingIsStable();
+    testSolidTexelReservation();
     testDirtyRegionTracking();
     testPackerRejectsOversizedAndExhaustedAtlases();
     testTrueTypeLoadFailureIsReported();

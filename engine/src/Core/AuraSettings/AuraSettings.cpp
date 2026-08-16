@@ -1,5 +1,12 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
+//! For getDefaultAudioBackend()/isAudioBackendAvailable(), which resolve the
+//! "auto" audio backend. The header itself only needs wma::AudioBackend the
+//! type, which comes from wma/core/Types.hpp, so the factory declarations are
+//! pulled in here rather than widening what every consumer of AuraSettings.h
+//! has to parse.
+#include <wma/wma.hpp>
+
 #include "aura/aura.h"
 
 namespace aura3d {
@@ -119,6 +126,61 @@ int AuraSettings::getCpuThreads() const
     return _settings.getPath<int>("/graphics/cpu_threads", 0);
 }
 
+wma::AudioBackend AuraSettings::getAudioBackend() const
+{
+    const std::string backendStr = _settings.getPath<std::string>("/audio/backend", "auto");
+
+    //! "auto" is the documented default and means "let libwma decide", which is
+    //! the only answer that is correct on every platform: ALSA exists on desktop
+    //! Linux and nowhere else, so a hardcoded value in a shared config file
+    //! would be wrong for some target.
+    if (backendStr == "auto" || backendStr.empty())
+        return wma::getDefaultAudioBackend();
+
+    wma::AudioBackend backend;
+    if (AudioBackendFromString(backendStr, backend))
+    {
+        //! A backend the build left out would degrade at openAudioDevice()
+        //! anyway, but saying so here names the setting that was ignored.
+        if (!wma::isAudioBackendAvailable(backend))
+        {
+            INK_WARN << "AuraSettings: audio backend '" << backendStr
+                     << "' is not compiled into this build of wma; using the default";
+            return wma::getDefaultAudioBackend();
+        }
+        return backend;
+    }
+
+    INK_WARN << "AuraSettings: unsupported audio backend '" << backendStr
+             << "'; falling back to the platform default";
+    return wma::getDefaultAudioBackend();
+}
+
+f32 AuraSettings::getMasterVolume() const
+{
+    return _settings.getPath<f32>("/audio/master_volume", 1.0f);
+}
+
+int AuraSettings::getAudioSampleRate() const
+{
+    return _settings.getPath<int>("/audio/sample_rate", 48000);
+}
+
+int AuraSettings::getAudioChannels() const
+{
+    return _settings.getPath<int>("/audio/channels", 2);
+}
+
+int AuraSettings::getAudioBufferFrames() const
+{
+    return _settings.getPath<int>("/audio/buffer_frames", 1024);
+}
+
+int AuraSettings::getAudioMaxVoices() const
+{
+    return _settings.getPath<int>("/audio/max_voices", 32);
+}
+
 std::string AuraSettings::getShadersPath() const
 {
     return _settings.getPath<std::string>("/paths/shaders", "./resources/shaders/");
@@ -132,6 +194,11 @@ std::string AuraSettings::getTexturesPath() const
 std::string AuraSettings::getModelsPath() const
 {
     return _settings.getPath<std::string>("/paths/models", "./resources/models/");
+}
+
+std::string AuraSettings::getAudioPath() const
+{
+    return _settings.getPath<std::string>("/paths/audio", "./resources/audio/");
 }
 
 std::string AuraSettings::getLogsPath() const

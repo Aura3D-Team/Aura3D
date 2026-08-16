@@ -25,6 +25,55 @@ if(ANDROID)
     set(AURA_ENABLE_LTO OFF CACHE BOOL "" FORCE)
 endif()
 
+if(NOT APPLE AND AURA_ENABLE_METAL)
+    message(WARNING
+        "[Aura3D] AURA_ENABLE_METAL is not supported on ${CMAKE_SYSTEM_NAME} — "
+        "forcing OFF (Metal is macOS/iOS only)"
+    )
+    set(AURA_ENABLE_METAL OFF CACHE BOOL "" FORCE)
+endif()
+
+if(APPLE)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(_AURA_APPLE_TARGET "iOS")
+    else()
+        set(_AURA_APPLE_TARGET "macOS")
+    endif()
+
+    message(STATUS "[Aura3D] Target platform: ${_AURA_APPLE_TARGET}  "
+                   "Arch=${CMAKE_OSX_ARCHITECTURES}  Compiler=${CMAKE_CXX_COMPILER_ID}")
+
+    # Metal is the only native GPU API Apple still ships, and the reason this
+    # backend exists:
+    #   - OpenGL was deprecated in macOS 10.14, caps out at 4.1, and never
+    #     existed on iOS at all (only OpenGL ES, itself deprecated).
+    #   - Vulkan is available solely through MoltenVK, a translation layer over
+    #     Metal. Explicitly out of scope: a native backend is the point.
+    set(AURA_ENABLE_METAL  ON  CACHE BOOL "" FORCE)
+    set(AURA_ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
+    set(AURA_ENABLE_OPENGL OFF CACHE BOOL "" FORCE)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        # A software rasteriser on a phone is neither useful nor exercised: it
+        # would rely on wma's SDL surface-blit path, which has no iOS coverage.
+        set(AURA_ENABLE_CPU OFF CACHE BOOL "" FORCE)
+
+        # -march=native is meaningless when cross-compiling for the device.
+        set(AURA_NATIVE_OPTIMIZE OFF CACHE BOOL "" FORCE)
+
+        # CTest cannot launch a test binary on a device or simulator from here;
+        # the iOS CI job is build-only for the same reason.
+        set(AURA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+        # An iOS executable is only launchable as an app bundle, so the Sandbox is
+        # built as one (see apps/Sandbox/CMakeLists.txt, which also embeds
+        # resources/ inside it rather than beside the binary).
+        set(CMAKE_MACOSX_BUNDLE ON)
+    endif()
+
+    unset(_AURA_APPLE_TARGET)
+endif()
+
 if(WIN32 AND NOT EMSCRIPTEN)
     message(STATUS "[Aura3D] Target platform: Windows  Compiler=${CMAKE_CXX_COMPILER_ID}")
 

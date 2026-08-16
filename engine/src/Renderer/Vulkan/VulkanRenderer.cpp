@@ -143,9 +143,15 @@ VulkanRenderer::~VulkanRenderer()
     cleanup();
 }
 
-void VulkanRenderer::initialize(AuraSettings* settings)
+void VulkanRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
 {
     if (_isInitialized) return;
+
+    //! Unused here: draw-call recording has its own dedicated pool
+    //! (_recordPool below), sized and shaped for per-thread Vulkan command
+    //! pools rather than JobSystem's generic band dispatch. See CPURenderer
+    //! for the backend that does share the engine's pool.
+    (void)jobs;
 
     const bool enableValidation = settings->getValidationLayers();
 
@@ -228,6 +234,26 @@ void VulkanRenderer::createCoreObjects(bool enableValidation)
         *_vkDeviceManager->getPhysicalDevice(),
         _vkDeviceData.exclusiveQueueFlags,
         *_vkSurfaceManager->getSurface());
+
+#ifdef AURA_ENABLE_DEBUG_MODE
+    /*
+     * After the queue family is known, because timestamp support is per family
+     * (VkQueueFamilyProperties::timestampValidBits) rather than per device --
+     * a transfer-only family on some hardware writes no timestamps at all.
+     *
+     * A device that cannot timestamp is not an error: initialize() reports it
+     * and GPU timing is simply marked unavailable in the report.
+     */
+    (void)_debugMetrics.timestamps().initialize(
+        *_vkDeviceManager->getDevice(),
+        *_vkDeviceManager->getPhysicalDevice(),
+        _graphicsIndexFamily,
+        GetMaxFramesInFlight());
+
+    //! The raw device-memory counters come from VMA's callbacks regardless;
+    //! this is what adds the suballocation and heap-budget detail.
+    _debugMetrics.setAllocator(_memoryManager->getAllocator());
+#endif
 }
 
 void VulkanRenderer::createResourceManagers()
@@ -369,14 +395,16 @@ void VulkanRenderer::createUniformBuffers()
      * on at the top of beginFrame(). That fence is indexed by frame slot, so
      * the buffers it protects must be too.
      */
-    _vkUniformBufferManager->createUniformBuffers(sharingMode, MAX_FRAMES_IN_FLIGHT);
+    const u32 framesInFlight = GetMaxFramesInFlight();
 
-    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    _vkUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight);
+
+    for (u32 i = 0; i < framesInFlight; ++i)
     {
         _vkUniformBufferManager->updateUniformBuffer(i, const_cast<gfx::TransformUBO&>(_currentTransform));
     }
 
-    _vkLightUniformBufferManager->createUniformBuffers(sharingMode, MAX_FRAMES_IN_FLIGHT, sizeof(gfx::LightUBO));
+    _vkLightUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight, sizeof(gfx::LightUBO));
 
     updateLightUniformBuffers();
 }
@@ -389,7 +417,7 @@ void VulkanRenderer::updateLightUniformBuffers()
     //! Every frame slot's copy, for the reason given in createUniformBuffers():
     //! the light is set rarely and read every frame, so all slots are refreshed
     //! rather than tracking which ones are stale.
-    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    for (u32 i = 0; i < GetMaxFramesInFlight(); ++i)
     {
         _vkLightUniformBufferManager->updateUniformBufferRaw(i, &_light, sizeof(gfx::LightUBO));
     }
@@ -417,11 +445,26 @@ void VulkanRenderer::createDescriptorSets()
             _vkGraphicsPipelineManager->getDescriptorSetLayout(1));
     }
 
-    //! Per frame in flight, matching the buffers they describe.
-    _descSets.resize(MAX_FRAMES_IN_FLIGHT);
-    _lightDescSets.resize(MAX_FRAMES_IN_FLIGHT);
+    const u32 framesInFlight = GetMaxFramesInFlight();
 
-    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+    //! Per frame in flight, matching the buffers they describe.
+    _descSets.resize(framesInFlight);
+    _lightDescSets.resize(framesInFlight);
+
+    /*
+     * The overlay's per-frame buffers/capacities, sized here for the same
+     * reason: this is the one place every frame-in-flight-indexed array in
+     * this class gets its size from. A repeat call (handleWindowChanges(),
+     * recreateSurfaceAndSwapchain()) resizes to the same count it already
+     * has, which leaves every existing buffer handle and capacity untouched --
+     * exactly as idempotent as _descSets.resize() above.
+     */
+    _overlay2DVertexBuffers.resize(framesInFlight);
+    _overlay2DIndexBuffers.resize(framesInFlight);
+    _overlay2DVertexCapacity.resize(framesInFlight);
+    _overlay2DIndexCapacity.resize(framesInFlight);
+
+    for (u32 i = 0; i < framesInFlight; ++i) {
         _descSets[i] = _vkDescriptorManager->allocateDescriptorSet(
             _vkGraphicsPipelineManager->getDescriptorSetLayout(0));
 
@@ -734,6 +777,19 @@ void VulkanRenderer::cleanup()
     _frameBegun = false;
     _fallbackTexture = INVALID_HANDLE;
 
+#ifdef AURA_ENABLE_DEBUG_MODE
+    /*
+     * The query pool is a device object, so it has to go before the device
+     * does; the allocator handle has to be dropped before vmaDestroyAllocator
+     * below, since a report built afterwards would call vmaCalculateStatistics
+     * on a destroyed allocator. The cumulative counters survive both -- they
+     * live in VkDeviceMemoryCounters, not here, which is what lets a report
+     * written after teardown still show what the run allocated.
+     */
+    _debugMetrics.timestamps().destroy();
+    _debugMetrics.setAllocator(VK_NULL_HANDLE);
+#endif
+
     //! Before the allocator shuts down below, since these hold VMA allocations.
     destroyOverlay2DBuffers();
 
@@ -976,6 +1032,18 @@ void VulkanRenderer::beginFrame()
         _vkRenderSyncManager->waitForFences(_currentFrame);
     }
 
+#ifdef AURA_ENABLE_DEBUG_MODE
+    /*
+     * Immediately after the fence wait and nowhere else. This slot's previous
+     * submission has just been proven complete, so its two timestamps are
+     * guaranteed readable and the read costs nothing; asking for them any
+     * earlier would mean blocking the CPU on the GPU purely to measure it.
+     * The reported GPU time therefore trails by the frames in flight, which
+     * over a benchmark's thousands of frames is not a distinction that matters.
+     */
+    _debugMetrics.timestamps().resolve(_currentFrame);
+#endif
+
     u32 imageIndex = 0;
     {
         AURA_FRAME_SCOPE(FramePhase::Acquire);
@@ -1003,6 +1071,12 @@ void VulkanRenderer::beginFrame()
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
     VkCommandManager::beginCommandBuffer(cmd);
+
+#ifdef AURA_ENABLE_DEBUG_MODE
+    //! The first command in the frame's primary buffer, so the opening
+    //! timestamp brackets everything the GPU does for this frame.
+    _debugMetrics.timestamps().writeBegin(cmd, _currentFrame);
+#endif
 
     //! A reset pool discards every recorded bind, so nothing may be assumed
     //! still bound in the command buffer that starts here.
@@ -1117,6 +1191,13 @@ void VulkanRenderer::endFrame()
     if (!_frameBegun) return;
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
+
+#ifdef AURA_ENABLE_DEBUG_MODE
+    //! The last command before the buffer closes: paired with the one in
+    //! beginFrame(), the difference is the frame's GPU wall time.
+    _debugMetrics.timestamps().writeEnd(cmd, _currentFrame);
+#endif
+
     VkCommandManager::endCommandBuffer(cmd);
 
     VkQueue graphicsQueue = _queueDataFromExclusiveFlags.front()->queues.front();
@@ -1410,7 +1491,11 @@ void VulkanRenderer::destroyOverlay2DBuffers()
     if (!_memoryManager || !_memoryManager->isInitialized())
         return;
 
-    for (u32 frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
+    //! Bounded by the vector's own size rather than GetMaxFramesInFlight():
+    //! this can run before createDescriptorSets() ever has (a teardown after
+    //! a failed partial init), when these are still empty, and .size() is
+    //! then correctly 0 rather than indexing off the end.
+    for (u32 frame = 0; frame < _overlay2DVertexBuffers.size(); ++frame)
     {
         if (_overlay2DVertexBuffers[frame].buffer != VK_NULL_HANDLE)
             _memoryManager->destroyBuffer(_overlay2DVertexBuffers[frame]);
@@ -1549,7 +1634,7 @@ VulkanMemoryManager* VulkanRenderer::getMemoryManager() { return _memoryManager.
 const std::vector<aura3d::vk::QueueData*>& VulkanRenderer::getQueues() const { return _queueDataFromExclusiveFlags; }
 VkFixedArray<VkCommandBuffer>& VulkanRenderer::getCommandBuffers() { return _cmdBuffers; }
 u32 VulkanRenderer::getCurrentFrame() const { return _currentFrame; }
-void VulkanRenderer::advanceFrame() { _currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT; }
+void VulkanRenderer::advanceFrame() { _currentFrame = (_currentFrame + 1) % GetMaxFramesInFlight(); }
 
 } // namespace vk
 } // namespace aura3d

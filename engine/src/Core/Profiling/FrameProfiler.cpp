@@ -16,6 +16,30 @@ constexpr u32 kFramesPerReport = 2000;
 
 void FrameProfiler::endFrame() noexcept
 {
+#ifdef AURA_ENABLE_DEBUG_MODE
+    /*
+     * Before the early return below, because the observer wants every frame
+     * rather than every kFramesPerReport-th one. The clock read is the same one
+     * the reporting path takes further down, hoisted here so a frame costs one
+     * read either way.
+     */
+    if (_observer != nullptr)
+    {
+        const auto frameEnd = Clock::now();
+
+        FrameSample sample;
+        sample.phaseNanos = _current;
+        sample.frameNanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                frameEnd - _lastFrameEnd)
+                                .count();
+
+        _lastFrameEnd = frameEnd;
+        _observer->onFrameSample(sample);
+    }
+
+    _current.fill(0);
+#endif
+
     if (++_frames < kFramesPerReport)
         return;
 

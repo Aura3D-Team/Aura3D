@@ -5,24 +5,13 @@
 
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
+#include <algorithm>
 #include <array>
 #include <vector>
 
 #include "aura/Core/AuraCore.h"
+#include "aura/Core/AuraSettings/AuraSettings.h"
 
-/**
- * @brief Frames the CPU may record ahead of the GPU.
- *
- * Every per-frame resource is replicated this many times -- command buffers,
- * fences, semaphores, the transform/light uniform buffers and their descriptor
- * sets, the overlay's vertex/index buffers -- so that recording frame N+1
- * never touches memory frame N is still being rendered from. The per-frame
- * fence waited on in beginFrame() is what enforces that, and it is indexed by
- * frame slot, so anything the CPU rewrites per frame must be indexed by frame
- * slot too (not by swapchain image, whose index acquire hands back before the
- * presentation engine has actually released it).
- */
-#define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_ATTRIBUTE_DESCRIPTION_2D 3
 #define MAX_ATTRIBUTE_DESCRIPTION_3D 4
 #define MAX_ATTRIBUTE_DESCRIPTION MAX_ATTRIBUTE_DESCRIPTION_3D
@@ -64,9 +53,40 @@ inline constexpr u32 kDesiredBindlessTextures = 4096;
 //! this size is rejected at device selection rather than silently limping.
 inline constexpr u32 kMinBindlessTextures = 128;
 
+namespace aura3d {
+namespace vk {
+
+/**
+ * @brief Frames the CPU may record ahead of the GPU.
+ *
+ * Every per-frame resource is replicated this many times -- command buffers,
+ * fences, semaphores, the transform/light uniform buffers and their descriptor
+ * sets, the overlay's vertex/index buffers -- so that recording frame N+1
+ * never touches memory frame N is still being rendered from. The per-frame
+ * fence waited on in beginFrame() is what enforces that, and it is indexed by
+ * frame slot, so anything the CPU rewrites per frame must be indexed by frame
+ * slot too (not by swapchain image, whose index acquire hands back before the
+ * presentation engine has actually released it).
+ *
+ * Resolved from renderer.max_frames_in_flight (default 2) rather than fixed
+ * at compile time: every VkFixedArray<T> below is sized from this at
+ * construction, not from a template parameter, so raising it to 3 trades a
+ * little latency and per-frame-resource memory for one more frame of
+ * CPU/GPU overlap -- see AuraSettings::getMaxFramesInFlight(). Clamped to at
+ * least 1: beginFrame()'s modulo-indexed frame slot requires a non-empty set
+ * of resources to index into.
+ */
+[[nodiscard]] inline u32 GetMaxFramesInFlight() noexcept
+{
+    return static_cast<u32>(std::max(1, AuraSettings::get()->getMaxFramesInFlight()));
+}
+
+} // namespace vk
+} // namespace aura3d
+
 // Template array definitions
 template <typename T>
-using VkFixedArray = std::array<T, MAX_FRAMES_IN_FLIGHT>;
+using VkFixedArray = std::vector<T>;
 
 template <typename T>
 using AttributeDescriptionArray = std::array<T, MAX_ATTRIBUTE_DESCRIPTION>;

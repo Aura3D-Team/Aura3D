@@ -114,4 +114,8 @@ Drawing a string walks it once, appends one quad per glyph into two vectors
 reused across frames, and hands the whole thing to `drawBatch2D` as a single
 draw call — a 500-character string costs one draw call, not 500.
 
+The engine's built-in UI is the other consumer of this pipeline: panels,
+buttons and sliders, drawn entirely through `drawBatch2D` and this same glyph
+atlas — see **[12-immediate-mode-ui.md](12-immediate-mode-ui.md)**.
+
 Next: **[08-input.md](08-input.md)**.

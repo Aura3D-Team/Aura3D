@@ -4,6 +4,8 @@
 
 #include "aura/aura.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Core/JobSystem/JobSystem.h"
+#include "aura/Core/Profiling/FrameProfiler.h"
 
 namespace aura3d {
 namespace cpu {
@@ -19,11 +21,17 @@ CPURenderer::~CPURenderer()
     cleanup();
 }
 
-void CPURenderer::initialize(aura3d::AuraSettings* settings)
+void CPURenderer::initialize(aura3d::AuraSettings* settings, const JobSystem* jobs)
 {
     _vertexBufferPool3d.reserve(256);
     _indexBufferPool.reserve(256);
     _texturePool.reserve(64);
+
+    //! Stored before createWindow(): it builds _frameBufferManager, which
+    //! dispatches both rasterisation and presentation through this pool
+    //! instead of owning one of its own (see CpuFrameBufferManager's
+    //! constructor comment).
+    _jobs = jobs;
 
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
 }
@@ -38,14 +46,11 @@ void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBac
     cfg.width  = _windowDetails.width;
     cfg.height = _windowDetails.height;
     cfg.useDepthBuffer = true;
-    //! 0 (the JSON default) auto-detects inside CpuFrameBufferManager; a
-    //! positive value pins the row-band rasteriser to that many threads.
-    cfg.threadCount = aura3d::AuraSettings::get()->getCpuThreads();
 
-    _frameBufferManager = std::make_unique<CpuFrameBufferManager>(*_windowManagerApi, cfg);
+    _frameBufferManager = std::make_unique<CpuFrameBufferManager>(*_windowManagerApi, cfg, *_jobs);
 
     INK_INFO << "CPURenderer: rasterising across "
-             << _frameBufferManager->getWorkerCount() << " worker thread(s)";
+             << _frameBufferManager->getWorkerCount() << " worker thread(s) (shared engine pool)";
 }
 
 void CPURenderer::handleWindowChanges()
@@ -188,6 +193,8 @@ void CPURenderer::beginFrame()
 
 void CPURenderer::beginRenderPass()
 {
+    AURA_FRAME_SCOPE(FramePhase::BeginPass);
+
     if (_frameBufferManager)
         _frameBufferManager->clear(_clearColorU32);
 }
@@ -200,15 +207,30 @@ void CPURenderer::endRenderPass()
      * backends use it -- the point past which no further geometry can arrive --
      * which is what makes it the right place to stop deferring. Present still
      * happens in endFrame().
+     *
+     * Which also makes EndPass the phase that owns essentially all of this
+     * backend's cost: on the GPU backends the same scope closes a command
+     * buffer, here it runs the rasteriser. Reading a phase breakdown across
+     * backends means reading what each phase does on that backend, not
+     * comparing the numbers directly.
      */
+    AURA_FRAME_SCOPE(FramePhase::EndPass);
+
     if (_frameBufferManager)
         _frameBufferManager->flush();
 }
 
 void CPURenderer::endFrame()
 {
-    if (_frameBufferManager)
-        _frameBufferManager->renderFramebuffer();
+    {
+        AURA_FRAME_SCOPE(FramePhase::Present);
+
+        if (_frameBufferManager)
+            _frameBufferManager->renderFramebuffer();
+    }
+
+    //! Braced above so the present scope has closed before the frame does.
+    AURA_FRAME_END();
 }
 
 void CPURenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
@@ -439,6 +461,8 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
                               std::span<const u32> indices,
                               TextureHandle texture)
 {
+    AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
+
     if (!_frameBufferManager || vertices.empty() || indices.empty())
         return;
 

@@ -3,7 +3,6 @@
 
 #include <cmath>
 #include <functional>
-#include <future>
 #include <memory>
 #include <span>
 #include <string>
@@ -22,10 +21,11 @@ static const float PI_FLOAT = std::acos(-1.0f);
 /// wma/SDL headers out of this public header.
 namespace wma { class IWindowManager; }
 
-//! Forward-declared for the same reason: keeps ink/ThreadPool.h (and its
-//! <thread>/<mutex> transitive includes) out of every translation unit that
-//! merely includes this header to draw a triangle.
-namespace ink { class ThreadPool; }
+//! Forward-declared for the same reason this class used to forward-declare
+//! ink::ThreadPool: keeps JobSystem.h out of every translation unit that
+//! merely includes this header to draw a triangle. See the constructor's
+//! comment for why a ThreadPool of its own is gone entirely now.
+namespace aura3d { class JobSystem; }
 
 namespace aura3d {
 namespace cpu {
@@ -163,24 +163,27 @@ public:
         i32 width = 1280;
         i32 height = 720;
         bool useDepthBuffer = true;
-        //! Worker threads flush() splits a frame across. 0 auto-detects via
-        //! std::thread::hardware_concurrency();
-        //! see AuraSettings::getCpuThreads(), which feeds this in practice.
-        i32 threadCount = 0;
     };
 
     /// @param windowManager  wma window created with GraphicsAPI::CPU. Must
     ///                        outlive this manager (owned by the CPURenderer).
     /// @param config          Framebuffer dimensions and depth-buffer settings.
-    CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config);
+    /// @param jobs            Engine-wide worker pool (see JobSystem) this
+    ///                        manager dispatches rasterisation and
+    ///                        presentation across, instead of building a
+    ///                        pool of its own. Must outlive this manager --
+    ///                        Engine guarantees that: JobSystem is
+    ///                        constructed before any renderer and survives
+    ///                        every backend switch.
+    CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config, const JobSystem& jobs);
     ~CpuFrameBufferManager() = default;
 
     // Core rendering
     void clear(u32 color = 0);
 
     /// Present the color plane by locking the backend's software framebuffer
-    /// (wma::IWindowManager::lockFramebuffer()), blitting into it in parallel
-    /// across CPU cores via wma::parallelFill(), then presenting it.
+    /// (wma::IWindowManager::lockFramebuffer()) and blitting into it in
+    /// parallel across the same worker pool flush() rasterises with.
     void renderFramebuffer();
 
     // Memory management
@@ -285,10 +288,10 @@ public:
     // Getters
     i32 getWidth() const { return settings.width; }
     i32 getHeight() const { return settings.height; }
-    //! Worker count flush() actually dispatches across (the resolved value of
-    //! Config::threadCount, after auto-detection). Note that flush() cuts
-    //! several bands per worker for load balance; this is the thread count,
-    //! not the band count.
+    //! Worker count flush() and renderFramebuffer() dispatch across -- the
+    //! engine's shared JobSystem::workerCount(), cached at construction. One
+    //! row-band per worker (see updateBandRanges()), so this is also the band
+    //! count.
     i32 getWorkerCount() const noexcept { return _workerCount; }
     i32 getTextWidth(const std::string& text, u32 fontSize = 2);
     i32 getTextHeight(const std::string& text, u32 fontSize = 2);
@@ -363,20 +366,25 @@ private:
     //! guarantees it outlives this manager.
     wma::IWindowManager* _windowManager;
 
-    //! Config::threadCount resolved once at construction (auto-detection
-    //! applied). Declared before _rasterPool so it is initialized first --
-    //! the pool's size depends on it -- and reused by every dispatchRowBands()
-    //! call so the number of bands always matches the pool's actual size.
-    //! Both of those only hold because it is assigned in the constructor's
-    //! initializer list; assigning it in the body runs after _rasterPool is
-    //! already built and silently pins the pool to one thread.
-    i32 _workerCount = 1;
+    /*
+     * Non-owning handle to the engine's shared worker pool. Both flush()
+     * (rasterisation) and renderFramebuffer() (the copy into the locked
+     * window surface) dispatch through it, via JobSystem::dispatch() -- so a
+     * CPU-backend run spins up exactly one pool for the whole frame, not one
+     * per workload. This used to be two: a ThreadPool this class built for
+     * itself, plus a second, separate one wma's parallelFill() owned
+     * internally for the presentation copy. Neither is needed once both
+     * halves go through the same dispatch() call; wma is left with nothing
+     * but lockFramebuffer()/presentFramebuffer(), the raw surface handoff,
+     * which is all a *window* manager should own -- the parallel fill was
+     * arguably the renderer's job in the first place, and the renderer here
+     * is aura3d, not wma.
+     */
+    const JobSystem* _jobs;
 
-    //! Backs flush(). Owned here (rather than shared
-    //! with wma's presentation pool) because rasterisation and presentation
-    //! are logically separate workloads that happen to both want "one task
-    //! per core"; owning it also keeps this class usable independent of wma.
-    std::unique_ptr<ink::ThreadPool> _rasterPool;
+    //! JobSystem::workerCount(), cached at construction so getWorkerCount()
+    //! and updateBandRanges() don't re-derive it every frame.
+    i32 _workerCount = 1;
 
     /*
      * Everything below is frame-scratch: cleared between frames but never
@@ -397,10 +405,12 @@ private:
      * frame's list to reject most of it.
      */
     std::vector<std::vector<u32>> _bandBins;
-    //! Row range owned by each band; index-aligned with _bandBins.
+    //! Row range owned by each band; index-aligned with _bandBins. One band
+    //! per worker (see updateBandRanges()) -- JobSystem::dispatch() statically
+    //! partitions its item range across the pool, so oversplitting into more
+    //! bands than workers no longer buys anything: there is no shared task
+    //! queue left for an idle worker to steal extra bands from.
     std::vector<BandRange> _bandRanges;
-    //! Join handles for one dispatch; a member purely to reuse the allocation.
-    std::vector<std::future<void>> _bandFutures;
 
     // Aura Font
     const AuraBitmapFont& _font;

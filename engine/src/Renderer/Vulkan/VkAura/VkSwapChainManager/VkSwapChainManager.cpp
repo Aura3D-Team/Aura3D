@@ -218,8 +218,8 @@ void VkSwapChainManager::transitionImageLayout(
     const u32& imageIndex,
     VkImageLayout oldLayout,
     VkImageLayout newLayout,
-    VkFixedArray<VkPipelineStageFlags> stages,
-    VkFixedArray<VkAccessFlags> accessFlags)
+    std::array<VkPipelineStageFlags, 2> stages,
+    std::array<VkAccessFlags, 2> accessFlags)
 
 {
     VkImageMemoryBarrier barrier = {};

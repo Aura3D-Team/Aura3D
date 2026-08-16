@@ -28,6 +28,10 @@
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkCommandRecordingContext/VkCommandRecordingContext.h"
 
+#ifdef AURA_ENABLE_DEBUG_MODE
+#include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkDebugMetrics.h"
+#endif
+
 //! Forward-declared to keep ink/ThreadPool.h (and its <thread>/<mutex>
 //! transitive includes) out of every translation unit that includes this
 //! header -- same reasoning as CpuFrameBufferManager.
@@ -41,7 +45,7 @@ public:
     VulkanRenderer(const wma::WindowDetails& windowDetails);
     virtual ~VulkanRenderer();
 
-    void initialize(AuraSettings* settings) override;
+    void initialize(AuraSettings* settings, const JobSystem* jobs) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
@@ -104,6 +108,19 @@ public:
     VkFixedArray<VkCommandBuffer>& getCommandBuffers();
     u32 getCurrentFrame() const;
     void advanceFrame();
+
+#ifdef AURA_ENABLE_DEBUG_MODE
+    /**
+     * @brief This backend's GPU counters, for aura3d::DebugMode's report.
+     *
+     * The only backend that answers this today. See VkDebugMetrics for what
+     * each of the three sources behind it actually measures.
+     */
+    [[nodiscard]] const IGpuDebugSource* gpuDebugSource() const noexcept override
+    {
+        return &_debugMetrics;
+    }
+#endif
 
 protected:
     void createWindow(const char* title, const wma::WindowBackend& wBackend) override;
@@ -210,10 +227,14 @@ private:
      * no culling). Nothing about it is shared with the 3D pipeline above.
      */
     std::unique_ptr<aura3d::vk::VkGraphicsPipelineManager> _vkOverlay2DPipelineManager;
-    VkFixedArray<AllocatedBuffer> _overlay2DVertexBuffers{};
-    VkFixedArray<AllocatedBuffer> _overlay2DIndexBuffers{};
-    VkFixedArray<VkDeviceSize> _overlay2DVertexCapacity{};
-    VkFixedArray<VkDeviceSize> _overlay2DIndexCapacity{};
+    //! Sized in createDescriptorSets(), alongside _descSets/_lightDescSets --
+    //! not here: a default-constructed vector is empty, and these four are
+    //! indexed directly by frame slot from their first use, with no resize
+    //! anywhere else to fall back on.
+    VkFixedArray<AllocatedBuffer> _overlay2DVertexBuffers;
+    VkFixedArray<AllocatedBuffer> _overlay2DIndexBuffers;
+    VkFixedArray<VkDeviceSize> _overlay2DVertexCapacity;
+    VkFixedArray<VkDeviceSize> _overlay2DIndexCapacity;
     //! Persistent bindless texture array bound at the overlay pipeline's set 0
     //! (see _bindlessTextureSet3D below for why this is a single set rather
     //! than one per texture).
@@ -299,6 +320,16 @@ private:
     bool _pipelineReady = false;
 
     VulkanMemoryManager::Config _vmaConfig{};
+
+#ifdef AURA_ENABLE_DEBUG_MODE
+    /*
+     * By value and for the renderer's whole lifetime, which is what Vulkan's
+     * allocator rule requires: a handle created with a pAllocator must be
+     * destroyed with a compatible one, so the allocator inside this cannot go
+     * away while any such handle is still alive.
+     */
+    VkDebugMetrics _debugMetrics;
+#endif
 
     VkInstanceData _vkInstanceData;
     VkDeviceData _vkDeviceData;
