@@ -52,7 +52,7 @@ public:
 
 private:
     std::unordered_map<VertexBufferHandle, GlVertexBufferData> _buffers;
-    VertexBufferHandle _nextHandle = 1;
+    VertexBufferHandle _nextHandle{1};
 
     //! VAO name currently bound in the context, as last set by this manager;
     //! 0 means "none". Lets bind() drop a redundant glBindVertexArray, which

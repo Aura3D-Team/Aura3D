@@ -126,7 +126,7 @@ with no audio API, so the two settings never constrain each other. See
 | `sample_rate` | int | 48000 | Requested output rate. The device may grant something else; `AudioEngine::sampleRate()` reports what it actually got. Clips are resampled to it once at load. |
 | `channels` | int | 2 | Requested output channels. Stereo panning needs 2; a mono device plays spatial voices unpanned. |
 | `buffer_frames` | int | 1024 | Frames per device callback — the latency dial (~21 ms at 48 kHz). Lower means tighter timing and more risk of dropouts under load. Treated as a hint: SDL3 in particular picks its own period size. |
-| `max_voices` | int | 32 | Voices that can sound simultaneously. Beyond it `play()` returns `INVALID_HANDLE` and drops the sound rather than cutting off one already audible. Fixed at startup — the mixer never allocates. |
+| `max_voices` | int | 32 | Voices that can sound simultaneously. Beyond it `play()` returns an invalid handle and drops the sound rather than cutting off one already audible. Fixed at startup — the mixer never allocates. |
 
 ## `paths` — live
 

@@ -67,10 +67,13 @@ r->setClearColor(r, g, b, a);
 r->setLight(lightUBO);                         // see doc 6
 ```
 
-Handles (`MeshHandle`, `TextureHandle`, `MaterialHandle`, ...) are opaque
-`u32` values; `INVALID_HANDLE` (`aura3d::INVALID_HANDLE`) is the sentinel for
-"nothing" / "failed to create". Passing an invalid handle where a texture is
-expected is defined to mean "keep whatever is already bound", not a crash.
+Handles (`MeshHandle`, `TextureHandle`, `MaterialHandle`, ...) are opaque,
+type-safe wrappers around a `u32` (`aura3d::Handle<Tag>`, one instantiation per
+resource kind, so a `TextureHandle` cannot be passed where a `MeshHandle` is
+expected — the compiler rejects it). A default-constructed handle (`{}`) is
+the sentinel for "nothing" / "failed to create"; `isValidHandle(handle)` tests
+for it. Passing an invalid handle where a texture is expected is defined to
+mean "keep whatever is already bound", not a crash.
 
 ## The run loop
 

@@ -47,7 +47,7 @@ public:
      * @param[in] rgbaPixels @p width * @p height * 4 bytes, RGBA order.
      * @param[in] width Texture width in pixels.
      * @param[in] height Texture height in pixels.
-     * @return A 1-based handle, or INVALID_HANDLE on failure.
+     * @return A 1-based handle, or an invalid handle on failure.
      */
     [[nodiscard]] TextureHandle createFromPixels(const u8* rgbaPixels, u32 width, u32 height);
 
@@ -64,7 +64,7 @@ public:
      *
      * @param[in] width Texture width in pixels.
      * @param[in] height Texture height in pixels.
-     * @return A 1-based handle, or INVALID_HANDLE on failure.
+     * @return A 1-based handle, or an invalid handle on failure.
      */
     [[nodiscard]] TextureHandle createDynamic(u32 width, u32 height);
 

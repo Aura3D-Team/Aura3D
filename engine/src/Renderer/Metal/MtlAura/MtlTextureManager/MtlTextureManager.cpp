@@ -106,12 +106,12 @@ TextureHandle MtlTextureManager::createFromPixels(const u8* rgbaPixels, u32 widt
 {
     if (!rgbaPixels) {
         INK_ERROR << "MtlTextureManager: createFromPixels was given a null pixel pointer";
-        return INVALID_HANDLE;
+        return {};
     }
 
     NS::SharedPtr<MTL::Texture> texture = allocate(width, height, "Aura3D texture");
     if (!texture)
-        return INVALID_HANDLE;
+        return {};
 
     texture->replaceRegion(MTL::Region::Make2D(0, 0, width, height), 0,
                            rgbaPixels, rowBytes(width));
@@ -124,7 +124,7 @@ TextureHandle MtlTextureManager::createDynamic(u32 width, u32 height)
 {
     NS::SharedPtr<MTL::Texture> texture = allocate(width, height, "Aura3D dynamic texture");
     if (!texture)
-        return INVALID_HANDLE;
+        return {};
 
     /*
      * Metal leaves a fresh texture's contents undefined, while IRenderer promises
@@ -185,7 +185,7 @@ MTL::Texture* MtlTextureManager::resolve(TextureHandle handle) const noexcept
     if (!isValidHandle(handle))
         return nullptr;
 
-    const size_t index = static_cast<size_t>(handle) - 1;
+    const size_t index = static_cast<size_t>(handle.value()) - 1;
     if (index >= _textures.size())
         return nullptr;
 

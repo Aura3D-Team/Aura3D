@@ -160,7 +160,7 @@ private:
      *        nothing usable is bound.
      *
      * IRenderer lets a caller draw with no texture and lets drawBatch2D() be
-     * handed INVALID_HANDLE, but the shaders always sample. A 1x1 opaque white
+     * handed an invalid handle, but the shaders always sample. A 1x1 opaque white
      * texel is substituted in those cases, so vertex colour comes through
      * unchanged -- the same fallback the OpenGL and Vulkan paths use.
      */
@@ -218,7 +218,7 @@ private:
     MtlFixedArray<size_t> _overlayIndexCapacity{};
 
     //! 1x1 opaque white, created on first use; see resolveSampledTexture().
-    TextureHandle _fallbackTexture = INVALID_HANDLE;
+    TextureHandle _fallbackTexture;
 
     u32 _currentFrame = 0;
     bool _isInitialized = false;
@@ -226,9 +226,9 @@ private:
     bool _frameBegun = false;
     bool _renderPassActive = false;
 
-    VertexBufferHandle _currentVertexBuffer = INVALID_HANDLE;
-    IndexBufferHandle _currentIndexBuffer = INVALID_HANDLE;
-    TextureHandle _currentTexture = INVALID_HANDLE;
+    VertexBufferHandle _currentVertexBuffer;
+    IndexBufferHandle _currentIndexBuffer;
+    TextureHandle _currentTexture;
 
     f32 _clearR = 0.05f;
     f32 _clearG = 0.05f;

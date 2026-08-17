@@ -15,7 +15,7 @@ TextureHandle ResourceManager::loadTexture(const std::string& path)
     if (!_renderer) 
     {
         INK_ERROR << "ResourceManager: no renderer bound; cannot load " << path;
-        return INVALID_HANDLE;
+        return {};
     }
 
     auto it = _textureCache.find(path);
@@ -36,7 +36,7 @@ MeshHandle ResourceManager::loadMesh(const std::string& path)
 {
     if (!_renderer) {
         INK_ERROR << "ResourceManager: no renderer bound; cannot load " << path;
-        return INVALID_HANDLE;
+        return {};
     }
 
     auto it = _meshCache.find(path);
@@ -60,7 +60,7 @@ AudioClipHandle ResourceManager::loadSound(const std::string& path, AudioClipMod
     if (!_audio)
     {
         INK_ERROR << "ResourceManager: no audio engine bound; cannot load " << path;
-        return INVALID_HANDLE;
+        return {};
     }
 
     auto it = _soundCache.find(path);

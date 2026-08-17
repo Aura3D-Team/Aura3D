@@ -25,14 +25,14 @@ VertexBufferHandle MtlVertexBufferManager::create(std::span<const gfx::Vertex3D>
 {
     if (vertices.empty()) {
         INK_WARN << "MtlVertexBufferManager: refusing to upload an empty vertex span";
-        return INVALID_HANDLE;
+        return {};
     }
 
     NS::SharedPtr<MTL::Buffer> buffer = _allocator->createFromBytes(
         vertices.data(), vertices.size_bytes(), "Aura3D vertex buffer");
 
     if (!buffer)
-        return INVALID_HANDLE;
+        return {};
 
     _buffers.push_back(std::move(buffer));
     return static_cast<VertexBufferHandle>(_buffers.size()); // 1-based
@@ -43,7 +43,7 @@ MTL::Buffer* MtlVertexBufferManager::resolve(VertexBufferHandle handle) const no
     if (!isValidHandle(handle))
         return nullptr;
 
-    const size_t index = static_cast<size_t>(handle) - 1;
+    const size_t index = static_cast<size_t>(handle.value()) - 1;
     if (index >= _buffers.size())
         return nullptr;
 

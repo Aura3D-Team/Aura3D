@@ -76,7 +76,7 @@ private:
     static constexpr GLuint kTrackedUnits = 8;
 
     std::unordered_map<TextureHandle, GlTextureData> _textures;
-    TextureHandle _nextHandle = 1;
+    TextureHandle _nextHandle{1};
 
     //! GL texture name bound to each tracked unit; 0 means none/unknown.
     std::array<GLuint, kTrackedUnits> _boundToUnit{};

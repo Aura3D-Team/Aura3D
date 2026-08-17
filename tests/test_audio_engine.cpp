@@ -115,18 +115,18 @@ void test_invalid_inputs_are_rejected()
 {
     TestRig rig;
 
-    AURA_CHECK(!isValidHandle(rig.engine->play(INVALID_HANDLE)),
+    AURA_CHECK(!isValidHandle(rig.engine->play(AudioClipHandle{})),
               "play: an invalid clip handle yields no voice");
 
     // A handle in range but never issued: nothing should resolve it.
-    AURA_CHECK(!isValidHandle(rig.engine->play(12345u)),
+    AURA_CHECK(!isValidHandle(rig.engine->play(AudioClipHandle{12345u})),
               "play: an unknown clip handle yields no voice");
 
     AudioClipData empty;
     AURA_CHECK(!isValidHandle(rig.engine->createClip(empty)),
               "createClip: invalid PCM yields no handle");
 
-    AURA_CHECK(!rig.engine->isPlaying(INVALID_HANDLE),
+    AURA_CHECK(!rig.engine->isPlaying(AudioSourceHandle{}),
               "isPlaying: the invalid sentinel is never playing");
 }
 

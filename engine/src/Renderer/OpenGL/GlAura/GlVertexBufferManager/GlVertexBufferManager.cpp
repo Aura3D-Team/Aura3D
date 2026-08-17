@@ -76,7 +76,7 @@ void GlVertexBufferManager::cleanup()
         glDeleteBuffers(1, &data.vbo);
     }
     _buffers.clear();
-    _nextHandle = 1;
+    _nextHandle = VertexBufferHandle{1};
     _boundVao = 0;
 }
 

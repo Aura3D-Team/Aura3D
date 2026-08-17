@@ -63,7 +63,7 @@ struct AudioListener3D {
  * @brief Everything needed to start one voice.
  */
 struct AudioSourceDesc {
-    AudioClipHandle clip = INVALID_HANDLE;
+    AudioClipHandle clip;
 
     //! Restart from the beginning on reaching the end instead of finishing.
     bool loop = false;
@@ -172,7 +172,7 @@ public:
     /**
      * @brief Starts a voice.
      *
-     * @return A handle to the new voice, or INVALID_HANDLE when @p desc names
+     * @return A handle to the new voice, or an invalid handle when @p desc names
      *         an unknown clip or every voice slot is busy. Voice exhaustion is
      *         a dropped sound, not an error: the alternative is stealing a
      *         voice from something already audible.
@@ -222,8 +222,8 @@ public:
      * Reclaims the slots of voices that finished on the audio thread and tops
      * up streaming buffers. Skipping it does not break playback — the mixer is
      * driven by the device, not by this — but finished voices stop being
-     * recycled, so the pool eventually fills and play() starts returning
-     * INVALID_HANDLE.
+     * recycled, so the pool eventually fills and play() starts returning an
+     * invalid handle.
      */
     void update(f32 deltaSeconds);
 
@@ -264,7 +264,7 @@ private:
      * took its place.
      */
     struct Voice {
-        AudioClipHandle clip = INVALID_HANDLE;
+        AudioClipHandle clip;
         //! Playback position, in frames from the clip's start. A plain integer
         //! because clips are resampled to the device rate once at load, which
         //! keeps the mixer's inner loop to an add and leaves no fractional
@@ -307,7 +307,9 @@ private:
     //! game thread does not contend with the mixer, which only reads clips.
     mutable std::mutex _clipMutex;
     std::unordered_map<AudioClipHandle, Clip> _clips;
-    AudioClipHandle _nextClipHandle = 1;
+    //! Raw counter, not AudioClipHandle: it is never itself handed out, only
+    //! ever wrapped into one at the point a clip is created (see createClip()).
+    AudioClipHandle::ValueType _nextClipHandle = 1;
 
     //! Atomic rather than mutex-guarded: read once per mixed block and written
     //! from the game thread, with no invariant tying it to anything else.

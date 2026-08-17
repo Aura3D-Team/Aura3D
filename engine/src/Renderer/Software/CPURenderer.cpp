@@ -73,7 +73,7 @@ void CPURenderer::cleanup()
 }
 
 //! Pools are indexed 0-based but handles are 1-based, so that no valid handle
-//! collides with INVALID_HANDLE and 0 stays reserved as "nothing bound".
+//! collides with the invalid-handle sentinel, and 0 stays reserved as "nothing bound".
 VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
 {
     _vertexBufferPool3d.push_back(std::move(vertices));
@@ -104,10 +104,10 @@ TextureHandle CPURenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 
 TextureHandle CPURenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
 {
-    if (!rgbaPixels || width == 0 || height == 0) 
+    if (!rgbaPixels || width == 0 || height == 0)
     {
         INK_ERROR << "CPURenderer: refusing to upload an empty texture";
-        return INVALID_HANDLE;
+        return {};
     }
 
     Texture tex(static_cast<int>(width), static_cast<int>(height));
@@ -128,7 +128,7 @@ TextureHandle CPURenderer::createTextureFromPixels(const u8* rgbaPixels, u32 wid
     }
 
     //! Textures are stored as mip-level vectors.
-    //! Handle is 1-based so that no valid handle collides with INVALID_HANDLE.
+    //! Handle is 1-based so that no valid handle collides with the invalid-handle sentinel.
     _texturePool.push_back({ std::move(tex) });
     return static_cast<TextureHandle>(_texturePool.size()); // 1-based
 }
@@ -138,7 +138,7 @@ TextureHandle CPURenderer::createDynamicTexture(u32 width, u32 height)
     if (width == 0 || height == 0)
     {
         INK_ERROR << "CPURenderer: refusing to allocate a zero-sized dynamic texture";
-        return INVALID_HANDLE;
+        return {};
     }
 
     //! Texture's constructor zero-fills, i.e. transparent black.
@@ -153,13 +153,13 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
     if (!rgbaPixels || width == 0 || height == 0)
         return;
 
-    if (!isValidHandle(handle) || handle > static_cast<TextureHandle>(_texturePool.size()))
+    if (!isValidHandle(handle) || handle.value() > _texturePool.size())
     {
         INK_ERROR << "CPURenderer: updateTextureRegion on an unknown texture";
         return;
     }
 
-    auto& mips = _texturePool[handle - 1];
+    auto& mips = _texturePool[handle.value() - 1];
     if (mips.empty())
         return;
 
@@ -344,10 +344,10 @@ glm::mat3 makeNormalMatrix(const glm::mat4& model) noexcept
 const Texture* CPURenderer::_resolveTexture(TextureHandle handle) const
 {
     // Handles are 1-based; anything else means "no texture".
-    if (!isValidHandle(handle) || handle > static_cast<TextureHandle>(_texturePool.size()))
+    if (!isValidHandle(handle) || handle.value() > _texturePool.size())
         return nullptr;
 
-    const auto& mips = _texturePool[handle - 1];
+    const auto& mips = _texturePool[handle.value() - 1];
     return mips.empty() ? nullptr : &mips[0];
 }
 
@@ -356,14 +356,14 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     if (!_frameBufferManager)
         return;
 
-    if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer > _vertexBufferPool3d.size())
+    if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer.value() > _vertexBufferPool3d.size())
         return;
 
-    if (!isValidHandle(_boundIndexBuffer) || _boundIndexBuffer > _indexBufferPool.size())
+    if (!isValidHandle(_boundIndexBuffer) || _boundIndexBuffer.value() > _indexBufferPool.size())
         return;
 
-    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer - 1];
-    const auto& indices = _indexBufferPool   [_boundIndexBuffer - 1];
+    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer.value() - 1];
+    const auto& indices = _indexBufferPool   [_boundIndexBuffer.value() - 1];
 
     const Texture* texture = _resolveTexture(_boundTexture);
 
@@ -418,10 +418,10 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     if (!_frameBufferManager)
         return;
 
-    if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer > _vertexBufferPool3d.size())
+    if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer.value() > _vertexBufferPool3d.size())
         return;
 
-    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer - 1];
+    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer.value() - 1];
 
     const Texture* texture = _resolveTexture(_boundTexture);
 

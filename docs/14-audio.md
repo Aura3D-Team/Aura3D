@@ -141,7 +141,7 @@ handle reads as "not playing" and cannot stop or modify whatever took its
 place. Check with `isPlaying()` rather than assuming a handle held across
 frames is still live.
 
-When every voice is busy, `play()` returns `INVALID_HANDLE` and the sound is
+When every voice is busy, `play()` returns an invalid handle and the sound is
 dropped. That is deliberate: cutting off something already audible to make
 room is more noticeable than one missing sound. Raise `audio.max_voices` if
 you hit it.

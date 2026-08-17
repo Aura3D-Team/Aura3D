@@ -70,7 +70,7 @@ void GlIndexBufferManager::cleanup()
         glDeleteBuffers(1, &data.ebo);
     }
     _buffers.clear();
-    _nextHandle = 1;
+    _nextHandle = IndexBufferHandle{1};
     _boundEbo = 0;
 }
 

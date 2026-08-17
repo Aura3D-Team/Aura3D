@@ -98,11 +98,11 @@ private:
     size_t _overlay2DVboBytes = 0; //! Current VBO allocation, in bytes.
     size_t _overlay2DEboBytes = 0; //! Current EBO allocation, in bytes.
     //! 1x1 opaque white, substituted when a batch asks for no texture.
-    TextureHandle _white2DTexture = INVALID_HANDLE;
+    TextureHandle _white2DTexture;
 
-    VertexBufferHandle _currentVertexBuffer = INVALID_HANDLE;
-    IndexBufferHandle _currentIndexBuffer  = INVALID_HANDLE;
-    TextureHandle _currentTexture = INVALID_HANDLE;
+    VertexBufferHandle _currentVertexBuffer;
+    IndexBufferHandle _currentIndexBuffer;
+    TextureHandle _currentTexture;
     f32 _clearR = 0.05f, _clearG = 0.05f, _clearB = 0.05f, _clearA = 1.0f;
 };
 

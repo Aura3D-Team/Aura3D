@@ -43,7 +43,7 @@ public:
 
 private:
     std::unordered_map<IndexBufferHandle, GlIndexBufferData> _buffers;
-    IndexBufferHandle _nextHandle = 1;
+    IndexBufferHandle _nextHandle{1};
 
     //! Element buffer known to be bound in the *current* VAO; 0 means unknown.
     //! Only trustworthy between VAO switches -- see invalidateBinding().

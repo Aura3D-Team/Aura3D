@@ -57,14 +57,14 @@ public:
     /**
      * @brief Uploads 16-bit indices.
      * @param[in] indices Indices to upload; an empty span is rejected.
-     * @return A 1-based handle, or INVALID_HANDLE when the upload failed.
+     * @return A 1-based handle, or an invalid handle when the upload failed.
      */
     [[nodiscard]] IndexBufferHandle create(std::span<const u16> indices);
 
     /**
      * @brief Uploads 32-bit indices.
      * @param[in] indices Indices to upload; an empty span is rejected.
-     * @return A 1-based handle, or INVALID_HANDLE when the upload failed.
+     * @return A 1-based handle, or an invalid handle when the upload failed.
      */
     [[nodiscard]] IndexBufferHandle create(std::span<const u32> indices);
 
@@ -88,7 +88,7 @@ private:
      * @param[in] byteSize Its size in bytes.
      * @param[in] indexType Width Metal should read the indices at.
      * @param[in] indexCount Number of indices.
-     * @return A 1-based handle, or INVALID_HANDLE on failure.
+     * @return A 1-based handle, or an invalid handle on failure.
      */
     [[nodiscard]] IndexBufferHandle upload(const void* bytes, size_t byteSize,
                                           MTL::IndexType indexType, u32 indexCount);

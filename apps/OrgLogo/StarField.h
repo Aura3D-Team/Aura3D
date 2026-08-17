@@ -96,7 +96,7 @@ private:
     std::vector<aura3d::gfx::Vertex2D> _vertices;
     std::vector<u32> _indices;
 
-    aura3d::TextureHandle _atlas = aura3d::INVALID_HANDLE;
+    aura3d::TextureHandle _atlas;
     UvRect _softUv{};
     UvRect _spikedUv{};
     UvRect _cometUv{};

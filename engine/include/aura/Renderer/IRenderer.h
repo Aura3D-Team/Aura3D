@@ -179,7 +179,7 @@ public:
      * @param[in] rgbaPixels Pointer to @p width * @p height * 4 bytes, RGBA order.
      * @param[in] width Texture width in pixels.
      * @param[in] height Texture height in pixels.
-     * @return TextureHandle Binding reference, or INVALID_HANDLE on failure.
+     * @return TextureHandle Binding reference, or an invalid handle on failure.
      */
     virtual TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) = 0;
 
@@ -197,7 +197,7 @@ public:
      *
      * @param[in] width Texture width in pixels.
      * @param[in] height Texture height in pixels.
-     * @return TextureHandle for the new texture, or INVALID_HANDLE on failure.
+     * @return TextureHandle for the new texture, or an invalid handle on failure.
      */
     virtual TextureHandle createDynamicTexture(u32 width, u32 height) = 0;
 
@@ -250,7 +250,7 @@ public:
      * megabytes of vertices, and that copy is pure waste when the source is
      * about to be destroyed anyway.
      *
-     * @param[in] mesh Geometry to upload; an empty mesh yields INVALID_HANDLE.
+     * @param[in] mesh Geometry to upload; an empty mesh yields an invalid handle.
      * @return MeshHandle referencing the uploaded pair.
      */
     virtual MeshHandle createMesh(const gfx::Mesh3D& mesh);
@@ -276,9 +276,9 @@ public:
      * available for advanced use.
      *
      * @param[in] mesh Mesh to draw.
-     * @param[in] texture Optional texture; INVALID_HANDLE keeps the current binding.
+     * @param[in] texture Optional texture; an invalid handle keeps the current binding.
      */
-    virtual void drawMesh(MeshHandle mesh, TextureHandle texture = INVALID_HANDLE);
+    virtual void drawMesh(MeshHandle mesh, TextureHandle texture = {});
 
     /**
      * @struct DrawItem
@@ -286,9 +286,9 @@ public:
      *        which surface, and where.
      */
     struct DrawItem {
-        MeshHandle mesh = INVALID_HANDLE;
-        //! INVALID_HANDLE leaves whatever bindMaterial()/bindTexture() last selected.
-        MaterialHandle material = INVALID_HANDLE;
+        MeshHandle mesh;
+        //! An invalid handle leaves whatever bindMaterial()/bindTexture() last selected.
+        MaterialHandle material;
         glm::mat4 model{1.0f};
     };
 
@@ -420,7 +420,7 @@ public:
      *
      * @param[in] vertices Batch vertices in window-pixel space.
      * @param[in] indices Triangle list into @p vertices.
-     * @param[in] texture Texture sampled by the batch; INVALID_HANDLE draws
+     * @param[in] texture Texture sampled by the batch; an invalid handle draws
      *        untextured (vertex colour only).
      */
     virtual void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
@@ -489,8 +489,8 @@ protected:
      * @brief The vertex/index buffer pair a MeshHandle resolves to.
      */
     struct MeshRecord {
-        VertexBufferHandle vertexBuffer = INVALID_HANDLE;
-        IndexBufferHandle indexBuffer  = INVALID_HANDLE;
+        VertexBufferHandle vertexBuffer;
+        IndexBufferHandle indexBuffer;
         u32 indexCount   = 0;
     };
 

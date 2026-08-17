@@ -205,10 +205,10 @@ void MetalRenderer::cleanup()
     }
 
     //! The texture pool dies with _textureManager, so drop the cached handle.
-    _fallbackTexture = INVALID_HANDLE;
-    _currentVertexBuffer = INVALID_HANDLE;
-    _currentIndexBuffer = INVALID_HANDLE;
-    _currentTexture = INVALID_HANDLE;
+    _fallbackTexture = {};
+    _currentVertexBuffer = {};
+    _currentIndexBuffer = {};
+    _currentTexture = {};
 
     /*
      * Reverse construction order: the pipelines and pools reference the device,
@@ -235,7 +235,7 @@ void MetalRenderer::cleanup()
 VertexBufferHandle MetalRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
 {
     if (!_vertexManager)
-        return INVALID_HANDLE;
+        return {};
 
     /*
      * The rvalue reference cannot be honoured, and could not be by any Metal
@@ -252,7 +252,7 @@ VertexBufferHandle MetalRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&
 IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u16>&& indices)
 {
     if (!_indexManager)
-        return INVALID_HANDLE;
+        return {};
 
     const std::vector<u16> owned = std::move(indices);
     return _indexManager->create(owned);
@@ -261,7 +261,7 @@ IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u16>&& indices)
 IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u32>&& indices)
 {
     if (!_indexManager)
-        return INVALID_HANDLE;
+        return {};
 
     const std::vector<u32> owned = std::move(indices);
     return _indexManager->create(owned);
@@ -270,7 +270,7 @@ IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u32>&& indices)
 TextureHandle MetalRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 {
     if (!_textureManager)
-        return INVALID_HANDLE;
+        return {};
 
     const std::array<u8, 4> texel = {r, g, b, a};
     return _textureManager->createFromPixels(texel.data(), 1, 1);
@@ -279,7 +279,7 @@ TextureHandle MetalRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 TextureHandle MetalRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
 {
     if (!_textureManager)
-        return INVALID_HANDLE;
+        return {};
 
     return _textureManager->createFromPixels(rgbaPixels, width, height);
 }
@@ -287,7 +287,7 @@ TextureHandle MetalRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 w
 TextureHandle MetalRenderer::createDynamicTexture(u32 width, u32 height)
 {
     if (!_textureManager)
-        return INVALID_HANDLE;
+        return {};
 
     return _textureManager->createDynamic(width, height);
 }

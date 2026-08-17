@@ -37,7 +37,7 @@ in one draw":
 - **The whole batch is one draw call** — a 500-quad HUD costs the same as a
   single quad. Vertex/index data is copied into backend-owned buffers, so
   your arrays can be reused or discarded the instant this returns.
-- `texture = INVALID_HANDLE` draws untextured, vertex-color only.
+- an invalid `texture` (a default-constructed `TextureHandle{}`) draws untextured, vertex-color only.
 
 Call it **between `beginRenderPass()`/`endRenderPass()`, after your 3D
 draws** — it leaves no 2D pipeline state bound, so the next 3D draw call

@@ -45,7 +45,7 @@ public:
     struct Batch {
         std::vector<gfx::Vertex2D> vertices;
         std::vector<u32> indices;
-        TextureHandle texture = INVALID_HANDLE;
+        TextureHandle texture;
     };
 
     RecordingRenderer() : IRenderer(wma::WindowDetails{}) {}
@@ -67,11 +67,11 @@ public:
     void initialize(AuraSettings*, const JobSystem*) override {}
     void handleWindowChanges() override {}
     void cleanup() override {}
-    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&&) override { return INVALID_HANDLE; }
-    IndexBufferHandle createIndexBuffer(std::vector<u16>&&) override { return INVALID_HANDLE; }
-    IndexBufferHandle createIndexBuffer(std::vector<u32>&&) override { return INVALID_HANDLE; }
-    TextureHandle createSolidColorTexture(u8, u8, u8, u8) override { return INVALID_HANDLE; }
-    TextureHandle createTextureFromPixels(const u8*, u32, u32) override { return INVALID_HANDLE; }
+    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&&) override { return {}; }
+    IndexBufferHandle createIndexBuffer(std::vector<u16>&&) override { return {}; }
+    IndexBufferHandle createIndexBuffer(std::vector<u32>&&) override { return {}; }
+    TextureHandle createSolidColorTexture(u8, u8, u8, u8) override { return {}; }
+    TextureHandle createTextureFromPixels(const u8*, u32, u32) override { return {}; }
     void beginFrame() override {}
     void beginRenderPass() override {}
     void endRenderPass() override {}
@@ -92,7 +92,7 @@ protected:
     void createWindow(const char*, const wma::WindowBackend&) override {}
 
 private:
-    TextureHandle _nextTexture = 0;
+    TextureHandle _nextTexture{0};
 };
 
 constexpr glm::vec2 kPanelOrigin{100.0f, 100.0f};

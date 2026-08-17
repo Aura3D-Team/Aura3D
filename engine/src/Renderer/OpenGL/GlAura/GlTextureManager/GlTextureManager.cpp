@@ -17,7 +17,7 @@ TextureHandle GlTextureManager::createTextureFromPixels(const u8* rgba, u32 widt
     if (!rgba || width == 0 || height == 0)
     {
         INK_ERROR << "GlTextureManager: refusing to upload an empty texture";
-        return INVALID_HANDLE;
+        return {};
     }
 
     auto handle = _nextHandle++;
@@ -55,7 +55,7 @@ TextureHandle GlTextureManager::createDynamicTexture(u32 width, u32 height)
     if (width == 0 || height == 0)
     {
         INK_ERROR << "GlTextureManager: refusing to allocate a zero-sized dynamic texture";
-        return INVALID_HANDLE;
+        return {};
     }
 
     auto handle = _nextHandle++;
@@ -168,7 +168,7 @@ void GlTextureManager::cleanup()
         glDeleteTextures(1, &data.texture);
     }
     _textures.clear();
-    _nextHandle = 1;
+    _nextHandle = TextureHandle{1};
     //! The names just went away; nothing cached about them is meaningful.
     invalidateBindings();
 }

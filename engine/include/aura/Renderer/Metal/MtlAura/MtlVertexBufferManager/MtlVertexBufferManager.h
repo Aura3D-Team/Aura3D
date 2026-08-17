@@ -48,7 +48,7 @@ public:
      * @brief Uploads @p vertices and returns a handle to the result.
      *
      * @param[in] vertices Geometry to upload; an empty span is rejected.
-     * @return A 1-based handle, or INVALID_HANDLE when the upload failed.
+     * @return A 1-based handle, or an invalid handle when the upload failed.
      */
     [[nodiscard]] VertexBufferHandle create(std::span<const gfx::Vertex3D> vertices);
 

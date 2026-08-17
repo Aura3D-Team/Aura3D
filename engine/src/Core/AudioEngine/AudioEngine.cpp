@@ -132,7 +132,7 @@ AudioClipHandle AudioEngine::loadClip(const std::string& path, AudioClipMode mod
 AudioClipHandle AudioEngine::createClip(const AudioClipData& data, AudioClipMode mode)
 {
     if (!data.valid())
-        return INVALID_HANDLE;
+        return {};
 
     Clip clip;
     clip.channelCount = data.channelCount;
@@ -141,7 +141,7 @@ AudioClipHandle AudioEngine::createClip(const AudioClipData& data, AudioClipMode
 
     const std::scoped_lock lock(_clipMutex);
 
-    const AudioClipHandle handle = _nextClipHandle++;
+    const AudioClipHandle handle{_nextClipHandle++};
     _clips.emplace(handle, std::move(clip));
     return handle;
 }
@@ -160,7 +160,7 @@ void AudioEngine::unloadClip(AudioClipHandle clip) noexcept
             if (voice.active && voice.clip == clip)
             {
                 voice.active = false;
-                voice.clip   = INVALID_HANDLE;
+                voice.clip   = {};
             }
         }
     }
@@ -180,7 +180,7 @@ void AudioEngine::unloadAllClips() noexcept
 AudioSourceHandle AudioEngine::play(const AudioSourceDesc& desc)
 {
     if (!isValidHandle(desc.clip))
-        return INVALID_HANDLE;
+        return {};
 
     {
         //! Verified before a slot is taken: starting a voice on a clip that
@@ -189,7 +189,7 @@ AudioSourceHandle AudioEngine::play(const AudioSourceDesc& desc)
         if (!_clips.contains(desc.clip))
         {
             INK_WARN << "[Aura3D] play() called with an unknown clip handle";
-            return INVALID_HANDLE;
+            return {};
         }
     }
 
@@ -202,7 +202,7 @@ AudioSourceHandle AudioEngine::play(const AudioSourceDesc& desc)
     {
         //! Every voice is busy. Dropping the newest request is the lesser evil
         //! against cutting off something already audible mid-sound.
-        return INVALID_HANDLE;
+        return {};
     }
 
     const usize index = static_cast<usize>(std::distance(_voices.begin(), slot));
@@ -245,7 +245,7 @@ void AudioEngine::stop(AudioSourceHandle source) noexcept
         return;
 
     _voices[slot].active = false;
-    _voices[slot].clip   = INVALID_HANDLE;
+    _voices[slot].clip   = {};
 }
 
 void AudioEngine::stopAll() noexcept
@@ -255,7 +255,7 @@ void AudioEngine::stopAll() noexcept
     for (Voice& voice : _voices)
     {
         voice.active = false;
-        voice.clip   = INVALID_HANDLE;
+        voice.clip   = {};
     }
 }
 
@@ -362,8 +362,8 @@ void AudioEngine::update(f32 /*deltaSeconds*/)
 
     for (Voice& voice : _voices)
     {
-        if (!voice.active && voice.clip != INVALID_HANDLE)
-            voice.clip = INVALID_HANDLE;
+        if (!voice.active && isValidHandle(voice.clip))
+            voice.clip = {};
     }
 }
 
@@ -395,8 +395,8 @@ void AudioEngine::resumeDevice()
 
 AudioSourceHandle AudioEngine::makeSourceHandle(usize slot, u16 generation) noexcept
 {
-    return static_cast<AudioSourceHandle>((static_cast<u32>(generation) << kVoiceSlotBits) |
-                                          (static_cast<u32>(slot) & kVoiceSlotMask));
+    return AudioSourceHandle{(static_cast<u32>(generation) << kVoiceSlotBits) |
+                             (static_cast<u32>(slot) & kVoiceSlotMask)};
 }
 
 bool AudioEngine::resolveVoice(AudioSourceHandle handle, usize& slotOut) const noexcept
@@ -404,8 +404,8 @@ bool AudioEngine::resolveVoice(AudioSourceHandle handle, usize& slotOut) const n
     if (!isValidHandle(handle))
         return false;
 
-    const usize slot = static_cast<usize>(handle & kVoiceSlotMask);
-    const u16 generation = static_cast<u16>(handle >> kVoiceSlotBits);
+    const usize slot = static_cast<usize>(handle.value() & kVoiceSlotMask);
+    const u16 generation = static_cast<u16>(handle.value() >> kVoiceSlotBits);
 
     if (slot >= _voices.size())
         return false;

@@ -20,8 +20,8 @@ namespace aura3d {
  *       without another API break.
  */
 struct Material {
-    /// Albedo texture. INVALID_HANDLE leaves whatever texture is already bound.
-    TextureHandle albedo = INVALID_HANDLE; //! The base color image/texture.
+    /// Albedo texture. An invalid handle leaves whatever texture is already bound.
+    TextureHandle albedo; //! The base color image/texture.
     glm::vec4 tint = {1.0f, 1.0f, 1.0f, 1.0f}; //! Color multiplier applied over the texture.
     float roughness = 0.5f; //! How shiny it is (0.0 = mirror, 1.0 = matte).
     float metallic = 0.0f; //! What it's made of (0.0 = plastic/wood, 1.0 = pure metal).

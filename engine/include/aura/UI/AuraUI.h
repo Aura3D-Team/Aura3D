@@ -330,7 +330,7 @@ private:
 
     IRenderer* _renderer;
     std::unique_ptr<FontAtlas> _atlas;
-    TextureHandle _atlasTexture = INVALID_HANDLE;
+    TextureHandle _atlasTexture;
     glm::vec2 _solidUv{0.0f}; //! Opaque atlas texel every solid quad samples.
     bool _usable = false;     //! False when the atlas or its texture is missing.
 

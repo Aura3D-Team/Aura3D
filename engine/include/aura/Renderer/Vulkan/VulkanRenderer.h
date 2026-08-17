@@ -241,8 +241,8 @@ private:
     VkDescriptorSet _bindlessTextureSet2D = VK_NULL_HANDLE;
     //! 1x1 opaque white, at texture-array slot 0 (see textureArrayIndexOf()).
     //! Substituted when a batch asks for no texture, and shared with the 3D
-    //! path as the fallback for bindTexture(INVALID_HANDLE).
-    TextureHandle _fallbackTexture = INVALID_HANDLE;
+    //! path as the fallback for bindTexture() given an invalid handle.
+    TextureHandle _fallbackTexture;
 
     VkFixedArray<VkCommandBuffer> _cmdBuffers;
 
@@ -340,8 +340,8 @@ private:
     MsaaColorResources _msaaColor;
     VkSampleCountFlagBits _msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VertexBufferHandle _nextVbHandle = 1;
-    IndexBufferHandle _nextIbHandle = 1;
+    VertexBufferHandle _nextVbHandle{1};
+    IndexBufferHandle _nextIbHandle{1};
 
     /*
      * Buffer managers are still keyed by a synthetic "vb_N"/"ib_N" string.
@@ -400,14 +400,14 @@ private:
      */
     [[nodiscard]] const VertexBufferInfo* vertexBufferOf(VertexBufferHandle handle) const noexcept
     {
-        const size_t index = static_cast<size_t>(handle) - 1;
-        return (handle != INVALID_HANDLE && index < _vbByHandle.size()) ? &_vbByHandle[index] : nullptr;
+        const size_t index = static_cast<size_t>(handle.value()) - 1;
+        return (isValidHandle(handle) && index < _vbByHandle.size()) ? &_vbByHandle[index] : nullptr;
     }
 
     [[nodiscard]] const IndexBufferInfo* indexBufferOf(IndexBufferHandle handle) const noexcept
     {
-        const size_t index = static_cast<size_t>(handle) - 1;
-        return (handle != INVALID_HANDLE && index < _ibByHandle.size()) ? &_ibByHandle[index] : nullptr;
+        const size_t index = static_cast<size_t>(handle.value()) - 1;
+        return (isValidHandle(handle) && index < _ibByHandle.size()) ? &_ibByHandle[index] : nullptr;
     }
 
     /**
@@ -416,7 +416,7 @@ private:
      * Slot 0 is _fallbackTexture, written before any draw can happen (see
      * initialize()), and is returned for two distinct cases that must both
      * stay in-bounds rather than sampling an arbitrary element:
-     *  - INVALID_HANDLE: bindTexture() was never called, or drawBatch2D() was
+     *  - An invalid handle: bindTexture() was never called, or drawBatch2D() was
      *    handed no texture.
      *  - A handle beyond _bindlessTextureCapacity: the scene created more
      *    textures than this device's table can hold. Sampling out of range is
@@ -429,13 +429,13 @@ private:
         if (!isValidHandle(handle))
             return 0u;
 
-        const u32 slot = static_cast<u32>(handle) - 1u;
+        const u32 slot = handle.value() - 1u;
         return (slot < _bindlessTextureCapacity) ? slot : 0u;
     }
 
-    VertexBufferHandle _currentVertexBuffer = INVALID_HANDLE;
-    IndexBufferHandle _currentIndexBuffer = INVALID_HANDLE;
-    TextureHandle _currentTexture = INVALID_HANDLE;
+    VertexBufferHandle _currentVertexBuffer;
+    IndexBufferHandle _currentIndexBuffer;
+    TextureHandle _currentTexture;
 
     f32 _clearR = 0.05f;
     f32 _clearG = 0.05f;

@@ -228,7 +228,7 @@ void OpenGLRenderer::cleanup()
     _overlay2DVboBytes = _overlay2DEboBytes = 0;
     _overlay2DProjLoc = _overlay2DSamplerLoc = _sampler3DLoc = -1;
     //! The texture pool dies with _textureMgr below, so drop the cached handle.
-    _white2DTexture = INVALID_HANDLE;
+    _white2DTexture = {};
 
     _vertexMgr.reset();
     _indexMgr.reset();
@@ -265,7 +265,7 @@ TextureHandle OpenGLRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 
 
 TextureHandle OpenGLRenderer::createDynamicTexture(u32 width, u32 height)
 {
-    if (!_textureMgr) return INVALID_HANDLE;
+    if (!_textureMgr) return {};
     return _textureMgr->createDynamicTexture(width, height);
 }
 

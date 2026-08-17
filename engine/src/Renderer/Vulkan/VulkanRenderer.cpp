@@ -176,8 +176,8 @@ void VulkanRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
     /*
      * Reserves texture-array slot 0 (TextureHandle 1, guaranteed since this is
      * the very first texture created) for a fallback opaque-white texture.
-     * bindTexture(INVALID_HANDLE) and drawBatch2D()'s untextured-batch case
-     * both resolve to this same slot (see textureArrayIndexOf()), so a draw
+     * bindTexture() given an invalid handle and drawBatch2D()'s untextured-batch
+     * case both resolve to this same slot (see textureArrayIndexOf()), so a draw
      * that never bound a texture samples a slot that is always written,
      * instead of one descriptorBindingPartiallyBound only permits leaving
      * unwritten -- not dynamically sampling.
@@ -553,11 +553,11 @@ void VulkanRenderer::publishTexture(TextureHandle textureHandle)
      * Deliberately a plain range test rather than a comparison against
      * _fallbackTexture: the fallback is itself published from inside its own
      * createSolidColorTexture() call, before initialize() has assigned
-     * _fallbackTexture, so any check reading that member here sees
-     * INVALID_HANDLE and would wrongly reject slot 0 -- leaving the one slot
+     * _fallbackTexture, so any check reading that member here sees an
+     * invalid handle and would wrongly reject slot 0 -- leaving the one slot
      * every unbound draw samples permanently unwritten.
      */
-    const u32 slot = static_cast<u32>(textureHandle) - 1u;
+    const u32 slot = textureHandle.value() - 1u;
     if (slot >= _bindlessTextureCapacity)
     {
         INK_WARN << "Bindless texture table full (" << _bindlessTextureCapacity
@@ -575,7 +575,7 @@ void VulkanRenderer::updateOverlay2DTextureDescriptorSets(TextureHandle textureH
     if (!_vkOverlay2DPipelineManager || _bindlessTextureSet2D == VK_NULL_HANDLE)
         return;
 
-    const auto* texture = _vkTextureManager->getTexture(textureHandle);
+    const auto* texture = _vkTextureManager->getTexture(textureHandle.value());
     if (!texture)
         return;
 
@@ -587,7 +587,7 @@ void VulkanRenderer::updateTextureDescriptorSets(TextureHandle textureHandle)
 {
     if (!_pipelineReady || !_vkGraphicsPipelineManager || _bindlessTextureSet3D == VK_NULL_HANDLE) return;
 
-    const auto* texture = _vkTextureManager->getTexture(textureHandle);
+    const auto* texture = _vkTextureManager->getTexture(textureHandle.value());
     if (!texture) return;
 
     _vkDescriptorManager->updateTextureArrayElement(
@@ -775,7 +775,7 @@ void VulkanRenderer::cleanup()
     _pipelineReady = false;
     _renderPassActive = false;
     _frameBegun = false;
-    _fallbackTexture = INVALID_HANDLE;
+    _fallbackTexture = {};
 
 #ifdef AURA_ENABLE_DEBUG_MODE
     /*
@@ -830,7 +830,7 @@ void VulkanRenderer::cleanup()
 VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
 {
     auto handle = _nextVbHandle++;
-    std::string name = "vb_" + std::to_string(handle);
+    std::string name = "vb_" + std::to_string(handle.value());
 
     _vkVertexBufferManager->createVertexBuffer(
         name,
@@ -842,15 +842,15 @@ VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>
 
     _vbNames[handle] = name;
     //! Resolve once here so the draw path never has to (see _vbByHandle).
-    _vbByHandle.resize(handle);
-    _vbByHandle[handle - 1] = _vkVertexBufferManager->getVertexBuffer(name);
+    _vbByHandle.resize(handle.value());
+    _vbByHandle[handle.value() - 1] = _vkVertexBufferManager->getVertexBuffer(name);
     return handle;
 }
 
 IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16>&& indices)
 {
     auto handle = _nextIbHandle++;
-    std::string name = "ib_" + std::to_string(handle);
+    std::string name = "ib_" + std::to_string(handle.value());
 
     _vkIndexBufferManager->createIndexBuffer(
         name,
@@ -862,15 +862,15 @@ IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16>&& indices)
 
     _ibNames[handle] = name;
     //! Resolve once here so the draw path never has to (see _ibByHandle).
-    _ibByHandle.resize(handle);
-    _ibByHandle[handle - 1] = _vkIndexBufferManager->getIndexBuffer(name);
+    _ibByHandle.resize(handle.value());
+    _ibByHandle[handle.value() - 1] = _vkIndexBufferManager->getIndexBuffer(name);
     return handle;
 }
 
 IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u32>&& indices)
 {
     auto handle = _nextIbHandle++;
-    std::string name = "ib_" + std::to_string(handle);
+    std::string name = "ib_" + std::to_string(handle.value());
 
     _vkIndexBufferManager->createIndexBuffer(
         name,
@@ -883,8 +883,8 @@ IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u32>&& indices)
 
     _ibNames[handle] = name;
     //! Resolve once here so the draw path never has to (see _ibByHandle).
-    _ibByHandle.resize(handle);
-    _ibByHandle[handle - 1] = _vkIndexBufferManager->getIndexBuffer(name);
+    _ibByHandle.resize(handle.value());
+    _ibByHandle[handle.value() - 1] = _vkIndexBufferManager->getIndexBuffer(name);
     return handle;
 }
 
@@ -899,14 +899,14 @@ TextureHandle VulkanRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 
     if (!rgbaPixels || width == 0 || height == 0)
     {
         INK_ERROR << "VulkanRenderer: refusing to upload an empty texture";
-        return INVALID_HANDLE;
+        return {};
     }
 
     //! The manager issues the dense id itself, and the renderer adopts it as
     //! the public handle -- so a handle indexes straight into its storage.
-    const TextureHandle handle = _vkTextureManager->createTextureFromPixels(rgbaPixels, width, height);
-    if (handle == VkTextureManager::kInvalidTextureId)
-        return INVALID_HANDLE;
+    const TextureHandle handle{_vkTextureManager->createTextureFromPixels(rgbaPixels, width, height)};
+    if (handle.value() == VkTextureManager::kInvalidTextureId)
+        return {};
 
     publishTexture(handle);
     return handle;
@@ -917,12 +917,12 @@ TextureHandle VulkanRenderer::createDynamicTexture(u32 width, u32 height)
     if (width == 0 || height == 0)
     {
         INK_ERROR << "VulkanRenderer: refusing to allocate an empty dynamic texture";
-        return INVALID_HANDLE;
+        return {};
     }
 
-    const TextureHandle handle = _vkTextureManager->createDynamicTexture(width, height);
-    if (handle == VkTextureManager::kInvalidTextureId)
-        return INVALID_HANDLE;
+    const TextureHandle handle{_vkTextureManager->createDynamicTexture(width, height)};
+    if (handle.value() == VkTextureManager::kInvalidTextureId)
+        return {};
 
     /*
      * Descriptor sets are allocated once, here, and never again: the image,
@@ -939,7 +939,7 @@ void VulkanRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
 {
     if (!_vkTextureManager) return;
 
-    _vkTextureManager->updateRegion(handle, x, y, width, height, rgbaPixels);
+    _vkTextureManager->updateRegion(handle.value(), x, y, width, height, rgbaPixels);
 }
 
 void VulkanRenderer::beginFrame()
@@ -1522,8 +1522,8 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
         return;
 
     //! An untextured batch still samples, so stand in an opaque white texel --
-    //! the same reserved fallback slot 0 bindTexture(INVALID_HANDLE) uses (see
-    //! textureArrayIndexOf()), guaranteed populated since initialize().
+    //! the same reserved fallback slot 0 bindTexture() given an invalid handle
+    //! uses (see textureArrayIndexOf()), guaranteed populated since initialize().
     const TextureHandle sampled = isValidHandle(texture) ? texture : _fallbackTexture;
 
     if (_bindlessTextureSet2D == VK_NULL_HANDLE)

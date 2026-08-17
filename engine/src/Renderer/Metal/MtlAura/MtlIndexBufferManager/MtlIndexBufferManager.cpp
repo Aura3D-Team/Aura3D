@@ -38,14 +38,14 @@ IndexBufferHandle MtlIndexBufferManager::upload(const void* bytes, size_t byteSi
 {
     if (indexCount == 0) {
         INK_WARN << "MtlIndexBufferManager: refusing to upload an empty index span";
-        return INVALID_HANDLE;
+        return {};
     }
 
     NS::SharedPtr<MTL::Buffer> buffer =
         _allocator->createFromBytes(bytes, byteSize, "Aura3D index buffer");
 
     if (!buffer)
-        return INVALID_HANDLE;
+        return {};
 
     /*
      * The record borrows the buffer that _buffers owns; the two vectors are
@@ -63,7 +63,7 @@ const IndexBufferRecord* MtlIndexBufferManager::resolve(IndexBufferHandle handle
     if (!isValidHandle(handle))
         return nullptr;
 
-    const size_t index = static_cast<size_t>(handle) - 1;
+    const size_t index = static_cast<size_t>(handle.value()) - 1;
     if (index >= _records.size())
         return nullptr;
 

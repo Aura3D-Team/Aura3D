@@ -137,7 +137,7 @@ private:
 
     IRenderer* _renderer;
     std::unique_ptr<FontAtlas> _atlas;
-    TextureHandle _atlasTexture = INVALID_HANDLE;
+    TextureHandle _atlasTexture;
     glm::vec4 _color{1.0f};
     bool _usingTrueType = false;
 

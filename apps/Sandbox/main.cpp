@@ -25,8 +25,8 @@ namespace {
 
 /// One drawable instance: geometry, surface, and where it sits in the world.
 struct SceneObject {
-    MeshHandle mesh = INVALID_HANDLE;
-    MaterialHandle material = INVALID_HANDLE;
+    MeshHandle mesh;
+    MaterialHandle material;
     glm::vec3 position{0.0f};
     glm::vec3 scale{1.0f};
     float spinSpeed = 0.0f; // radians/second about +Y

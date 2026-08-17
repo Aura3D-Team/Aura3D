@@ -62,7 +62,7 @@ MeshHandle IRenderer::createMesh(gfx::Mesh3D&& mesh)
     if (mesh.empty())
     {
         INK_WARN << "createMesh: refusing to upload an empty mesh";
-        return INVALID_HANDLE;
+        return {};
     }
 
     MeshRecord record;
@@ -78,7 +78,7 @@ MeshHandle IRenderer::createMesh(gfx::Mesh3D&& mesh)
     if (!isValidHandle(record.vertexBuffer) || !isValidHandle(record.indexBuffer))
     {
         INK_ERROR << "createMesh: backend failed to allocate the buffer pair";
-        return INVALID_HANDLE;
+        return {};
     }
 
     _meshes.push_back(record);
@@ -158,18 +158,18 @@ void IRenderer::setLight(const gfx::LightUBO& light)
 
 const IRenderer::MeshRecord* IRenderer::getMesh(MeshHandle handle) const
 {
-    if (!isValidHandle(handle) || handle > _meshes.size())
+    if (!isValidHandle(handle) || handle.value() > _meshes.size())
         return nullptr;
 
-    return &_meshes[handle - 1];
+    return &_meshes[handle.value() - 1];
 }
 
 const Material* IRenderer::getMaterial(MaterialHandle handle) const
 {
-    if (!isValidHandle(handle) || handle > _materials.size())
+    if (!isValidHandle(handle) || handle.value() > _materials.size())
         return nullptr;
 
-    return &_materials[handle - 1];
+    return &_materials[handle.value() - 1];
 }
 
 void IRenderer::clearSharedResources()

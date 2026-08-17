@@ -116,6 +116,29 @@ All notable changes to Aura3D are documented in this file.
     `IRenderer` that records `drawBatch2D()` calls, covering the single-batch
     guarantee, press/release click semantics, drag, clipping and auto-height
     layout with no window, GPU or driver involved.
+- **Type-safe resource handles.** `VertexBufferHandle`, `IndexBufferHandle`,
+  `TextureHandle`, `MeshHandle`, `MaterialHandle`, `AudioClipHandle` and
+  `AudioSourceHandle` were previously all `using X = u32` — nothing stopped a
+  mesh handle from being passed where a texture handle was expected. Each is
+  now its own instantiation of a new `aura3d::Handle<Tag>` template
+  (`aura/Core/Handle.h`): an opaque `u32` wrapper distinguished per resource
+  kind at compile time, so passing one handle type where another is expected
+  is now a compiler error instead of a latent runtime bug.
+  - Same runtime shape and cost as before — still a plain `u32` under the
+    hood, still 1-based with a default-constructed handle as the invalid
+    sentinel (`isValidHandle()` unchanged in spirit) — so every existing
+    backend (Vulkan, OpenGL, Metal, CPU), `AudioEngine`'s generation-checked
+    voice handles, `ResourceManager`, `TextOverlay` and `aura3d::ui` carried
+    over with no behavioral change.
+  - Deliberately arithmetic-free beyond a narrow `++` for pool counters: a
+    handle converts to/from its raw value only explicitly (`.value()` /
+    `Handle{u32}`), so the few call sites that legitimately need to index a
+    pool or pack extra bits (see `AudioEngine::makeSourceHandle()`) do so
+    visibly, instead of a handle being usable as a general-purpose integer
+    everywhere it is held.
+  - `INVALID_HANDLE` is gone; a default-constructed handle (`{}`) is the
+    invalid value, matching modern C++ idiom and removing a global constant
+    that was really five-going-on-seven different sentinels wearing one name.
 
 ## [0.1.0]
 

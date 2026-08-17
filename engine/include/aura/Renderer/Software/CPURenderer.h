@@ -77,9 +77,9 @@ private:
      */
     std::vector<cpu::ScreenTriangle> _projectedTriangles;
 
-    VertexBufferHandle _boundVertexBuffer = INVALID_HANDLE;
-    IndexBufferHandle _boundIndexBuffer = INVALID_HANDLE;
-    TextureHandle _boundTexture = INVALID_HANDLE;
+    VertexBufferHandle _boundVertexBuffer;
+    IndexBufferHandle _boundIndexBuffer;
+    TextureHandle _boundTexture;
 };
 
 } // namespace cpu
