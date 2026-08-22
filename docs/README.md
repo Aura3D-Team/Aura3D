@@ -47,6 +47,7 @@ straight to whatever you need — each chapter links to the ones it builds on.
     performance or leaked memory.
 
 See also the [top-level README](../README.md) for the repository layout and
-CMake option reference, and `apps/Sandbox/main.cpp` / `apps/OrgLogo/main.cpp` /
-`apps/UIPlayground/main.cpp` for three complete, runnable programs these docs
-draw their examples from.
+CMake option reference, and `apps/Sandbox/main.cpp` / `apps/OrgLogo/main.cpp`
+for two complete, runnable programs these docs draw their examples from —
+Sandbox's own `aura3d::ui` panels are this chapter's worked example running
+live, alongside its camera, lighting and audio demos.

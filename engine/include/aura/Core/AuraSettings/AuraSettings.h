@@ -21,16 +21,9 @@
     X(Immediate)        \
     X(Mailbox)
 
-/**
- * @brief List of windowing backends wma can create a window through.
- *
- * Mirrors @c wma::WindowBackend (defined in libwma's core/Types.hpp, not
- * here) rather than declaring a fresh enum -- unlike VSYNC_MODE_LIST, which
- * owns the type it enumerates, this list only owns the string<->enum mapping
- * for a type the engine doesn't control. Keep in sync with wma::WindowBackend
- * by hand; there's no way to generate one from the other across the library
- * boundary.
- */
+/// Windowing backends wma can create a window through. Mirrors
+/// wma::WindowBackend; keep in sync by hand, there's no cross-library way to
+/// generate one from the other.
 #define WINDOW_BACKEND_LIST \
     X(GLFW)                 \
     X(SDL3)                 \
@@ -38,21 +31,12 @@
     X(WAYLAND)
 
 /**
- * @brief List of audio backends wma can play sound through.
+ * @brief Audio backends wma can play sound through. Mirrors wma::AudioBackend
+ *        (separate axis from WINDOW_BACKEND_LIST -- only SDL3 appears in both).
  *
- * Mirrors @c wma::AudioBackend, and like WINDOW_BACKEND_LIST it owns only the
- * string<->enum mapping for a type the engine does not control — keep the two
- * in sync by hand.
- *
- * Deliberately a separate axis from WINDOW_BACKEND_LIST: GLFW, X11 and Wayland
- * are display protocols with no audio API, so `window.backend` and
- * `audio.backend` are configured independently and only SDL3 appears in both.
- */
-/*
- * Two arguments, unlike the lists above: wma::AudioBackend's enumerators are
- * PascalCase (Alsa, Sdl3, Null) rather than the all-caps WindowBackend uses, so
- * stringifying the enumerator does not give a token that a case-folded config
- * value can be compared against. The second column carries that uppercase form.
+ * Two columns, unlike the lists above: AudioBackend's enumerators are
+ * PascalCase (Alsa, Sdl3, Null), so the second column carries the uppercase
+ * form a case-folded config value is compared against.
  */
 #define AUDIO_BACKEND_LIST \
     X(Alsa, "ALSA")        \
@@ -200,10 +184,8 @@ public:
     int         getWindowWidth()     const;   //! default 1280
     int         getWindowHeight()    const;   //! default 720
     std::string getWindowTitle()     const;   //! default "Aura3D"
-    //! Windowing library backend wma creates the window through. Default
-    //! "SDL3" -- the only backend all three of Vulkan/OpenGL/CPU exercise on
-    //! every platform this engine targets. An unrecognized value falls back
-    //! to SDL3 with a warning, the same pattern getRendererBackend() uses.
+    //! Windowing backend wma creates the window through. Default "SDL3";
+    //! unrecognized values fall back to it with a warning.
     wma::WindowBackend getWindowBackend() const;
     bool        getWindowResizable() const;   //! default true
     bool        getFullscreen()      const;   //! default false
@@ -215,14 +197,10 @@ public:
     std::string getRendererBackend()  const;  //! default "vulkan"
     bool        getValidationLayers() const;  //! default true in debug builds
     //! Frames the CPU may record ahead of the GPU (Vulkan only). Every
-    //! per-frame GPU resource -- command buffers, fences, semaphores, the
-    //! transform/light UBOs and their descriptor sets, the overlay's
-    //! vertex/index buffers -- is sized to this at renderer init; see
-    //! aura3d::vk::GetMaxFramesInFlight() (VkAuraCore.h), which is what every
-    //! one of those actually reads. Raising it trades a little latency and
-    //! per-frame-resource memory for more CPU/GPU overlap; see the WaitFence
-    //! phase in a AURA_PROFILE_FRAME report before assuming it will help --
-    //! it targets only that phase, not Acquire or Present.
+    //! per-frame GPU resource is sized to this at renderer init; see
+    //! aura3d::vk::GetMaxFramesInFlight(). Raising it trades latency and
+    //! memory for more CPU/GPU overlap -- check the WaitFence phase of an
+    //! AURA_PROFILE_FRAME report before assuming it will help.
     int         getMaxFramesInFlight() const; //! default 2
 
     //! Graphics (device selection & visual quality; Vulkan-only)
@@ -237,16 +215,9 @@ public:
     int getCpuThreads() const;
 
     //! Audio
-    /**
-     * @brief Platform API sound is played through.
-     *
-     * Default "auto", which resolves through wma::getDefaultAudioBackend() —
-     * ALSA on desktop Linux, SDL3 everywhere else. An unrecognized value falls
-     * back to that same default with a warning, matching getRendererBackend().
-     *
-     * Independent of window.backend: the two are separate axes, and a value
-     * here never constrains which windowing backend can be used.
-     */
+    //! Platform API sound is played through. Default "auto" (resolves via
+    //! wma::getDefaultAudioBackend(): ALSA on desktop Linux, SDL3 elsewhere).
+    //! Independent of window.backend.
     wma::AudioBackend getAudioBackend() const;
     f32  getMasterVolume()     const;         //! default 1.0, clamped to [0, 1]
     int  getAudioSampleRate()  const;         //! default 48000

@@ -90,11 +90,75 @@ struct Texture {
     i32 width;
     i32 height;
 
-    u32 sample(f32 u, f32 v) const noexcept 
+    /// Texel at (x, y), clamped to the texture's bounds -- clamp-to-edge,
+    /// matching the wrap mode every GPU backend sets on its dynamic textures.
+    [[nodiscard]] u32 texelClamped(int x, int y) const noexcept
     {
-        int x = INK_CLAMP(static_cast<int>(u * static_cast<f32>(width)),  0, width  - 1);
-        int y = INK_CLAMP(static_cast<int>(v * static_cast<f32>(height)), 0, height - 1);
+        x = INK_CLAMP(x, 0, width - 1);
+        y = INK_CLAMP(y, 0, height - 1);
         return data[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)];
+    }
+
+    /**
+     * @brief Bilinearly filtered sample at normalized (u, v), ARGB8888.
+     *
+     * Point sampling would throw away exactly the thing FontAtlas exists to
+     * produce: stb_truetype rasterizes glyphs with antialiased (grayscale)
+     * coverage, not 1-bit edges, but a pen position is essentially never on an
+     * integer pixel boundary, since it accumulates fractional glyph advances.
+     * Reading the nearest texel instead of blending its neighbours turns that
+     * soft coverage back into a hard, jagged edge the moment a glyph lands
+     * off-grid -- which is always. Vulkan, OpenGL and Metal all sample the
+     * atlas linearly already (see each backend's texture manager); this is
+     * what brings the software rasteriser's text to the same quality.
+     *
+     * Applies to every texture sampled here, not only glyphs -- consistent
+     * with the GPU backends, which do not special-case fonts either.
+     */
+    [[nodiscard]] u32 sample(f32 u, f32 v) const noexcept
+    {
+        /*
+         * Texel-centre convention: texel i's centre sits at (i + 0.5) / size,
+         * so subtracting 0.5 converts a UV back into continuous texel space
+         * where whole numbers land exactly on texel centres -- matching every
+         * GPU sampler this mirrors, rather than being offset half a texel
+         * from them.
+         */
+        const f32 fx = u * static_cast<f32>(width)  - 0.5f;
+        const f32 fy = v * static_cast<f32>(height) - 0.5f;
+
+        const f32 floorX = std::floor(fx);
+        const f32 floorY = std::floor(fy);
+        const int x0 = static_cast<int>(floorX);
+        const int y0 = static_cast<int>(floorY);
+
+        const f32 tx = fx - floorX;
+        const f32 ty = fy - floorY;
+
+        const u32 c00 = texelClamped(x0,     y0);
+        const u32 c10 = texelClamped(x0 + 1, y0);
+        const u32 c01 = texelClamped(x0,     y0 + 1);
+        const u32 c11 = texelClamped(x0 + 1, y0 + 1);
+
+        return lerpArgb(lerpArgb(c00, c10, tx), lerpArgb(c01, c11, tx), ty);
+    }
+
+private:
+    /// Per-channel linear interpolation between two ARGB8888 texels.
+    [[nodiscard]] static u32 lerpArgb(u32 a, u32 b, f32 t) noexcept
+    {
+        const auto lerpChannel = [a, b, t](u32 shift) noexcept -> u32 {
+            const f32 ca = static_cast<f32>((a >> shift) & 0xFFu);
+            const f32 cb = static_cast<f32>((b >> shift) & 0xFFu);
+            //! +0.5f rounds to nearest rather than truncating, which otherwise
+            //! biases every blended channel down by up to one part in 255.
+            return static_cast<u32>(ca + (cb - ca) * t + 0.5f) & 0xFFu;
+        };
+
+        return (lerpChannel(24) << 24)
+             | (lerpChannel(16) << 16)
+             | (lerpChannel( 8) <<  8)
+             |  lerpChannel( 0);
     }
 };
 
@@ -206,7 +270,7 @@ public:
      * Implements a half-space (edge-function) rasteriser with:
      *   - Barycentric perspective-correct attribute interpolation
      *   - Per-pixel depth test (when Config::useDepthBuffer is true)
-     *   - Optional nearest-neighbour texture sampling
+     *   - Optional bilinear texture sampling (see Texture::sample())
      *   - Vertex-colour × texture-colour modulation
      *
      * @param v0,v1,v2  Screen-space vertices from the vertex transform stage.

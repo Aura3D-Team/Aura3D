@@ -14,17 +14,12 @@
  * @file BenchmarkStats.h
  * @brief Distribution statistics over a run of samples.
  *
- * Exists because a mean frame time is close to useless on its own: a run that
- * averages 4 ms with a 40 ms hitch every second and a run that is flat at 4 ms
- * report the same number and feel nothing alike. What separates them is the
- * tail -- the median against the mean, p95/p99, and how often the samples cross
- * a budget -- so that is what this computes.
+ * A mean frame time alone can't distinguish a flat 4ms run from one averaging
+ * 4ms with a 40ms hitch every second, so this also computes median, p95/p99,
+ * and budget-crossing frequency.
  *
- * Unconditionally compiled, unlike the rest of the debug-mode machinery: it is
- * a pure function of its inputs with no global state and no instrumentation, so
- * gating it would only make it untestable in a default build. Nothing
- * references it unless a report is being produced, and an unreferenced header
- * costs nothing.
+ * Unconditionally compiled (pure functions, no global state), so it stays
+ * testable without AURA_ENABLE_DEBUG_MODE.
  */
 
 namespace aura3d {
@@ -48,14 +43,9 @@ struct StatSummary
     f64 p95    = 0.0;  ///< 95th percentile.
     f64 p99    = 0.0;  ///< 99th percentile.
 
-    /**
-     * @brief Median absolute deviation: median(|x - median|).
-     *
-     * Reported beside @c stddev rather than instead of it because the two
-     * disagreeing is itself the finding: a run whose MAD is small while its
-     * stddev is large is a smooth run with hitches, which is exactly the shape
-     * a mean hides.
-     */
+    //! Median absolute deviation: median(|x - median|). Reported beside stddev
+    //! because the two disagreeing is itself informative: small MAD with large
+    //! stddev means a smooth run with hitches.
     f64 mad = 0.0;
 };
 
@@ -72,15 +62,10 @@ class BenchmarkStats
 public:
     BenchmarkStats() = delete;
 
-    /**
-     * @brief Summarises @p samples, which need not be sorted.
-     *
-     * Copies and sorts internally, so this allocates. Prefer
-     * summarizeSorted() on a hot path or from a context where allocating would
-     * perturb what is being measured (see AllocationTracker::ScopedMute).
-     *
-     * @return A zeroed summary when @p samples is empty.
-     */
+    /// Summarises @p samples, which need not be sorted. Copies and sorts
+    /// internally (allocates); prefer summarizeSorted() on a hot path or
+    /// under AllocationTracker::ScopedMute.
+    /// @return A zeroed summary when @p samples is empty.
     [[nodiscard]] static StatSummary summarize(std::span<const f64> samples)
     {
         if (samples.empty())
@@ -104,12 +89,9 @@ public:
         return summary;
     }
 
-    /**
-     * @brief Summarises an already ascending-sorted @p sorted.
-     *
-     * Leaves StatSummary::mad at zero: it is not derivable from the sorted
-     * samples in one pass. Use summarize() when the MAD is wanted.
-     */
+    /// Summarises an already ascending-sorted @p sorted. Leaves
+    /// StatSummary::mad at zero (not derivable in one pass); use summarize()
+    /// when the MAD is wanted.
     [[nodiscard]] static StatSummary summarizeSorted(std::span<const f64> sorted) noexcept
     {
         StatSummary summary;
@@ -130,12 +112,9 @@ public:
             sum += sample;
         summary.mean = sum / n;
 
-        /*
-         * Two passes rather than the sum-of-squares shortcut. Frame times sit
-         * around a large mean with a small spread, which is precisely the input
-         * that makes E[x^2] - E[x]^2 cancel away its own significant digits and
-         * occasionally go negative.
-         */
+        //! Two passes rather than the sum-of-squares shortcut: frame times'
+        //! large mean + small spread makes E[x^2] - E[x]^2 cancel away its own
+        //! significant digits and occasionally go negative.
         f64 sumSquaredError = 0.0;
         for (const f64 sample : sorted)
         {
@@ -168,14 +147,10 @@ public:
         return sorted[lower] * (1.0 - weight) + sorted[upper] * weight;
     }
 
-    /**
-     * @brief Fraction of @p samples strictly above @p threshold.
-     *
-     * The non-parametric answer to "how often did this run blow the budget",
-     * making no assumption about the shape of the distribution. Compare against
-     * normalExceedance() -- the two diverging says the samples are not normal,
-     * which for frame times they usually are not.
-     */
+    /// Fraction of @p samples strictly above @p threshold: the non-parametric
+    /// "how often did this run blow the budget", no distribution assumed.
+    /// Compare against normalExceedance() -- disagreement means non-normal
+    /// samples, which frame times usually are.
     [[nodiscard]] static f64 empiricalExceedance(std::span<const f64> samples, f64 threshold) noexcept
     {
         if (samples.empty())
@@ -194,14 +169,12 @@ public:
     /**
      * @brief P(X > @p threshold) for a normal fit of @p summary.
      *
-     * The parametric counterpart of empiricalExceedance(), extrapolating past
-     * the longest sample actually observed -- which is the only way to put a
-     * number on a budget the run never once crossed. Treat it as an
-     * order-of-magnitude estimate: frame-time distributions are right-skewed,
-     * so a normal fit understates the far tail.
+     * Extrapolates past the longest sample actually observed, which is the
+     * only way to put a number on a budget never once crossed. Treat as
+     * order-of-magnitude only: frame times are right-skewed, so a normal fit
+     * understates the far tail.
      *
-     * @return 0 or 1 for a degenerate (zero-variance) run, per which side of
-     *         the threshold the constant value falls on.
+     * @return 0 or 1 for a degenerate (zero-variance) run.
      */
     [[nodiscard]] static f64 normalExceedance(const StatSummary& summary, f64 threshold) noexcept
     {
@@ -218,17 +191,9 @@ public:
         return 0.5 * std::erfc(z * kInvSqrt2);
     }
 
-    /**
-     * @brief Least-squares slope of @p samples against their own index.
-     *
-     * Units are "sample units per sample". Fed live allocation bytes it
-     * answers the leak question directly -- a run that ends where it started
-     * has a slope near zero however much it churned in between, while a steady
-     * climb shows up as bytes-per-frame no matter how small each frame's share
-     * of it was.
-     *
-     * @return 0 for fewer than two samples.
-     */
+    /// Least-squares slope of @p samples against their own index (units:
+    /// sample units per sample). Fed live allocation bytes, answers the leak
+    /// question directly. @return 0 for fewer than two samples.
     [[nodiscard]] static f64 trendSlope(std::span<const f64> samples) noexcept
     {
         LinearTrend trend;
@@ -238,15 +203,8 @@ public:
         return trend.slope();
     }
 
-    /**
-     * @class LinearTrend
-     * @brief Streaming least-squares slope against the sample index.
-     *
-     * The whole-run counterpart of trendSlope() for callers that keep only a
-     * bounded window of raw samples: this holds four running sums and no
-     * samples at all, so a leak that develops over a hundred thousand frames is
-     * still measured across every one of them.
-     */
+    /// Streaming least-squares slope against the sample index: trendSlope()
+    /// without keeping the samples, just four running sums.
     class LinearTrend
     {
     public:

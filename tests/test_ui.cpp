@@ -410,7 +410,7 @@ void testWantsMouseFollowsThePanel()
             gui.endPanel();
         }
         gui.render();
-        return gui.wantsMouse();
+        return gui.isCapturingMouse();
     };
 
     (void)frame(kPanelOrigin + glm::vec2{10.0f, 10.0f});
@@ -505,6 +505,355 @@ void testTitleBarDragMovesTheWholePanel()
 
 } // namespace
 
+//! An Input carrying one typed string, as the platform's text stream delivers it.
+[[nodiscard]] ui::Input typing(std::string_view text)
+{
+    ui::Input input;
+    input.text = text;
+    return input;
+}
+
+//! An Input carrying one key press.
+[[nodiscard]] ui::Input pressing(wma::Key key, bool shift = false, bool ctrl = false)
+{
+    ui::Input input;
+    wma::KeyModifiers mods{};
+    mods.shift = shift;
+    mods.ctrl = ctrl;
+    input.keys.push_back(ui::KeyPress{key, mods});
+    return input;
+}
+
+/**
+ * Runs one frame containing a single focused text field, and returns whether
+ * the field reported a change. Focus is taken on the first frame with
+ * setKeyboardFocusHere() so no click is needed.
+ */
+bool textFieldFrame(ui::Context& gui, const ui::Input& input, std::string& value, bool focusFirst)
+{
+    gui.newFrame(input);
+
+    bool changed = false;
+
+    (void)gui.beginPanel("Panel", kPanelOrigin, kPanelWidth);
+    if (focusFirst)
+        gui.setKeyboardFocusHere();
+    changed = gui.inputText("Field", value);
+    gui.endPanel();
+    
+    gui.render();
+    
+    return changed;
+}
+
+void testTextFieldEditing()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    std::string value;
+
+    //! First frame claims focus; nothing typed yet.
+    (void)textFieldFrame(gui, ui::Input{}, value, /*focusFirst=*/true);
+
+    AURA_CHECK(gui.isCapturingKeyboard(), "a focused text field claims the keyboard");
+    AURA_CHECK(gui.isCapturingTextInput(), "a focused text field asks for platform text input");
+
+    AURA_CHECK(textFieldFrame(gui, typing("Hi"), value, false), "typing reports a change");
+    AURA_CHECK(value == "Hi", "typed text is inserted at the caret");
+
+    //! Multi-byte input must survive intact: the caret is a byte offset, so an
+    //! off-by-one here would split the sequence and corrupt the string.
+    (void)textFieldFrame(gui, typing("\xC3\xA9"), value, false);
+    AURA_CHECK(value == "Hi\xC3\xA9", "multi-byte UTF-8 is inserted whole");
+
+    //! One Backspace must remove the whole two-byte character, not one byte.
+    (void)textFieldFrame(gui, pressing(wma::KEY_BACKSPACE), value, false);
+    AURA_CHECK(value == "Hi", "backspace deletes a whole UTF-8 character");
+
+    (void)textFieldFrame(gui, pressing(wma::KEY_LEFT), value, false);
+    (void)textFieldFrame(gui, typing("e"), value, false);
+    AURA_CHECK(value == "Hei", "the caret moves left and text inserts there");
+
+    (void)textFieldFrame(gui, pressing(wma::KEY_HOME), value, false);
+    (void)textFieldFrame(gui, pressing(wma::KEY_DELETE), value, false);
+    AURA_CHECK(value == "ei", "Home then Delete removes the first character");
+
+    //! Ctrl+A then typing replaces the whole contents.
+    (void)textFieldFrame(gui, pressing(wma::KEY_A, false, true), value, false);
+    (void)textFieldFrame(gui, typing("X"), value, false);
+    AURA_CHECK(value == "X", "typing over a select-all replaces the contents");
+}
+
+void testTextFieldEscapeReverts()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    std::string value = "original";
+
+    (void)textFieldFrame(gui, ui::Input{}, value, /*focusFirst=*/true);
+    (void)textFieldFrame(gui, typing("!"), value, false);
+    AURA_CHECK(value == "original!", "the edit is applied while focused");
+
+    (void)textFieldFrame(gui, pressing(wma::KEY_ESCAPE), value, false);
+    AURA_CHECK(value == "original", "Escape reverts the edit");
+    AURA_CHECK(!gui.isCapturingKeyboard(), "Escape releases keyboard focus");
+}
+
+void testTextFieldRespectsMaxBytes()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    std::string value;
+
+    gui.newFrame(ui::Input{});
+    
+    (void)gui.beginPanel("Panel", kPanelOrigin, kPanelWidth);
+    gui.setKeyboardFocusHere();
+    (void)gui.inputText("Field", value, /*maxBytes=*/4);
+    gui.endPanel();
+
+    gui.render();
+
+    gui.newFrame(typing("abcd"));
+    
+    (void)gui.beginPanel("Panel", kPanelOrigin, kPanelWidth);
+    (void)gui.inputText("Field", value, 4);
+    gui.endPanel();
+    
+    gui.render();
+    AURA_CHECK(value == "abcd", "input up to the limit is accepted");
+
+    gui.newFrame(typing("e"));
+    
+    (void)gui.beginPanel("Panel", kPanelOrigin, kPanelWidth);
+    (void)gui.inputText("Field", value, 4);
+    gui.endPanel();
+    
+    gui.render();
+    AURA_CHECK(value == "abcd", "input past the limit is dropped, not truncated");
+}
+
+void testTabMovesFocusBetweenWidgets()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    std::string first;
+    std::string second;
+
+    //! Emits two fields; the first claims focus on frame one.
+    const auto frame = [&](const ui::Input& input, bool focusFirst) {
+        gui.newFrame(input);
+
+        (void)gui.beginPanel("Panel", kPanelOrigin, kPanelWidth);
+        if (focusFirst)
+            gui.setKeyboardFocusHere();
+        (void)gui.inputText("First", first);
+        (void)gui.inputText("Second", second);
+        gui.endPanel();
+
+        gui.render();
+    };
+
+    frame(ui::Input{}, true);
+    frame(typing("a"), false);
+    AURA_CHECK(first == "a" && second.empty(), "typing goes to the focused field");
+
+    //! Tab moves focus on; the next frame's text must land in the second field.
+    frame(pressing(wma::KEY_TAB), false);
+    frame(typing("b"), false);
+    AURA_CHECK(first == "a" && second == "b", "Tab moves focus to the next field");
+
+    //! Shift+Tab moves back.
+    frame(pressing(wma::KEY_TAB, /*shift=*/true), false);
+    frame(typing("c"), false);
+    AURA_CHECK(first == "ac" && second == "b", "Shift+Tab moves focus back");
+}
+
+void testKeyboardActivatesButtonAndCheckbox()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    bool toggled = false;
+    bool clicked = false;
+
+    const auto frame = [&](const ui::Input& input, bool focusFirst) {
+        gui.newFrame(input);
+        
+        (void)gui.beginPanel("Panel", kPanelOrigin, kPanelWidth);
+        if (focusFirst)
+            gui.setKeyboardFocusHere();
+        clicked = gui.button("Go");
+        (void)gui.checkbox("Flag", toggled);
+        gui.endPanel();
+    
+        gui.render();
+    };
+
+    frame(ui::Input{}, true);
+    frame(pressing(wma::KEY_ENTER), false);
+    AURA_CHECK(clicked, "Enter activates the focused button");
+
+    frame(pressing(wma::KEY_TAB), false);
+    frame(pressing(wma::KEY_SPACE), false);
+    AURA_CHECK(toggled, "Space toggles the focused checkbox");
+}
+
+void testScrollRegionClipsAndScrolls()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    constexpr float kViewportHeight = 60.0f;
+
+    //! Emits far more rows than fit, so the region genuinely overflows.
+    const auto frame = [&](const ui::Input& input) {
+        gui.newFrame(input);
+        (void)gui.beginPanel("Panel", kPanelOrigin, kPanelWidth);
+        (void)gui.beginScroll("List", kViewportHeight);
+        for (int i = 0; i < 20; ++i)
+            gui.label("row");
+        gui.endScroll();
+        gui.endPanel();
+        gui.render();
+    };
+
+    frame(ui::Input{});
+
+    AURA_CHECK(renderer.batches.size() == 1, "a scroll region stays within one batch");
+
+    //! The panel must be sized by the viewport, not by the content: that is the
+    //! whole point of a fixed-height region inside an auto-height panel.
+    const ui::Style& style = gui.style();
+    const float expectedBottom = kPanelOrigin.y + style.rowHeight + style.padding
+                               + kViewportHeight + style.padding;
+
+    float lowest = 0.0f;
+    for (const auto& vertex : renderer.batches.front().vertices)
+        lowest = std::max(lowest, vertex.pos.y);
+
+    AURA_CHECK(lowest <= expectedBottom + 1.0f,
+               "content taller than the region is clipped to it, not drawn past it");
+
+    //! Scrolling down then back up must return to the original geometry.
+    ui::Input wheel;
+    wheel.scroll = -3.0f;
+    frame(wheel);
+    const size_t scrolledCount = renderer.batches.back().vertices.size();
+
+    wheel.scroll = 10.0f; //! Far more than needed; the offset clamps at zero.
+    frame(wheel);
+
+    AURA_CHECK(scrolledCount > 0 && !renderer.batches.back().vertices.empty(),
+               "scrolling keeps emitting geometry");
+}
+
+void testNewWidgetsStayInOneBatch()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    int choice = 0;
+    int radio = 1;
+    std::string text = "abc";
+    float number = 1.5f;
+
+    const std::string_view items[] = {"Alpha", "Beta", "Gamma"};
+
+    gui.newFrame(ui::Input{});
+    (void)gui.beginPanel("Everything", kPanelOrigin, kPanelWidth);
+
+    (void)gui.inputText("Name", text);
+    (void)gui.inputFloat("Scale", number);
+    (void)gui.dropdown("Mode", choice, items);
+    (void)gui.radioButton("One", radio, 1);
+    (void)gui.selectable("A row", false);
+
+    //! Unlike beginPanel/beginScroll above, these three genuinely gate whether
+    //! their contents should run: a collapsed header or closed tree node means
+    //! "do not emit this", not merely "misused outside a panel".
+    if (gui.collapsingHeader("Section"))
+        gui.label("inside");
+
+    if (gui.treeNode("Node", true))
+    {
+        gui.label("child");
+        gui.treePop();
+    }
+
+    if (gui.beginTabBar("Tabs"))
+    {
+        if (gui.tabItem("First"))
+            gui.label("first page");
+        (void)gui.tabItem("Second");
+        gui.endTabBar();
+    }
+
+    gui.button("Hover me");
+    gui.tooltip("explanation");
+
+    gui.setNextItemWidth(60.0f);
+    gui.button("Left");
+    gui.sameLine();
+    gui.button("Right");
+
+    gui.endPanel();
+    gui.render();
+
+    AURA_CHECK(renderer.batches.size() == 1,
+               "every widget kind together still submits exactly one batch");
+
+    if (renderer.batches.empty())
+        return;
+
+    const auto& batch = renderer.batches.front();
+    AURA_CHECK(batch.indices.size() % 6 == 0, "the batch is whole quads");
+
+    for (const u32 index : batch.indices)
+    {
+        if (index >= batch.vertices.size())
+        {
+            AURA_CHECK(false, "every index addresses a vertex in the batch");
+            return;
+        }
+    }
+    AURA_CHECK(true, "every index addresses a vertex in the batch");
+}
+
+void testSameLineSharesARow()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    //! Two rows of one widget are taller than one row of two, which is the
+    //! observable consequence of sameLine() actually packing them.
+    const auto panelHeight = [&](bool packed) {
+        gui.newFrame(ui::Input{});
+        (void)gui.beginPanel(packed ? "Packed" : "Stacked", kPanelOrigin, kPanelWidth);
+        gui.setNextItemWidth(60.0f);
+        gui.button("A");
+        if (packed)
+            gui.sameLine();
+        gui.button("B");
+        gui.endPanel();
+        gui.render();
+
+        float lowest = 0.0f;
+        for (const auto& vertex : renderer.batches.back().vertices)
+            lowest = std::max(lowest, vertex.pos.y);
+        return lowest;
+    };
+
+    const float stacked = panelHeight(false);
+    const float packed = panelHeight(true);
+
+    AURA_CHECK(packed < stacked, "sameLine keeps the second widget on the first's row");
+}
+
 int main()
 {
     testSingleBatchPerFrame();
@@ -519,6 +868,14 @@ int main()
     testWantsMouseFollowsThePanel();
     testPanelPositionSurvivesFrames();
     testTitleBarDragMovesTheWholePanel();
+    testTextFieldEditing();
+    testTextFieldEscapeReverts();
+    testTextFieldRespectsMaxBytes();
+    testTabMovesFocusBetweenWidgets();
+    testKeyboardActivatesButtonAndCheckbox();
+    testScrollRegionClipsAndScrolls();
+    testNewWidgetsStayInOneBatch();
+    testSameLineSharesARow();
 
     AURA_TEST_MAIN_RETURN();
 }

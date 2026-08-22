@@ -12,33 +12,19 @@
  * @file FrameProfiler.h
  * @brief Per-phase frame timing for the render loop.
  *
- * Exists because the interesting question in a render loop is almost never
- * "how long is a frame" but "which phase owns it", and the two most expensive
- * phases here -- waiting on a fence and presenting -- cost nothing in CPU
- * cycles while dominating wall time. A sampling profiler under-reports exactly
- * those; explicit scopes do not.
+ * Compiled out unless AURA_PROFILE_FRAME is defined: AURA_FRAME_SCOPE then
+ * expands to nothing and endFrame() is an empty inline, so a release build
+ * pays no clock reads, counters, or branches for this.
  *
- * Compiled out entirely unless AURA_PROFILE_FRAME is defined (see the CMake
- * option of the same name): with it off, AURA_FRAME_SCOPE expands to nothing
- * and FrameProfiler::report() is an empty inline function, so a release build
- * carries no clock reads, no counters and no branch.
- *
- * AURA_ENABLE_DEBUG_MODE adds a second, per-frame outlet on top of the periodic
- * log: a FrameObserver installed here is handed every frame's phase breakdown
- * as it closes, which is what lets aura3d::DebugMode compute percentiles rather
- * than only the rolling average this file prints. The observer machinery is
- * gated separately from AURA_PROFILE_FRAME so that a plain profiling build
- * keeps exactly the cost it had before.
+ * With AURA_ENABLE_DEBUG_MODE also on, a FrameObserver receives every frame's
+ * phase breakdown as it closes -- used by DebugMode for percentiles, on top
+ * of the periodic log this file prints on its own. Gated separately from
+ * AURA_PROFILE_FRAME so a plain profiling build keeps its original cost.
  */
 
 namespace aura3d {
 
-/**
- * @brief Phases of one frame, in the order the render loop executes them.
- *
- * Kept deliberately coarse: each entry is a phase you could act on. Splitting
- * finer would cost more clock reads than the phases it separates.
- */
+/// Phases of one frame, in render-loop order.
 enum class FramePhase : u32
 {
     WaitFence = 0,  ///< Blocking on the previous submission for this frame slot.
@@ -76,8 +62,7 @@ inline constexpr u32 kFramePhaseCount = static_cast<u32>(FramePhase::COUNT);
  * @struct FrameSample
  * @brief One frame's timings, as handed to a FrameObserver.
  *
- * Declared outside the AURA_PROFILE_FRAME guard so that a consumer -- the
- * benchmark report writer, a test feeding synthetic frames -- can be written
+ * Declared outside the AURA_PROFILE_FRAME guard so consumers can be written
  * and tested without the profiler being compiled in.
  */
 struct FrameSample
@@ -85,15 +70,9 @@ struct FrameSample
     //! Per-phase nanoseconds for this frame alone, indexed by FramePhase.
     std::array<i64, kFramePhaseCount> phaseNanos{};
 
-    /**
-     * @brief Wall-clock nanoseconds from the previous frame's close to this one's.
-     *
-     * Not the sum of @c phaseNanos, and deliberately: the difference between
-     * the two is everything the loop spent outside any scope -- the event pump,
-     * application logic, a frame limiter's sleep -- which is a finding rather
-     * than an error term. Zero for the very first frame, which has no
-     * predecessor to measure against.
-     */
+    /// Wall-clock nanoseconds since the previous frame closed. Not the sum of
+    /// @c phaseNanos -- the gap is time spent outside any scope (event pump,
+    /// application logic, a frame limiter's sleep). Zero on the first frame.
     i64 frameNanos = 0;
 };
 
@@ -101,10 +80,8 @@ struct FrameSample
  * @class FrameObserver
  * @brief Receives every closed frame, in order.
  *
- * @note onFrameSample() runs on the render thread inside AURA_FRAME_END(),
- *       between one frame and the next. It is on the frame path, so an
- *       implementation belongs in the "append to a preallocated buffer"
- *       category, not the "sort and write a file" one.
+ * @note Runs on the render thread inside AURA_FRAME_END(). Keep implementations
+ *       cheap (append to a preallocated buffer); this is on the frame path.
  */
 class FrameObserver
 {
@@ -120,11 +97,10 @@ public:
  * @class FrameProfiler
  * @brief Accumulates per-phase nanoseconds and logs a breakdown periodically.
  *
- * Single-threaded by construction: only the render thread opens scopes, which
- * is what lets the accumulators be plain integers rather than atomics. Worker
- * threads are measured through the phase that waits on them (RecordScene
- * blocks until every chunk is recorded), so their cost is already accounted
- * for without any cross-thread bookkeeping.
+ * Single-threaded by construction: only the render thread opens scopes, so
+ * the accumulators are plain integers, not atomics. Worker threads are
+ * measured through the phase that waits on them (RecordScene blocks until
+ * every chunk is recorded).
  */
 class FrameProfiler
 {
@@ -152,23 +128,16 @@ public:
     /**
      * @brief Installs @p observer, or clears it with nullptr.
      *
-     * Non-owning: the observer must outlive the render loop, which is what
-     * Engine's ownership of DebugMode gives it. One at a time -- a second
-     * install replaces the first rather than fanning out, since the only
-     * consumer is the report writer and a list would put an indirect call per
-     * entry on the frame path for it.
+     * Non-owning: must outlive the render loop. One at a time -- a second
+     * install replaces the first.
      */
     void setObserver(FrameObserver* observer) noexcept { _observer = observer; }
 
     [[nodiscard]] FrameObserver* observer() const noexcept { return _observer; }
 #endif
 
-    /**
-     * @brief RAII timer for one phase.
-     *
-     * Deliberately not nestable within the same phase: a phase is a span of
-     * the frame, not a call count, so overlapping scopes would double-count.
-     */
+    /// RAII timer for one phase. Not nestable within the same phase: a phase
+    /// is a span of the frame, and overlapping scopes would double-count.
     class Scope
     {
     public:
@@ -198,18 +167,15 @@ private:
     Clock::time_point _windowStart = Clock::now();
 
 #ifdef AURA_ENABLE_DEBUG_MODE
-    //! This frame's phases alone. _totals accumulates across the report window
-    //! and cannot be differenced back into per-frame values once summed.
+    //! This frame's phases alone; _totals accumulates across the report window.
     std::array<i64, kFramePhaseCount> _current{};
     Clock::time_point _lastFrameEnd = Clock::now();
     FrameObserver* _observer = nullptr;
 #endif
 };
 
-//! Two levels of indirection so that __LINE__ is expanded to its value before
-//! being pasted, rather than pasted literally: without them every scope in a
-//! translation unit is named _auraFrameScope__LINE__ and two in one block are a
-//! redefinition.
+//! Two levels of indirection so __LINE__ expands to a value before pasting;
+//! without them, two scopes in one block would both be named the same thing.
 #define AURA_FRAME_SCOPE_CAT_(a, b) a##b
 #define AURA_FRAME_SCOPE_NAME_(line) AURA_FRAME_SCOPE_CAT_(_auraFrameScope, line)
 
@@ -230,11 +196,8 @@ private:
 /**
  * @brief Installs @p observer as the frame sink, if this build has one.
  *
- * The unconditional face of FrameProfiler::setObserver(): a no-op when the
- * profiler is compiled out, so a caller (Engine) needs no `#ifdef` around
- * wiring up something that may simply never be called. Pass nullptr to detach,
- * which the owner must do before destroying the observer -- the profiler holds
- * a raw pointer.
+ * No-op when the profiler is compiled out. Pass nullptr to detach, which the
+ * owner must do before destroying the observer -- this holds a raw pointer.
  */
 inline void installFrameObserver([[maybe_unused]] FrameObserver* observer) noexcept
 {

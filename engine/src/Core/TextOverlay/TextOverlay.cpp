@@ -5,11 +5,7 @@
 #include <utility>
 
 namespace aura3d {
-
 namespace {
-
-//! Four vertices and six indices per glyph; reserving up front keeps the
-//! steady-state path free of reallocation.
 constexpr size_t kVerticesPerGlyph = 4;
 constexpr size_t kIndicesPerGlyph = 6;
 
@@ -34,11 +30,6 @@ TextOverlay::TextOverlay(IRenderer* renderer, const TextOverlayDesc& desc)
         }
         else
         {
-            /*
-             * A missing font is a degraded experience, not a fatal one: fall
-             * back to the embedded bitmap font so the overlay still draws on
-             * platforms where no asset was staged (WASM, Android).
-             */
             INK_WARN << loaded.error() << "; falling back to the embedded bitmap font";
         }
     }
@@ -46,11 +37,6 @@ TextOverlay::TextOverlay(IRenderer* renderer, const TextOverlayDesc& desc)
     if (!_atlas)
         _atlas = FontAtlas::builtinBitmap(atlasDesc);
 
-    /*
-     * Allocate the atlas texture once, here. Every glyph rasterized later is
-     * patched into it with updateTextureRegion(), so the renderer never has to
-     * create another texture for the overlay's whole life.
-     */
     _atlasTexture = _renderer->createDynamicTexture(_atlas->width(), _atlas->height());
     if (!isValidHandle(_atlasTexture))
         INK_ERROR << "TextOverlay: could not allocate the glyph atlas texture";
@@ -72,8 +58,6 @@ void TextOverlay::drawText(std::string_view text, float x, float y,
     if (_indices.empty())
         return;
 
-    //! Strictly after buildBatch(): that is what rasterizes the new glyphs this
-    //! upload carries, and strictly before the draw that samples them.
     uploadAtlasChanges();
 
     _renderer->drawBatch2D(_vertices, _indices, _atlasTexture);
@@ -82,8 +66,6 @@ void TextOverlay::drawText(std::string_view text, float x, float y,
 void TextOverlay::buildBatch(std::string_view text, float x, float y,
                              const glm::vec4& color, float scale)
 {
-    //! clear() keeps the capacity, so the reserve below is a no-op after the
-    //! first few frames.
     _vertices.clear();
     _indices.clear();
 
@@ -108,7 +90,7 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y,
         {
             penX = x;
             penY += lineAdvance;
-            previous = 0; //! No kerning pair straddles a line break.
+            previous = 0;
             continue;
         }
 
@@ -116,11 +98,9 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y,
         if (!glyph)
             continue;
 
-        //! Kerning tightens specific pairs (e.g. "AV"); zero for most.
         if (previous != 0)
             penX += _atlas->kerning(previous, codepoint) * scale;
 
-        //! Whitespace carries an advance but no cell, so it emits no quad.
         if (glyph->size.x > 0.0f && glyph->size.y > 0.0f)
         {
             const float left = penX + glyph->bearing.x * scale;
@@ -130,14 +110,11 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y,
 
             const auto base = static_cast<u32>(_vertices.size());
 
-            //! Corners wound top-left, top-right, bottom-right, bottom-left, so
-            //! the UV rectangle maps straight onto the quad with no flip.
             _vertices.push_back({{left,  top},    {glyph->uvMin.x, glyph->uvMin.y}, color});
             _vertices.push_back({{right, top},    {glyph->uvMax.x, glyph->uvMin.y}, color});
             _vertices.push_back({{right, bottom}, {glyph->uvMax.x, glyph->uvMax.y}, color});
             _vertices.push_back({{left,  bottom}, {glyph->uvMin.x, glyph->uvMax.y}, color});
 
-            //! Two triangles sharing the quad's diagonal.
             _indices.push_back(base + 0);
             _indices.push_back(base + 1);
             _indices.push_back(base + 2);
@@ -153,11 +130,6 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y,
 
 void TextOverlay::uploadAtlasChanges()
 {
-    /*
-     * One sub-image copy covers every glyph rasterized since the last upload,
-     * because FontAtlas unions their cells into a single dirty rectangle. In
-     * the steady state nothing is pending and this costs a branch.
-     */
     const auto pending = _atlas->takeDirtyUpload();
     if (!pending)
         return;
@@ -221,7 +193,7 @@ void TextOverlay::drawFPS(float x, float y, float scale)
     const f64 fps = windowManager ? windowManager->getWindowFlags()->fps : 0.0;
 
     char buffer[32];
-    //! +0.5 rounds to nearest rather than truncating, so 59.7 reads as 60.
+
     std::snprintf(buffer, sizeof(buffer), "FPS: %d", static_cast<int>(fps + 0.5));
     drawText(buffer, x, y, scale);
 }

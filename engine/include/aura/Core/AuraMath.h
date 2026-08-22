@@ -11,18 +11,12 @@
 
 /**
  * @file AuraMath.h
- * @brief Engine math shared across the renderer backends.
+ * @brief Math operations shared by every renderer backend.
  *
- * The companion to AuraCore.h, and deliberately beside it in Core rather than
- * under Utils: what lives here is not incidental convenience code but part of
- * what the backends are built on. AuraCore.h owns the graphics *data* every
- * backend passes around (@c gfx::Vertex3D, @c gfx::TransformUBO); this owns the
- * operations on it that more than one backend needs and none of them should
- * own. Both contribute to @c aura3d::gfx for that reason.
- *
- * Header-only and free-function only. Nothing here holds state or touches a
- * device, which is what lets the Vulkan, Metal and software paths all call it
- * without any of them reaching into another's headers.
+ * Header-only, free-function only, no state or device access -- so Vulkan,
+ * Metal and the software path can all call it directly instead of reaching
+ * into one another's headers. Companion to AuraCore.h, which owns the graphics
+ * data (@c gfx::Vertex3D, @c gfx::TransformUBO) this operates on.
  */
 
 namespace aura3d {
@@ -31,19 +25,10 @@ namespace gfx {
 /**
  * @brief The matrix that carries a normal through @p model without shearing it.
  *
- * Mathematically identical to `transpose(inverse(mat3(model)))` but built from
- * the cofactor form directly: three cross products and one dot, instead of
- * glm's general inverse followed by a full transpose copy. Non-invertible input
- * (a zero-scaled object) yields the identity rather than infinities, which keeps
- * a degenerate transform from poisoning whatever uniform block it is written into.
- *
- * Backend-neutral on purpose: the Vulkan and Metal backends both compute this on
- * the CPU and hand the result to their vertex stage (push constants and
- * setVertexBytes respectively), while the GLSL of the OpenGL path does the
- * equivalent in-shader. Two byte-identical copies of this function once existed
- * in two Vulkan translation units -- the kind of duplication that stays correct
- * only until someone fixes one of them -- so it lives here instead, where every
- * backend reaches it without reaching into another backend's headers.
+ * Equivalent to `transpose(inverse(mat3(model)))`, computed from the cofactor
+ * form directly (three cross products, one dot) instead of glm's general
+ * inverse + transpose. A non-invertible @p model (zero scale) yields the
+ * identity rather than infinities.
  */
 [[nodiscard]] inline glm::mat3 normalMatrixOf(const glm::mat4& model) noexcept
 {
@@ -67,4 +52,4 @@ namespace gfx {
 } // namespace gfx
 } // namespace aura3d
 
-#endif // MATH_UTILS_H
+#endif // AURA_MATH_H

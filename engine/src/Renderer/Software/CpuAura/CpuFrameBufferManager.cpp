@@ -456,7 +456,7 @@ void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex& v0, const 
                                         (b0 * col0w + b1 * col1w + b2 * col2w) * perspW,
                                         0.0f, 1.0f);
 
-            // Texture sample (nearest-neighbour)
+            // Texture sample (bilinear; see Texture::sample())
             const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
 
             // Unpack texel (ARGB8888 — matches SDL_PIXELFORMAT_ARGB8888)

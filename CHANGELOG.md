@@ -104,18 +104,68 @@ All notable changes to Aura3D are documented in this file.
     interaction integers (`hot`/`active` ids, panel positions) surviving
     between frames — no widget tree, no callbacks to register or unregister.
   - Draggable, auto-height panels that remember their position across frames
-    keyed by title; `wantsMouse()` for handing a click to the UI instead of
+    keyed by title; `isCapturingMouse()` for handing a click to the UI instead of
     the game underneath it, covering both hover and an in-flight drag that has
     left the widget it started on.
   - `AURA_ENABLE_UI` (default `ON`) gates the module out of the library
     entirely, defining `AURA_HAS_UI` for consumers when it's compiled in.
-  - `apps/UIPlayground`: a new demo app spawning/removing textured 3D objects
-    and driving a procedurally re-rendered 2D sprite live through UI panels —
-    the runnable version of docs/12's worked example.
+  - `apps/Sandbox`: alongside its own camera/lighting/audio demo, spawns and
+    removes textured 3D objects and drives a procedurally re-rendered 2D
+    sprite live through UI panels — the runnable version of docs/12's worked
+    example, plus an "Inspector" panel exercising the rest of the widget set
+    (text fields, dropdown, tabs, tree nodes, a scrolling list). This absorbed
+    the standalone `apps/UIPlayground` demo, which existed only earlier in
+    this same unreleased cycle: keeping the UI showcase inside the one demo
+    app that already has a camera, lighting and audio to interact *with* was a
+    better fit than a second app whose entire reason to exist was the UI.
   - `tests/test_ui.cpp`: drives the whole module headlessly against a stub
     `IRenderer` that records `drawBatch2D()` calls, covering the single-batch
     guarantee, press/release click semantics, drag, clipping and auto-height
     layout with no window, GPU or driver involved.
+- **Keyboard, scroll and touch input for `aura3d::ui`**, and the widgets that
+  needed them. The module previously saw only a cursor position and a left
+  button; it now consumes the whole input surface, and `attachInput()` wires
+  every part of it up.
+  - **Text fields** (`inputText`, `inputFloat`) read the platform's *committed
+    text* rather than translating keycodes, so they are correct on every
+    keyboard layout and through dead keys and IME. Caret and selection with
+    arrows (Ctrl for word-wise, Shift to extend), Home/End,
+    Backspace/Delete, Ctrl+A, and type-over-selection; the caret moves by whole
+    characters, so multi-byte text is never split mid-sequence. Enter commits,
+    Escape reverts to the value the field held when it took focus. `inputFloat`
+    keeps the text as typed rather than reformatting from the bound float each
+    frame — otherwise a decimal point could never be entered, since `"1."` does
+    not survive a round trip.
+  - **Keyboard focus and navigation.** Tab and Shift+Tab walk the focus ring in
+    submission order and wrap at both ends; Enter/Space activates a focused
+    button or checkbox, and the arrow keys nudge a focused slider (Shift for a
+    coarse step). Focus is drawn as an accent-coloured ring. `isCapturingKeyboard()`
+    joins `isCapturingMouse()` for gating the application's own input, and
+    `isCapturingTextInput()` drives the on-screen keyboard on Android/iOS through
+    libwma's new `setTextInputEnabled()` — so it appears exactly while a field
+    is focused.
+  - **Scrolling regions** (`beginScroll`/`endScroll`): fixed-height, clipped,
+    wheel- and scrollbar-driven. The one construct auto-height panels cannot
+    express, and regions nest — the wheel scrolls whichever one the cursor is
+    over rather than moving all of them at once.
+  - **Touch** drives the same cursor the mouse does, so panels work on Android
+    and in a touch browser with no separate code path. The UI's callbacks are
+    additive, so multi-finger gestures stay available to the application on the
+    same `TouchListener`.
+  - **New widgets**: `dropdown`, `radioButton`, `selectable`,
+    `collapsingHeader`, `treeNode`/`treePop`, `beginTabBar`/`tabItem`/
+    `endTabBar`, and `tooltip`. Plus `sameLine()` and `setNextItemWidth()` for
+    horizontal layout — sizing the *first* widget of a row rather than dividing
+    the row once the count is known, because immediate mode retains no geometry
+    to revise after the fact.
+  - **Still one draw call.** Dropdown lists and tooltips must draw over widgets
+    submitted after them, and the batch has no depth test, so they are recorded
+    with their clip rectangle and replayed at the end of `render()` — on top,
+    and in the same batch. `tests/test_ui.cpp` asserts the single-batch
+    guarantee across every widget kind together, alongside new coverage for
+    UTF-8-correct editing, Escape-reverts, Tab/Shift+Tab traversal, keyboard
+    activation, and scroll clipping.
+
 - **Type-safe resource handles.** `VertexBufferHandle`, `IndexBufferHandle`,
   `TextureHandle`, `MeshHandle`, `MaterialHandle`, `AudioClipHandle` and
   `AudioSourceHandle` were previously all `using X = u32` — nothing stopped a
@@ -139,6 +189,21 @@ All notable changes to Aura3D are documented in this file.
   - `INVALID_HANDLE` is gone; a default-constructed handle (`{}`) is the
     invalid value, matching modern C++ idiom and removing a global constant
     that was really five-going-on-seven different sentinels wearing one name.
+- **Bilinear texture filtering on the software rasteriser.** `cpu::Texture::sample()`
+  point-sampled every texture, which silently undid `FontAtlas`'s antialiasing:
+  glyphs are rasterized with grayscale coverage (`stbtt_MakeGlyphBitmap`), but a
+  pen position is essentially never on an integer pixel boundary, so reading the
+  nearest texel turned that soft coverage back into a hard, jagged edge on every
+  glyph the CPU backend drew. Vulkan, OpenGL and Metal already sample their
+  dynamic textures linearly; this brings the software rasteriser's text (and
+  every other texture it draws) to the same quality, with no API change —
+  `sample()`'s signature and clamp-to-edge behaviour are unchanged; only what it
+  computes at each UV is different.
+  - New `tests/test_texture_sampling.cpp`: pins down that a texel's own centre
+    still samples exactly (no blur where none is wanted), that a midpoint
+    between two texels blends evenly, that a uniform texture is unaffected by
+    UV including past `[0,1]`, and — the change's actual point — that two
+    off-grid samples straddling an antialiased edge are no longer identical.
 
 ## [0.1.0]
 

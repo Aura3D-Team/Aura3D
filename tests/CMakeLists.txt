@@ -24,6 +24,7 @@ set(AURA_TEST_SUITES
     test_mesh_loader
     test_renderer_factory
     test_shader_loader
+    test_texture_sampling
 )
 
 # Guarded because AURA_ENABLE_UI=OFF leaves aura3d::ui out of the library

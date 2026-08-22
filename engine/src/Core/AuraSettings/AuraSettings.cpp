@@ -1,17 +1,10 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
-//! For getDefaultAudioBackend()/isAudioBackendAvailable(), which resolve the
-//! "auto" audio backend. The header itself only needs wma::AudioBackend the
-//! type, which comes from wma/core/Types.hpp, so the factory declarations are
-//! pulled in here rather than widening what every consumer of AuraSettings.h
-//! has to parse.
 #include <wma/wma.hpp>
 
 #include "aura/aura.h"
 
 namespace aura3d {
-
-
 AuraSettings* AuraSettings::get()
 {
     static AuraSettings instance;
@@ -81,8 +74,6 @@ VSyncMode AuraSettings::getVSyncMode() const
         return mode;
     }
 
-    // No explicit mode: derive from the legacy boolean flag so existing
-    // settings.json files keep behaving the same.
     return getVSync() ? VSyncMode::Fifo : VSyncMode::AutoNoVsync;
 }
 
@@ -130,18 +121,12 @@ wma::AudioBackend AuraSettings::getAudioBackend() const
 {
     const std::string backendStr = _settings.getPath<std::string>("/audio/backend", "auto");
 
-    //! "auto" is the documented default and means "let libwma decide", which is
-    //! the only answer that is correct on every platform: ALSA exists on desktop
-    //! Linux and nowhere else, so a hardcoded value in a shared config file
-    //! would be wrong for some target.
     if (backendStr == "auto" || backendStr.empty())
         return wma::getDefaultAudioBackend();
 
     wma::AudioBackend backend;
     if (AudioBackendFromString(backendStr, backend))
     {
-        //! A backend the build left out would degrade at openAudioDevice()
-        //! anyway, but saying so here names the setting that was ignored.
         if (!wma::isAudioBackendAvailable(backend))
         {
             INK_WARN << "AuraSettings: audio backend '" << backendStr
@@ -215,17 +200,15 @@ ink::LogLevel AuraSettings::getLogLevel() const
 #endif
 
     const std::string levelStr = _settings.getPath<std::string>("/logging/level", std::string());
-    if (levelStr.empty()) 
+    if (levelStr.empty())
         return kDefault;
 
     std::string up;
     up.reserve(levelStr.size());
-    for (const char c : levelStr) 
+    for (const char c : levelStr)
         up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-    // Reuses the same name table the logger itself prints with, so the two
-    // never drift apart.
-    for (u32 i = 0; i < std::to_underlying(ink::LogLevel::COUNT); ++i) 
+    for (u32 i = 0; i < std::to_underlying(ink::LogLevel::COUNT); ++i)
     {
         if (up == ink::MAP_COLORS_FOR_LEVEL[i].desc)
             return static_cast<ink::LogLevel>(i);

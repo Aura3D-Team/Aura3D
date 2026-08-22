@@ -159,9 +159,8 @@ Windows, Android, and WASM specifics.
 ```
 Aura3D/
 ├── apps/
-│   ├── Sandbox/       # Interactive 3D demo: WASD+mouse camera, lit scene, FPS overlay, Tab-toggled UI panel
-│   ├── OrgLogo/        # Minimal 2D demo: one textured quad, no camera movement
-│   └── UIPlayground/   # aura3d::ui + textures: spawn/remove textured 3D objects and tweak a live-animated sprite through UI panels
+│   ├── Sandbox/       # Interactive 3D demo: WASD+mouse camera, lit scene, FPS overlay, Tab-toggled UI panels — spawn/remove textured 3D objects, tweak a live-animated sprite, and an aura3d::ui widget showcase
+│   └── OrgLogo/        # Minimal 2D demo: one textured quad, no camera movement
 ├── docs/                # Tutorial series (see table above)
 ├── engine/
 │   ├── include/aura/    # Public API — this is what your game includes

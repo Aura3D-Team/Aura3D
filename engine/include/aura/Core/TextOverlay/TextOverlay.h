@@ -37,34 +37,15 @@ struct TextOverlayDesc {
 
 /**
  * @brief Draws text over the current frame through the renderer's dedicated
- * unlit 2D pipeline.
+ * unlit 2D pipeline. Behaves identically on every backend.
  *
- * Built only on the public IRenderer API, so it behaves identically on every
- * backend (Vulkan, OpenGL and the CPU/software renderer).
+ * Glyphs are cached in a @ref FontAtlas (one GPU texture, allocated once);
+ * each character rasterizes on first use, costing a small sub-image upload
+ * rather than a new texture. A whole draw call's text is one
+ * IRenderer::drawBatch2D() call regardless of length.
  *
- * @par How a string reaches the screen
- * Glyphs are cached in a @ref FontAtlas: one large GPU texture, allocated once,
- * into which each character is rasterized the first time it is actually drawn.
- * A new character costs one sub-image upload of its own few hundred bytes --
- * never a new texture, mesh or material. That distinction matters on the Vulkan
- * backend in particular, where every texture permanently consumes descriptor-pool
- * slots that are never freed, so creating one per frame exhausts the pool within
- * minutes.
- *
- * Drawing then walks the string once, appends a quad per glyph into two vectors
- * that are reused across frames, and hands the whole thing to
- * IRenderer::drawBatch2D() as a **single draw call** -- a 500-character string
- * costs one call, not 500.
- *
- * @par Coordinates and colour
- * Positions are window pixels with (0,0) at the top-left corner; the renderer's
- * 2D pipeline supplies the orthographic projection itself, so no camera is
- * involved and the overlay is unaffected by wherever the scene's camera happens
- * to be pointing. Shading is unlit, so text keeps exactly the colour it was
- * given no matter what the scene's light is doing.
- *
- * Text is UTF-8. Codepoints the font does not carry render as '?'; '\n' starts
- * a new line.
+ * Positions are window pixels, (0,0) top-left; no camera is involved. Text is
+ * UTF-8, unsupported codepoints render as '?', '\n' starts a new line.
  *
  * @note Draw calls must be issued between beginRenderPass() and endRenderPass(),
  *       after the scene's own draws.
@@ -124,12 +105,9 @@ public:
     [[nodiscard]] bool usingTrueType() const noexcept { return _usingTrueType; }
 
 private:
-    /**
-     * @brief Fills the reusable vertex/index buffers with @p text's quads.
-     *
-     * Rasterizes any glyph not yet in the atlas as a side effect, which is why
-     * the atlas upload has to follow this rather than precede it.
-     */
+    //! Fills the reusable vertex/index buffers with @p text's quads.
+    //! Rasterizes any glyph not yet in the atlas, so the atlas upload must
+    //! follow this rather than precede it.
     void buildBatch(std::string_view text, float x, float y, const glm::vec4& color, float scale);
 
     /// Pushes the atlas' pending dirty rectangle to the GPU, if any.
@@ -141,18 +119,10 @@ private:
     glm::vec4 _color{1.0f};
     bool _usingTrueType = false;
 
-    /*
-     * Retained across calls so a steady-state overlay never reallocates, and
-     * over-aligned rather than plain std::vector because of what happens to
-     * them next: every frame the whole batch is memcpy'd into write-combined
-     * mapped device memory (Vulkan) or handed to glBufferSubData (OpenGL).
-     * Both copy fastest from a source aligned to the widest vector register,
-     * and a default-aligned heap block leaves the copy a scalar prologue to
-     * grind through before it can use full-width loads.
-     *
-     * gfx::Vertex2D is exactly 32 bytes, so a 32-byte-aligned base makes every
-     * vertex in the batch individually aligned too, not just the first.
-     */
+    //! Retained across calls (no reallocation in steady state) and over-aligned
+    //! rather than plain std::vector: the batch is memcpy'd/glBufferSubData'd
+    //! every frame, and a 32-byte-aligned base keeps every 32-byte Vertex2D
+    //! individually aligned for that copy, not just the array's first element.
     static_assert(sizeof(gfx::Vertex2D) == 32,
                   "Vertex2D must stay 32 bytes for the aligned batch storage "
                   "below to align every vertex, not merely the array's base.");

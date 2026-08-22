@@ -17,7 +17,6 @@ include(GNUInstallDirs)
 option(AURA_BUILD_SANDBOX   "Build the Sandbox demo application"   ON)
 option(AURA_INSTALL_SANDBOX "Install the Sandbox demo application" OFF)
 option(AURA_BUILD_ORGLOGO   "Build the OrgLogo demo application"   ON)
-option(AURA_BUILD_UIPLAYGROUND "Build the UIPlayground demo application" ON)
 option(AURA_BUILD_TESTS     "Build the automated test suite"       OFF)
 
 option(AURA_ENABLE_VULKAN "Compile the Vulkan backend"            ON)
@@ -344,17 +343,6 @@ if(AURA_BUILD_ORGLOGO)
     add_subdirectory(apps/OrgLogo)
 endif()
 
-if(AURA_BUILD_UIPLAYGROUND)
-    if(AURA_ENABLE_UI)
-        add_subdirectory(apps/UIPlayground)
-    else()
-        # The app's whole point is aura3d::ui; with the module compiled out of
-        # the library it can only fail (its main.cpp #errors deliberately
-        # rather than silently building a UI-less husk), so skip it instead of
-        # breaking a UI-free configure that never asked for this app to build.
-        message(STATUS "UIPlayground: skipped (AURA_ENABLE_UI is OFF)")
-    endif()
-endif()
 
 ################################################################################
 # Tests

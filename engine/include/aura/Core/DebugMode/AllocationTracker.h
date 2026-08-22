@@ -12,16 +12,14 @@
  * @file AllocationTracker.h
  * @brief Process-wide CPU allocation counters.
  *
- * The counters themselves are always compiled; what AURA_ENABLE_DEBUG_MODE
- * switches on is the global operator new/delete pair in AllocationHooks.cpp
- * that feeds them. Splitting it that way keeps the tracker unit-testable in a
- * default build (a test can drive recordAllocation()/recordFree() directly)
- * while a release build still contains no allocation hook, no branch on the
- * malloc path and nothing referencing this at all.
+ * The counters are always compiled; AURA_ENABLE_DEBUG_MODE only switches on
+ * the global operator new/delete hooks (AllocationHooks.cpp) that feed them,
+ * so a test can drive recordAllocation()/recordFree() directly without that
+ * build flag, and a release build has no allocation hook at all.
  *
- * Ask isHooked() rather than assuming: with the hooks compiled out, every
- * counter here reads zero forever, and a report that silently presented that as
- * "no allocations" would be worse than one that says it did not measure.
+ * Check isHooked() rather than assuming: with hooks compiled out, every
+ * counter reads zero forever, which a report must say explicitly rather than
+ * present as "no allocations".
  */
 
 namespace aura3d {
@@ -30,12 +28,10 @@ namespace aura3d {
  * @struct AllocationStats
  * @brief A consistent-enough snapshot of the allocation counters.
  *
- * @note Fields are read from independent relaxed atomics, so a snapshot taken
- *       while other threads are allocating can be internally inconsistent by a
- *       few allocations (liveBytes not exactly totalAllocatedBytes -
- *       totalFreedBytes, say). Locking to close that window would put a mutex
- *       on every malloc in the process to make a debug report tidier, which is
- *       not a trade worth making.
+ * @note Fields are independent relaxed atomics, so a snapshot taken during
+ *       concurrent allocation can be off by a few (liveBytes not exactly
+ *       totalAllocatedBytes - totalFreedBytes). Not locked: that would put a
+ *       mutex on every malloc in the process just to tidy a debug report.
  */
 struct AllocationStats
 {
@@ -50,14 +46,9 @@ struct AllocationStats
     u64 allocationCount      = 0;
     u64 freeCount            = 0;
 
-    /**
-     * @brief Histogram of allocation sizes by power-of-two class.
-     *
-     * Cheap (one count-leading-zeros and one increment per allocation) and it
-     * answers the question the byte totals cannot: two runs that allocate the
-     * same number of megabytes behave nothing alike if one does it in a
-     * thousand large blocks and the other in ten million 32-byte ones.
-     */
+    //! Histogram of allocation sizes by power-of-two class. Distinguishes runs
+    //! the byte totals can't: the same total in a thousand large blocks vs. ten
+    //! million tiny ones behave nothing alike.
     std::array<u64, kSizeClassCount> sizeClasses{};
 
     //! Bytes allocated and never freed. Zero for a balanced run.
@@ -79,11 +70,10 @@ struct AllocationStats
  * @class AllocationTracker
  * @brief Thread-safe, lock-free counters behind the global allocation hooks.
  *
- * A singleton with a constexpr constructor and constant initialisation (see
- * AllocationTracker.cpp), not a function-local static: the hooks that feed it
- * run before main() during dynamic initialisation of other translation units
- * and after main() during their destruction, and a function-local static is
- * guaranteed to exist for neither.
+ * A singleton with a constexpr constructor (constant-initialised, not a
+ * function-local static): the hooks that feed it can run before main() during
+ * other translation units' dynamic initialisation, where a function-local
+ * static is not guaranteed to exist yet.
  */
 class AllocationTracker
 {
@@ -96,13 +86,8 @@ public:
 
     [[nodiscard]] static AllocationTracker& get() noexcept;
 
-    /**
-     * @brief True when the global operator new/delete hooks were compiled in.
-     *
-     * Constant-folds to the build's answer: with AURA_ENABLE_DEBUG_MODE off the
-     * counters are never written and every report should say so rather than
-     * present zeroes as a measurement.
-     */
+    /// True when the global operator new/delete hooks were compiled in.
+    /// Constant-folds to the build's answer.
     [[nodiscard]] static constexpr bool isHooked() noexcept
     {
 #ifdef AURA_ENABLE_DEBUG_MODE
@@ -143,21 +128,13 @@ public:
 
     /// @}
 
-    /**
-     * @brief Zeroes every counter.
-     *
-     * For tests and for discarding startup noise before a measured window.
-     * Racy by nature -- allocations in flight on other threads land on either
-     * side of it -- so call it from a quiescent point.
-     */
+    /// Zeroes every counter, for tests and for discarding startup noise. Racy
+    /// by nature (in-flight allocations on other threads); call from a
+    /// quiescent point.
     void reset() noexcept;
 
-    /**
-     * @brief The size class recordAllocation() would file @p bytes under.
-     *
-     * floor(log2(bytes)), saturating at the last bucket; zero-byte allocations
-     * (which operator new must still honour) go in bucket 0.
-     */
+    /// The size class recordAllocation() would file @p bytes under:
+    /// floor(log2(bytes)), saturating at the last bucket; 0 bytes -> bucket 0.
     [[nodiscard]] static constexpr usize sizeClassOf(usize bytes) noexcept
     {
         usize klass = 0;
@@ -169,12 +146,8 @@ public:
         return klass;
     }
 
-    /**
-     * @brief Inclusive lower bound in bytes of size class @p klass.
-     *
-     * The report writer's counterpart to sizeClassOf(), so a histogram bucket
-     * can be labelled with the range it covers rather than an index.
-     */
+    /// Inclusive lower bound in bytes of size class @p klass. The report
+    /// writer's counterpart to sizeClassOf(), for labelling a histogram bucket.
     [[nodiscard]] static constexpr u64 sizeClassLowerBound(usize klass) noexcept
     {
         return klass == 0 ? 0 : (u64{1} << klass);
@@ -184,22 +157,15 @@ public:
      * @class ScopedMute
      * @brief Suspends tracking on the calling thread for the enclosing block.
      *
-     * The report writer allocates -- a JSON document, a sorted copy of the
-     * sample buffer -- and counting that against the run being measured would
-     * mean the act of reporting the numbers changed them. Every allocation the
-     * debug subsystem makes on its own behalf goes inside one of these.
+     * Wrap every allocation the debug subsystem makes on its own behalf (e.g.
+     * building the report), so measuring does not itself change the numbers.
+     * Thread-local and reentrant.
      *
-     * Thread-local and reentrant, so a muted region may call into anything.
-     *
-     * @note The signal fences are load-bearing, not decoration. A compiler is
-     *       entitled to treat the replaceable global @c operator new as
-     *       malloc-like -- allocating storage and reading nothing -- and GCC at
-     *       @c -O3 duly hoists an inlined allocation above a plain store to
-     *       this flag, which silently un-mutes the region. Both fences are pure
-     *       compiler barriers: they emit no instruction and cost nothing at
-     *       runtime, they simply forbid that reordering in either direction.
-     *       Verified: without them, a 1 MiB allocation inside a mute is counted
-     *       at @c -O3 and not at @c -O2.
+     * @warning Do not remove the signal fences. GCC at -O3 can hoist an
+     *          inlined allocation above the plain store to the mute flag,
+     *          silently un-muting the region -- verified: without the fences,
+     *          a 1 MiB allocation inside a mute is counted at -O3 and not -O2.
+     *          The fences are pure compiler barriers (zero runtime cost).
      */
     class ScopedMute
     {
@@ -223,13 +189,9 @@ public:
         bool _previous;
     };
 
-    /**
-     * @brief The calling thread's mute flag, as an lvalue.
-     *
-     * A function-local thread_local bool with constant initialisation: no
-     * guard variable and no dynamic init, which matters because the allocation
-     * hooks read it and anything that allocated to answer would recurse.
-     */
+    /// The calling thread's mute flag, as an lvalue. Constant-initialised
+    /// (no guard variable, no dynamic init) since the allocation hooks read
+    /// it and any allocation to answer would recurse.
     [[nodiscard]] static bool& muted() noexcept
     {
         static thread_local bool flag = false;
@@ -237,12 +199,8 @@ public:
     }
 
 private:
-    /*
-     * Relaxed atomics throughout. Every one of these is written on the malloc
-     * path of every thread in the process, so the ordering is chosen to make
-     * that path as close to a plain increment as the ISA allows; nothing is
-     * published through them, only counted.
-     */
+    //! Relaxed atomics throughout: written on every thread's malloc path, so
+    //! ordering is kept as close to a plain increment as the ISA allows.
     std::atomic<u64> _liveBytes{0};
     std::atomic<u64> _peakBytes{0};
     std::atomic<u64> _totalAllocatedBytes{0};

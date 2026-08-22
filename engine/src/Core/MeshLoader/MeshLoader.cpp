@@ -7,22 +7,13 @@
 
 #include "aura/aura.h"
 
-//! Single translation unit that materialises tinyobjloader, keeping the parser
-//! out of the engine's public headers.
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
 namespace aura3d {
-
 namespace {
-
 constexpr float kPi = 3.14159265358979323846f;
 
-/*
- * An OBJ face corner references position/normal/texcoord by three independent
- * indices. Two corners are the same vertex only when all three agree, so the
- * triple is the de-duplication key.
- */
 struct VertexKey {
     int position = -1;
     int normal = -1;
@@ -46,18 +37,12 @@ struct VertexKeyHash {
     }
 };
 
-/*
- * Accumulate each triangle's geometric normal onto its three corners, then
- * normalize. Shared corners end up with the average of the faces they touch,
- * which gives smooth shading on curved surfaces and is the usual fallback when
- * an OBJ ships without 'vn' records.
- */
 void generateNormals(gfx::Mesh3D& mesh)
 {
     for (auto& vertex : mesh.vertices)
         vertex.normal = glm::vec3(0.0f);
 
-    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) 
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
     {
         const u32 i0 = mesh.indices[i + 0];
         const u32 i1 = mesh.indices[i + 1];
@@ -70,8 +55,6 @@ void generateNormals(gfx::Mesh3D& mesh)
         const glm::vec3& p1 = mesh.vertices[i1].pos;
         const glm::vec3& p2 = mesh.vertices[i2].pos;
 
-        //! Not normalized: the cross product's length is twice the triangle
-        //! area, which area-weights the average for free.
         const glm::vec3 faceNormal = glm::cross(p1 - p0, p2 - p0);
 
         mesh.vertices[i0].normal += faceNormal;
@@ -79,7 +62,7 @@ void generateNormals(gfx::Mesh3D& mesh)
         mesh.vertices[i2].normal += faceNormal;
     }
 
-    for (auto& vertex : mesh.vertices) 
+    for (auto& vertex : mesh.vertices)
     {
         const float length = glm::length(vertex.normal);
         vertex.normal = (length > 0.0f) ? vertex.normal / length : glm::vec3(0.0f, 1.0f, 0.0f);
@@ -96,7 +79,6 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
     std::string warn;
     std::string err;
 
-    // triangulate = true: faces arrive as triangles whatever the file used.
     const bool loaded = tinyobj::LoadObj(
         &attrib, &shapes, &materials, &warn, &err, path.c_str(),
         /*mtl_basedir=*/nullptr, /*triangulate=*/true);
@@ -104,7 +86,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
     if (!warn.empty())
         INK_WARN << "MeshLoader: " << path << ": " << warn;
 
-    if (!loaded || !err.empty()) 
+    if (!loaded || !err.empty())
     {
         INK_WARN << "MeshLoader: failed to load '" << path << "': "
                  << (err.empty() ? "unknown error" : err)
@@ -117,9 +99,9 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
 
     const bool fileHasNormals = !attrib.normals.empty();
 
-    for (const auto& shape : shapes) 
+    for (const auto& shape : shapes)
     {
-        for (const auto& index : shape.mesh.indices) 
+        for (const auto& index : shape.mesh.indices)
         {
             VertexKey key;
             key.position = index.vertex_index;
@@ -127,7 +109,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
             key.texcoord = index.texcoord_index;
 
             auto it = uniqueVertices.find(key);
-            if (it != uniqueVertices.end()) 
+            if (it != uniqueVertices.end())
             {
                 mesh.indices.push_back(it->second);
                 continue;
@@ -135,10 +117,10 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
 
             gfx::Vertex3D vertex{};
 
-            if (index.vertex_index >= 0) 
+            if (index.vertex_index >= 0)
             {
                 const size_t base = static_cast<size_t>(index.vertex_index) * 3;
-                if (base + 2 < attrib.vertices.size()) 
+                if (base + 2 < attrib.vertices.size())
                 {
                     vertex.pos = {attrib.vertices[base + 0],
                                   attrib.vertices[base + 1],
@@ -146,10 +128,10 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
                 }
             }
 
-            if (index.normal_index >= 0) 
+            if (index.normal_index >= 0)
             {
                 const size_t base = static_cast<size_t>(index.normal_index) * 3;
-                if (base + 2 < attrib.normals.size()) 
+                if (base + 2 < attrib.normals.size())
                 {
                     vertex.normal = {attrib.normals[base + 0],
                                      attrib.normals[base + 1],
@@ -157,24 +139,21 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
                 }
             }
 
-            if (index.texcoord_index >= 0) 
+            if (index.texcoord_index >= 0)
             {
                 const size_t base = static_cast<size_t>(index.texcoord_index) * 2;
-                if (base + 1 < attrib.texcoords.size()) 
+                if (base + 1 < attrib.texcoords.size())
                 {
-                    // OBJ's V axis runs bottom-up; the engine samples top-down.
                     vertex.texCoord = {attrib.texcoords[base + 0],
                                        1.0f - attrib.texcoords[base + 1]};
                 }
             }
 
-            // tinyobj fills colors with white when the file carries none
-            // (default_vcols_fallback), so this is always safe to read.
             vertex.color = glm::vec4(1.0f);
-            if (index.vertex_index >= 0) 
+            if (index.vertex_index >= 0)
             {
                 const size_t base = static_cast<size_t>(index.vertex_index) * 3;
-                if (base + 2 < attrib.colors.size()) 
+                if (base + 2 < attrib.colors.size())
                 {
                     vertex.color = {attrib.colors[base + 0],
                                     attrib.colors[base + 1],
@@ -190,14 +169,14 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
         }
     }
 
-    if (mesh.empty()) 
+    if (mesh.empty())
     {
         INK_WARN << "MeshLoader: '" << path
                  << "' contained no geometry; substituting the cube fallback";
         return createCube();
     }
 
-    if (!fileHasNormals) 
+    if (!fileHasNormals)
     {
         INK_DEBUG << "MeshLoader: '" << path << "' has no normals; generating them";
         generateNormals(mesh);
@@ -210,49 +189,42 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
     return mesh;
 }
 
-/*
- * Primitives below use counter-clockwise winding when viewed from outside,
- * matching the convention the rest of the engine's geometry already follows.
- */
-
 gfx::Mesh3D MeshLoader::createCube()
 {
     gfx::Mesh3D mesh;
 
     struct Face {
         glm::vec3 normal;
-        glm::vec3 corners[4]; // CCW seen from outside
+        glm::vec3 corners[4];
     };
 
     const Face faces[6] = {
-        // +Z
         {{0.0f, 0.0f, 1.0f},
          {{-0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f}}},
-        // -Z
+
         {{0.0f, 0.0f, -1.0f},
          {{0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}}},
-        // -X
+
         {{-1.0f, 0.0f, 0.0f},
          {{-0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, -0.5f}}},
-        // +X
+
         {{1.0f, 0.0f, 0.0f},
          {{0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}}},
-        // +Y
+
         {{0.0f, 1.0f, 0.0f},
          {{-0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}}},
-        // -Y
+
         {{0.0f, -1.0f, 0.0f},
          {{-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, 0.5f}, {-0.5f, -0.5f, 0.5f}}},
     };
 
     const glm::vec2 uvs[4] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
 
-    // Each face gets its own 4 vertices so the normals stay hard-edged.
-    for (const Face& face : faces) 
+    for (const Face& face : faces)
     {
         const auto base = static_cast<u32>(mesh.vertices.size());
 
-        for (int i = 0; i < 4; ++i) 
+        for (int i = 0; i < 4; ++i)
         {
             gfx::Vertex3D vertex{};
             vertex.pos = face.corners[i];
@@ -282,7 +254,7 @@ gfx::Mesh3D MeshLoader::createPlane()
     };
     const glm::vec2 uvs[4] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
 
-    for (int i = 0; i < 4; ++i) 
+    for (int i = 0; i < 4; ++i)
     {
         gfx::Vertex3D vertex{};
         vertex.pos = corners[i];
@@ -301,19 +273,17 @@ gfx::Mesh3D MeshLoader::createSphere(int subdivisions)
     gfx::Mesh3D mesh;
 
     const int level   = std::max(subdivisions, 1);
-    const int stacks  = std::max(2, 8 * level);   // pole to pole
-    const int sectors = std::max(3, 16 * level);  // around the equator
+    const int stacks  = std::max(2, 8 * level);
+    const int sectors = std::max(3, 16 * level);
     constexpr float radius = 0.5f;
 
-    // Vertex grid: (stacks + 1) rings of (sectors + 1) vertices. The seam
-    // column is duplicated so its U coordinate can reach 1.0.
-    for (int i = 0; i <= stacks; ++i) 
+    for (int i = 0; i <= stacks; ++i)
     {
         const float phi = kPi * 0.5f - static_cast<float>(i) * kPi / static_cast<float>(stacks);
         const float y = radius * std::sin(phi);
         const float ringRadius = radius * std::cos(phi);
 
-        for (int j = 0; j <= sectors; ++j) 
+        for (int j = 0; j <= sectors; ++j)
         {
             const float theta = static_cast<float>(j) * 2.0f * kPi / static_cast<float>(sectors);
 
@@ -327,14 +297,13 @@ gfx::Mesh3D MeshLoader::createSphere(int subdivisions)
         }
     }
 
-    for (int i = 0; i < stacks; ++i) 
+    for (int i = 0; i < stacks; ++i)
     {
         u32 k1 = static_cast<u32>(i * (sectors + 1));
         u32 k2 = k1 + static_cast<u32>(sectors) + 1;
 
-        for (int j = 0; j < sectors; ++j, ++k1, ++k2) 
+        for (int j = 0; j < sectors; ++j, ++k1, ++k2)
         {
-            // The triangle that would collapse into a pole is skipped.
             if (i != 0) {
                 mesh.indices.insert(mesh.indices.end(), {k1, k1 + 1, k2});
             }

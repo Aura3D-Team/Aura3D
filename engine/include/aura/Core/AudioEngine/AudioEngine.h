@@ -23,24 +23,18 @@ namespace aura3d {
  * @brief How a clip's samples reach the mixer.
  */
 enum class AudioClipMode : u8 {
-    /**
-     * @brief Decoded once, held in memory in full.
-     *
-     * The right choice for sound effects: playing one costs no decoding and no
-     * allocation, and the same decoded buffer backs every simultaneous voice.
-     */
+    /// Decoded once, held fully in memory. Right choice for sound effects:
+    /// playing costs no decoding/allocation, and one buffer backs every
+    /// simultaneous voice.
     Static,
 
     /**
      * @brief Decoded up front but played through a bounded ring buffer.
+     *        For music/ambience -- long clips where holding every frame of
+     *        PCM is wasteful.
      *
-     * Intended for music and ambience — long clips where holding every frame
-     * of mixer-ready float PCM is the wasteful part.
-     *
-     * @note This mode currently decodes the whole file at load time as well; it
-     *       differs in playback, not in load. It exists as the seam that
-     *       incremental decoding slots into, so callers already mark which
-     *       clips are long-form and gain that without changing their code.
+     * @note Currently decodes the whole file at load time too; only playback
+     *       differs. Exists as the seam incremental decoding will slot into.
      */
     Streaming
 };
@@ -71,14 +65,10 @@ struct AudioSourceDesc {
     //! Linear gain applied before the master volume. 1.0 is unattenuated.
     f32 gain = 1.0f;
 
-    /**
-     * @brief Position this voice in the world rather than playing it flat.
-     *
-     * A non-spatial voice is heard at full level in both channels — correct for
-     * UI clicks and music, which have no position in the scene. A spatial one
-     * is attenuated by distance and panned by direction relative to the
-     * listener.
-     */
+    /// Position this voice in the world rather than playing it flat. A
+    /// non-spatial voice is heard at full level in both channels (UI clicks,
+    /// music); a spatial one is attenuated by distance and panned by
+    /// direction relative to the listener.
     bool spatial = false;
 
     glm::vec3 position{0.0f};
@@ -95,37 +85,26 @@ struct AudioSourceDesc {
  * @class AudioEngine
  * @brief Clip playback, mixing and 3D spatialization on top of an audio device.
  *
- * The engine-facing half of Aura3D's audio: it owns the clip cache and the
- * voice pool, and supplies wma::IAudioDevice with the one thing the platform
- * layer asks for — a callback that fills a buffer of samples. Everything here
- * is platform-independent arithmetic; which OS API those samples end up in is
- * libwma's concern and is not visible through this class.
- *
- * Handles rather than pointers, matching the renderer's textures and meshes:
- * a voice can end at any moment on the audio thread, and a stale
+ * Owns the clip cache and voice pool, and supplies wma::IAudioDevice's mixing
+ * callback. Handles rather than pointers, matching the renderer's textures and
+ * meshes: a voice can end at any moment on the audio thread, so a stale
  * AudioSourceHandle reads as "not playing" instead of dangling.
  *
- * @note Thread-safety: the public API is safe to call from the game thread
- *       while the device's audio thread is mixing. Everything the two share
- *       sits behind a short lock — deliberately a plain mutex rather than a
- *       lock-free structure, since the critical sections are a handful of
- *       arithmetic operations and never touch the file system or allocate.
- *       Two threads calling this API concurrently is *not* supported; drive it
- *       from the thread that owns the Engine.
+ * @note Thread-safety: safe to call from the game thread while the device's
+ *       audio thread mixes -- shared state sits behind a short plain mutex
+ *       (critical sections are pure arithmetic, no allocation or I/O). Not
+ *       safe to call from two threads concurrently.
  */
 class AudioEngine {
 public:
     /**
      * @brief Takes ownership of @p device and starts it.
      *
-     * The device must already be open (as wma::openAudioDevice() returns it).
-     * A device that fails to start is not fatal: the engine stays fully usable
-     * and every operation behaves normally, it simply produces no sound —
-     * matching the rest of the engine's habit of degrading rather than
-     * throwing when hardware is missing.
+     * @p device must already be open (wma::openAudioDevice()). A device that
+     * fails to start is not fatal -- the engine stays usable, just silent.
      *
-     * @param maxVoices Size of the voice pool, fixed for the engine's lifetime
-     *                  so the mixer never allocates. Clamped to at least 1.
+     * @param maxVoices Size of the voice pool, fixed for the engine's
+     *                  lifetime so the mixer never allocates. At least 1.
      */
     explicit AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoices = 32);
 
@@ -137,46 +116,28 @@ public:
     /**
      * @brief Loads @p path, converting it to the device's format.
      *
-     * @return A handle that is always valid. A file that is missing or
-     *         undecodable yields a short silent clip and a warning, so a
-     *         missing asset costs silence rather than a crash — the same
-     *         contract as ResourceManager::loadTexture()'s checkerboard.
+     * @return An always-valid handle. A missing or undecodable file yields a
+     *         short silent clip and a warning.
      *
-     * @note Not cached here. Use ResourceManager::loadSound() for path-keyed
-     *       de-duplication; this is the uncached primitive underneath it.
+     * @note Not cached here; use ResourceManager::loadSound() for that.
      */
     [[nodiscard]] AudioClipHandle loadClip(const std::string& path,
                                            AudioClipMode mode = AudioClipMode::Static);
 
-    /**
-     * @brief Registers already-decoded PCM as a clip.
-     *
-     * Resampled to the device's rate at this point rather than during playback,
-     * so the mixer never interpolates. Useful for generated audio — see
-     * AudioClipLoader::makeSineTone().
-     */
+    /// Registers already-decoded PCM as a clip, resampled to the device's
+    /// rate now rather than during playback. For generated audio; see
+    /// AudioClipLoader::makeSineTone().
     [[nodiscard]] AudioClipHandle createClip(const AudioClipData& data,
                                              AudioClipMode mode = AudioClipMode::Static);
 
-    /**
-     * @brief Releases @p clip's samples.
-     *
-     * Voices still playing it are stopped first: letting them run would leave
-     * the mixer reading a buffer that has been freed.
-     */
+    /// Releases @p clip's samples, stopping any voice still playing it first.
     void unloadClip(AudioClipHandle clip) noexcept;
 
     //! Forgets every clip and stops every voice.
     void unloadAllClips() noexcept;
 
-    /**
-     * @brief Starts a voice.
-     *
-     * @return A handle to the new voice, or an invalid handle when @p desc names
-     *         an unknown clip or every voice slot is busy. Voice exhaustion is
-     *         a dropped sound, not an error: the alternative is stealing a
-     *         voice from something already audible.
-     */
+    /// Starts a voice. @return An invalid handle if @p desc names an unknown
+    /// clip or every voice slot is busy -- a dropped sound, not an error.
     [[nodiscard]] AudioSourceHandle play(const AudioSourceDesc& desc);
 
     //! Convenience overload: play @p clip once, unspatialized, at @p gain.
@@ -216,15 +177,9 @@ public:
     void setMasterVolume(f32 volume) noexcept;
     [[nodiscard]] f32 masterVolume() const noexcept;
 
-    /**
-     * @brief Per-frame upkeep. Call once per frame with the frame delta.
-     *
-     * Reclaims the slots of voices that finished on the audio thread and tops
-     * up streaming buffers. Skipping it does not break playback — the mixer is
-     * driven by the device, not by this — but finished voices stop being
-     * recycled, so the pool eventually fills and play() starts returning an
-     * invalid handle.
-     */
+    /// Per-frame upkeep: reclaims finished voice slots and tops up streaming
+    /// buffers. Skipping it doesn't break playback, but finished voices stop
+    /// being recycled and play() eventually starts returning invalid handles.
     void update(f32 deltaSeconds);
 
     //! The device's granted output format.
@@ -238,13 +193,9 @@ public:
     //! (the null device), where every other operation still behaves normally.
     [[nodiscard]] bool isDeviceRunning() const noexcept;
 
-    /**
-     * @brief Re-attempt start() on a device that is open but not running.
-     *
-     * Exists for the web: browsers refuse to start audio until the page has
-     * seen a user gesture, so a WASM build should call this from an input
-     * handler. A no-op everywhere else once the device is already running.
-     */
+    /// Re-attempts start() on a device that is open but not running. For the
+    /// web: browsers block audio until a user gesture, so a WASM build should
+    /// call this from an input handler. No-op once already running.
     void resumeDevice();
 
 private:
@@ -255,19 +206,13 @@ private:
         AudioClipMode mode = AudioClipMode::Static;
     };
 
-    /**
-     * @brief One playing instance of a clip.
-     *
-     * `generation` is what makes recycled slots safe: a handle carries the
-     * generation its slot had when issued, and any operation on a slot whose
-     * generation has moved on is ignored rather than applied to the voice that
-     * took its place.
-     */
+    /// One playing instance of a clip. `generation` makes recycled slots
+    /// safe: a stale handle's generation no longer matches its slot's, so the
+    /// operation is ignored rather than applied to the voice that replaced it.
     struct Voice {
         AudioClipHandle clip;
-        //! Playback position, in frames from the clip's start. A plain integer
-        //! because clips are resampled to the device rate once at load, which
-        //! keeps the mixer's inner loop to an add and leaves no fractional
+        //! Playback position in frames. Plain integer since clips are
+        //! resampled to the device rate at load, so there's no fractional
         //! position to track.
         usize cursor = 0;
         f32 gain = 1.0f;

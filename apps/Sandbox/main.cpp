@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <vector>
 
@@ -17,6 +19,7 @@
 
 #ifdef AURA_HAS_UI
 #include "aura/UI/AuraUI.h"
+#include "aura/UI/InputRouter.h"
 #endif
 
 using namespace aura3d;
@@ -32,6 +35,139 @@ struct SceneObject {
     float spinSpeed = 0.0f; // radians/second about +Y
 };
 
+#ifdef AURA_HAS_UI
+
+/*
+ * Everything below this point, down to appendQuad(), used to be the separate
+ * apps/UIPlayground demo: objects spawned and removed at runtime through UI
+ * panels, and a procedurally animated 2D sprite. It is folded in here rather
+ * than kept apart because both were the same kind of thing -- IRenderer plus
+ * aura3d::ui driving a live scene -- and a second near-identical app cost more
+ * to keep in sync than a few extra panels cost to read. See docs/12 and
+ * docs/13 for what the widgets themselves do; this is still their reference
+ * usage.
+ *
+ * All of it is additive: the WASD/mouse-look/touch camera, the audio demo and
+ * the floor-plus-three-objects scene above are untouched. What follows spawns
+ * *more* objects alongside them (offset behind the original scene so the two
+ * do not overlap on spawn) and layers three more panels beside "Scene".
+ */
+
+constexpr size_t kMaxSpawnedObjects = 48;
+
+//! Golden-angle spiral: each new object lands at a fixed angular step from the
+//! last, with radius growing as sqrt(index). That spacing is what keeps
+//! objects from ever landing on top of each other however many are spawned,
+//! with no randomness needed -- the layout is identical on every run.
+constexpr float kGoldenAngle = 2.399963229f; // radians, ~137.5 degrees
+
+//! Shifted well behind the original scene (see the stress-object grid further
+//! down, which offsets the same way) so the first few spawns do not land on
+//! top of the floor's existing cubes and orb.
+constexpr glm::vec3 kSpawnOrigin{0.0f, 0.0f, -6.0f};
+
+[[nodiscard]] glm::vec3 spawnPosition(size_t index) noexcept
+{
+    const float angle = static_cast<float>(index) * kGoldenAngle;
+    const float radius = 0.85f * std::sqrt(static_cast<float>(index) + 1.0f);
+    return kSpawnOrigin + glm::vec3{radius * std::cos(angle), 0.0f, radius * std::sin(angle)};
+}
+
+// The animated sprite: a texture regenerated every frame, drawn directly
+// through drawBatch2D -- independent of both the 3D scene and the UI's own
+// batch.
+
+constexpr u32 kSpriteSize = 96;
+
+/**
+ * @brief Refills @p pixels with one frame of a plasma-style animation.
+ *
+ * Coverage only -- RGB stays white, alpha carries the shape -- exactly the
+ * convention FontAtlas rasterizes glyphs with. That is what lets a single
+ * texture be recoloured for free by the vertex colour drawBatch2D() blends it
+ * against, rather than needing one texture per hue.
+ *
+ * @note This differs from how FontAtlas or AuraUI's own atlas is kept up to
+ * date on purpose. Those upload a small dirty rectangle only when new content
+ * was actually rasterized, because their content is static once drawn -- a
+ * glyph, once rasterized, never changes. This texture is the other case: the
+ * whole image changes every frame, so there is no sparse region to track and
+ * the full @p size x @p size rectangle is regenerated and reuploaded each
+ * time. Reach for FontAtlas's lazy, dirty-rectangle pattern when content is
+ * static and drawn repeatedly; reach for this whole-texture pattern when it
+ * is not static to begin with.
+ */
+void regenerateSprite(std::vector<u8>& pixels, u32 size, float time) noexcept
+{
+    for (u32 y = 0; y < size; ++y)
+    {
+        for (u32 x = 0; x < size; ++x)
+        {
+            const float u = static_cast<float>(x) / static_cast<float>(size);
+            const float v = static_cast<float>(y) / static_cast<float>(size);
+
+            // Three overlapping sine waves at different speeds and axes read
+            // as a slowly churning plasma rather than a simple ripple.
+            const float wave = std::sin(u * 8.0f + time)
+                             + std::sin(v * 7.0f - time * 1.3f)
+                             + std::sin((u + v) * 6.0f + time * 0.7f);
+            const float coverage = std::clamp(0.5f + 0.16f * wave, 0.0f, 1.0f);
+
+            // A radial falloff from the centre turns the square texture into
+            // a soft round blob instead of a filled tile.
+            const float dx = u - 0.5f;
+            const float dy = v - 0.5f;
+            const float radial = std::clamp(1.0f - std::sqrt(dx * dx + dy * dy) * 2.0f, 0.0f, 1.0f);
+
+            const auto alpha = static_cast<u8>(std::clamp(coverage * radial, 0.0f, 1.0f) * 255.0f);
+
+            u8* texel = &pixels[(static_cast<size_t>(y) * size + x) * 4];
+            texel[0] = 255;
+            texel[1] = 255;
+            texel[2] = 255;
+            texel[3] = alpha;
+        }
+    }
+}
+
+/// Standard HSV(hue, 1, 1) -> RGB, used to turn one "Hue" slider into a vivid
+/// colour without needing three separate R/G/B sliders in the panel.
+[[nodiscard]] glm::vec3 hueToRgb(float hue01) noexcept
+{
+    const float h = std::clamp(hue01, 0.0f, 1.0f) * 6.0f;
+    const float x = 1.0f - std::abs(std::fmod(h, 2.0f) - 1.0f);
+
+    if (h < 1.0f) return {1.0f, x, 0.0f};
+    if (h < 2.0f) return {x, 1.0f, 0.0f};
+    if (h < 3.0f) return {0.0f, 1.0f, x};
+    if (h < 4.0f) return {0.0f, x, 1.0f};
+    if (h < 5.0f) return {x, 0.0f, 1.0f};
+    return {1.0f, 0.0f, x};
+}
+
+/// Appends one axis-aligned textured quad to a 2D batch, matching the vertex
+/// order AuraUI and TextOverlay both use (top-left, top-right, bottom-right,
+/// bottom-left) so the two triangles share the quad's diagonal.
+void appendQuad(std::vector<gfx::Vertex2D>& vertices, std::vector<u32>& indices,
+                const glm::vec2& min, const glm::vec2& max, const glm::vec4& color)
+{
+    const auto base = static_cast<u32>(vertices.size());
+
+    vertices.push_back({{min.x, min.y}, {0.0f, 0.0f}, color});
+    vertices.push_back({{max.x, min.y}, {1.0f, 0.0f}, color});
+    vertices.push_back({{max.x, max.y}, {1.0f, 1.0f}, color});
+    vertices.push_back({{min.x, max.y}, {0.0f, 1.0f}, color});
+
+    indices.push_back(base + 0);
+    indices.push_back(base + 1);
+    indices.push_back(base + 2);
+    indices.push_back(base + 2);
+    indices.push_back(base + 3);
+    indices.push_back(base + 0);
+}
+
+#endif // AURA_HAS_UI
+
 } // namespace
 
 int main()
@@ -44,9 +180,6 @@ int main()
 
     auto* windowManager = r->getWindowManager();
     wma::KeyboardListener& keyboard = windowManager->getKeyboardListener();
-    wma::MouseListener& mouse = windowManager->getMouseListener();
-    wma::InputContextId gameplay = keyboard.createContext();
-    keyboard.setActiveContext(gameplay);
 
     // camera
     const wma::WindowDetails* wd = r->getWindowManager()->getWindowDetails();
@@ -69,19 +202,56 @@ int main()
 
     constexpr float kMouseSensitivity = 0.1f;
 
+#ifdef AURA_HAS_UI
+    /*
+     * The engine's built-in immediate-mode UI. It draws through the same
+     * backend-agnostic 2D pipeline the text overlay uses, so this same code
+     * runs unchanged on Vulkan, OpenGL and the software rasterizer, and the
+     * whole panel below costs a single draw call.
+     *
+     * Built before the gameplay bindings below because ui::InputRouter has to
+     * exist first: it owns the wma input contexts those bindings are registered
+     * into, which is what lets a menu suspend them wholesale.
+     */
+    ui::ContextDesc uiDesc;
+    uiDesc.pixelHeight = 15.0f;
+    ui::Context gui(r, uiDesc);
+
     /*
      * Mouse-look and a pointer-driven UI want opposite things from the cursor:
      * the first needs it captured and invisible, the second needs it free and
-     * on screen. Tab swaps between the two modes, which is also what makes the
-     * cursor position the UI reads meaningful -- in relative mode there is no
-     * cursor for it to hit-test against.
+     * on screen. The router owns that swap -- along with suspending a mode's
+     * bindings while another is current, which is what stops typing "east" into
+     * a field from also firing the E binding and walking the camera.
+     *
+     * How many modes there are, and which key reaches which, is the
+     * application's call rather than the engine's. This sandbox needs only the
+     * built-in kGameplay and one tool screen, so it uses kMenu as-is; a game
+     * with a pause screen and an inventory declares createMode() for each and
+     * gives them a bindToggle() apiece.
      */
+    constexpr auto kTools = ui::InputRouter::kMenu;
+
+    ui::InputRouter input(*windowManager, gui);
+
+    /*
+     * F1 rather than Tab, which this used to use. Tab is the UI's own focus
+     * traversal key, and a toggle bound to it fires for every widget that is
+     * not a text field -- so tabbing between controls dismissed the panels
+     * instead of advancing focus, leaving keyboard navigation unreachable in
+     * the one demo built to show it off.
+     */
+    input.bindToggle(wma::KEY_F1, kTools);
+    input.bindClose(wma::KEY_ESCAPE, kTools);
+
+    //! gui.attachInput() is not called here: the router already did it, from
+    //! inside the context of each mode that asked for a UI.
+
 #ifdef __ANDROID__
     //! Touch is the only pointer there is and it is never captured, so there is
-    //! no mode to swap out of: the UI is simply always up.
-    bool uiVisible = true;
-#else
-    bool uiVisible = false;
+    //! no mode to swap out of -- the panels are simply always up.
+    input.switchTo(kTools);
+#endif
 #endif
 
 #ifdef __ANDROID__
@@ -165,29 +335,46 @@ int main()
             }
         }));
 #else
-    mouse.setCursorEnabled(false);
-    mouse.setMoveAction(wma::MouseAction{[&](const wma::WMAMousePosition& pos) {
-        //! Motion belongs to the UI while it is up, not to the camera.
-        if (uiVisible)
-            return;
-
+    const auto look = [&](const wma::WMAMousePosition& pos) {
         camYaw += static_cast<float>(pos.deltaX) * kMouseSensitivity;
         camPitch += static_cast<float>(pos.deltaY) * kMouseSensitivity;
         camera.setRotation(camYaw, camPitch);
-    }});
+    };
 
-    keyboard.addKeyAction(wma::KEY_TAB, wma::KeyAction{[&]() {
-        uiVisible = !uiVisible;
-        mouse.setCursorEnabled(uiVisible);
-    }});
+#ifdef AURA_HAS_UI
+    //! The router suppresses this while a screen is up and owns the cursor
+    //! capture that goes with it, so neither is tested here.
+    input.bindLook(look);
+#else
+    wma::MouseListener& mouse = windowManager->getMouseListener();
+    mouse.setCursorEnabled(false);
+    mouse.setMoveAction(wma::MouseAction{wma::MouseAction::PositionCallback(look)});
+#endif
 #endif
 
-    auto bindHeld = [&keyboard](wma::Key key, bool& flag) {
+    /*
+     * Movement, bound through the router where the UI exists: it registers them
+     * in kGameplay's input context alone, so W/A/S/D/Space are plain letters
+     * while a text field has focus rather than also walking the camera, and a
+     * key still held when a screen opens is dropped rather than left stuck.
+     */
+#ifdef AURA_HAS_UI
+    const auto bindHeld = [&input](wma::Key key, bool& flag) { input.bindHeld(key, flag); };
+    const auto bindPress = [&input](wma::Key key, std::function<void()> action) {
+        input.bindPress(key, std::move(action));
+    };
+#else
+    const auto bindHeld = [&keyboard](wma::Key key, bool& flag) {
         keyboard.addKeyAction(key, wma::KeyAction{
             [&flag]() { flag = true; },
             [&flag]() { flag = false; }
         });
     };
+    const auto bindPress = [&keyboard](wma::Key key, std::function<void()> action) {
+        keyboard.addKeyAction(key, wma::KeyAction{[action = std::move(action)]() { action(); }});
+    };
+#endif
+
     bindHeld(wma::KEY_W, moveForward);
     bindHeld(wma::KEY_S, moveBack);
     bindHeld(wma::KEY_A, moveLeft);
@@ -298,18 +485,15 @@ int main()
     orbDesc.maxDistance = 14.0f;  // inaudible past it
     const AudioSourceHandle orbVoice = audio->play(orbDesc);
 
-    // E fires a one-shot. Bound on press only (the release lambda is empty), so
-    // holding the key does not retrigger it every frame.
-    keyboard.addKeyAction(wma::KEY_E, wma::KeyAction{
-        [&]() { (void)audio->play(blipClip, 0.8f); },
-        []() {}
-    });
+    // E fires a one-shot. Bound on press only, so holding the key does not
+    // retrigger it every frame -- and through bindPress(), so typing an "e"
+    // into a text field is a letter rather than also a blip.
+    bindPress(wma::KEY_E, [&]() { (void)audio->play(blipClip, 0.8f); });
 
     // M mutes and unmutes, which is also the quickest way to confirm the master
     // gain is reaching the mixer.
-    keyboard.addKeyAction(wma::KEY_M, wma::KeyAction{
-        [&]() { audio->setMasterVolume(audio->masterVolume() > 0.0f ? 0.0f : 1.0f); },
-        []() {}
+    bindPress(wma::KEY_M, [&]() {
+        audio->setMasterVolume(audio->masterVolume() > 0.0f ? 0.0f : 1.0f);
     });
 
     INK_INFO << "Audio: " << (audio->isDeviceRunning() ? "running" : "silent (no device)")
@@ -363,22 +547,41 @@ int main()
     TextOverlay overlay(r, overlayDesc);
 
 #ifdef AURA_HAS_UI
-    /*
-     * The engine's built-in immediate-mode UI. It draws through the same
-     * backend-agnostic 2D pipeline the text overlay uses, so this same code
-     * runs unchanged on Vulkan, OpenGL and the software rasteriser, and the
-     * whole panel below costs a single draw call.
-     */
-    ui::ContextDesc uiDesc;
-    uiDesc.pixelHeight = 15.0f;
-    ui::Context gui(r, uiDesc);
-
-    //! Binds the left button. The cursor is polled rather than bound, so the
-    //! camera's move callback above keeps working untouched.
-    gui.attachInput(*windowManager);
-
     float lightIntensity = light.intensity;
     float lightAmbient = light.ambient;
+
+    // -- Spawnable objects: same meshes/materials as the scene above, placed
+    // -- on a spiral behind it so the two never overlap on spawn.
+    std::vector<SceneObject> spawned;
+    std::vector<IRenderer::DrawItem> spawnedDrawItems;
+
+    bool spawnSpinEnabled = true;
+    float spawnSpinSpeedScale = 1.0f;
+    float spawnSpinTime = 0.0f; // Its own clock, independent of the scene's.
+
+    // -- The animated sprite: allocated once, rewritten in full every frame
+    // -- it animates. See regenerateSprite()'s comment for why that upload
+    // -- shape is deliberate here rather than a bug.
+    const TextureHandle spriteTexture = r->createDynamicTexture(kSpriteSize, kSpriteSize);
+    std::vector<u8> spritePixels(static_cast<size_t>(kSpriteSize) * kSpriteSize * 4);
+
+    bool spriteAnimate = true;
+    float spriteSpeed = 1.0f;
+    float spriteHue = 0.55f;
+    float spriteScale = 160.0f;
+    float spriteAlpha = 0.9f;
+    float spriteTime = 0.0f;
+
+    std::vector<gfx::Vertex2D> spriteVertices;
+    std::vector<u32> spriteIndices;
+
+    // -- Inspector demo state: a text field, a drop-down, a radio group and a
+    // -- scrolling selection list -- exercises the widgets that needed the
+    // -- keyboard/scroll/focus work behind them to be reachable at all.
+    std::string sceneName = "sandbox";
+    int shadingMode = 0;
+    int detailLevel = 1;
+    int selectedSpawned = -1;
 #endif
 
     //! Rotation runs off its own clock rather than off the wall clock, so
@@ -427,6 +630,13 @@ int main()
 
         if (spinning)
             spinTime += dt;
+
+#ifdef AURA_HAS_UI
+        if (spawnSpinEnabled)
+            spawnSpinTime += dt * spawnSpinSpeedScale;
+        if (spriteAnimate)
+            spriteTime += dt * spriteSpeed;
+#endif
 
         const glm::vec3 forward = camera.forward();
         const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
@@ -509,19 +719,75 @@ int main()
         }
 #endif
 
+#ifdef AURA_HAS_UI
+        // A second, independent submission for whatever has been spawned
+        // through the "Objects" panel -- kept apart from `scene`'s own
+        // drawMeshes() call above so that call's cost (and the profiling
+        // around it) keeps measuring exactly what it always has.
+        if (!spawned.empty())
+        {
+            spawnedDrawItems.resize(spawned.size());
+            for (size_t i = 0; i < spawned.size(); ++i)
+            {
+                const SceneObject& object = spawned[i];
+
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), object.position);
+
+                if (object.spinSpeed != 0.0f)
+                    model = glm::rotate(model, spawnSpinTime * object.spinSpeed, glm::vec3(0.0f, 1.0f, 0.0f));
+
+                model = glm::scale(model, object.scale);
+
+                spawnedDrawItems[i] = {object.mesh, object.material, model};
+            }
+
+            r->drawMeshes(spawnedDrawItems);
+        }
+#endif
+
         // The 2D pipeline supplies its own orthographic projection, so the
         // overlay needs nothing from the scene camera and leaves the scene's
         // transform untouched.
         overlay.drawFPS(10.0f, 10.0f);
 
 #ifdef AURA_HAS_UI
-        if (uiVisible)
+        // -- 2D: the animated sprite, drawn independently of the UI ---------
+        if (spriteAnimate)
+        {
+            regenerateSprite(spritePixels, kSpriteSize, spriteTime);
+            r->updateTextureRegion(spriteTexture, 0, 0, kSpriteSize, kSpriteSize, spritePixels.data());
+        }
+
+        // The margin grows with the scale slider, so the corner nearest the
+        // edge stays a fixed 16px inset at every size instead of the sprite
+        // clipping off-screen once Scale is pushed past a fixed margin.
+        {
+            const glm::vec2 half{spriteScale * 0.5f, spriteScale * 0.5f};
+            const float margin = spriteScale * 0.5f + 16.0f;
+            const glm::vec2 anchor{static_cast<float>(lastWindowWidth) - margin,
+                                   static_cast<float>(lastWindowHeight) - margin};
+            const glm::vec4 spriteColor{hueToRgb(spriteHue), spriteAlpha};
+
+            spriteVertices.clear();
+            spriteIndices.clear();
+            appendQuad(spriteVertices, spriteIndices, anchor - half, anchor + half, spriteColor);
+            r->drawBatch2D(spriteVertices, spriteIndices, spriteTexture);
+        }
+
+        /*
+         * Opens the UI's frame in every mode, not only while the panels are
+         * up: that is what keeps gui.isCapturingMouse()/isCapturingKeyboard()
+         * describing the frame that just happened, which is in turn what the
+         * router's gameplay suppression reads. A frame that submits no panel
+         * costs a buffer clear.
+         */
+        input.newFrame();
+
+        if (input.isMode(kTools))
         {
             // Rebuilt from scratch every frame, which is what keeps it from
             // ever disagreeing with the state it edits: there is no widget
             // object holding a stale copy of `spinning` or of the light.
-            gui.newFrame();
-
             if (gui.beginPanel("Scene", {16.0f, 48.0f}, 260.0f))
             {
                 gui.label(RendererChoiceToString(r->getBackendType()));
@@ -556,9 +822,125 @@ int main()
                 gui.endPanel();
             }
 
-            // Single draw call, whatever the panel contains.
-            gui.render();
+            (void)gui.beginPanel("Objects", {292.0f, 48.0f}, 240.0f);
+            {
+                char count[48];
+                std::snprintf(count, sizeof(count), "%zu / %zu spawned",
+                              spawned.size(), kMaxSpawnedObjects);
+                gui.label(count);
+                gui.separator();
+
+                if (gui.button("+ Crate") && spawned.size() < kMaxSpawnedObjects)
+                {
+                    spawned.push_back({cubeMesh, crateMat, spawnPosition(spawned.size()),
+                                       glm::vec3(1.0f), 0.6f});
+                }
+
+                if (gui.button("+ Orb") && spawned.size() < kMaxSpawnedObjects)
+                {
+                    spawned.push_back({sphereMesh, orbMat, spawnPosition(spawned.size()),
+                                       glm::vec3(1.0f), -0.5f});
+                }
+
+                if (gui.button("Remove last") && !spawned.empty())
+                    spawned.pop_back();
+
+                gui.separator();
+                gui.checkbox("Spin", spawnSpinEnabled);
+                gui.sliderFloat("Spin speed", spawnSpinSpeedScale, 0.0f, 3.0f);
+
+                gui.endPanel();
+            }
+
+            (void)gui.beginPanel("Sprite", {548.0f, 48.0f}, 240.0f);
+            {
+                gui.label("Regenerated live, 96x96");
+                gui.separator();
+
+                gui.checkbox("Animate", spriteAnimate);
+                gui.sliderFloat("Speed", spriteSpeed, 0.0f, 4.0f);
+                gui.sliderFloat("Hue", spriteHue, 0.0f, 1.0f);
+                gui.sliderFloat("Scale", spriteScale, 32.0f, 320.0f);
+                gui.sliderFloat("Alpha", spriteAlpha, 0.0f, 1.0f);
+
+                gui.endPanel();
+            }
+
+            /*
+             * Exercises the input and widget work built for text/scroll/focus:
+             * a text field driven by the platform's committed-text stream, a
+             * fixed-height scrolling list, and the widgets that needed focus
+             * to be reachable without a mouse. Tab and Shift+Tab walk every
+             * control on screen.
+             */
+            (void)gui.beginPanel("Inspector", {804.0f, 48.0f}, 260.0f);
+            {
+                gui.inputText("Name", sceneName);
+                gui.inputFloat("Spin", spawnSpinSpeedScale);
+
+                static constexpr std::string_view kModes[] = {"Lit", "Unlit", "Wireframe"};
+                gui.dropdown("Shading", shadingMode, kModes);
+
+                gui.separator();
+
+                if (gui.beginTabBar("InspectorTabs"))
+                {
+                    if (gui.tabItem("Scene"))
+                    {
+                        gui.radioButton("Low", detailLevel, 0);
+                        gui.radioButton("Medium", detailLevel, 1);
+                        gui.radioButton("High", detailLevel, 2);
+                    }
+
+                    if (gui.tabItem("Objects"))
+                    {
+                        //! Fixed height, so a long list scrolls rather than
+                        //! growing the panel past the bottom of the window.
+                        (void)gui.beginScroll("SpawnedList", 120.0f);
+                        {
+                            for (size_t i = 0; i < spawned.size(); ++i)
+                            {
+                                char row[32];
+                                std::snprintf(row, sizeof(row), "Object %zu", i);
+                                if (gui.selectable(row, selectedSpawned == static_cast<int>(i)))
+                                    selectedSpawned = static_cast<int>(i);
+                            }
+                            gui.endScroll();
+                        }
+                    }
+
+                    gui.endTabBar();
+                }
+
+                if (gui.collapsingHeader("Advanced", false))
+                {
+                    if (gui.treeNode("Rendering", true))
+                    {
+                        gui.checkbox("Spin enabled", spawnSpinEnabled);
+                        gui.treePop();
+                    }
+                }
+
+                gui.separator();
+                gui.setNextItemWidth(110.0f);
+                gui.button("Apply");
+                gui.tooltip("Nothing to apply -- this is a layout demo");
+                gui.sameLine();
+                if (gui.button("Reset"))
+                {
+                    spawnSpinSpeedScale = 1.0f;
+                    detailLevel = 1;
+                    shadingMode = 0;
+                }
+
+                gui.endPanel();
+            }
         }
+
+        //! Outside the screen check, so the frame the panels are dismissed on
+        //! still gets its (now empty) batch closed out. Costs nothing when
+        //! nothing was submitted, and is a single draw call when it was.
+        gui.render();
 #endif
 
         r->endRenderPass();

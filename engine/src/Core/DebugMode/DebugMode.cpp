@@ -11,11 +11,7 @@
 #include "aura/Renderer/IRenderer.h"
 
 namespace aura3d {
-
 namespace {
-
-//! Bumped whenever a field changes meaning rather than merely being added, so a
-//! tool reading old artifacts can tell which contract it is looking at.
 constexpr const char* kSchemaVersion = "aura3d.benchmark/1";
 
 constexpr f64 kNanosPerMilli = 1.0e6;
@@ -25,13 +21,6 @@ constexpr f64 kNanosPerMilli = 1.0e6;
     return static_cast<f64>(nanos) / kNanosPerMilli;
 }
 
-/**
- * @brief Reads an environment variable, or an empty string when unset.
- *
- * Split out for MSVC, whose getenv() is a deprecation warning under the
- * default warning level and whose replacement hands back an allocation the
- * caller owns.
- */
 [[nodiscard]] std::string readEnv(const char* name)
 {
 #ifdef _MSC_VER
@@ -50,7 +39,6 @@ constexpr f64 kNanosPerMilli = 1.0e6;
 #endif
 }
 
-//! Applies @p name's value to @p target when the variable is set and parses.
 void applyEnv(const char* name, u32& target)
 {
     const std::string value = readEnv(name);
@@ -129,15 +117,6 @@ void applyEnv(const char* name, std::string& target)
 #endif
 }
 
-/**
- * @brief Current UTC time as ISO 8601, e.g. "2026-08-16T09:41:07Z".
- *
- * std::gmtime rather than <chrono>'s formatter: chrono calendar formatting is
- * still uneven across the four standard libraries this engine builds against
- * (notably Emscripten's), and this is one string in a file written once. The
- * shared static buffer gmtime returns is not a concern here -- report writing
- * is not concurrent with anything else that formats a time.
- */
 [[nodiscard]] std::string utcTimestamp()
 {
     const std::time_t now = std::time(nullptr);
@@ -153,8 +132,6 @@ void applyEnv(const char* name, std::string& target)
     return buffer;
 }
 
-//! A StatSummary as a JSON object, so every distribution in the report reads
-//! the same way.
 [[nodiscard]] ink::EnhancedJson summaryToJson(const StatSummary& summary)
 {
     ink::EnhancedJson json = ink::EnhancedJson::object();
@@ -216,12 +193,6 @@ DebugModeConfig DebugModeConfig::fromSettings(AuraSettings* settings)
         }
     }
 
-    /*
-     * Environment last, so it wins. This is what lets one built image be
-     * pointed at a different report path, frame count or budget per CI job
-     * without a settings.json edit baked into the image -- and what lets a
-     * developer run the same binary the pipeline runs.
-     */
     applyEnv("AURA_DEBUG_REPORT",    config.reportPath);
     applyEnv("AURA_DEBUG_LABEL",     config.label);
     applyEnv("AURA_DEBUG_FRAMES",    config.targetFrames);
@@ -229,8 +200,6 @@ DebugModeConfig DebugModeConfig::fromSettings(AuraSettings* settings)
     applyEnv("AURA_DEBUG_BUDGET_MS", config.frameBudgetMillis);
     applyEnv("AURA_DEBUG_EXIT",      config.exitOnComplete);
 
-    //! A zero-capacity ring would divide by zero everywhere downstream, and a
-    //! non-positive budget makes every frame over budget.
     config.sampleCapacity    = std::max(config.sampleCapacity, 1u);
     config.frameBudgetMillis = std::max(config.frameBudgetMillis, 0.001);
 
@@ -240,12 +209,6 @@ DebugModeConfig DebugModeConfig::fromSettings(AuraSettings* settings)
 DebugMode::DebugMode(DebugModeConfig config)
     : _config(std::move(config))
 {
-    /*
-     * The ring is allocated once, here, and never grows. onFrameSample() runs
-     * on the frame path and must not allocate: an allocation there would be
-     * counted by the very tracker it is sampling, so the act of measuring
-     * would move the number.
-     */
     AllocationTracker::ScopedMute mute;
 
     _samples.resize(_config.sampleCapacity);
@@ -264,12 +227,6 @@ DebugMode::DebugMode(DebugModeConfig config)
 
 DebugMode::~DebugMode()
 {
-    /*
-     * The last chance to produce a report: a run that ends by the window
-     * closing never reaches a target frame count, and losing the whole
-     * measurement to that would make the subsystem useless for exactly the
-     * interactive sessions it is also meant for.
-     */
     if (_reportWritten || _capturedFrames == 0)
         return;
 
@@ -291,12 +248,6 @@ bool DebugMode::finished() const noexcept
 
 void DebugMode::onFrameSample(const FrameSample& sample) noexcept
 {
-    /*
-     * The first frames of a run are shader compilation, texture upload,
-     * swapchain settling and cold pages -- an order of magnitude slower than
-     * steady state, and enough of them to move a p99. Dropped rather than
-     * flagged, since no consumer of the report wants them.
-     */
     if (_warmupRemaining > 0)
     {
         --_warmupRemaining;
@@ -336,8 +287,6 @@ void DebugMode::onFrameSample(const FrameSample& sample) noexcept
     for (u32 phase = 0; phase < kFramePhaseCount; ++phase)
         _phaseTotalNanos[phase] += record.phaseNanos[phase];
 
-    //! Whole-run, not window: a leak that develops over a hundred thousand
-    //! frames must not be judged from the last twenty thousand.
     _liveBytesTrend.add(static_cast<f64>(record.liveBytes));
 
     if (toMillis(record.frameNanos) > _config.frameBudgetMillis)
@@ -367,19 +316,11 @@ void DebugMode::update(f32 deltaSeconds) noexcept
 {
     _wallSeconds += static_cast<f64>(deltaSeconds);
 
-    /*
-     * Both branches below write a file, which is why they live here rather than
-     * in onFrameSample(): that runs inside FrameProfiler's frame-close, between
-     * the renderer's present and the next frame's begin, and an fsync there
-     * would be measured as part of the frame it is reporting on.
-     */
     if (_config.autoFlushIntervalFrames > 0 &&
         _framesSinceAutoFlush >= _config.autoFlushIntervalFrames)
     {
         _framesSinceAutoFlush = 0;
 
-        //! Interim reports do not mark the run as reported: the destructor
-        //! should still write the final one over the top.
         const bool written = flushReport();
         _reportWritten = false;
 
@@ -390,11 +331,6 @@ void DebugMode::update(f32 deltaSeconds) noexcept
     if (!finished() || _completionHandled)
         return;
 
-    //! Set before flushReport() so a run configured with exitOnComplete=false
-    //! calls it exactly once: without this, every frame after the target is
-    //! reached would retake this branch, rebuilding and rewriting the whole
-    //! report (plus this log line) once per frame for as long as the
-    //! application keeps running.
     _completionHandled = true;
 
     const bool written = flushReport();
@@ -406,20 +342,6 @@ void DebugMode::update(f32 deltaSeconds) noexcept
     if (!_config.exitOnComplete)
         return;
 
-    /*
-     * std::_Exit rather than std::exit or a return out of the loop.
-     *
-     * There is no way to leave IRenderer::run()'s loop from inside a frame:
-     * the window manager owns the loop condition, and tearing the window down
-     * mid-frame would leave the renderer presenting to a destroyed surface.
-     * std::exit is no better -- it runs static destructors from a point where
-     * the renderer still holds live GPU objects and a frame is half recorded.
-     *
-     * _Exit runs nothing and returns to the OS immediately, which is exactly
-     * right here: the only artifact of a benchmark run is the report, and it
-     * is already flushed and closed on the line above. Opt-in
-     * (DebugModeConfig::exitOnComplete) precisely because it is this blunt.
-     */
     INK_INFO << "DebugMode: exit_on_complete set; ending the process";
     std::_Exit(written ? EXIT_SUCCESS : EXIT_FAILURE);
 }
@@ -438,7 +360,6 @@ std::vector<DebugMode::FrameRecord> DebugMode::orderedSamples() const
         return ordered;
     }
 
-    //! Wrapped: the oldest surviving sample is the one about to be overwritten.
     ordered.reserve(_samples.size());
     ordered.insert(ordered.end(),
                    _samples.begin() + static_cast<isize>(_writeIndex), _samples.end());
@@ -460,13 +381,6 @@ ink::EnhancedJson DebugMode::buildFrameSection(const std::vector<FrameRecord>& o
     const StatSummary summary = BenchmarkStats::summarize(millis);
     frame["cpu_ms"] = summaryToJson(summary);
 
-    /*
-     * FPS derived from the frame-time percentiles rather than averaged
-     * directly: the mean of 1/t is not 1/mean(t), and the difference is
-     * precisely the hitches. "1% low" here means the frame rate at the 99th
-     * percentile frame time -- the speed of the slowest 1% of frames, which is
-     * the number a player actually notices.
-     */
     ink::EnhancedJson fps = ink::EnhancedJson::object();
     fps["mean"]                  = summary.mean   > 0.0 ? 1000.0 / summary.mean   : 0.0;
     fps["median"]                = summary.median > 0.0 ? 1000.0 / summary.median : 0.0;
@@ -483,19 +397,10 @@ ink::EnhancedJson DebugMode::buildFrameSection(const std::vector<FrameRecord>& o
                                                 : 0.0;
     budget["max_consecutive_over_budget"] = _maxConsecutiveOverBudget;
 
-    /*
-     * Two probabilities, deliberately. The empirical one counts what happened
-     * and cannot see past the slowest frame observed; the normal fit
-     * extrapolates and so can put a number on a budget the run never crossed.
-     * They disagree exactly when the distribution is skewed, which for frame
-     * times it always is -- so the pair is more informative than either.
-     */
     budget["probability_empirical"]  = BenchmarkStats::empiricalExceedance(millis, _config.frameBudgetMillis);
     budget["probability_normal_fit"] = BenchmarkStats::normalExceedance(summary, _config.frameBudgetMillis);
     frame["budget"] = std::move(budget);
 
-    //! Exact over the whole run, unlike everything above, which describes the
-    //! bounded window the ring holds.
     ink::EnhancedJson wholeRun = ink::EnhancedJson::object();
     wholeRun["frames"]  = _capturedFrames;
     wholeRun["mean_ms"] = _capturedFrames > 0
@@ -537,12 +442,6 @@ ink::EnhancedJson DebugMode::buildPhaseSection(const std::vector<FrameRecord>& o
         phases[toString(static_cast<FramePhase>(index))] = std::move(phase);
     }
 
-    /*
-     * The gap between the frame and the sum of its phases: the event pump,
-     * application logic, a frame limiter's sleep. Reported as a phase of its
-     * own because it is routinely the largest one, and folding it silently into
-     * the others would misattribute it.
-     */
     millis.clear();
     for (const FrameRecord& record : ordered)
     {
@@ -577,9 +476,6 @@ ink::EnhancedJson DebugMode::buildMemorySection() const
     ink::EnhancedJson memory = ink::EnhancedJson::object();
     ink::EnhancedJson cpu    = ink::EnhancedJson::object();
 
-    //! Stated explicitly rather than implied by zeroes: with the hooks compiled
-    //! out every counter below reads zero, and "no allocations" and "not
-    //! measured" must not look the same in an artifact.
     cpu["tracked"] = AllocationTracker::isHooked();
 
     const AllocationStats stats = AllocationTracker::get().snapshot();
@@ -593,11 +489,6 @@ ink::EnhancedJson DebugMode::buildMemorySection() const
     cpu["outstanding_bytes"]       = stats.outstandingBytes();
     cpu["outstanding_allocations"] = stats.outstandingAllocations();
 
-    /*
-     * The measured window, baselined at the first captured frame. Whole-process
-     * totals are dominated by asset loading and say nothing about steady state;
-     * these say what a frame costs.
-     */
     ink::EnhancedJson window = ink::EnhancedJson::object();
 
     const auto frames = static_cast<f64>(_capturedFrames);
@@ -611,19 +502,11 @@ ink::EnhancedJson DebugMode::buildMemorySection() const
     window["allocations_per_frame"] = frames > 0.0 ? static_cast<f64>(windowAllocations) / frames : 0.0;
     cpu["window"] = std::move(window);
 
-    /*
-     * The leak signal. A slope, not a delta between endpoints: a run that
-     * allocates and frees a megabyte every frame ends where it started and has
-     * a slope of zero, while one retaining a hundred bytes a frame has a slope
-     * of a hundred no matter how small its totals look.
-     */
     ink::EnhancedJson trend = ink::EnhancedJson::object();
     trend["slope_bytes_per_frame"] = _liveBytesTrend.slope();
     trend["samples"]               = _liveBytesTrend.count();
     cpu["trend"] = std::move(trend);
 
-    //! Only the non-empty buckets: a fixed 32-entry array of mostly zeroes
-    //! makes the artifact harder to read for no added information.
     ink::EnhancedJson sizeClasses = ink::EnhancedJson::array();
     for (usize index = 0; index < AllocationStats::kSizeClassCount; ++index)
     {
@@ -634,8 +517,6 @@ ink::EnhancedJson DebugMode::buildMemorySection() const
         bucket["min_bytes"] = AllocationTracker::sizeClassLowerBound(index);
         bucket["count"]     = stats.sizeClasses[index];
 
-        //! The last bucket is open-ended, so it gets no upper bound at all
-        //! rather than a misleading one.
         if (index + 1 < AllocationStats::kSizeClassCount)
             bucket["max_bytes"] = AllocationTracker::sizeClassLowerBound(index + 1) - 1;
 
@@ -655,8 +536,6 @@ ink::EnhancedJson DebugMode::buildGpuSection(const std::vector<FrameRecord>& ord
     const IGpuDebugSource* source = _renderer != nullptr ? _renderer->gpuDebugSource() : nullptr;
     if (source == nullptr)
     {
-        //! The software rasteriser has no device, and OpenGL has no timestamp
-        //! queries wired up yet. Both are honest "not measured", not zero.
         gpu["available"] = false;
         gpu["reason"]    = "backend exposes no GPU debug source";
         return gpu;
@@ -698,8 +577,6 @@ ink::EnhancedJson DebugMode::buildGpuSection(const std::vector<FrameRecord>& ord
         device["free_count"]       = memory.deviceFreeCount;
         device["live_blocks"]      = memory.deviceBlocksLive;
 
-        //! What the suballocator is holding but not handing out: a different
-        //! problem from allocating too much, and invisible in the totals.
         device["reserved_bytes"] = memory.deviceBytesLive >= memory.deviceBytesInUse
                                        ? memory.deviceBytesLive - memory.deviceBytesInUse
                                        : 0;
@@ -729,13 +606,6 @@ ink::EnhancedJson DebugMode::buildVerdictSection(const ink::EnhancedJson& frame,
     ink::EnhancedJson verdict = ink::EnhancedJson::object();
     ink::EnhancedJson checks  = ink::EnhancedJson::array();
 
-    /*
-     * Machine-readable pass/fail, so a pipeline can gate on the artifact
-     * without reimplementing the thresholds. Every threshold judged against is
-     * echoed into the report beside its result: a verdict whose criteria are
-     * not in the artifact cannot be reproduced from it.
-     */
-
     const bool sampled = _capturedFrames > 0;
     checks.push_back(makeCheck("frames_captured", sampled,
                                std::to_string(_capturedFrames) + " frames captured"));
@@ -750,8 +620,6 @@ ink::EnhancedJson DebugMode::buildVerdictSection(const ink::EnhancedJson& frame,
 
     const f64 leakSlope = memory.getPath<f64>("/cpu/trend/slope_bytes_per_frame", 0.0);
 
-    //! Only meaningful when something was actually counting; with the hooks
-    //! compiled out the slope is zero for the wrong reason.
     const bool leakOk = !AllocationTracker::isHooked() ||
                         leakSlope <= _config.leakSlopeBytesPerFrame;
     checks.push_back(makeCheck(
@@ -769,9 +637,6 @@ ink::EnhancedJson DebugMode::buildVerdictSection(const ink::EnhancedJson& frame,
 
 ink::EnhancedJson DebugMode::buildReport() const
 {
-    //! Everything below allocates -- the JSON document, the sorted copies
-    //! inside every summarize() call. Counting that against the run would mean
-    //! the act of writing the numbers changed them.
     AllocationTracker::ScopedMute mute;
 
     const std::vector<FrameRecord> ordered = orderedSamples();
@@ -810,9 +675,6 @@ ink::EnhancedJson DebugMode::buildReport() const
     run["sample_window"]   = ordered.size();
     run["sample_capacity"] = _samples.size();
 
-    //! True once the ring has wrapped: percentiles then describe the most
-    //! recent sampleCapacity frames rather than the whole run, and a reader
-    //! comparing them against `whole_run` needs to know that.
     run["window_truncated"] = _wrapped;
     report["run"] = std::move(run);
 

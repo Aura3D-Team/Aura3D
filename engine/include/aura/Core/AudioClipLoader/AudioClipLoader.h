@@ -14,9 +14,9 @@ namespace aura3d {
  * @struct AudioClipData
  * @brief Decoded, interleaved 32-bit float PCM.
  *
- * Float rather than the 16-bit integers most files store: it is what the mixer
- * sums in and what wma::IAudioDevice consumes, so converting once at load time
- * keeps the per-sample work out of the audio callback.
+ * Float rather than the 16-bit integers most files store, since that is what
+ * the mixer and wma::IAudioDevice both consume -- converted once at load time
+ * rather than per sample in the audio callback.
  */
 struct AudioClipData {
     //! frameCount * channelCount samples, interleaved (L, R, L, R, ...),
@@ -50,41 +50,20 @@ struct AudioClipData {
  * @class AudioClipLoader
  * @brief Decodes audio files to float PCM, with an always-available fallback.
  *
- * The audio sibling of ImageLoader: a static utility that turns a path into
- * plain data and knows nothing about the engine. Decoders are an implementation
- * detail, so this header stays free of third-party includes and can remain part
- * of the installed public API.
- *
- * Supported formats:
- *   - WAV (RIFF): 8/16/24/32-bit PCM and 32/64-bit IEEE float, any channel
- *     count. Parsed in-tree — the format is simple enough that a dependency
- *     would cost more than it saves.
- *   - OGG Vorbis: through the vendored stb_vorbis, for music and anything else
- *     long enough that WAV's size becomes a problem.
- *
- * The format is chosen by sniffing the file's magic bytes, not its extension.
+ * Supports WAV (RIFF: 8/16/24/32-bit PCM, 32/64-bit float, any channel count,
+ * parsed in-tree) and OGG Vorbis (via the vendored stb_vorbis). Format is
+ * chosen by sniffing magic bytes, not the file extension.
  */
 class AudioClipLoader {
 public:
-    /**
-     * @brief Decodes @p path to interleaved float PCM.
-     *
-     * @return The decoded clip, or an invalid AudioClipData when the file is
-     *         missing, truncated, or in a format/variant that is not supported.
-     *         Callers that need playback to proceed regardless should fall back
-     *         to makeSilence(), the way a missing texture falls back to
-     *         ImageLoader::makeCheckerboard().
-     */
+    /// Decodes @p path to interleaved float PCM. Returns an invalid
+    /// AudioClipData if missing, truncated, or unsupported; see makeSilence()
+    /// for a fallback that lets playback continue regardless.
     static AudioClipData loadPCM(const std::string& path);
 
     /**
-     * @brief Builds a silent clip of @p durationSeconds.
-     *
-     * The audio equivalent of the magenta checkerboard, minus the "look at me":
-     * a failed texture should be obvious on screen, whereas a failed sound
-     * effect substituting a buzz would be worse than the silence it replaces.
-     * Generated in memory, so it is available on every platform regardless of
-     * file system access.
+     * @brief Builds a silent clip of @p durationSeconds. Generated in memory,
+     *        so always available regardless of file system access.
      *
      * @param durationSeconds Clamped to at least one frame.
      * @param sampleRate      Frames per second; clamped to at least 1.
@@ -95,12 +74,8 @@ public:
                                      u16 channelCount = 2);
 
     /**
-     * @brief Builds a @p frequencyHz sine tone: a test signal with known content.
-     *
-     * Unlike makeSilence() this is not a fallback — nothing substitutes it
-     * automatically. It exists so tests and demos have a clip whose samples are
-     * predictable enough to assert on (and audible enough to confirm a device
-     * is really running) without shipping a fixture file.
+     * @brief Builds a @p frequencyHz sine tone: a test signal with known
+     *        content, for tests and demos that need predictable samples.
      *
      * @param frequencyHz     Tone frequency; clamped into the audible range.
      * @param durationSeconds Clamped to at least one frame.

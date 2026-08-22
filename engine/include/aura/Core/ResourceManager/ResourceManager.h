@@ -14,16 +14,11 @@ namespace aura3d {
 /**
  * @class ResourceManager
  * @brief Path-keyed cache in front of the renderer's and audio engine's asset
- *        entry points.
+ *        entry points. Loading the same file twice returns the same handle.
  *
- * Loading the same file twice returns the same handle instead of uploading a
- * second copy to the GPU (or decoding a second copy of the same PCM). Handles
- * stay valid for as long as the subsystem that produced them.
- *
- * Textures and meshes belong to the renderer and are dropped by unloadAll()
- * when a backend switch invalidates them; sounds belong to the audio engine,
- * which survives that switch, so they are cached and released separately. See
- * unloadSounds().
+ * Textures/meshes (renderer-owned) are dropped by unloadAll() on a backend
+ * switch; sounds (audio-engine-owned, survives that switch) use unloadSounds()
+ * instead.
  *
  * @note Not thread-safe; call from the thread that owns the renderer.
  */
@@ -53,26 +48,14 @@ public:
     AudioClipHandle loadSound(const std::string& path,
                               AudioClipMode mode = AudioClipMode::Static);
 
-    /**
-     * @brief Forgets every cached renderer handle (textures and meshes).
-     *
-     * Only drops the cache: the GPU resources belong to the renderer and are
-     * released when it is cleaned up. Call this after switching backends, since
-     * handles from the old renderer no longer mean anything to the new one.
-     *
-     * Deliberately leaves sounds alone — they are owned by the audio engine,
-     * which a backend switch does not touch. Use unloadSounds() for those.
-     */
+    /// Drops the texture/mesh cache (not the GPU resources themselves, which
+    /// the renderer releases on cleanup). Call after switching backends.
+    /// Leaves sounds alone; see unloadSounds().
     void unloadAll();
 
-    /**
-     * @brief Forgets every cached sound and releases it from the audio engine.
-     *
-     * Unlike unloadAll() this really does free the underlying data: clips are
-     * held by the audio engine for as long as something references them, so
-     * dropping the cache alone would leak the PCM for the engine's lifetime.
-     * Any voice still playing one of these clips is stopped.
-     */
+    /// Drops the sound cache and releases the clips from the audio engine,
+    /// stopping any voice still playing one. Unlike unloadAll(), this actually
+    /// frees the underlying PCM.
     void unloadSounds();
 
     //! Repoints the cache at @p renderer and drops stale texture/mesh handles.

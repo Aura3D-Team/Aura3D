@@ -6,23 +6,10 @@
 #include <utility>
 
 namespace aura3d {
-
 namespace {
-
-//! Slot index occupies the low half of a source handle, generation the high
-//! half. Generation starts at 1 so that slot 0's first handle is not the
-//! numeric 0 that isValidHandle() rejects.
 constexpr u32 kVoiceSlotBits = 16;
 constexpr u32 kVoiceSlotMask = (1u << kVoiceSlotBits) - 1u;
 
-/**
- * @brief Linearly resamples @p input from @p srcRate to @p dstRate.
- *
- * Done once at load so the mixer never interpolates. Linear interpolation is
- * enough here: source material is normally already at the device rate, making
- * this an identity copy, and the rare mismatch is a small ratio where the
- * artefacts sit far above the audible range.
- */
 std::vector<f32> resample(const std::vector<f32>& input, u16 channels, u32 srcRate, u32 dstRate)
 {
     if (srcRate == dstRate || channels == 0 || input.empty())
@@ -43,8 +30,6 @@ std::vector<f32> resample(const std::vector<f32>& input, u16 channels, u32 srcRa
         const usize base = static_cast<usize>(srcPos);
         const f32 frac = static_cast<f32>(srcPos - static_cast<f64>(base));
 
-        //! The last frame has no successor to interpolate towards, so it is
-        //! held rather than read past the end.
         const usize next = std::min(base + 1, srcFrames - 1);
 
         for (u16 channel = 0; channel < channels; ++channel)
@@ -65,9 +50,6 @@ AudioEngine::AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoice
 {
     if (!_device)
     {
-        //! Constructing without a device would leave every method branching on
-        //! null. wma::openAudioDevice() never returns one, so this only guards
-        //! against a caller building the engine by hand.
         INK_WARN << "[Aura3D] AudioEngine constructed without a device; falling back to a null device";
         _device = wma::createAudioDevice(wma::AudioBackend::Null);
         (void)_device->open(wma::AudioDeviceConfig{});
@@ -77,22 +59,12 @@ AudioEngine::AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoice
     _sampleRate   = config.sampleRate;
     _channelCount = config.channelCount;
 
-    //! Sized once and never resized: play() only ever hands out slots that
-    //! already exist, so the mixer can hold a reference into this vector
-    //! without a reallocation moving it out from under the audio thread. The
-    //! upper bound keeps a slot index inside the 16 bits a source handle gives
-    //! it.
     _voices.resize(std::clamp<usize>(maxVoices, 1u, kVoiceSlotMask));
 
-    //! Installed before start(), which is what IAudioDevice::setMixCallback()
-    //! requires: replacing it on a running device would race the audio thread.
     _device->setMixCallback([this](std::span<f32> output) { mix(output); });
 
     if (_device->start() != wma::WmaCode::Ok)
     {
-        //! Not fatal. Every operation below still works and the engine simply
-        //! produces no sound -- the same degradation the renderer applies when
-        //! a graphics backend is unavailable.
         INK_WARN << "[Aura3D] audio device failed to start; continuing without sound";
     }
     else
@@ -105,8 +77,6 @@ AudioEngine::AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoice
 
 AudioEngine::~AudioEngine()
 {
-    //! Order matters: the device must stop before the clips it is reading are
-    //! destroyed, or the mixer walks freed memory on its way out.
     if (_device)
     {
         _device->stop();
@@ -120,8 +90,6 @@ AudioClipHandle AudioEngine::loadClip(const std::string& path, AudioClipMode mod
 
     if (!data.valid())
     {
-        //! Same contract as a missing texture: substitute something harmless and
-        //! carry on, so one absent asset cannot take the frame down.
         INK_WARN << "[Aura3D] could not load audio clip '" << path << "'; substituting silence";
         data = AudioClipLoader::makeSilence(0.1f, _sampleRate, _channelCount);
     }
@@ -151,8 +119,6 @@ void AudioEngine::unloadClip(AudioClipHandle clip) noexcept
     if (!isValidHandle(clip))
         return;
 
-    //! Voices first: a voice left pointing at a clip that is about to be erased
-    //! would have the mixer reading freed samples on the next block.
     {
         const std::scoped_lock lock(_voiceMutex);
         for (Voice& voice : _voices)
@@ -183,8 +149,6 @@ AudioSourceHandle AudioEngine::play(const AudioSourceDesc& desc)
         return {};
 
     {
-        //! Verified before a slot is taken: starting a voice on a clip that
-        //! does not exist would occupy a slot to render silence.
         const std::scoped_lock clipLock(_clipMutex);
         if (!_clips.contains(desc.clip))
         {
@@ -200,16 +164,11 @@ AudioSourceHandle AudioEngine::play(const AudioSourceDesc& desc)
 
     if (slot == _voices.end())
     {
-        //! Every voice is busy. Dropping the newest request is the lesser evil
-        //! against cutting off something already audible mid-sound.
         return {};
     }
 
     const usize index = static_cast<usize>(std::distance(_voices.begin(), slot));
 
-    //! Bumping the generation here is what retires every handle previously
-    //! issued for this slot. Wraps back to 1, never 0, so the encoded handle
-    //! can never collide with the numeric zero isValidHandle() rejects.
     slot->generation = static_cast<u16>(slot->generation + 1u);
     if (slot->generation == 0)
         slot->generation = 1;
@@ -350,14 +309,8 @@ f32 AudioEngine::masterVolume() const noexcept
     return _masterVolume.load(std::memory_order_relaxed);
 }
 
-void AudioEngine::update(f32 /*deltaSeconds*/)
+void AudioEngine::update(f32 )
 {
-    //! Voices that ran to their end are marked inactive by the mixer, on the
-    //! audio thread, which deliberately does no more than that -- it must not
-    //! touch the clip map or anything else that could block. Releasing the
-    //! clip reference is therefore left to here, on the game thread, which is
-    //! what lets unloadClip() see an accurate picture of who is still using a
-    //! clip and keeps a finished voice from pinning one indefinitely.
     const std::scoped_lock lock(_voiceMutex);
 
     for (Voice& voice : _voices)
@@ -412,9 +365,6 @@ bool AudioEngine::resolveVoice(AudioSourceHandle handle, usize& slotOut) const n
 
     const Voice& voice = _voices[slot];
 
-    //! The generation check is what makes a recycled slot safe: a handle from
-    //! before the slot was reused fails here rather than addressing whatever
-    //! is playing in it now.
     if (!voice.active || voice.generation != generation)
         return false;
 
@@ -427,10 +377,6 @@ void AudioEngine::computeSpatialGains(const Voice& voice, f32& leftGain, f32& ri
     const glm::vec3 toSource = voice.position - _listener.position;
     const f32 distance = glm::length(toSource);
 
-    //! Linear roll-off between the two radii: inside minDistance the source is
-    //! at full volume, past maxDistance it is silent. Linear rather than the
-    //! physically-correct inverse-square because it reaches actual zero at a
-    //! defined distance, which is what lets far-away voices be skipped outright.
     f32 attenuation = 1.0f;
     if (distance > voice.minDistance)
     {
@@ -438,26 +384,19 @@ void AudioEngine::computeSpatialGains(const Voice& voice, f32& leftGain, f32& ri
         attenuation = 1.0f - std::clamp((distance - voice.minDistance) / span, 0.0f, 1.0f);
     }
 
-    f32 pan = 0.0f; // -1 hard left, +1 hard right
+    f32 pan = 0.0f;
 
-    //! A source sitting exactly on the listener has no direction to pan
-    //! towards; normalising it would divide by zero, so it stays centred.
     constexpr f32 kMinPanDistance = 0.0001f;
     if (distance > kMinPanDistance)
     {
         const glm::vec3 forward = glm::normalize(_listener.forward);
         const glm::vec3 up      = glm::normalize(_listener.up);
 
-        //! The listener's own right axis, so panning follows where the camera
-        //! is looking rather than a fixed world axis.
         const glm::vec3 right = glm::normalize(glm::cross(forward, up));
 
         pan = std::clamp(glm::dot(toSource / distance, right), -1.0f, 1.0f);
     }
 
-    //! Equal-power panning: gains follow a quarter-circle so that total power
-    //! stays constant as a source sweeps across the stereo field. A linear
-    //! crossfade would instead dip audibly in the middle.
     const f32 angle = (pan + 1.0f) * 0.25f * std::numbers::pi_v<f32>;
     leftGain  = std::cos(angle) * attenuation;
     rightGain = std::sin(angle) * attenuation;
@@ -465,9 +404,6 @@ void AudioEngine::computeSpatialGains(const Voice& voice, f32& leftGain, f32& ri
 
 void AudioEngine::mix(std::span<f32> output)
 {
-    //! Runs on the audio thread under a hard deadline. Everything here is
-    //! arithmetic over already-resident buffers: no allocation, no file access,
-    //! and the only locks are the two below, both held over bounded work.
     std::fill(output.begin(), output.end(), 0.0f);
 
     const f32 master = _masterVolume.load(std::memory_order_relaxed);
@@ -487,8 +423,6 @@ void AudioEngine::mix(std::span<f32> output)
         const auto entry = _clips.find(voice.clip);
         if (entry == _clips.end())
         {
-            //! The clip went away underneath this voice. Retire it rather than
-            //! reading a buffer that no longer exists.
             voice.active = false;
             continue;
         }
@@ -531,10 +465,6 @@ void AudioEngine::mix(std::span<f32> output)
             {
                 if (!voice.loop)
                 {
-                    //! Finished. The slot is left occupied until update() runs
-                    //! on the game thread, which is what releases the clip
-                    //! reference -- the audio thread deliberately touches
-                    //! nothing beyond this flag.
                     voice.active = false;
                     break;
                 }
@@ -543,10 +473,6 @@ void AudioEngine::mix(std::span<f32> output)
 
             const usize clipBase = voice.cursor * clipChannels;
 
-            //! Mono sources feed every output channel, which is also what makes
-            //! them the only ones that spatialize meaningfully: a point in the
-            //! world has one signal, and direction is expressed through the
-            //! per-channel gains rather than baked into the file.
             if (clipChannels == 1)
             {
                 const f32 sample = clip.samples[clipBase];
@@ -556,9 +482,6 @@ void AudioEngine::mix(std::span<f32> output)
                     output[frame * outChannels + 0] += sample * leftGain;
                     output[frame * outChannels + 1] += sample * rightGain;
 
-                    //! Surround layouts beyond the front pair get the
-                    //! unpanned signal: correct placement there needs a real
-                    //! channel map, which this mixer does not model.
                     for (u16 channel = 2; channel < outChannels; ++channel)
                         output[frame * outChannels + channel] += sample * voiceGain;
                 }
@@ -571,9 +494,6 @@ void AudioEngine::mix(std::span<f32> output)
             {
                 for (u16 channel = 0; channel < outChannels; ++channel)
                 {
-                    //! Channel counts that do not line up reuse the last channel
-                    //! the clip has, so a stereo clip on a mono device is not
-                    //! silently truncated to its left half.
                     const u16 sourceChannel = std::min<u16>(channel, static_cast<u16>(clipChannels - 1));
                     const f32 sample = clip.samples[clipBase + sourceChannel];
 
@@ -589,9 +509,6 @@ void AudioEngine::mix(std::span<f32> output)
         }
     }
 
-    //! Summing several voices can exceed full scale. Clamping here turns what
-    //! would be a hard wrap-around -- which sounds like a loud click -- into
-    //! ordinary clipping distortion.
     for (f32& sample : output)
         sample = std::clamp(sample, -1.0f, 1.0f);
 }

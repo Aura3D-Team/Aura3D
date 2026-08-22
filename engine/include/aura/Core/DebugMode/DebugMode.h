@@ -19,28 +19,18 @@
  * @file DebugMode.h
  * @brief The benchmark subsystem: collects, aggregates and writes the report.
  *
- * One object joins four independent sources -- FrameProfiler's per-phase
- * timings, AllocationTracker's CPU counters, the active backend's
- * IGpuDebugSource, and its own wall clock -- into a single JSON document that
- * answers "did this change regress performance or leak memory" without anyone
- * having to attach a profiler.
+ * Joins FrameProfiler's per-phase timings, AllocationTracker's CPU counters,
+ * the active backend's IGpuDebugSource, and a wall clock into one JSON report.
  *
- * ## Bounded memory, unbounded run
+ * Raw samples live in a fixed-capacity ring (DebugModeConfig::sampleCapacity),
+ * so memory stays bounded on a long run; whole-run totals that a bounded
+ * window would distort (frame count, wall time, allocation trend) are kept in
+ * separate O(1) accumulators instead.
  *
- * A benchmark can run for minutes and a dev session for hours, so raw samples
- * live in a fixed-capacity ring holding the most recent
- * DebugModeConfig::sampleCapacity frames. Everything a bounded window would
- * distort -- the run's true frame count, its wall time, its allocation trend --
- * is kept instead in O(1) accumulators updated per frame, so those stay exact
- * over any run length while percentiles describe the recent window.
- *
- * ## Why the class is compiled unconditionally
- *
- * Only the *instance* is gated: Engine builds one when AURA_ENABLE_DEBUG_MODE
- * is set and Engine::debugMode() returns null otherwise. The class itself is
- * always compiled so that a default build can still unit-test it (feeding
- * synthetic frames through onFrameSample()), and so application code needs no
- * `#ifdef` around a null check it has to write regardless.
+ * Only the *instance* is gated by AURA_ENABLE_DEBUG_MODE (Engine::debugMode()
+ * returns null without it) -- the class itself always compiles, so a default
+ * build can unit-test it and application code needs no `#ifdef` around the
+ * null check it has to write regardless.
  */
 
 namespace aura3d {
@@ -52,10 +42,9 @@ class IRenderer;
  * @struct DebugModeConfig
  * @brief What to measure, for how long, and what counts as a failure.
  *
- * Resolved from `settings.json`'s `debug` object and then from the environment,
- * in that order -- see fromSettings(). A CI job can therefore point an
- * unmodified application at a different report path and frame count without
- * editing a config file into the image.
+ * Resolved from settings.json's `debug` object, then the environment; see
+ * fromSettings(). Lets a CI job override the report path and frame count
+ * without editing a config file into the image.
  */
 struct DebugModeConfig
 {
@@ -65,13 +54,8 @@ struct DebugModeConfig
     //! Free-form tag copied into the report, e.g. a commit SHA or a scene name.
     std::string label;
 
-    /**
-     * @brief Frames discarded before sampling begins.
-     *
-     * The first frames of any run are shader compilation, texture upload,
-     * swapchain settling and page faults. Including them turns every
-     * distribution into a bimodal one and makes p99 a measure of startup.
-     */
+    //! Frames discarded before sampling begins -- shader compilation, texture
+    //! upload, swapchain settling all land here otherwise and skew p99.
     u32 warmupFrames = 60;
 
     //! Ring capacity for raw samples. ~96 bytes each; 20000 is about 5 minutes
@@ -89,42 +73,26 @@ struct DebugModeConfig
     //! Fraction of over-budget frames above which the verdict is a failure.
     f64 maxOverBudgetRatio = 0.05;
 
-    /**
-     * @brief Live-bytes growth per frame above which a leak is called.
-     *
-     * Compared against the least-squares slope of live bytes over the whole
-     * run, not against the endpoints: a run that allocates and frees a
-     * megabyte every frame has a slope of zero, and one that retains a hundred
-     * bytes a frame has a slope of a hundred however small its totals look.
-     */
+    //! Live-bytes growth per frame above which a leak is called. Compared
+    //! against the least-squares slope over the whole run, not the endpoints.
     f64 leakSlopeBytesPerFrame = 1024.0;
 
     //! Write an interim report every N captured frames; 0 writes only at the
     //! end. Non-zero is what makes a report survive a CI job's timeout.
     u32 autoFlushIntervalFrames = 0;
 
-    /**
-     * @brief End the process once targetFrames have been captured.
-     *
-     * For headless benchmark runs, whose whole purpose is the report. Off by
-     * default -- a dev session wants the window to stay up.
-     */
+    //! End the process once targetFrames have been captured. For headless
+    //! benchmark runs; off by default since a dev session wants the window up.
     bool exitOnComplete = false;
 
     /**
-     * @brief Reads the `debug` object of @p settings, then the environment.
+     * @brief Reads the `debug` object of @p settings, then applies environment
+     *        overrides on top (each taking precedence over the file):
+     *        AURA_DEBUG_REPORT -> reportPath, AURA_DEBUG_LABEL -> label,
+     *        AURA_DEBUG_FRAMES -> targetFrames, AURA_DEBUG_WARMUP -> warmupFrames,
+     *        AURA_DEBUG_BUDGET_MS -> frameBudgetMillis, AURA_DEBUG_EXIT -> exitOnComplete.
      *
-     * Environment overrides, each taking precedence over the file:
-     *   - `AURA_DEBUG_REPORT`        -> reportPath
-     *   - `AURA_DEBUG_LABEL`         -> label
-     *   - `AURA_DEBUG_FRAMES`        -> targetFrames
-     *   - `AURA_DEBUG_WARMUP`        -> warmupFrames
-     *   - `AURA_DEBUG_BUDGET_MS`     -> frameBudgetMillis
-     *   - `AURA_DEBUG_EXIT`          -> exitOnComplete (0/1)
-     *
-     * @param settings May be null, in which case only the environment applies.
-     *                 Non-const to match AuraSettings::getSettings(), the same
-     *                 way VulkanMemoryManager::loadConfig() takes it.
+     * @param settings May be null; only the environment applies then.
      */
     [[nodiscard]] static DebugModeConfig fromSettings(AuraSettings* settings);
 };
@@ -146,33 +114,17 @@ public:
     DebugMode(const DebugMode&)            = delete;
     DebugMode& operator=(const DebugMode&) = delete;
 
-    /**
-     * @brief Records one frame. Called by FrameProfiler from AURA_FRAME_END().
-     *
-     * On the frame path, so it does no allocation (the ring is sized in the
-     * constructor), no sorting and no I/O -- everything expensive waits for
-     * flushReport().
-     */
+    /// Records one frame. Called by FrameProfiler from AURA_FRAME_END(). On
+    /// the frame path: no allocation, no sorting, no I/O.
     void onFrameSample(const FrameSample& sample) noexcept override;
 
-    /**
-     * @brief Per-frame bookkeeping the application drives.
-     *
-     * Handles the interim auto-flush and, when configured, ending the run.
-     * Kept out of onFrameSample() because both of those can write a file, and
-     * a file write belongs in the application's frame, not inside the
-     * profiler's frame-close.
-     *
-     * @param deltaSeconds The frame delta the application already computed.
-     */
+    /// Per-frame bookkeeping the application drives: interim auto-flush and,
+    /// when configured, ending the run. Kept out of onFrameSample() because
+    /// a file write belongs in the application's frame, not the profiler's.
     void update(f32 deltaSeconds) noexcept;
 
-    /**
-     * @brief Binds the renderer whose GPU counters the report should include.
-     *
-     * Non-owning, and re-called after a backend switch. Pass nullptr to detach
-     * before the renderer is destroyed.
-     */
+    /// Binds the renderer whose GPU counters the report should include.
+    /// Non-owning; pass nullptr to detach before the renderer is destroyed.
     void attachRenderer(const IRenderer* renderer) noexcept;
 
     //! True once targetFrames have been captured. Always false when
@@ -265,17 +217,10 @@ private:
     //! identical report over the one flushReport() already produced.
     mutable bool _reportWritten = false;
 
-    /**
-     * @brief Set once finished() has been handled by update(), so the
-     *        completion branch runs exactly once.
-     *
-     * Deliberately a separate flag from _reportWritten rather than reusing it:
-     * an interim auto-flush clears _reportWritten so the destructor still
-     * writes a final report over the top, and that clear must not re-arm the
-     * completion branch -- without a flag of its own, finished() staying true
-     * after an interim flush would make update() rebuild and rewrite the whole
-     * report (and log a line) on every single frame from then on.
-     */
+    //! Set once finished() has been handled, so the completion branch runs
+    //! exactly once. Separate from _reportWritten: an interim auto-flush
+    //! clears that flag (so the destructor still writes a final report), and
+    //! that clear must not re-arm completion handling too.
     bool _completionHandled = false;
 };
 

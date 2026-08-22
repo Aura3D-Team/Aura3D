@@ -8,8 +8,6 @@ namespace aura3d {
 
 namespace {
 
-//! Report cadence. Long enough that the log itself is not the workload at
-//! several thousand frames a second, short enough to react to a scene change.
 constexpr u32 kFramesPerReport = 2000;
 
 } // namespace
@@ -17,12 +15,6 @@ constexpr u32 kFramesPerReport = 2000;
 void FrameProfiler::endFrame() noexcept
 {
 #ifdef AURA_ENABLE_DEBUG_MODE
-    /*
-     * Before the early return below, because the observer wants every frame
-     * rather than every kFramesPerReport-th one. The clock read is the same one
-     * the reporting path takes further down, hoisted here so a frame costs one
-     * read either way.
-     */
     if (_observer != nullptr)
     {
         const auto frameEnd = Clock::now();
@@ -47,13 +39,6 @@ void FrameProfiler::endFrame() noexcept
     const f64 windowMicros = std::chrono::duration<f64, std::micro>(now - _windowStart).count();
     const f64 frameMicros = windowMicros / static_cast<f64>(_frames);
 
-    /*
-     * Phases are reported against measured wall time per frame, not against
-     * their own sum: the two differ by whatever the loop spends outside any
-     * scope (window event pump, application logic), and that gap is itself a
-     * finding. Printing the total makes it visible rather than silently
-     * redistributing it across the phases.
-     */
     i64 accountedNanos = 0;
     for (const i64 phaseNanos : _totals)
         accountedNanos += phaseNanos;
