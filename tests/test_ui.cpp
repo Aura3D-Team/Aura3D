@@ -854,6 +854,215 @@ void testSameLineSharesARow()
     AURA_CHECK(packed < stacked, "sameLine keeps the second widget on the first's row");
 }
 
+
+/*
+ * Retained widget state is swept, and the sweep is the dangerous half: dropping
+ * an entry silently resets whatever the user did to that widget. These three
+ * pin both sides -- what must go, and what must never.
+ *
+ * They rely on RetainedMap's policy constants (a 256-entry threshold, a
+ * 256-frame interval and a 1024-frame idle window) only through the shape of
+ * the numbers below, which are chosen to clear all three by a wide margin.
+ */
+
+//! Widget identity is positional as well as textual, so anything checked
+//! across frames has to be submitted at the same index in the panel every
+//! time. Every helper here puts its subject first.
+void testLiveStateIsNeverSwept()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    constexpr int kGenerated = 300;  // comfortably past the sweep threshold
+    constexpr int kFrames = 1400;    // and past the idle window, twice over
+
+    std::vector<std::string> generated;
+    for (int i = 0; i < kGenerated; ++i)
+        generated.push_back("generated_" + std::to_string(i));
+
+    // One frame that mints a few hundred ids nothing will ever ask for again,
+    // plus two that start open.
+    gui.newFrame(ui::Input{});
+    if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+    {
+        (void)gui.collapsingHeader("keeper", true);
+        (void)gui.collapsingHeader("abandoned", true);
+        for (const std::string& label : generated)
+            (void)gui.collapsingHeader(label, true);
+        gui.endPanel();
+    }
+    gui.render();
+
+    // Then a long run in which only "keeper" is ever submitted. Asking for it
+    // with defaultOpen=false proves the answer is remembered, not defaulted.
+    bool openThroughout = true;
+    for (int frame = 0; frame < kFrames; ++frame)
+    {
+        renderer.batches.clear();
+
+        gui.newFrame(ui::Input{});
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            openThroughout = gui.collapsingHeader("keeper", false) && openThroughout;
+            gui.endPanel();
+        }
+        gui.render();
+    }
+
+    AURA_CHECK(openThroughout, "a submitted widget keeps its state on every frame of a long run");
+
+    gui.newFrame(ui::Input{});
+    bool keeper = false;
+    bool abandoned = true;
+    if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+    {
+        keeper = gui.collapsingHeader("keeper", false);
+        abandoned = gui.collapsingHeader("abandoned", false);
+        gui.endPanel();
+    }
+    gui.render();
+
+    AURA_CHECK(keeper, "state of a widget still being submitted survives the sweep");
+    AURA_CHECK(!abandoned, "state of a widget nothing has asked for in a long time is swept");
+}
+
+//! The threshold is what keeps the sweep off ordinary UIs entirely: a panel of
+//! hand-written widgets never reaches it, so a section left collapsed for ten
+//! minutes still remembers what was open inside it.
+void testSmallUIsAreNeverSwept()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    constexpr int kFrames = 3000;
+
+    gui.newFrame(ui::Input{});
+    if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+    {
+        (void)gui.collapsingHeader("Advanced", true);
+        (void)gui.treeNode("hidden", true);
+        gui.endPanel();
+    }
+    gui.render();
+
+    // "hidden" is not submitted again for the whole run -- exactly what happens
+    // to everything under a collapsed header.
+    for (int frame = 0; frame < kFrames; ++frame)
+    {
+        renderer.batches.clear();
+
+        gui.newFrame(ui::Input{});
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            (void)gui.collapsingHeader("Advanced", false);
+            gui.endPanel();
+        }
+        gui.render();
+    }
+
+    gui.newFrame(ui::Input{});
+    bool hidden = false;
+    if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+    {
+        (void)gui.collapsingHeader("Advanced", false);
+        hidden = gui.treeNode("hidden", false);
+        if (hidden)
+            gui.treePop();
+        gui.endPanel();
+    }
+    gui.render();
+
+    AURA_CHECK(hidden, "a small UI is never swept, however long it runs");
+}
+
+//! A panel's position is retained state too, so it is subject to the same rule.
+void testPanelPositionSurvivesALongRun()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    constexpr glm::vec2 kDefault{40.0f, 60.0f};
+    constexpr int kFrames = 3000;
+
+    const auto topLeft = [&renderer]() {
+        glm::vec2 corner{1.0e9f, 1.0e9f};
+        for (const auto& vertex : renderer.batches.back().vertices)
+        {
+            corner.x = std::min(corner.x, vertex.pos.x);
+            corner.y = std::min(corner.y, vertex.pos.y);
+        }
+        return corner;
+    };
+
+    // Drag the panel somewhere that is not its default, then leave it alone.
+    const glm::vec2 grab = kDefault + glm::vec2{20.0f, 5.0f};
+    for (int step = 0; step < 3; ++step)
+    {
+        gui.newFrame(ui::Input{step == 0 ? grab : grab + glm::vec2{120.0f, 90.0f}, true});
+        if (gui.beginPanel("Draggable", kDefault, kPanelWidth))
+            gui.endPanel();
+        gui.render();
+    }
+
+    gui.newFrame(ui::Input{});
+    if (gui.beginPanel("Draggable", kDefault, kPanelWidth))
+        gui.endPanel();
+    gui.render();
+
+    const glm::vec2 dropped = topLeft();
+    AURA_CHECK(dropped != kDefault, "the panel actually moved off its default position");
+
+    for (int frame = 0; frame < kFrames; ++frame)
+    {
+        //! The last frame's batch has to survive: topLeft() reads it.
+        if (frame + 1 < kFrames)
+            renderer.batches.clear();
+
+        gui.newFrame(ui::Input{});
+        if (gui.beginPanel("Draggable", kDefault, kPanelWidth))
+            gui.endPanel();
+        gui.render();
+    }
+
+    AURA_CHECK(topLeft() == dropped, "a panel does not snap back to its default over a long run");
+}
+
+//! newFrame() with no arguments is the path applications actually take. With no
+//! window attached it sees no cursor and no clicks, but it must still open a
+//! frame -- and it now hands its input buffers over rather than copying them,
+//! which is easy to get wrong in a way that only shows up on the second frame.
+void testArgumentlessNewFrameOpensAFrame()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    size_t previousVertices = 0;
+    bool stable = true;
+
+    for (int frame = 0; frame < 4; ++frame)
+    {
+        gui.newFrame();
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            gui.label("row");
+            (void)gui.button("press");
+            gui.endPanel();
+        }
+        gui.render();
+
+        const size_t vertices =
+            renderer.batches.empty() ? 0 : renderer.batches.back().vertices.size();
+
+        if (frame > 0)
+            stable = stable && vertices == previousVertices;
+        previousVertices = vertices;
+    }
+
+    AURA_CHECK(previousVertices > 0, "newFrame() with no window attached still draws");
+    AURA_CHECK(stable, "an unattached newFrame() produces the same frame every time");
+    AURA_CHECK(!gui.isCapturingKeyboard(), "an unattached context claims no keyboard");
+}
+
 int main()
 {
     testSingleBatchPerFrame();
@@ -876,6 +1085,10 @@ int main()
     testScrollRegionClipsAndScrolls();
     testNewWidgetsStayInOneBatch();
     testSameLineSharesARow();
+    testLiveStateIsNeverSwept();
+    testSmallUIsAreNeverSwept();
+    testPanelPositionSurvivesALongRun();
+    testArgumentlessNewFrameOpensAFrame();
 
     AURA_TEST_MAIN_RETURN();
 }

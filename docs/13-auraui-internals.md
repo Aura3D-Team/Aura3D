@@ -7,12 +7,21 @@ any of it to use the UI; read
 you're adding a widget, tracking down a behaviour, or deciding whether the
 design fits a change you have in mind.
 
-The whole module is two files:
+The whole module is two files, and the split is strict:
 
 ```
-engine/include/aura/UI/AuraUI.h    // the API
-engine/src/UI/AuraUI.cpp           // all of the implementation
+engine/include/aura/UI/AuraUI.h    // the API, and nothing else
+engine/src/UI/AuraUI.cpp           // Context::Impl -- all of the state
 ```
+
+`Context` is a handle: a `unique_ptr<Impl>` and a forwarder per method. Every
+piece of state below lives in `Context::Impl`, which is declared in the header
+by name only and defined in the `.cpp`. That is worth one pointer hop per public
+call (measured at well under 1% of a frame) and buys two things: a translation
+unit that draws a checkbox parses the API and neither `FontAtlas.h` nor
+`IRenderer.h` nor `<unordered_map>` -- 663 headers instead of 827, and about
+half the compile time -- and changing how a widget remembers something
+recompiles one file instead of every file that draws.
 
 ## What it's made of
 
@@ -63,10 +72,13 @@ them because they have very different lifetimes:
 |---|---|---|
 | Geometry | one frame | `_vertices`, `_indices` (cleared in `newFrame`) |
 | Layout | one panel | `_panel.cursorY`, `_clip`, `_panel.widgetIndex` |
-| Interaction | across frames | `_hot`, `_active`, `_panels` positions |
+| Interaction | across frames | `_pointer.hot`, `_pointer.active` |
+| Per-widget | until swept | `_panels`, `_textStates`, `_scrollStates`, `_widgetValues` |
 
-Only the third is "retained", and it's a handful of integers — no widget
-objects, no tree.
+The last two are the "retained" ones, and they are still only integers, floats
+and a couple of strings — no widget objects, no tree. The fourth row is the one
+with a lifetime question attached, which [Forgetting widgets](#forgetting-widgets)
+answers.
 
 ## Widget identity
 
@@ -74,9 +86,16 @@ Immediate mode draws no objects to point at, so a widget has to be recognised
 from one frame to the next by value alone. That value is `_idFor`:
 
 ```cpp
+u32 Context::_peekId(std::string_view text) const noexcept
+{
+    return hashBytes(text, _panel.id) ^ (_panel.widgetIndex * kIdStride);
+}
+
 u32 Context::_idFor(std::string_view text) noexcept
 {
-    return hashBytes(text, _panel.id) ^ (_panel.widgetIndex++ * 0x9e3779b9u);
+    const u32 id = _peekId(text);
+    ++_panel.widgetIndex;
+    return id;
 }
 ```
 
@@ -97,18 +116,31 @@ hover state, because ids are consulted for interaction, never for storage.
 
 Two ids drive everything:
 
-- **`_hot`** — the widget under the cursor.
-- **`_active`** — the widget that owns an in-flight press.
+- **`_pointer.hot`** — the widget under the cursor.
+- **`_pointer.active`** — the widget that owns an in-flight press.
 
-`_behaviour(id, bounds)` runs the machine for one widget and returns
-`{hovered, held, clicked}`. Every clickable widget is a call to it plus some
-drawing:
+`_behaviour(id, rect)` runs the machine for one widget and fills in an `Item`
+— the widget's id, its rectangle, and every flag this frame's input produced
+for it:
+
+```cpp
+struct Item {
+    u32 id;  Rect rect;
+    bool hovered, held, clicked;   // from _behaviour
+    bool focused, activated;       // from _focusItem
+};
+```
+
+`Item` is what every widget is written against, and `_item(label, height)` is
+the one call that produces one: id, row, hit-test and focus in a single line.
+Only the pieces that are not rows — title bars, scrollbar thumbs, tabs, open
+dropdown entries — reach for `_behaviour` directly.
 
 ```
         cursor enters bounds
               |
               v
-  (nothing) ------> _hot == id ------> press ------> _active == id
+  (nothing) ---> _pointer.hot == id ---> press ---> _pointer.active == id
               ^                                          |
               |                                          | release
               '------------------------------------------'
@@ -122,16 +154,16 @@ does nothing. Both are what a user expects, and neither falls out of a naive
 "is the button down inside this rectangle" test. `tests/test_ui.cpp` pins all
 four cases.
 
-### Why `_hot` is resolved a frame late
+### Why `hot` is resolved a frame late
 
 `newFrame` does this:
 
 ```cpp
-_hot = _nextHot;
-_nextHot = 0;
+hot = nextHot;
+nextHot = 0;
 ```
 
-Widgets *claim* `_nextHot` as they're submitted, and the claim is unconditional
+Widgets *claim* `nextHot` as they're submitted, and the claim is unconditional
 — so the **last** widget to claim it wins. Panels are drawn back to front, so
 the last claimer is the topmost one, which is exactly the one the user is
 pointing at.
@@ -143,30 +175,72 @@ latency on hover, which is imperceptible; the cost of not doing it is a UI that
 misroutes clicks whenever two panels touch.
 
 One wrinkle follows from that. On the very first frame the cursor arrives, no
-one has claimed `_hot` yet, so a press would be dropped:
+one has claimed `hot` yet, so a press would be dropped:
 
 ```cpp
-else if (_mousePressed && (_hot == id || (_hot == 0 && result.hovered)))
+else if (_pointer.pressed && (_pointer.hot == id || (_pointer.hot == 0 && item.hovered)))
 ```
 
 The second disjunct accepts a press from a widget that is hovered *now* when
-nothing was hot before. Requiring `_hot == 0` is what keeps it safe: if panels
-overlap, the topmost has already claimed `_hot`, so it is non-zero and the
-covered widget cannot steal the press.
+nothing was hot before. Requiring `hot == 0` is what keeps it safe: if panels
+overlap, the topmost has already claimed it, so it is non-zero and the covered
+widget cannot steal the press.
 
 ### Not getting stuck
 
 A widget that vanishes mid-press — its panel closed, an `if` stopped emitting
-it — never gets to observe the release that would clear `_active`. Without a
+it — never gets to observe the release that would clear `active`. Without a
 guard the UI would believe a press is in flight forever, and every later click
-would be swallowed. So `_behaviour` sets `_activeSubmitted` whenever the active
-widget is seen, and `newFrame` clears `_active` when it wasn't:
+would be swallowed. So `_behaviour` sets `activeSubmitted` whenever the active
+widget is seen, and `PointerState::beginFrame` clears `active` when it wasn't:
 
 ```cpp
-if (!_activeSubmitted)
-    _active = 0;
-_activeSubmitted = false;
+if (!activeSubmitted)
+    active = 0;
+activeSubmitted = false;
 ```
+
+`FocusState::beginFrame` drops a vanished widget's *keyboard* focus for exactly
+the same reason.
+
+## Forgetting widgets
+
+Immediate mode has nothing to destruct. A panel closes, a branch stops emitting
+a tree node, a list row scrolls out of the data — and the widget simply never
+comes back. Its entry in `_widgetValues` or `_scrollStates` has nobody left to
+delete it.
+
+For a UI whose labels are written by hand that is harmless: a few dozen entries
+for the life of the process. For one whose labels come from data it is a leak,
+because every change of that data mints a fresh id:
+
+```cpp
+for (const Entity& e : scene)                     // "Entity 8817", "Entity 8818", ...
+    if (gui.treeNode(std::format("Entity {}", e.id)))
+```
+
+So the five retained maps are `RetainedMap<T>`, which stamps every lookup with
+the current frame and sweeps what has gone unasked-for. The sweep is the
+dangerous half — dropping an entry silently resets whatever the user did to
+that widget — so two rules keep it away from anything that would notice:
+
+- **A map under 256 entries is never swept at all.** A UI small enough to have
+  been *authored* keeps its state for the whole run, exactly as it did before
+  any of this existed. This is the case almost every panel is in.
+- **Above that, an entry still has to go untouched for 1024 frames** (~17s at
+  60 Hz). "Not submitted" is the normal state of a widget behind a collapsed
+  header or an unselected tab; those must not lose their state for being out of
+  sight for a few seconds.
+
+Entries in active use are stamped every frame, so the scene tree above keeps all
+ten thousand of its nodes however long it runs — only ids nothing asks for any
+more go. `tests/test_ui.cpp` pins both directions: that a submitted widget
+survives a 1400-frame run past the sweep, that an abandoned one does not, and
+that a small UI is never touched at all.
+
+`RetainedMap::Slot::inserted` also replaced a flag. `PanelState` used to carry
+`placed`, meaning "defaultPosition has been applied" — which is exactly "this
+lookup is what created the entry", and the map already knew that.
 
 ## Geometry: one draw call
 
@@ -280,37 +354,49 @@ Every widget has the same five-step shape. `button` is the smallest complete
 example:
 
 ```cpp
-bool Context::button(std::string_view text)
+bool Context::Impl::button(std::string_view text)
 {
-    if (!_inPanel)                                    // 1. refuse outside a panel
+    if (!_panel.open)                                 // 1. refuse outside a panel
         return false;
 
-    const Rect row = _nextRow(_style.rowHeight);      // 2. reserve a row
-    const Interaction it = _behaviour(_idFor(text), row);  // 3. run the machine
+    const Item it = _item(text, _style.rowHeight);    // 2. row + identity + input
 
-    const glm::vec4& fill = it.held    ? _style.controlActive
-                          : it.hovered ? _style.controlHovered
-                                       : _style.control;
+    _quad(it.rect, _fill(it.held, it.hovered));       // 3. draw from that state
 
-    _quad(row, fill);                                 // 4. draw from that state
-    _textCentered(text, row, _style.text);
+    if (it.focused)
+        _focusRing(it.rect);
 
-    return it.clicked;                                // 5. report
+    _textCentered(text, it.rect);
+
+    return it.activated;                              // 4. report
 }
 ```
 
-Keep to it and a new widget inherits clipping, batching, identity and the
-press/release semantics without doing anything itself. The parts to be careful
-about:
+Keep to it and a new widget inherits clipping, batching, identity, keyboard
+focus and the press/release semantics without doing anything itself. The parts
+to be careful about:
 
-- Call `_idFor` **once** per widget — it increments the per-panel counter, so
-  calling it twice shifts every later widget's identity.
-- Reserve the row before hit-testing; `_behaviour` needs the final rectangle.
+- Call `_item` (or `_idFor`) **once** per widget — it consumes a per-panel
+  counter slot, so calling it twice shifts every later widget's identity. Use
+  `_peekId` when you need the id without consuming one, as `inputFloat` does.
+- Report `it.activated`, not `it.clicked`, unless the widget genuinely has no
+  keyboard behaviour: `activated` is "clicked, or Enter/Space while focused".
+- Reach retained state through `_state(id, initial)` (or `_textStates.touch`,
+  `_scrollStates.touch`, ...) and never through a bare `operator[]`: the touch
+  is what tells the sweep the widget is still alive.
+- A new public method needs a one-line forwarder on `Context`. If a forwarder
+  ever grows a body, that logic belongs in `Impl`, beside the state it reads.
 - Take edited values by reference and return *changed*, not *touched*, so
   callers can gate expensive work (chapter 12 has the pattern).
 - Prefer the whole row as the hit target over the visual control. `checkbox`
   does this deliberately: a 16-pixel square is a needlessly small thing to ask
   anyone to hit.
+
+There is a matching rule for drawing. Text is always `Style::text`, so
+`_text`/`_textAt`/`_textCentered` take no colour; rectangles pick theirs with
+`_fill(active, hovered)`; and one glyph walk, `walkGlyphs`, does all the UTF-8
+decoding, glyph lookup and kerning that `measureText`, `_text` and
+`_caretFromX` need. Reach for those rather than open-coding any of it.
 
 ## Testing it
 
