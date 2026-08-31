@@ -77,7 +77,7 @@ TextOverlay overlay(r, desc); // built once — allocates the glyph atlas textur
 // per frame, between beginRenderPass()/endRenderPass():
 overlay.drawText("Score: 1200", 10.0f, 10.0f);
 overlay.drawText("Warning!", 10.0f, 40.0f, glm::vec4(1, 0.3f, 0.3f, 1)); // per-call color
-overlay.drawFPS(10.0f, 60.0f); // formats "FPS: <n>" from live frame timing
+overlay.drawFPS(10.0f, 60.0f); // smoothed "FPS: <n>  (<ms> ms)"; overlay.fps() reads it back
 ```
 
 **Font loading never fails visibly**: leave `fontPath` empty, or point it at

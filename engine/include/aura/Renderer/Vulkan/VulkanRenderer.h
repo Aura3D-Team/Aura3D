@@ -235,6 +235,22 @@ private:
     VkFixedArray<AllocatedBuffer> _overlay2DIndexBuffers;
     VkFixedArray<VkDeviceSize> _overlay2DVertexCapacity;
     VkFixedArray<VkDeviceSize> _overlay2DIndexCapacity;
+
+    /*
+     * Bytes of this frame's overlay buffers already spoken for. Every
+     * drawBatch2D() in a frame records into the same secondary command buffer,
+     * which is replayed once at endRenderPass() -- so the batches are not
+     * consumed as they are submitted, and writing each one at offset 0 left
+     * every draw in the frame reading whatever the *last* batch happened to
+     * leave there. Each batch now appends here and binds at its own offset.
+     */
+    VkFixedArray<VkDeviceSize> _overlay2DVertexUsed;
+    VkFixedArray<VkDeviceSize> _overlay2DIndexUsed;
+
+    //! Buffers that a mid-frame grow replaced while already-recorded draws
+    //! still pointed at them. Freed when this frame slot comes round again,
+    //! which is past the fence saying the GPU has finished with it.
+    VkFixedArray<std::vector<AllocatedBuffer>> _overlay2DRetiredBuffers;
     //! Persistent bindless texture array bound at the overlay pipeline's set 0
     //! (see _bindlessTextureSet3D below for why this is a single set rather
     //! than one per texture).

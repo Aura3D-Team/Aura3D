@@ -165,6 +165,45 @@ All notable changes to Aura3D are documented in this file.
     guarantee across every widget kind together, alongside new coverage for
     UTF-8-correct editing, Escape-reverts, Tab/Shift+Tab traversal, keyboard
     activation, and scroll clipping.
+- **AuraUI styling, simplified.** Three mechanisms became three *consistent*
+  ones, and the per-widget case stopped being the awkward one.
+  - `ui::Style` — a **sparse patch** where only the fields it sets apply and
+    everything else falls through to the Part's entry in the theme. A bare
+    `WidgetStyle` is transparent by default, so the old "copy the Part, edit
+    two fields, pass it back" dance silently drew an *invisible* widget the
+    moment you forgot the copy. A patch cannot: `ui::Style{}.fill(red)` is a
+    red button that still has the theme's rounding, padding and height.
+    Chainable setters (`fill`, `outline`, `textColor`, `accentColor`,
+    `rounded`, `pad`, `alignText`, `rowHeight`, `mark`) over public
+    `std::optional` fields.
+  - **Every widget takes an optional trailing `const Style&`**, so styling one
+    instance is one call: `gui.button("Delete", ui::Style{}.fill(red))`. A
+    default argument rather than an overload per widget, so the API surface is
+    unchanged for callers that don't style.
+  - `Context::setNextStyle()` is **gone**, redundant now that the style rides
+    with the call it belongs to — and it was Part-agnostic, so it landed on
+    whatever widget came next even when that was the wrong kind.
+  - `StyleGuard` takes a `Style` patch too, applied over the Part's current
+    look, so a scope that wants one different colour says only that.
+  - `Context::theme()`, `setTheme()` and `metrics()` (five methods) collapse
+    into one public `Theme theme;` member: `gui.theme[Part::Button]`,
+    `gui.theme.metrics`, `gui.theme = Theme::light()`. There was nothing to
+    encapsulate — the theme is a value each widget reads as it is submitted.
+  - Internally `Item::style` is now a `WidgetStyle` by value rather than a
+    pointer into a resolved-style member, which removes a latent aliasing
+    hazard: a container holding a resolved style across the widgets nested
+    inside it would have had that reference rewritten under it.
+
+- **`TextOverlay::drawFPS` now smooths.** It printed `1000/deltaTime` for the
+  single frame that just ended, which on an unlocked loop swings by tens of
+  frames between one frame and the next and reads as noise rather than a
+  number. It now keeps an exponential moving average with a ~0.5s time
+  constant, blended proportionally to `dt` so the constant holds at any frame
+  rate, and prints the raw frame time beside it (`"FPS: 144  (6.94 ms)"`) --
+  milliseconds being what stays linear when you are chasing a regression. New
+  `TextOverlay::fps()` reads the smoothed figure back without advancing it, for
+  showing the same number in a UI panel or HUD. `apps/Sandbox` does exactly
+  that, in the corner and in its Scene panel.
 
 - **Type-safe resource handles.** `VertexBufferHandle`, `IndexBufferHandle`,
   `TextureHandle`, `MeshHandle`, `MaterialHandle`, `AudioClipHandle` and

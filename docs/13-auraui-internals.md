@@ -7,10 +7,12 @@ any of it to use the UI; read
 you're adding a widget, tracking down a behaviour, or deciding whether the
 design fits a change you have in mind.
 
-The whole module is two files, and the split is strict:
+The module is four files, and the split is strict:
 
 ```
+engine/include/aura/UI/Style.h     // Part, WidgetStyle, Palette, Theme
 engine/include/aura/UI/AuraUI.h    // the API, and nothing else
+engine/src/UI/Style.cpp            // one palette -> nineteen Parts
 engine/src/UI/AuraUI.cpp           // Context::Impl -- all of the state
 ```
 
@@ -19,7 +21,7 @@ piece of state below lives in `Context::Impl`, which is declared in the header
 by name only and defined in the `.cpp`. That is worth one pointer hop per public
 call (measured at well under 1% of a frame) and buys two things: a translation
 unit that draws a checkbox parses the API and neither `FontAtlas.h` nor
-`IRenderer.h` nor `<unordered_map>` -- 663 headers instead of 827, and about
+`IRenderer.h` nor `<unordered_map>` -- 662 headers instead of 815, and about
 half the compile time -- and changing how a widget remembers something
 recompiles one file instead of every file that draws.
 
@@ -53,14 +55,14 @@ derives itself, unlit shading, depth test off, straight alpha blending.
 newFrame()      latch input, resolve hot, reset layout, clear geometry
    |
    v
-beginPanel()    hit-test the title bar, apply drag, emit background + title
-   |            (remember the background's vertex index)
+beginPanel()    hit-test the title bar, apply drag, emit the title bar
+   |            (remember where this panel's geometry starts)
    v
 widgets         each: reserve a row, run the state machine, append quads
    |
    v
-endPanel()      patch the background's height, claim the mouse if hovered
-   |
+endPanel()      build the background at its now-known height and rotate it
+   |            in front of the content; claim the mouse if hovered
    v
 render()        upload new glyphs, submit one drawBatch2D
 ```
@@ -71,7 +73,7 @@ them because they have very different lifetimes:
 | State | Lifetime | Examples |
 |---|---|---|
 | Geometry | one frame | `_vertices`, `_indices` (cleared in `newFrame`) |
-| Layout | one panel | `_panel.cursorY`, `_clip`, `_panel.widgetIndex` |
+| Layout | one panel | `_panel.cursorY`, `_clip`, `_labelCounts` |
 | Interaction | across frames | `_pointer.hot`, `_pointer.active` |
 | Per-widget | until swept | `_panels`, `_textStates`, `_scrollStates`, `_widgetValues` |
 
@@ -86,16 +88,20 @@ Immediate mode draws no objects to point at, so a widget has to be recognised
 from one frame to the next by value alone. That value is `_idFor`:
 
 ```cpp
-u32 Context::_peekId(std::string_view text) const noexcept
+u32 Context::Impl::_peekId(std::string_view text) const noexcept
 {
-    return hashBytes(text, _panel.id) ^ (_panel.widgetIndex * kIdStride);
+    const u32 label = hashBytes(text, _panel.id);
+
+    const auto seen = _labelCounts.find(label);
+    return label ^ ((seen != _labelCounts.end() ? seen->second : 0u) * kIdStride);
 }
 
-u32 Context::_idFor(std::string_view text) noexcept
+u32 Context::Impl::_idFor(std::string_view text)
 {
-    const u32 id = _peekId(text);
-    ++_panel.widgetIndex;
-    return id;
+    const u32 label = hashBytes(text, _panel.id);
+
+    u32& seen = _labelCounts[label];
+    return label ^ (seen++ * kIdStride);
 }
 ```
 
@@ -104,13 +110,21 @@ Three ingredients, each fixing a specific collision:
 - **the label** — distinguishes widgets within a panel;
 - **the panel id** (itself an FNV-1a of the panel title) — so `"Reset"` in two
   different panels are two different widgets;
-- **a per-panel counter** — so `"Reset"` *twice in the same panel* are also
-  distinct. Without it, pressing one would light up both, which is a
-  surprisingly common layout.
+- **how many widgets already used that label** — so `"Reset"` *twice in the same
+  panel* are also distinct. Without it, pressing one would light up both, which
+  is a surprisingly common layout.
 
-The counter is why identity is positional as well as textual: reordering
-widgets within a panel reassigns ids. In practice that only costs a frame of
-hover state, because ids are consulted for interaction, never for storage.
+Counting occurrences of the label rather than position in the panel is what
+makes identity stable. Ids are consulted for storage as well as interaction —
+`_widgetValues`, `_textStates`, `_numericBuffers`, `_scrollStates` and
+`_focus.current` are all keyed by them — so an id that moved would not cost a
+frame of hover, it would silently reset an open header, a caret or a scroll
+offset. A per-panel *counter* does exactly that: an `if` above a widget starting
+to emit shifts every id below it. Counting per label confines the hazard to
+same-labelled widgets, where it is inherent.
+
+`_labelCounts` is cleared per panel rather than destroyed, so the steady state
+allocates nothing.
 
 ## The interaction state machine
 
@@ -163,10 +177,10 @@ hot = nextHot;
 nextHot = 0;
 ```
 
-Widgets *claim* `nextHot` as they're submitted, and the claim is unconditional
-— so the **last** widget to claim it wins. Panels are drawn back to front, so
-the last claimer is the topmost one, which is exactly the one the user is
-pointing at.
+Widgets *claim* `nextHot` as they're submitted, and among ordinary widgets the
+claim is unconditional — so the **last** to claim it wins. Panels are drawn back
+to front, so the last claimer is the topmost one, which is exactly the one the
+user is pointing at.
 
 Resolving within the same frame would instead hand the cursor to whichever
 widget was submitted *first*, meaning a panel would happily respond to clicks
@@ -185,6 +199,33 @@ The second disjunct accepts a press from a widget that is hovered *now* when
 nothing was hot before. Requiring `hot == 0` is what keeps it safe: if panels
 overlap, the topmost has already claimed it, so it is non-zero and the covered
 widget cannot steal the press.
+
+### Deferred geometry outranks submission order
+
+Last-claimer-wins is right *between panels* and wrong *within* one, because an
+open dropdown list is emitted mid-panel but drawn over the widgets that follow
+it. Submission order would hand the cursor to whatever it covers: the entry
+claims `nextHot`, a later widget overwrites the claim, and the next press lands
+on the wrong one — while the list still looks perfectly correct on screen.
+
+Deferred geometry (`_deferring`, the same flag that routes quads to
+`_overlayQuads`) is precisely what draws on top, so its claim stands for the
+rest of the frame:
+
+```cpp
+const bool overlayOwnsCursor = _pointer.nextHotOverlay && !_deferring;
+
+item.hovered = !overlayOwnsCursor && _hovering(rect);
+
+if (item.hovered)
+{
+    _pointer.nextHot = id;
+    _pointer.nextHotOverlay = _deferring;
+}
+```
+
+Suppressing `hovered` rather than only the claim is what also stops the covered
+widgets lighting up under an open list.
 
 ### Not getting stuck
 
@@ -241,6 +282,85 @@ that a small UI is never touched at all.
 `RetainedMap::Slot::inserted` also replaced a flag. `PanelState` used to carry
 `placed`, meaning "defaultPosition has been applied" — which is exactly "this
 lookup is what created the entry", and the map already knew that.
+
+## Styling
+
+No widget names a colour, a radius or a height. Each one declares which
+`Part` it is; everything visual arrives on its `Item`:
+
+```
+button("Save")
+   |
+   v
+_item(Part::Button, "Save", spec, patch)
+   |
+   |-- _look(part, patch) .... _theme[part], with the call's Style applied
+   |                           over it when the patch is non-empty (a
+   |                           StyleGuard has already swapped that entry
+   |                           in place)
+   |-- _rowHeight(style) ..... style.height, else Metrics::rowHeight
+   |-- _nextRow(height)
+   '-- _behaviour + _focusItem
+   |
+   v
+Item{ id, rect, style, hovered, held, clicked, focused, activated }
+```
+
+Three mechanisms, and **none of them is stateful**:
+
+| Scope | Mechanism | Cost |
+|---|---|---|
+| whole UI | `Theme::applyPalette` | rewrites nineteen `WidgetStyle`s, once |
+| one Part | `theme[part] = ...` | none — the widget reads it next frame |
+| one scope | `StyleGuard` | swaps the Part's entry, restores in its destructor |
+| one widget | the trailing `Style` argument | one `WidgetStyle` copy, and only when the patch is non-empty |
+
+`StyleGuard` needs no stack: it saves the Part's old `WidgetStyle` by value and
+puts it back, so nesting falls out for free.
+
+`Item::style` is a `WidgetStyle` **by value**, which is what lets the one-widget
+scope carry no state at all. The alternative — resolving into a member and
+handing out a reference — has to keep that member alive for exactly as long as
+the widget reading it, and quietly aliases the moment a container (`beginScroll`)
+holds a resolved style across the widgets nested inside it. A ~160-byte copy per
+widget, a few hundred times a frame, buys that whole class of bug away.
+
+### Rounded corners without a second batch
+
+A rounded rectangle is built from axis-aligned spans — one for the middle, one
+per pixel row of each cap:
+
+```cpp
+const float dy   = r - (i + 0.5f);
+const float bite = r - std::sqrt(r * r - dy * dy);
+_quad({{min.x + bite, top}, {max.x - bite, top + 1.0f}}, color);
+```
+
+A triangle fan would be fewer primitives, but the CPU clip in `_texturedQuad`
+only trims axis-aligned quads — so a fan would need either polygon clipping or
+a scissor rectangle, and a scissor costs a draw call per clip change. Spans
+keep rounding free of both. A radius of `r` costs `1 + 2·ceil(r)` quads, which
+is why `kMaxRounding` exists: past it a corner is a pill, not a curve.
+
+Borders are the same shape drawn twice — the border colour at full size, the
+fill inset by `borderWidth` — rather than a ring. A control's fill is opaque
+where it overlaps, so nothing can see the difference.
+
+### Disabled
+
+`beginDisabled` is a `std::vector<bool>` where each entry is already folded
+with the level outside it, so nesting needs no counting. It is read in exactly
+two places: `_behaviour` returns before hit-testing, `_focusItem` returns
+before the tab order. Drawing goes on as normal, with one multiply at the
+bottom of `_texturedQuad`:
+
+```cpp
+if (isDisabled())
+    color.a *= _theme.metrics.disabledAlpha;
+```
+
+One place, so a surface, a border, a glyph and a tick mark all fade together —
+and a widget author gets the whole feature without knowing it exists.
 
 ## Geometry: one draw call
 
@@ -304,26 +424,31 @@ anything.
 
 ## Auto-height panels
 
-A panel's background has to be drawn *behind* its content, so it must be
-emitted first — but its height isn't known until `endPanel()`. Rather than
-buffering the content or measuring it twice, `beginPanel` emits the background
-at placeholder height and remembers where it landed:
+A panel's background has to be drawn *behind* its content, but its height
+isn't known until `endPanel()`. Rather than buffering the content or measuring
+it twice, `beginPanel` records where this panel's geometry starts and emits
+nothing:
 
 ```cpp
-_panel.backgroundVertex = _vertices.size();
-_quad(_panel.bounds, _style.panelBackground);
+_panel.vertexStart = _vertices.size();
+_panel.indexStart  = _indices.size();
 ```
 
-`endPanel` then rewrites the two bottom vertices in place:
+`endPanel` builds the background *last*, at its real height, and rotates it
+into that slot — renumbering the indices first, while each one still says
+which side of the split it came from:
 
 ```cpp
-_vertices[_panel.backgroundVertex + 2].pos.y = bottom;
-_vertices[_panel.backgroundVertex + 3].pos.y = bottom;
+index = index >= split ? index - (split - start) : index + added;
+
+std::rotate(_vertices.begin() + start, _vertices.begin() + split, _vertices.end());
 ```
 
-This is why the winding order in `_texturedQuad` is load-bearing and
-commented as such: corners go top-left, top-right, bottom-right, bottom-left,
-so indices 2 and 3 are exactly the pair that follows the content's height.
+The obvious alternative — reserve one quad up front and rewrite its bottom
+edge — pins the background to being exactly one rectangle, and breaks silently
+the moment a theme gives `Part::Panel` a radius or a border. Rotating costs a
+`memmove` of one panel's geometry and one pass over its indices, per panel,
+per frame: microseconds, and it cannot be got wrong.
 
 The same "hit-test where it was, draw where it is" split appears in the title
 bar. Dragging is resolved *before* any geometry is emitted, so `grabBar` (the
@@ -350,33 +475,48 @@ the new glyphs) and strictly before the draw that samples them.
 
 ## Adding a widget
 
-Every widget has the same five-step shape. `button` is the smallest complete
-example:
+`Item` is what a base class would be if immediate mode had objects to derive
+from. There is no widget to inherit — a widget exists for the length of one
+call — so the shared part is a value every widget is handed, and `_widget()`
+is its constructor and destructor:
+
+```cpp
+template <typename Body>
+bool _widget(Part part, std::string_view label, const ItemSpec& spec, Body&& body)
+{
+    const Item item = _item(part, label, spec);   // row, identity, style, input, focus
+    if (!item)                                    // outside a panel
+        return false;
+
+    const bool result = body(item);
+    _ring(item);                                  // focus outline, on top
+
+    return result;
+}
+```
+
+`button` is then only the part that makes it a button:
 
 ```cpp
 bool Context::Impl::button(std::string_view text)
 {
-    if (!_panel.open)                                 // 1. refuse outside a panel
-        return false;
+    return _widget(Part::Button, text, [&](const Item& it) {
+        _paint(it, it.held);
+        _label(text, it.rect, *it.style);
 
-    const Item it = _item(text, _style.rowHeight);    // 2. row + identity + input
-
-    _quad(it.rect, _fill(it.held, it.hovered));       // 3. draw from that state
-
-    if (it.focused)
-        _focusRing(it.rect);
-
-    _textCentered(text, it.rect);
-
-    return it.activated;                              // 4. report
+        return it.activated;
+    });
 }
 ```
 
-Keep to it and a new widget inherits clipping, batching, identity, keyboard
-focus and the press/release semantics without doing anything itself. The parts
-to be careful about:
+That is the whole shape. A new widget inherits clipping, batching, identity,
+keyboard focus, the press/release semantics, `beginDisabled` and its Part's
+theming without writing a line for any of them — and *cannot* forget the panel
+guard, the tab order or the focus ring, because it never writes those.
 
-- Call `_item` (or `_idFor`) **once** per widget — it consumes a per-panel
+The parts to be careful about:
+
+- Call `_widget` (or `_idFor`) **once** per widget — it consumes a per-panel
   counter slot, so calling it twice shifts every later widget's identity. Use
   `_peekId` when you need the id without consuming one, as `inputFloat` does.
 - Report `it.activated`, not `it.clicked`, unless the widget genuinely has no
@@ -391,12 +531,25 @@ to be careful about:
 - Prefer the whole row as the hit target over the visual control. `checkbox`
   does this deliberately: a 16-pixel square is a needlessly small thing to ask
   anyone to hit.
+- Add a `Part` for anything visually distinct, and give it a line in
+  `Theme::applyPalette`. A widget that hard-codes a colour, a radius or a
+  height cannot be themed, and nothing else will tell you.
 
-There is a matching rule for drawing. Text is always `Style::text`, so
-`_text`/`_textAt`/`_textCentered` take no colour; rectangles pick theirs with
-`_fill(active, hovered)`; and one glyph walk, `walkGlyphs`, does all the UTF-8
-decoding, glyph lookup and kerning that `measureText`, `_text` and
-`_caretFromX` need. Reach for those rather than open-coding any of it.
+There is a matching rule for drawing: **no widget names a colour**. Everything
+comes off `*item.style`, through four calls.
+
+| Call | Draws |
+|---|---|
+| `_paint(item, active)` | the surface and border, picking the state's colours |
+| `_label(text, rect, style)` | text, inset and aligned as the style says |
+| `_marker(item, on)` | the checkbox/radio box, shaped by the style's `rounding` |
+| `_ring(item)` | the focus outline (`_widget` already calls it) |
+
+Underneath them, `_surface` is the one place a filled rectangle is produced and
+`_roundedQuad` the one place a corner is, so a border or a radius arrives
+everywhere at once. One glyph walk, `walkGlyphs`, does all the UTF-8 decoding,
+glyph lookup and kerning that `measureText`, `_text` and `_caretFromX` need.
+Reach for those rather than open-coding any of it.
 
 ## Testing it
 

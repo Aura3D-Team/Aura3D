@@ -173,17 +173,33 @@ private:
     VkCommandBuffer beginSingleTimeCommands();
 
     /**
-     * @brief Ends @p commandBuffer, submits it, and waits for it to retire.
+     * @brief Ends @p commandBuffer and submits it, without waiting for it.
      *
-     * Waits on a dedicated fence rather than vkQueueWaitIdle: the latter blocks
-     * until *every* submission on the graphics queue has drained, which on the
-     * glyph-atlas path (updateRegion() during a live frame) means a texture
-     * patch stalls the frame already in flight. A fence waits for this
-     * submission alone and leaves the rest of the queue running.
+     * The wait is deferred to waitForPendingUpload(), which the next writer of
+     * the staging buffer performs. Waiting here instead cost a full CPU/GPU
+     * round trip *per call*, which for an application re-uploading a dynamic
+     * texture every frame -- the documented use of createDynamicTexture() --
+     * was the single largest item in the frame.
+     *
+     * Nothing is lost by not waiting: the recorded barrier transitioning the
+     * image back to SHADER_READ_ONLY_OPTIMAL orders the copy ahead of any later
+     * sampling in submission order, and every frame is submitted to this same
+     * queue. What the wait actually protected was the shared staging buffer,
+     * and that is exactly what the deferred wait still protects.
      *
      * @param commandBuffer The command buffer to submit.
      */
     void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
+    /**
+     * @brief Blocks until the previous upload has retired, then frees it.
+     *
+     * A no-op when nothing is in flight, so it is cheap to call defensively
+     * before anything that overwrites the staging buffer or tears state down.
+     * In steady state the previous upload retired frames ago and this returns
+     * immediately -- which is the whole point of deferring it.
+     */
+    void waitForPendingUpload();
 
     /**
      * @brief Records an image layout transition into @p cmd.
@@ -213,10 +229,11 @@ private:
      * upload per newly seen character. The buffer only ever grows, so a scene
      * settles on its largest texture and stops allocating.
      *
-     * Reusing a single buffer is safe precisely because every upload path here
-     * is synchronous: endSingleTimeCommands() waits for the copy to retire
-     * before returning, so the GPU is provably finished reading the staging
-     * memory before the next caller can overwrite it.
+     * Reusing a single buffer is safe because this waits for the previous
+     * upload before handing the pointer out: waitForPendingUpload() is called
+     * on the way in, so the GPU is provably finished reading the staging memory
+     * before the next caller can overwrite it. That wait -- not one at
+     * submission time -- is what the single buffer actually needs.
      *
      * @param bytes Required capacity.
      * @return Mapped write pointer, or nullptr if the allocation failed.
@@ -239,13 +256,17 @@ private:
     bool _stagingManuallyMapped = false;
 
     /**
-     * @brief Fence endSingleTimeCommands() waits on, created once on first use.
+     * @brief Fence waitForPendingUpload() waits on, created once on first use.
      *
      * A single fence suffices because uploads through this manager are strictly
-     * serialized -- each waits for its own submission before returning -- so
-     * there is never more than one in flight to track.
+     * serialized -- each waits for the one before it on the way in -- so there
+     * is never more than one in flight to track.
      */
     VkFence _uploadFence = VK_NULL_HANDLE;
+
+    //! The submitted-but-not-yet-waited-for upload, held so waitForPendingUpload()
+    //! can free it once the GPU is done. VK_NULL_HANDLE when nothing is in flight.
+    VkCommandBuffer _pendingUploadCmd = VK_NULL_HANDLE;
 };
 
 } // namespace vk

@@ -83,7 +83,27 @@ public:
      * @brief Convenience: formats and draws "FPS: <n>" from the renderer's live
      * frame timing (wma::WindowFlags::fps) at window pixel (x, y).
      */
+    /**
+     * @brief Draws the live frame rate as @c "FPS: <n>  (<ms> ms)".
+     *
+     * Smoothed, deliberately: wma reports 1000/deltaTime for the frame that
+     * just ended, which on an unlocked loop swings by tens of frames between
+     * one frame and the next and reads as noise rather than a number. This
+     * keeps an exponential moving average with a ~0.5s time constant, so the
+     * figure is one you can act on. The raw frame time is printed beside it
+     * because that is what stays linear when you are chasing a regression --
+     * 120 to 60 fps and 8.3 to 16.7 ms are the same fact, and only the second
+     * pair reads as "twice the work".
+     *
+     * @note Advances the average once per call, so call it once a frame. To
+     *       show the same figure somewhere else, read @ref fps() rather than
+     *       calling this again.
+     */
     void drawFPS(float x, float y, float scale = 1.0f);
+
+    /// The smoothed frame rate @ref drawFPS last computed; zero before the
+    /// first call. For showing the same number in a UI panel or a HUD.
+    [[nodiscard]] float fps() const noexcept { return _fps; }
 
     /**
      * @brief Pixel dimensions @p text would occupy if drawn at @p scale.
@@ -118,6 +138,11 @@ private:
     TextureHandle _atlasTexture;
     glm::vec4 _color{1.0f};
     bool _usingTrueType = false;
+
+    //! Smoothed frame rate; see drawFPS(), which is the only thing that
+    //! advances it.
+    float _fps = 0.0f;
+    char _cachedFpsString[48] = "FPS: 0  (0.00 ms)";
 
     //! Retained across calls (no reallocation in steady state) and over-aligned
     //! rather than plain std::vector: the batch is memcpy'd/glBufferSubData'd

@@ -9,8 +9,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ranges>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace aura3d::ui {
 
@@ -28,6 +30,12 @@ struct Rect {
     [[nodiscard]] constexpr bool contains(glm::vec2 p) const noexcept
     {
         return p.x >= min.x && p.x < max.x && p.y >= min.y && p.y < max.y;
+    }
+
+    /// This rectangle shrunk by @p amount on all four sides.
+    [[nodiscard]] constexpr Rect inset(float amount) const noexcept
+    {
+        return Rect{{min.x + amount, min.y + amount}, {max.x - amount, max.y - amount}};
     }
 };
 
@@ -116,6 +124,107 @@ private:
     std::unordered_map<u32, Entry> _entries;
 };
 
+/**
+ * @brief Open-addressed u32 -> u32 counter table that never deallocates.
+ *
+ * Backs the duplicate-label disambiguation in _idFor(). Every widget inserts
+ * one entry and every beginPanel() drops the lot, which as a node-based map
+ * cost one malloc and one free per widget per frame -- the UI's only
+ * steady-state allocation. Stamping each slot with a generation turns clear()
+ * into an integer bump and keeps the buckets warm across frames.
+ *
+ * Entries are never erased individually, so probing needs no tombstones.
+ */
+class LabelCounts
+{
+public:
+    void clear() noexcept
+    {
+        //! A wrapped generation would make stale slots read as live again, so
+        //! the one tick that can alias pays for a real wipe.
+        if (++_generation == 0)
+        {
+            std::ranges::fill(_slots, Slot{});
+            _generation = 1;
+        }
+
+        _live = 0;
+    }
+
+    /// How many times @p key has been seen this generation, without claiming it.
+    [[nodiscard]] u32 peek(u32 key) const noexcept
+    {
+        if (_slots.empty())
+            return 0;
+
+        const Slot& slot = _slots[_probe(key)];
+        return slot.generation == _generation ? slot.count : 0u;
+    }
+
+    /// Claims the next ordinal for @p key, returning what it was before.
+    [[nodiscard]] u32 bump(u32 key)
+    {
+        //! Kept under a 3/4 load so probe runs stay short. Growth stops once
+        //! the widest panel has been seen once, so this allocates only during
+        //! warm-up.
+        if ((_live + 1) * 4 > _slots.size() * 3)
+            _grow();
+
+        Slot& slot = _slots[_probe(key)];
+
+        if (slot.generation != _generation)
+        {
+            slot = Slot{.key = key, .generation = _generation, .count = 0};
+            ++_live;
+        }
+
+        return slot.count++;
+    }
+
+private:
+    struct Slot {
+        u32 key = 0;
+        u32 generation = 0; //! 0 is never a live generation, so this reads empty.
+        u32 count = 0;
+    };
+
+    static constexpr usize kInitialSlots = 64; //! Power of two; masked, not modulo.
+
+    /// Index of @p key's slot, or of the first free one it probed through.
+    [[nodiscard]] usize _probe(u32 key) const noexcept
+    {
+        const usize mask = _slots.size() - 1;
+
+        //! The keys are already hashBytes() output, so they are well mixed;
+        //! masking the low bits is enough.
+        usize index = key & mask;
+
+        while (_slots[index].generation == _generation && _slots[index].key != key)
+            index = (index + 1) & mask;
+
+        return index;
+    }
+
+    void _grow()
+    {
+        std::vector<Slot> live;
+        live.reserve(_live);
+
+        for (const Slot& slot : _slots)
+            if (slot.generation == _generation)
+                live.push_back(slot);
+
+        _slots.assign(std::max(kInitialSlots, _slots.size() * 2), Slot{});
+
+        for (const Slot& slot : live)
+            _slots[_probe(slot.key)] = slot;
+    }
+
+    std::vector<Slot> _slots;
+    u32 _generation = 1;
+    u32 _live = 0;
+};
+
 namespace {
 
 constexpr size_t kVerticesPerQuad = 4;
@@ -125,7 +234,6 @@ constexpr size_t kIndicesPerQuad = 6;
 //! known while its content is emitted, and auto-height panels never need it.
 constexpr float kUnboundedBelow = 1.0e6f;
 
-constexpr float kScrollbarWidth = 10.0f;
 constexpr float kScrollStep = 48.0f;
 
 constexpr u32 kHashOffsetBasis = 2166136261u;
@@ -137,13 +245,11 @@ constexpr u32 kIdStride = 0x9e3779b9u;
 //! Bytes an inputFloat() accepts, one short of its formatting buffer.
 constexpr size_t kNumericMaxBytes = 31;
 
-//! Tick-box metrics: how far the box is inset from the row height, and how far
-//! its fill is inset from the box. A radio button's is slightly smaller and its
-//! dot slightly tighter, which is the only thing distinguishing the two.
-constexpr float kCheckboxInset = 6.0f;
-constexpr float kCheckboxFill = 0.25f;
-constexpr float kRadioInset = 8.0f;
-constexpr float kRadioFill = 0.30f;
+//! A rounded corner costs one axis-aligned span per pixel row of its cap (see
+//! Impl::_roundedQuad), which is only cheap while the radius stays small.
+//! WidgetStyle::rounding is clamped here as well as to half the shorter side,
+//! so "very round" is a pill rather than a bill.
+constexpr float kMaxRounding = 24.0f;
 
 [[nodiscard]] constexpr u32 hashBytes(std::string_view text, u32 seed) noexcept
 {
@@ -287,6 +393,26 @@ void appendFloat(std::string& out, float value)
  *        @c offsetAfter the byte offset just past its codepoint.
  * @return The pen's total advance, i.e. the text's width in pixels.
  */
+/**
+ * @brief Moves @c [split,end) to sit at @p first, sliding @c [first,split) up.
+ *
+ * @p scratch parks the tail while the head slides and is owned by the caller
+ * so that steady-state frames allocate nothing.
+ */
+template <typename Vec>
+void rotateTailToFront(Vec& data, size_t first, size_t split, Vec& scratch)
+{
+    if (split == first || split == data.size())
+        return;
+
+    const auto begin = data.begin();
+    const auto at = [begin](size_t i) { return begin + static_cast<ptrdiff_t>(i); };
+
+    scratch.assign(at(split), data.end());
+    std::move_backward(at(first), at(split), data.end());
+    std::copy(scratch.begin(), scratch.end(), at(first));
+}
+
 template <typename Visit>
 float walkGlyphs(FontAtlas& atlas, std::string_view text, float scale, Visit&& visit)
 {
@@ -331,7 +457,7 @@ float walkGlyphs(FontAtlas& atlas, std::string_view text, float scale, Visit&& v
  */
 class Context::Impl {
 public:
-    Impl(IRenderer* renderer, const ContextDesc& desc);
+    Impl(IRenderer* renderer, const ContextDesc& desc, Theme& theme);
     ~Impl();
 
     Impl(const Impl&) = delete;
@@ -347,29 +473,33 @@ public:
     [[nodiscard]] bool beginPanel(std::string_view title, glm::vec2 defaultPosition, float width);
     void endPanel();
 
-    void label(std::string_view text);
-    bool button(std::string_view text);
-    bool checkbox(std::string_view text, bool& value);
-    bool sliderFloat(std::string_view text, float& value, float min, float max);
-    bool inputText(std::string_view label, std::string& value, size_t maxBytes);
-    bool inputFloat(std::string_view label, float& value);
-    bool dropdown(std::string_view label, int& index, std::span<const std::string_view> items);
-    bool radioButton(std::string_view label, int& value, int buttonValue);
-    [[nodiscard]] bool collapsingHeader(std::string_view label, bool defaultOpen);
-    [[nodiscard]] bool treeNode(std::string_view label, bool defaultOpen);
+    void label(std::string_view text, const Style& patch);
+    bool button(std::string_view text, const Style& patch);
+    bool checkbox(std::string_view text, bool& value, const Style& patch);
+    bool sliderFloat(std::string_view text, float& value, float min, float max,
+                     const Style& patch);
+    bool inputText(std::string_view label, std::string& value, size_t maxBytes,
+                   const Style& patch);
+    bool inputFloat(std::string_view label, float& value, const Style& patch);
+    bool dropdown(std::string_view label, int& index, std::span<const std::string_view> items,
+                  const Style& patch);
+    bool radioButton(std::string_view label, int& value, int buttonValue, const Style& patch);
+    [[nodiscard]] bool collapsingHeader(std::string_view label, bool defaultOpen,
+                                        const Style& patch);
+    [[nodiscard]] bool treeNode(std::string_view label, bool defaultOpen, const Style& patch);
     void treePop() noexcept;
-    bool selectable(std::string_view label, bool selected);
+    bool selectable(std::string_view label, bool selected, const Style& patch);
 
-    [[nodiscard]] bool beginScroll(std::string_view id, float height);
+    [[nodiscard]] bool beginScroll(std::string_view id, float height, const Style& patch);
     void endScroll();
     [[nodiscard]] bool beginTabBar(std::string_view id);
-    [[nodiscard]] bool tabItem(std::string_view label);
+    [[nodiscard]] bool tabItem(std::string_view label, const Style& patch);
     void endTabBar() noexcept;
-    void tooltip(std::string_view text);
+    void tooltip(std::string_view text, const Style& patch);
 
     void sameLine() noexcept;
     void setNextItemWidth(float width) noexcept;
-    void separator();
+    void separator(const Style& patch);
     void spacing(float pixels) noexcept;
 
     void setKeyboardFocusHere() noexcept { _focus.requestNext = true; }
@@ -378,34 +508,102 @@ public:
     [[nodiscard]] bool isCapturingTextInput() const noexcept { return _capture.textInput; }
     [[nodiscard]] bool isCapturingMouse() const noexcept { return _capture.mouse; }
 
-    [[nodiscard]] Style& style() noexcept { return _style; }
-    [[nodiscard]] const Style& style() const noexcept { return _style; }
+    void beginDisabled(bool disabled) { _disabledStack.push_back(disabled || isDisabled()); }
+
+    void endDisabled() noexcept
+    {
+        if (!_disabledStack.empty())
+            _disabledStack.pop_back();
+    }
+
+    [[nodiscard]] bool isDisabled() const noexcept
+    {
+        return !_disabledStack.empty() && _disabledStack.back();
+    }
 
     [[nodiscard]] glm::vec2 measureText(std::string_view text);
 
 private:
-    /// One widget's identity, geometry, and everything this frame's input did
-    /// to it. Every interactive widget is one of these plus some drawing.
+    /**
+     * @brief One widget's identity, geometry, resolved style, and everything
+     *        this frame's input did to it.
+     *
+     * This is what a base class would be if immediate mode had objects to
+     * derive from. There is no widget to inherit -- a widget exists for the
+     * length of one call -- so the shared part is a value every widget is
+     * handed, and _widget() below is its constructor and destructor.
+     */
     struct Item {
         u32 id = 0;
         Rect rect{};
+
+        //! The Part's entry in the theme with the call's Style patch applied.
+        //! Held by value: a widget reads its colours and metrics from here
+        //! rather than reaching for the theme, and nothing has to keep a
+        //! resolved style alive for exactly as long as the widget using it.
+        WidgetStyle style{};
+
+        bool valid = false;     //! False outside a panel: the widget draws nothing.
         bool hovered = false;   //! Cursor is over the widget right now.
         bool held = false;      //! Widget owns the ongoing press.
         bool clicked = false;   //! Press was released over the widget this frame.
         bool focused = false;   //! Widget holds keyboard focus this frame.
         bool activated = false; //! Clicked, or Enter/Space while focused.
+
+        explicit operator bool() const noexcept { return valid; }
     };
 
-    /// Reserves the next row and resolves identity, hit-testing and focus for
-    /// one widget -- the opening line of every widget that takes input.
-    /// @param trailingLabel Narrows the row to leave room for @p label drawn
-    ///        after it, as inputText() and dropdown() do.
-    [[nodiscard]] Item _item(std::string_view label, float height, bool trailingLabel = false);
+    /// How one widget differs from a plain full-width row.
+    struct ItemSpec {
+        //! Row height. Zero takes the Part's, or Metrics::rowHeight.
+        float height = 0.0f;
+
+        //! Narrows the row to leave room for a label drawn *after* it, as
+        //! inputText() and dropdown() do.
+        bool trailingLabel = false;
+    };
+
+    /**
+     * @brief The skeleton every interactive widget runs.
+     *
+     * Reserves the row, resolves identity and style, hit-tests, runs the focus
+     * machinery, then hands @p body an Item and draws the focus ring after it.
+     * What is left in a widget is only what makes it that widget -- and no
+     * widget can forget the guard, the ring, or the tab order, because none of
+     * them writes those.
+     *
+     * @return Whatever @p body returned, or false outside a panel.
+     */
+    template <typename Body>
+    bool _widget(Part part, std::string_view label, const Style& patch, const ItemSpec& spec,
+                 Body&& body)
+    {
+        const Item item = _item(part, label, spec, patch);
+        if (!item)
+            return false;
+
+        const bool result = body(item);
+        _ring(item);
+
+        return result;
+    }
+
+    template <typename Body>
+    bool _widget(Part part, std::string_view label, const Style& patch, Body&& body)
+    {
+        return _widget(part, label, patch, ItemSpec{}, std::forward<Body>(body));
+    }
+
+    /// Reserves the next row and resolves identity, style, hit-testing and
+    /// focus for one widget. Use _widget() rather than calling this directly;
+    /// the begin/end widgets, which have no single body, are the exception.
+    [[nodiscard]] Item _item(Part part, std::string_view label, const ItemSpec& spec,
+                             const Style& patch);
 
     /// Runs the hot/active state machine for @p id over @p rect without
     /// entering it into the tab order. For the parts that are not rows: title
     /// bars, scrollbar thumbs, tabs, open dropdown entries.
-    [[nodiscard]] Item _behaviour(u32 id, const Rect& rect) noexcept;
+    [[nodiscard]] Item _behaviour(u32 id, const Rect& rect, const WidgetStyle& style) noexcept;
 
     /// Enters @p item into this frame's tab order, applies click-to-focus and
     /// fills in its focused/activated flags. Called in submission order, which
@@ -429,13 +627,14 @@ private:
     /// Reserves the next full-width row inside the current panel.
     [[nodiscard]] Rect _nextRow(float height) noexcept;
 
-    /// Identity a widget keeps across frames: its label, its panel, and a
-    /// per-panel counter, so same-labelled widgets don't collide. Consumes one
-    /// counter slot, so call it exactly once per widget.
-    [[nodiscard]] u32 _idFor(std::string_view text) noexcept;
+    /// Identity a widget keeps across frames: its label, its panel, and how
+    /// many widgets in the panel have already used that label, so same-labelled
+    /// widgets don't collide. Consumes one occurrence, so call it exactly once
+    /// per widget.
+    [[nodiscard]] u32 _idFor(std::string_view text);
 
-    //! The id _idFor() would hand out next, without consuming the slot. For
-    //! inputFloat(), which needs its state before delegating to inputText().
+    //! The id _idFor() would hand out next, without consuming the occurrence.
+    //! For inputFloat(), which needs its state before delegating to inputText().
     [[nodiscard]] u32 _peekId(std::string_view text) const noexcept;
 
     //! The one retained value widgets that need exactly one share: open/closed
@@ -443,11 +642,30 @@ private:
     //! Ids cannot collide across kinds, so one map serves all of them.
     [[nodiscard]] u32& _state(u32 id, u32 initial);
 
+    /// Flips @p item's retained open flag when it is activated and hands the
+    /// flag back, so a caller that also closes it -- a drop-down picking an
+    /// entry -- can. The whole of what a header, a tree node and a drop-down
+    /// have in common.
+    [[nodiscard]] u32& _toggle(const Item& item, bool defaultOpen);
+
     /// True when the cursor is inside @p bounds and inside the active clip.
     [[nodiscard]] bool _hovering(const Rect& bounds) const noexcept;
 
-    /// Control colour for a widget's state; active outranks hovered.
-    [[nodiscard]] const glm::vec4& _fill(bool active, bool hovered) const noexcept;
+    /// @p part's style as the theme currently has it.
+    [[nodiscard]] const WidgetStyle& _look(Part part) const noexcept { return _theme[part]; }
+
+    /// As above with @p patch applied over it. An empty patch -- the common
+    /// case, since the parameter defaults to one -- costs the check and no copy.
+    [[nodiscard]] WidgetStyle _look(Part part, const Style& patch) const
+    {
+        return patch.empty() ? _theme[part] : patch.over(_theme[part]);
+    }
+
+    /// Row height @p style asks for, falling back to the shared metric.
+    [[nodiscard]] float _rowHeight(const WidgetStyle& style) const noexcept
+    {
+        return style.height.value_or(_theme.metrics.rowHeight);
+    }
 
     /// Baseline-to-baseline distance at the current text scale, in pixels.
     [[nodiscard]] float _lineHeight() const noexcept;
@@ -461,27 +679,56 @@ private:
     /// Appends a solid quad, clipped to the active clip rectangle.
     void _quad(const Rect& bounds, const glm::vec4& color);
 
+    /**
+     * @brief A solid rectangle with rounded corners.
+     *
+     * Built from axis-aligned spans -- one for the middle, one per pixel row of
+     * each cap -- so every piece goes through the same clipped quad path as
+     * everything else and the UI stays a single batch. Radii are small, which
+     * is what makes that affordable; @ref kMaxRounding keeps them that way.
+     */
+    void _roundedQuad(const Rect& bounds, float radius, const glm::vec4& color);
+
+    /// Draws one component's background: its border, then its fill inside it.
+    /// Every filled surface in the UI goes through here.
+    void _surface(const Rect& bounds, const WidgetStyle& style, const glm::vec4& fill,
+                  const glm::vec4& border);
+
+    /// _surface() for a widget, picking the colours for its state. @p active is
+    /// whatever "active" means to that widget: held, focused, open, selected.
+    void _paint(const Item& item, bool active);
+
     /// Appends one textured quad, trimmed to @c _clip on the CPU rather than
     /// with a scissor rectangle (drawBatch2D() is one batch with no per-command
     /// state, so a scissor would mean one draw call per clip change).
-    void _texturedQuad(Rect bounds, glm::vec2 uvMin, glm::vec2 uvMax, const glm::vec4& color);
+    void _texturedQuad(Rect bounds, glm::vec2 uvMin, glm::vec2 uvMax, glm::vec4 color);
 
-    /// Text is always Style::text -- the three appenders below take no colour.
-    /// @{
-    void _text(std::string_view text, glm::vec2 origin);            //! Top-left at @p origin.
-    void _textAt(std::string_view text, float x, const Rect& bounds); //! Centred vertically in @p bounds.
-    void _textCentered(std::string_view text, const Rect& bounds);  //! Centred on both axes.
-    /// @}
+    /// Text, top-left at @p origin.
+    void _text(std::string_view text, glm::vec2 origin, const glm::vec4& color);
 
-    /// Draws a focus outline around @p bounds, for the keyboard-focused widget.
-    void _focusRing(const Rect& bounds);
+    /// Text at @p x, centred vertically in @p bounds.
+    void _textAt(std::string_view text, float x, const Rect& bounds, const glm::vec4& color);
+
+    /// Text inside @p bounds, inset and aligned as @p style says. The one call
+    /// that turns WidgetStyle::align into pixels.
+    void _label(std::string_view text, const Rect& bounds, const WidgetStyle& style);
+
+    /// Draws the focus outline, if @p item has focus. Called by _widget().
+    void _ring(const Item& item);
 
     /// Draws the tick box a checkbox or radio button shows at the left of its
     /// row, filled when @p on, and returns it so the caller can place a label
-    /// beside it.
-    /// @param rowInset How far the box is inset from the row height.
-    /// @param fillScale The filled square's inset, as a fraction of the box.
-    Rect _marker(const Rect& row, bool hovered, bool on, float rowInset, float fillScale);
+    /// beside it. Shape, size and mark all come from the item's style, which is
+    /// the entire difference between a check box and a radio dot.
+    [[nodiscard]] Rect _marker(const Item& item, bool on);
+
+    /// Draws the open/closed glyph a header or tree node carries, and returns
+    /// the x its label starts at.
+    [[nodiscard]] float _leadingGlyph(const Item& item, std::string_view glyph);
+
+    /// Moves the panel's background in front of its content, now that
+    /// endPanel() knows how tall it is. See the comment on the definition.
+    void _insertPanelBackground();
 
     /// Replays _overlayQuads into the batch; called at the end of render().
     void _flushOverlays();
@@ -495,7 +742,13 @@ private:
     glm::vec2 _solidUv{0.0f}; //! Opaque atlas texel every solid quad samples.
     bool _usable = false;     //! False when the atlas or its texture is missing.
 
-    Style _style{};
+    //! The Context's own public member, not a copy: an edit to gui.theme has to
+    //! reach the very next widget, and a copy here would silently shadow it.
+    Theme& _theme;
+
+    //! One entry per open beginDisabled(), each already folded with the level
+    //! outside it, so nesting needs no counting and isDisabled() is a peek.
+    std::vector<bool> _disabledStack;
 
     //! Retained across frames and over-aligned, like TextOverlay's: memcpy'd
     //! into mapped device memory / glBufferSubData every frame, and a
@@ -506,6 +759,11 @@ private:
 
     AlignedVector<gfx::Vertex2D> _vertices;
     AlignedVector<u32> _indices;
+
+    //! Scratch for _insertPanelBackground()'s rotate. Members rather than
+    //! locals so their capacity survives the frame and the move never allocates.
+    AlignedVector<gfx::Vertex2D> _vertexScratch;
+    AlignedVector<u32> _indexScratch;
 
     //! Frames since construction. Only RetainedMap reads it, and only to
     //! decide what nothing has asked for in a while.
@@ -539,7 +797,13 @@ private:
         //! within the frame would favor whichever was submitted first.
         u32 hot = 0;     //! Under the cursor, from last frame's claims.
         u32 nextHot = 0; //! Claimed this frame; becomes @c hot next frame.
-        u32 active = 0;  //! Owns the ongoing press, if any.
+
+        //! Whether @c nextHot was claimed by deferred geometry. Deferred is
+        //! what draws on top, so once it claims the cursor nothing submitted
+        //! after it may take the claim back. See _behaviour().
+        bool nextHotOverlay = false;
+
+        u32 active = 0; //! Owns the ongoing press, if any.
 
         //! Whether the active widget was submitted last frame. One that
         //! vanishes mid-press never observes the release that would otherwise
@@ -566,6 +830,7 @@ private:
 
             hot = nextHot;
             nextHot = 0;
+            nextHotOverlay = false;
 
             if (!activeSubmitted)
                 active = 0;
@@ -689,9 +954,18 @@ private:
 
     RetainedMap<PanelState> _panels;
 
-    //! CurrentPanel::backgroundVertex when the background never reached the
-    //! batch, so endPanel() knows there is nothing to patch.
-    static constexpr size_t kNoVertex = static_cast<size_t>(-1);
+    /*
+     * How many widgets in the panel being built have already used each label
+     * hash. Counting occurrences of the label rather than position in the panel
+     * is what keeps a widget's id -- and every retained value stored under it:
+     * open flags, carets, scroll offsets, keyboard focus -- alive across a
+     * frame where an `if` above it started or stopped emitting. Positional ids
+     * silently re-key everything below such a branch.
+     *
+     * Cleared per panel rather than destroyed, so the steady state allocates
+     * nothing.
+     */
+    LabelCounts _labelCounts;
 
     //! The panel between beginPanel() and endPanel(). One object answers both
     //! "is a panel being built" and "which".
@@ -700,11 +974,11 @@ private:
         bool open = false;
         Rect bounds{};        //! Grows downwards as widgets are added.
         float cursorY = 0.0f; //! Top of the next row, in window pixels.
-        u32 widgetIndex = 0;  //! Disambiguates widgets sharing a label.
 
-        //! First vertex of the background quad, rewritten to the final height
-        //! by endPanel(). See @ref kNoVertex.
-        size_t backgroundVertex = kNoVertex;
+        //! Where this panel's geometry starts. endPanel() emits the background
+        //! at the end and rotates it back to here. See _insertPanelBackground().
+        size_t vertexStart = 0;
+        size_t indexStart = 0;
 
         float indent = 0.0f; //! Left inset, grown by each open treeNode().
         u32 treeDepth = 0;   //! Open treeNode()s, so treePop() undoes its own indent.
@@ -745,6 +1019,14 @@ private:
         //! Left edge of the next tab. Tabs are fitted to their labels and
         //! packed left to right, so the row is walked rather than divided.
         float cursorX = 0.0f;
+
+        //! The bar's own row, held here rather than read from the panel: the
+        //! selected tab's *contents* are emitted between one tabItem() and the
+        //! next, so by the time the second one runs the panel's cursor has
+        //! moved past them and every tab after the first would be drawn beside
+        //! whatever the first tab last emitted.
+        float rowTop = 0.0f;
+        float rowHeight = 0.0f;
     };
 
     TabBar _tabBar{};
@@ -775,8 +1057,9 @@ private:
     std::string _caption;
 };
 
-Context::Impl::Impl::Impl(IRenderer* renderer, const ContextDesc& desc)
+Context::Impl::Impl(IRenderer* renderer, const ContextDesc& desc, Theme& theme)
     : _renderer(renderer)
+    , _theme(theme)
 {
     FontAtlasDesc atlasDesc{};
     atlasDesc.width = desc.atlasSize;
@@ -813,7 +1096,7 @@ Context::Impl::Impl::Impl(IRenderer* renderer, const ContextDesc& desc)
     _usable = true;
 }
 
-Context::Impl::Impl::~Impl()
+Context::Impl::~Impl()
 {
     if (!_window)
         return;
@@ -946,9 +1229,14 @@ void Context::Impl::_beginFrame() noexcept
     _deferring = false;
 
     _panel = CurrentPanel{};
+    _labelCounts.clear();
     _scrollStack.clear();
     _tabBar.open = false;
     _clip = Rect{};
+
+    //! Scoped to a frame's submission, so an unbalanced endDisabled() cannot
+    //! leak into the next one.
+    _disabledStack.clear();
 }
 
 void Context::Impl::render()
@@ -968,6 +1256,9 @@ void Context::Impl::render()
     _capture.keyboard = _focus.current != 0;
     _capture.textInput = _capture.textInputThisFrame;
 
+    //! Deferred geometry was tinted when it was recorded, if it was recorded
+    //! inside a beginDisabled(); replaying it must not tint it twice.
+    _disabledStack.clear();
     _flushOverlays();
 
     if (!_usable || _indices.empty())
@@ -997,19 +1288,21 @@ void Context::Impl::_flushOverlays()
 }
 
 // -----------------------------------------------------------------------------
-// Identity, interaction and focus
+// Identity, style, interaction and focus
 // -----------------------------------------------------------------------------
 
 u32 Context::Impl::_peekId(std::string_view text) const noexcept
 {
-    return hashBytes(text, _panel.id) ^ (_panel.widgetIndex * kIdStride);
+    const u32 label = hashBytes(text, _panel.id);
+
+    return label ^ (_labelCounts.peek(label) * kIdStride);
 }
 
-u32 Context::Impl::_idFor(std::string_view text) noexcept
+u32 Context::Impl::_idFor(std::string_view text)
 {
-    const u32 id = _peekId(text);
-    ++_panel.widgetIndex;
-    return id;
+    const u32 label = hashBytes(text, _panel.id);
+
+    return label ^ (_labelCounts.bump(label) * kIdStride);
 }
 
 u32& Context::Impl::_state(u32 id, u32 initial)
@@ -1017,25 +1310,55 @@ u32& Context::Impl::_state(u32 id, u32 initial)
     return _widgetValues.touch(id, _frame, initial).value;
 }
 
+u32& Context::Impl::_toggle(const Item& item, bool defaultOpen)
+{
+    u32& open = _state(item.id, defaultOpen ? 1u : 0u);
+
+    if (item.activated)
+        open ^= 1u;
+
+    return open;
+}
+
 bool Context::Impl::_hovering(const Rect& bounds) const noexcept
 {
     return bounds.contains(_input.mouse) && _clip.contains(_input.mouse);
 }
 
-const glm::vec4& Context::Impl::_fill(bool active, bool hovered) const noexcept
-{
-    return active ? _style.controlActive : hovered ? _style.controlHovered : _style.control;
-}
-
-Context::Impl::Item Context::Impl::_behaviour(u32 id, const Rect& rect) noexcept
+Context::Impl::Item Context::Impl::_behaviour(u32 id, const Rect& rect,
+                                              const WidgetStyle& style) noexcept
 {
     Item item;
     item.id = id;
     item.rect = rect;
-    item.hovered = _hovering(rect);
+    item.style = style;
+    item.valid = true;
+
+    //! Laid out and drawn, but never hit-tested: inside a beginDisabled() a
+    //! widget cannot be clicked, and cannot swallow the press meant for
+    //! whatever is behind it. _focusItem() skips it for the same reason, which
+    //! between them is the whole of the feature.
+    if (isDisabled())
+        return item;
+
+    /*
+     * An open dropdown list is emitted mid-panel but drawn over the widgets
+     * that follow it, so plain submission order would hand the cursor to
+     * whatever it covers: the entry claims hot, the widget underneath is
+     * submitted later and overwrites the claim, and the next press lands on
+     * the wrong one. Deferred geometry is exactly what draws on top, so its
+     * claim stands for the rest of the frame -- and the widgets beneath do not
+     * light up as hovered either.
+     */
+    const bool overlayOwnsCursor = _pointer.nextHotOverlay && !_deferring;
+
+    item.hovered = !overlayOwnsCursor && _hovering(rect);
 
     if (item.hovered)
+    {
         _pointer.nextHot = id;
+        _pointer.nextHotOverlay = _deferring;
+    }
 
     if (_pointer.active == id)
     {
@@ -1064,6 +1387,9 @@ Context::Impl::Item Context::Impl::_behaviour(u32 id, const Rect& rect) noexcept
 
 void Context::Impl::_focusItem(Item& item) noexcept
 {
+    if (isDisabled())
+        return;
+
     const u32 id = item.id;
 
     if (_focus.first == 0)
@@ -1105,15 +1431,28 @@ void Context::Impl::_focusItem(Item& item) noexcept
                                        _keyPressed(wma::KEY_SPACE)));
 }
 
-Context::Impl::Item Context::Impl::_item(std::string_view label, float height, bool trailingLabel)
+Context::Impl::Item Context::Impl::_item(Part part, std::string_view label,
+                                        const ItemSpec& spec, const Style& patch)
 {
+    if (!_panel.open)
+        return Item{};
+
+    const WidgetStyle style = _look(part, patch);
+
+    //! Taken even while disabled: the id is what every retained value hangs
+    //! off, and a widget must not lose its caret or its open flag for having
+    //! spent a few frames greyed out.
     const u32 id = _idFor(label);
 
-    Rect rect = _nextRow(height);
-    if (trailingLabel && !label.empty())
-        rect.max.x = std::max(rect.min.x, rect.max.x - measureText(label).x - _style.padding);
+    Rect rect = _nextRow(spec.height > 0.0f ? spec.height : _rowHeight(style));
 
-    Item item = _behaviour(id, rect);
+    if (spec.trailingLabel && !label.empty())
+    {
+        rect.max.x = std::max(rect.min.x,
+                              rect.max.x - measureText(label).x - _theme.metrics.padding);
+    }
+
+    Item item = _behaviour(id, rect, style);
     _focusItem(item);
 
     return item;
@@ -1147,22 +1486,24 @@ bool Context::Impl::_keyPressed(wma::Key key) const noexcept
 
 Rect Context::Impl::_nextRow(float height) noexcept
 {
-    const float left = _panel.bounds.min.x + _style.padding + _panel.indent;
+    const Metrics& metrics = _theme.metrics;
+
+    const float left = _panel.bounds.min.x + metrics.padding + _panel.indent;
 
     //! Inside a scroll region the content stops short of the scrollbar, whether
     //! or not one is currently needed, so rows don't reflow as it appears.
     const float right = _scrollStack.empty()
-                            ? _panel.bounds.max.x - _style.padding
-                            : _scrollStack.back().viewport.max.x - kScrollbarWidth -
-                                  _style.itemSpacing;
+                            ? _panel.bounds.max.x - metrics.padding
+                            : _scrollStack.back().viewport.max.x - metrics.scrollbarWidth -
+                                  metrics.itemSpacing;
 
-    const float x = _panel.packNext ? _panel.lastWidget.max.x + _style.itemSpacing : left;
+    const float x = _panel.packNext ? _panel.lastWidget.max.x + metrics.itemSpacing : left;
 
     if (!_panel.packNext)
     {
         _panel.rowTop = _panel.cursorY;
         _panel.rowHeight = height;
-        _panel.cursorY += height + _style.itemSpacing;
+        _panel.cursorY += height + metrics.itemSpacing;
     }
     _panel.packNext = false;
 
@@ -1193,17 +1534,20 @@ void Context::Impl::spacing(float pixels) noexcept
         _panel.cursorY += pixels;
 }
 
-void Context::Impl::separator()
+void Context::Impl::separator(const Style& patch)
 {
     if (!_panel.open)
         return;
 
     constexpr float kThickness = 1.0f;
 
-    const Rect row = _nextRow(_style.itemSpacing * 2.0f + kThickness);
+    const WidgetStyle style = _look(Part::Separator, patch);
+
+    const Rect row = _nextRow(_theme.metrics.itemSpacing * 2.0f + kThickness);
     const float y = std::round((row.min.y + row.max.y) * 0.5f);
 
-    _quad({{row.min.x, y}, {row.max.x, y + kThickness}}, _style.separator);
+    _surface({{row.min.x, y}, {row.max.x, y + kThickness}}, style, style.surface.normal,
+             style.border.normal);
 }
 
 // -----------------------------------------------------------------------------
@@ -1223,7 +1567,8 @@ bool Context::Impl::beginPanel(std::string_view title, glm::vec2 defaultPosition
     if (firstSeen)
         state.position = defaultPosition;
 
-    const float titleHeight = _style.rowHeight;
+    const WidgetStyle& titleStyle = _look(Part::TitleBar);
+    const float titleHeight = _rowHeight(titleStyle);
 
     //! Hit-test where the bar *was*, draw where it ends up: reusing one
     //! rectangle for both leaves the title trailing the body by a frame of
@@ -1232,7 +1577,7 @@ bool Context::Impl::beginPanel(std::string_view title, glm::vec2 defaultPosition
 
     _clip = grabBar;
 
-    if (_behaviour(hashBytes("##title", id), grabBar).held)
+    if (_behaviour(hashBytes("##title", id), grabBar, titleStyle).held)
     {
         if (_pointer.pressed)
             _pointer.dragOffset = _input.mouse - state.position;
@@ -1244,7 +1589,7 @@ bool Context::Impl::beginPanel(std::string_view title, glm::vec2 defaultPosition
         {
             //! One row of the panel always stays on screen, so a panel dragged
             //! off an edge can be dragged back.
-            const float margin = _style.rowHeight;
+            const float margin = titleHeight;
             const float minX = margin - width;
 
             state.position.x = std::clamp(state.position.x, minX,
@@ -1257,22 +1602,21 @@ bool Context::Impl::beginPanel(std::string_view title, glm::vec2 defaultPosition
     const Rect titleBar{state.position, state.position + glm::vec2{width, titleHeight}};
 
     _panel = CurrentPanel{};
+    _labelCounts.clear();
     _panel.id = id;
     _panel.bounds = titleBar;
     _panel.open = true;
-    _panel.cursorY = titleBar.max.y + _style.padding;
+    _panel.cursorY = titleBar.max.y + _theme.metrics.padding;
+
+    //! Everything from here to endPanel() is this panel's geometry; the
+    //! background is spliced in front of it once its height is known.
+    _panel.vertexStart = _vertices.size();
+    _panel.indexStart = _indices.size();
 
     _clip = Rect{state.position, {titleBar.max.x, state.position.y + kUnboundedBelow}};
 
-    //! The background has to be behind the content, so it is emitted first at
-    //! placeholder height and its bottom vertices rewritten by endPanel().
-    const size_t background = _vertices.size();
-    _quad(_panel.bounds, _style.panelBackground);
-    _panel.backgroundVertex =
-        _vertices.size() == background + kVerticesPerQuad ? background : kNoVertex;
-
-    _quad(titleBar, _style.panelTitle);
-    _textCentered(title, titleBar);
+    _surface(titleBar, titleStyle, titleStyle.surface.normal, titleStyle.border.normal);
+    _label(title, titleBar, titleStyle);
 
     _clip.min.y = titleBar.max.y;
 
@@ -1284,18 +1628,14 @@ void Context::Impl::endPanel()
     if (!_panel.open)
         return;
 
-    const float bottom = std::max(_panel.cursorY - _style.itemSpacing + _style.padding,
-                                  _panel.bounds.min.y + _style.rowHeight);
+    const Metrics& metrics = _theme.metrics;
+
+    const float bottom = std::max(_panel.cursorY - metrics.itemSpacing + metrics.padding,
+                                  _panel.bounds.min.y + _rowHeight(_look(Part::TitleBar)));
 
     _panel.bounds.max.y = bottom;
 
-    //! Corners wind top-left, top-right, bottom-right, bottom-left, so 2 and 3
-    //! are exactly the pair that follows the content's height.
-    if (_panel.backgroundVertex != kNoVertex)
-    {
-        _vertices[_panel.backgroundVertex + 2].pos.y = bottom;
-        _vertices[_panel.backgroundVertex + 3].pos.y = bottom;
-    }
+    _insertPanelBackground();
 
     if (_panel.bounds.contains(_input.mouse))
         _capture.mouseThisFrame = true;
@@ -1303,261 +1643,291 @@ void Context::Impl::endPanel()
     _panel.open = false;
 }
 
+/*
+ * A panel's height is not known until its content has been emitted, but its
+ * background has to be *behind* that content. Rather than reserving a quad up
+ * front and rewriting its bottom edge -- which pins the background to being
+ * exactly one rectangle, and quietly breaks the moment it is rounded or given
+ * a border -- the background is built last and rotated into place.
+ *
+ * Renumbering runs before the rotation, while an index still says which side
+ * of the split it came from.
+ */
+void Context::Impl::_insertPanelBackground()
+{
+    const size_t vertexSplit = _vertices.size();
+    const size_t indexSplit = _indices.size();
+
+    const WidgetStyle& style = _look(Part::Panel);
+
+    const Rect savedClip = std::exchange(_clip, _panel.bounds);
+    _surface(_panel.bounds, style, style.surface.normal, style.border.normal);
+    _clip = savedClip;
+
+    const auto added = static_cast<u32>(_vertices.size() - vertexSplit);
+    if (added == 0)
+        return;
+
+    const auto start = static_cast<u32>(_panel.vertexStart);
+    const auto split = static_cast<u32>(vertexSplit);
+
+    for (size_t i = _panel.indexStart; i < _indices.size(); ++i)
+    {
+        u32& index = _indices[i];
+        index = index >= split ? index - (split - start) : index + added;
+    }
+
+    /*
+     * Not std::rotate: for random-access iterators libstdc++ picks the
+     * gcd-cycle algorithm, which walks both buffers in strides and misses
+     * cache on nearly every step. The background is a handful of quads against
+     * a panel's worth of content, so lifting it into scratch, sliding the
+     * content up by that much and dropping it back in is three sequential
+     * passes over the small part and one memmove over the large one -- ~8 us a
+     * frame cheaper across five panels at Sandbox's geometry.
+     */
+    rotateTailToFront(_vertices, _panel.vertexStart, vertexSplit, _vertexScratch);
+    rotateTailToFront(_indices, _panel.indexStart, indexSplit, _indexScratch);
+}
+
 // -----------------------------------------------------------------------------
 // Widgets
+//
+// Every one of them is _widget() -- the row, the identity, the hit-test, the
+// focus ring -- plus the few lines that make it that widget. Nothing below
+// decides a colour, a radius or a height for itself: all of that arrives on the
+// Item, from the Part's entry in the theme.
 // -----------------------------------------------------------------------------
 
-void Context::Impl::label(std::string_view text)
+void Context::Impl::label(std::string_view text, const Style& patch)
 {
     if (!_panel.open)
         return;
 
-    const Rect row = _nextRow(_style.rowHeight);
-    _textAt(text, row.min.x, row);
+    const WidgetStyle style = _look(Part::Label, patch);
+    const Rect row = _nextRow(_rowHeight(style));
+
+    _surface(row, style, style.surface.normal, style.border.normal);
+    _label(text, row, style);
 }
 
-bool Context::Impl::button(std::string_view text)
+bool Context::Impl::button(std::string_view text, const Style& patch)
 {
-    if (!_panel.open)
-        return false;
+    return _widget(Part::Button, text, patch, [&](const Item& it) {
+        _paint(it, it.held);
+        _label(text, it.rect, it.style);
 
-    const Item it = _item(text, _style.rowHeight);
-
-    _quad(it.rect, _fill(it.held, it.hovered));
-
-    if (it.focused)
-        _focusRing(it.rect);
-
-    _textCentered(text, it.rect);
-
-    return it.activated;
+        return it.activated;
+    });
 }
 
-bool Context::Impl::checkbox(std::string_view text, bool& value)
+bool Context::Impl::checkbox(std::string_view text, bool& value, const Style& patch)
 {
-    if (!_panel.open)
-        return false;
+    return _widget(Part::Checkbox, text, patch, [&](const Item& it) {
+        if (it.activated)
+            value = !value;
 
-    const Item it = _item(text, _style.rowHeight);
+        const Rect box = _marker(it, value);
+        _textAt(text, box.max.x + it.style.padding, it.rect, it.style.text);
 
-    if (it.activated)
-        value = !value;
-
-    if (it.focused)
-        _focusRing(it.rect);
-
-    _textAt(text, _marker(it.rect, it.hovered, value, kCheckboxInset, kCheckboxFill).max.x +
-                      _style.padding,
-            it.rect);
-
-    return it.activated;
+        return it.activated;
+    });
 }
 
-bool Context::Impl::radioButton(std::string_view label, int& value, int buttonValue)
+bool Context::Impl::radioButton(std::string_view label, int& value, int buttonValue,
+                                const Style& patch)
 {
-    if (!_panel.open)
-        return false;
+    return _widget(Part::Radio, label, patch, [&](const Item& it) {
+        const bool takes = it.activated && value != buttonValue;
+        if (it.activated)
+            value = buttonValue;
 
-    const Item it = _item(label, _style.rowHeight);
+        const Rect box = _marker(it, value == buttonValue);
+        _textAt(label, box.max.x + it.style.padding, it.rect, it.style.text);
 
-    const bool takes = it.activated && value != buttonValue;
-    if (it.activated)
-        value = buttonValue;
-
-    if (it.focused)
-        _focusRing(it.rect);
-
-    _textAt(label, _marker(it.rect, it.hovered, value == buttonValue, kRadioInset, kRadioFill)
-                           .max.x +
-                       _style.padding,
-            it.rect);
-
-    return takes;
+        return takes;
+    });
 }
 
-bool Context::Impl::selectable(std::string_view label, bool selected)
+bool Context::Impl::selectable(std::string_view label, bool selected, const Style& patch)
 {
-    if (!_panel.open)
-        return false;
+    return _widget(Part::Selectable, label, patch, [&](const Item& it) {
+        _paint(it, selected);
+        _label(label, it.rect, it.style);
 
-    const Item it = _item(label, _style.rowHeight);
-
-    if (selected)
-        _quad(it.rect, _style.controlActive);
-    else if (it.hovered)
-        _quad(it.rect, _style.controlHovered);
-
-    if (it.focused)
-        _focusRing(it.rect);
-
-    _textAt(label, it.rect.min.x + _style.padding * 0.5f, it.rect);
-
-    return it.activated;
+        return it.activated;
+    });
 }
 
-bool Context::Impl::sliderFloat(std::string_view text, float& value, float min, float max)
+bool Context::Impl::sliderFloat(std::string_view text, float& value, float min, float max,
+                                const Style& patch)
 {
-    if (!_panel.open || !(max > min))
+    if (!(max > min))
         return false;
 
-    const Item it = _item(text, _style.rowHeight);
+    return _widget(Part::Slider, text, patch, [&](const Item& it) {
+        //! Focus on the press, not the click: a drag that ends off the track
+        //! still leaves the slider ready for arrow keys.
+        if (it.held && _pointer.pressed)
+            _setFocus(it.id);
 
-    //! Focus on the press, not the click: a drag that ends off the track still
-    //! leaves the slider ready for arrow keys.
-    if (it.held && _pointer.pressed)
-        _setFocus(it.id);
+        const float clamped = std::clamp(value, min, max);
+        bool changed = clamped != value;
+        value = clamped;
 
-    const float clamped = std::clamp(value, min, max);
-    bool changed = clamped != value;
-    value = clamped;
-
-    if (it.focused)
-    {
-        for (const KeyPress& press : _input.keys)
+        if (it.focused)
         {
-            const bool back = press.key == wma::KEY_LEFT || press.key == wma::KEY_DOWN;
-            const bool forward = press.key == wma::KEY_RIGHT || press.key == wma::KEY_UP;
+            for (const KeyPress& press : _input.keys)
+            {
+                const bool back = press.key == wma::KEY_LEFT || press.key == wma::KEY_DOWN;
+                const bool forward = press.key == wma::KEY_RIGHT || press.key == wma::KEY_UP;
 
-            if ((!back && !forward) || !press.mods.onlyShiftOrNone())
-                continue;
+                if ((!back && !forward) || !press.mods.onlyShiftOrNone())
+                    continue;
 
-            const float step = (max - min) * (press.mods.shift ? 0.10f : 0.01f);
+                const float step = (max - min) * (press.mods.shift ? 0.10f : 0.01f);
 
-            value = std::clamp(back ? value - step : value + step, min, max);
-            changed = true;
+                value = std::clamp(back ? value - step : value + step, min, max);
+                changed = true;
+            }
         }
-    }
 
-    if (it.held)
-    {
-        const float t =
-            std::clamp((_input.mouse.x - it.rect.min.x) / it.rect.width(), 0.0f, 1.0f);
-
-        if (const float next = lerp(min, max, t); next != value)
+        if (it.held)
         {
-            value = next;
-            changed = true;
+            const float t =
+                std::clamp((_input.mouse.x - it.rect.min.x) / it.rect.width(), 0.0f, 1.0f);
+
+            if (const float next = lerp(min, max, t); next != value)
+            {
+                value = next;
+                changed = true;
+            }
         }
-    }
 
-    _quad(it.rect, _fill(false, it.hovered));
+        _paint(it, false);
 
-    if (const float filled = (value - min) / (max - min); filled > 0.0f)
-    {
-        _quad({it.rect.min, {it.rect.min.x + filled * it.rect.width(), it.rect.max.y}},
-              _style.accent);
-    }
+        if (const float filled = (value - min) / (max - min); filled > 0.0f)
+        {
+            //! Drawn as the whole track in the accent colour, clipped to the
+            //! filled part: the fill then keeps the track's rounded left end
+            //! and stays square where the value cuts it off.
+            const Rect fill{it.rect.min,
+                            {it.rect.min.x + filled * it.rect.width(), it.rect.max.y}};
 
-    _caption.assign(text);
-    _caption += ": ";
-    appendFloat(_caption, value);
+            const Rect savedClip = std::exchange(_clip, intersect(_clip, fill));
+            _roundedQuad(it.rect, it.style.rounding, it.style.accent);
+            _clip = savedClip;
+        }
 
-    if (it.focused)
-        _focusRing(it.rect);
+        _caption.assign(text);
+        _caption += ": ";
+        appendFloat(_caption, value);
 
-    _textCentered(_caption, it.rect);
+        _label(_caption, it.rect, it.style);
 
-    return changed;
+        return changed;
+    });
 }
 
-bool Context::Impl::inputText(std::string_view label, std::string& value, size_t maxBytes)
+bool Context::Impl::inputText(std::string_view label, std::string& value, size_t maxBytes,
+                              const Style& patch)
 {
-    if (!_panel.open)
-        return false;
+    return _widget(Part::TextField, label, patch, ItemSpec{.trailingLabel = true}, [&](const Item& it) {
+        const Rect row = it.rect;
+        const WidgetStyle& style = it.style;
 
-    const Item it = _item(label, _style.rowHeight, /*trailingLabel=*/true);
-    const Rect row = it.rect;
-
-    if (it.held && _pointer.pressed)
-        _setFocus(it.id);
-    else if (_pointer.pressed && !it.hovered && it.focused)
-        _clearFocus(it.id);
-
-    TextState& state = _textStates.touch(it.id, _frame).value;
-
-    //! The frame focus is gained: snapshot the value for Escape, and put the
-    //! caret at the end as every platform's field does.
-    if (it.focused && _focus.lastFrame != it.id)
-    {
-        state.original = value;
-        state.caret = value.size();
-        state.anchor = state.caret;
-    }
-
-    bool changed = false;
-
-    if (it.focused)
-    {
-        if (_keyPressed(wma::KEY_ESCAPE))
-        {
-            value = state.original;
-            changed = true;
+        if (it.held && _pointer.pressed)
+            _setFocus(it.id);
+        else if (_pointer.pressed && !it.hovered && it.focused)
             _clearFocus(it.id);
-        }
-        else if (_keyPressed(wma::KEY_ENTER) || _keyPressed(wma::KEY_KP_ENTER))
+
+        TextState& state = _textStates.touch(it.id, _frame).value;
+
+        //! The frame focus is gained: snapshot the value for Escape, and put
+        //! the caret at the end as every platform's field does.
+        if (it.focused && _focus.lastFrame != it.id)
         {
-            _clearFocus(it.id);
-        }
-        else
-        {
-            changed = _editText(state, value, maxBytes);
-        }
-
-        if (_focus.current == it.id)
-            _capture.textInputThisFrame = true;
-    }
-
-    _quad(row, _fill(it.focused, it.hovered));
-
-    const float inset = _style.padding * 0.5f;
-    const float visibleWidth = std::max(row.width() - inset * 2.0f, 1.0f);
-    const float caretX = _xFromCaret(value, state.caret);
-
-    //! Follow the caret first, then refuse to scroll past either end of the
-    //! text, so a short string is never pushed off its own field.
-    state.scrollX = std::clamp(state.scrollX, caretX - visibleWidth, caretX);
-    state.scrollX = std::clamp(state.scrollX, 0.0f,
-                               std::max(0.0f, measureText(value).x - visibleWidth));
-
-    const Rect savedClip = std::exchange(_clip, intersect(_clip, row));
-
-    const glm::vec2 textOrigin{row.min.x + inset - state.scrollX,
-                               row.min.y + (row.height() - _lineHeight()) * 0.5f};
-
-    if (it.focused && state.caret != state.anchor)
-    {
-        const float from = _xFromCaret(value, std::min(state.caret, state.anchor));
-        const float to = _xFromCaret(value, std::max(state.caret, state.anchor));
-
-        _quad({{textOrigin.x + from, row.min.y + 2.0f}, {textOrigin.x + to, row.max.y - 2.0f}},
-              _style.accent);
-    }
-
-    _text(value, textOrigin);
-
-    if (it.focused)
-    {
-        const float x = textOrigin.x + caretX;
-        _quad({{x, row.min.y + 2.0f}, {x + 1.0f, row.max.y - 2.0f}}, _style.text);
-    }
-
-    _clip = savedClip;
-
-    //! Placing the caret needs textOrigin, so it happens after drawing; the
-    //! move only shows next frame, which is imperceptible while dragging.
-    if (it.held)
-    {
-        state.caret = _caretFromX(value, textOrigin.x, _input.mouse.x);
-        if (_pointer.pressed)
+            state.original = value;
+            state.caret = value.size();
             state.anchor = state.caret;
-    }
+        }
 
-    _textAt(label, row.max.x + _style.padding, row);
+        bool changed = false;
 
-    return changed;
+        if (it.focused)
+        {
+            if (_keyPressed(wma::KEY_ESCAPE))
+            {
+                value = state.original;
+                changed = true;
+                _clearFocus(it.id);
+            }
+            else if (_keyPressed(wma::KEY_ENTER) || _keyPressed(wma::KEY_KP_ENTER))
+            {
+                _clearFocus(it.id);
+            }
+            else
+            {
+                changed = _editText(state, value, maxBytes);
+            }
+
+            if (_focus.current == it.id)
+                _capture.textInputThisFrame = true;
+        }
+
+        _paint(it, it.focused);
+
+        const float inset = style.padding;
+        const float visibleWidth = std::max(row.width() - inset * 2.0f, 1.0f);
+        const float caretX = _xFromCaret(value, state.caret);
+
+        //! Follow the caret first, then refuse to scroll past either end of the
+        //! text, so a short string is never pushed off its own field.
+        state.scrollX = std::clamp(state.scrollX, caretX - visibleWidth, caretX);
+        state.scrollX = std::clamp(state.scrollX, 0.0f,
+                                   std::max(0.0f, measureText(value).x - visibleWidth));
+
+        const Rect savedClip = std::exchange(_clip, intersect(_clip, row));
+
+        const glm::vec2 textOrigin{row.min.x + inset - state.scrollX,
+                                   row.min.y + (row.height() - _lineHeight()) * 0.5f};
+
+        if (it.focused && state.caret != state.anchor)
+        {
+            const float from = _xFromCaret(value, std::min(state.caret, state.anchor));
+            const float to = _xFromCaret(value, std::max(state.caret, state.anchor));
+
+            _quad({{textOrigin.x + from, row.min.y + 2.0f},
+                   {textOrigin.x + to, row.max.y - 2.0f}},
+                  style.accent);
+        }
+
+        _text(value, textOrigin, style.text);
+
+        if (it.focused)
+        {
+            const float x = textOrigin.x + caretX;
+            _quad({{x, row.min.y + 2.0f}, {x + 1.0f, row.max.y - 2.0f}}, style.text);
+        }
+
+        _clip = savedClip;
+
+        //! Placing the caret needs textOrigin, so it happens after drawing; the
+        //! move only shows next frame, which is imperceptible while dragging.
+        if (it.held)
+        {
+            state.caret = _caretFromX(value, textOrigin.x, _input.mouse.x);
+            if (_pointer.pressed)
+                state.anchor = state.caret;
+        }
+
+        _textAt(label, row.max.x + _theme.metrics.padding, row, style.text);
+
+        return changed;
+    });
 }
 
-bool Context::Impl::inputFloat(std::string_view label, float& value)
+bool Context::Impl::inputFloat(std::string_view label, float& value, const Style& patch)
 {
     if (!_panel.open)
         return false;
@@ -1576,7 +1946,7 @@ bool Context::Impl::inputFloat(std::string_view label, float& value)
         appendFloat(buffer, value);
     }
 
-    if (!inputText(label, buffer, kNumericMaxBytes))
+    if (!inputText(label, buffer, kNumericMaxBytes, patch))
         return false;
 
     const char* begin = buffer.c_str();
@@ -1590,142 +1960,123 @@ bool Context::Impl::inputFloat(std::string_view label, float& value)
     return true;
 }
 
-bool Context::Impl::dropdown(std::string_view label, int& index, std::span<const std::string_view> items)
+bool Context::Impl::dropdown(std::string_view label, int& index,
+                             std::span<const std::string_view> items, const Style& patch)
 {
-    if (!_panel.open || items.empty())
+    if (items.empty())
         return false;
 
     index = std::clamp(index, 0, static_cast<int>(items.size()) - 1);
 
-    const Item it = _item(label, _style.rowHeight, /*trailingLabel=*/true);
-    const Rect row = it.rect;
+    return _widget(Part::Dropdown, label, patch, ItemSpec{.trailingLabel = true}, [&](const Item& it) {
+        const Rect row = it.rect;
+        const WidgetStyle& style = it.style;
 
-    u32& open = _state(it.id, 0u);
-    if (it.activated)
-        open ^= 1u;
+        u32& open = _toggle(it, false);
 
-    bool changed = false;
+        bool changed = false;
 
-    if (it.focused)
-    {
-        if (_keyPressed(wma::KEY_DOWN) && index + 1 < static_cast<int>(items.size()))
+        if (it.focused)
         {
-            ++index;
-            changed = true;
+            if (_keyPressed(wma::KEY_DOWN) && index + 1 < static_cast<int>(items.size()))
+            {
+                ++index;
+                changed = true;
+            }
+            else if (_keyPressed(wma::KEY_UP) && index > 0)
+            {
+                --index;
+                changed = true;
+            }
         }
-        else if (_keyPressed(wma::KEY_UP) && index > 0)
+
+        _paint(it, open != 0u);
+
+        _label(items[static_cast<size_t>(index)], row, style);
+        _textAt("v", row.max.x - style.padding - measureText("v").x, row, style.text);
+        _textAt(label, row.max.x + _theme.metrics.padding, row, style.text);
+
+        if (open == 0u)
+            return changed;
+
+        const WidgetStyle& entryStyle = _look(Part::DropdownItem);
+        const float itemHeight = _rowHeight(entryStyle);
+
+        const Rect list{{row.min.x, row.max.y},
+                        {row.max.x, row.max.y + itemHeight * static_cast<float>(items.size())}};
+
+        if (list.contains(_input.mouse))
+            _capture.mouseThisFrame = true;
+
+        //! Clipped to the list rather than to the panel, and deferred, so the
+        //! open list draws over whatever follows it.
+        const Rect savedClip = std::exchange(_clip, list);
+        _deferring = true;
+
+        //! The list is a small panel floating over the UI, and is styled as one.
+        const WidgetStyle& panelStyle = _look(Part::Panel);
+        _surface(list, panelStyle, panelStyle.surface.normal, panelStyle.border.normal);
+
+        for (size_t i = 0; i < items.size(); ++i)
         {
-            --index;
-            changed = true;
+            const Rect entryRow{{list.min.x, list.min.y + itemHeight * static_cast<float>(i)},
+                                {list.max.x, list.min.y + itemHeight * static_cast<float>(i + 1)}};
+
+            const Item hit =
+                _behaviour(hashBytes(items[i], it.id) ^ 0x51ed270bu, entryRow, entryStyle);
+
+            _paint(hit, static_cast<int>(i) == index);
+            _label(items[i], entryRow, entryStyle);
+
+            if (hit.clicked)
+            {
+                changed = changed || static_cast<int>(i) != index;
+                index = static_cast<int>(i);
+                open = 0u;
+            }
         }
-    }
 
-    _quad(row, _fill(open != 0u, it.hovered));
+        _deferring = false;
+        _clip = savedClip;
 
-    _textAt(items[static_cast<size_t>(index)], row.min.x + _style.padding * 0.5f, row);
-    _textAt("v", row.max.x - _style.padding * 1.5f, row);
-    _textAt(label, row.max.x + _style.padding, row);
-
-    if (it.focused)
-        _focusRing(row);
-
-    if (!open)
-        return changed;
-
-    const float itemHeight = _style.rowHeight;
-    const Rect list{{row.min.x, row.max.y},
-                    {row.max.x, row.max.y + itemHeight * static_cast<float>(items.size())}};
-
-    if (list.contains(_input.mouse))
-        _capture.mouseThisFrame = true;
-
-    //! Clipped to the list rather than to the panel, and deferred, so the open
-    //! list draws over whatever follows it.
-    const Rect savedClip = std::exchange(_clip, list);
-    _deferring = true;
-
-    _quad(list, _style.panelBackground);
-
-    for (size_t i = 0; i < items.size(); ++i)
-    {
-        const Rect entryRow{{list.min.x, list.min.y + itemHeight * static_cast<float>(i)},
-                            {list.max.x, list.min.y + itemHeight * static_cast<float>(i + 1)}};
-
-        const Item hit = _behaviour(hashBytes(items[i], it.id) ^ 0x51ed270bu, entryRow);
-
-        if (hit.hovered)
-            _quad(entryRow, _style.controlHovered);
-        else if (static_cast<int>(i) == index)
-            _quad(entryRow, _style.controlActive);
-
-        _textAt(items[i], entryRow.min.x + _style.padding * 0.5f, entryRow);
-
-        if (hit.clicked)
-        {
-            changed = changed || static_cast<int>(i) != index;
-            index = static_cast<int>(i);
+        if (_pointer.pressed && !list.contains(_input.mouse) && !row.contains(_input.mouse))
             open = 0u;
+
+        return changed;
+    });
+}
+
+bool Context::Impl::collapsingHeader(std::string_view label, bool defaultOpen,
+                                     const Style& patch)
+{
+    return _widget(Part::Header, label, patch, [&](const Item& it) {
+        const bool open = _toggle(it, defaultOpen) != 0u;
+
+        //! Hover outranks open: a header stays legible as a header, and its
+        //! state is already spelled out by the glyph.
+        _paint(it, false);
+        _textAt(label, _leadingGlyph(it, open ? "-" : "+"), it.rect, it.style.text);
+
+        return open;
+    });
+}
+
+bool Context::Impl::treeNode(std::string_view label, bool defaultOpen, const Style& patch)
+{
+    return _widget(Part::TreeNode, label, patch, [&](const Item& it) {
+        const bool open = _toggle(it, defaultOpen) != 0u;
+
+        _paint(it, false);
+        _textAt(label, _leadingGlyph(it, open ? "v" : ">"), it.rect, it.style.text);
+
+        if (open)
+        {
+            _panel.indent += _theme.metrics.indent;
+            ++_panel.treeDepth;
         }
-    }
 
-    _deferring = false;
-    _clip = savedClip;
-
-    if (_pointer.pressed && !list.contains(_input.mouse) && !row.contains(_input.mouse))
-        open = 0u;
-
-    return changed;
-}
-
-bool Context::Impl::collapsingHeader(std::string_view label, bool defaultOpen)
-{
-    if (!_panel.open)
-        return false;
-
-    const Item it = _item(label, _style.rowHeight);
-
-    u32& open = _state(it.id, defaultOpen ? 1u : 0u);
-    if (it.activated)
-        open ^= 1u;
-
-    _quad(it.rect, it.hovered ? _style.controlHovered : _style.panelTitle);
-
-    if (it.focused)
-        _focusRing(it.rect);
-
-    _textAt(open ? "-" : "+", it.rect.min.x + _style.padding * 0.5f, it.rect);
-    _textAt(label, it.rect.min.x + _style.padding * 2.0f, it.rect);
-
-    return open != 0u;
-}
-
-bool Context::Impl::treeNode(std::string_view label, bool defaultOpen)
-{
-    if (!_panel.open)
-        return false;
-
-    const Item it = _item(label, _style.rowHeight);
-
-    u32& open = _state(it.id, defaultOpen ? 1u : 0u);
-    if (it.activated)
-        open ^= 1u;
-
-    if (it.hovered)
-        _quad(it.rect, _style.controlHovered);
-
-    if (it.focused)
-        _focusRing(it.rect);
-
-    _textAt(open ? "v" : ">", it.rect.min.x, it.rect);
-    _textAt(label, it.rect.min.x + _style.padding * 1.5f, it.rect);
-
-    if (open)
-    {
-        _panel.indent += _style.padding * 1.5f;
-        ++_panel.treeDepth;
-    }
-
-    return open != 0u;
+        return open;
+    });
 }
 
 void Context::Impl::treePop() noexcept
@@ -1734,16 +2085,19 @@ void Context::Impl::treePop() noexcept
         return;
 
     --_panel.treeDepth;
-    _panel.indent = std::max(0.0f, _panel.indent - _style.padding * 1.5f);
+    _panel.indent = std::max(0.0f, _panel.indent - _theme.metrics.indent);
 }
 
-bool Context::Impl::beginScroll(std::string_view id, float height)
+bool Context::Impl::beginScroll(std::string_view id, float height, const Style& patch)
 {
     if (!_panel.open)
         return false;
 
+    const Metrics& metrics = _theme.metrics;
+    const WidgetStyle viewStyle = _look(Part::ScrollView, patch);
+
     const u32 widgetId = _idFor(id);
-    const Rect viewport = _nextRow(std::max(height, _style.rowHeight));
+    const Rect viewport = _nextRow(std::max(height, metrics.rowHeight));
 
     ScrollState& state = _scrollStates.touch(widgetId, _frame).value;
 
@@ -1758,18 +2112,21 @@ bool Context::Impl::beginScroll(std::string_view id, float height)
 
     state.offset = std::clamp(state.offset, 0.0f, maxOffset);
 
-    _quad(viewport, {0.0f, 0.0f, 0.0f, 0.25f});
+    _surface(viewport, viewStyle, viewStyle.surface.normal, viewStyle.border.normal);
 
     if (maxOffset > 0.0f)
     {
-        const Rect track{{viewport.max.x - kScrollbarWidth, viewport.min.y}, viewport.max};
+        const WidgetStyle& trackStyle = _look(Part::ScrollTrack);
+        const WidgetStyle& thumbStyle = _look(Part::ScrollThumb);
+
+        const Rect track{{viewport.max.x - metrics.scrollbarWidth, viewport.min.y}, viewport.max};
 
         const float thumbHeight =
             std::max(track.height() * viewport.height() / state.contentHeight, 16.0f);
         const float travel = track.height() - thumbHeight;
         const float thumbTop = track.min.y + travel * (state.offset / maxOffset);
 
-        const Item drag = _behaviour(hashBytes("##scrollbar", widgetId), track);
+        const Item drag = _behaviour(hashBytes("##scrollbar", widgetId), track, thumbStyle);
         if (drag.held)
         {
             //! The grab point is the thumb's centre, so the thumb lands under
@@ -1780,9 +2137,11 @@ bool Context::Impl::beginScroll(std::string_view id, float height)
             state.offset = t * maxOffset;
         }
 
-        _quad(track, {1.0f, 1.0f, 1.0f, 0.06f});
-        _quad({{track.min.x, thumbTop}, {track.max.x, thumbTop + thumbHeight}},
-              _fill(drag.held, drag.hovered));
+        _surface(track, trackStyle, trackStyle.surface.normal, trackStyle.border.normal);
+
+        const Rect thumb{{track.min.x, thumbTop}, {track.max.x, thumbTop + thumbHeight}};
+        _surface(thumb, thumbStyle, thumbStyle.surface.pick(drag.held, drag.hovered),
+                 thumbStyle.border.pick(drag.held, drag.hovered));
     }
 
     _scrollStack.push_back(ScrollFrame{widgetId, viewport, _clip,
@@ -1810,7 +2169,7 @@ void Context::Impl::endScroll()
 
     //! The region as a whole becomes the row just emitted, so sameLine() packs
     //! beside it rather than beside its last inner widget.
-    _panel.cursorY = frame.viewport.max.y + _style.itemSpacing;
+    _panel.cursorY = frame.viewport.max.y + _theme.metrics.itemSpacing;
     _panel.rowTop = frame.viewport.min.y;
     _panel.rowHeight = frame.viewport.height();
     _panel.lastWidget = frame.viewport;
@@ -1828,33 +2187,39 @@ bool Context::Impl::beginTabBar(std::string_view id)
     _tabBar.index = 0;
     _tabBar.open = true;
 
+    const float height = _rowHeight(_look(Part::Tab));
+
     //! Tabs are placed by hand rather than through _nextRow(): they are fitted
     //! to their labels and packed left to right, so the row is walked.
     _panel.rowTop = _panel.cursorY;
-    _panel.rowHeight = _style.rowHeight;
-    _panel.cursorY += _style.rowHeight + _style.itemSpacing;
+    _panel.rowHeight = height;
+    _panel.cursorY += height + _theme.metrics.itemSpacing;
 
-    _tabBar.cursorX = _panel.bounds.min.x + _style.padding + _panel.indent;
+    _tabBar.rowTop = _panel.rowTop;
+    _tabBar.rowHeight = height;
+    _tabBar.cursorX = _panel.bounds.min.x + _theme.metrics.padding + _panel.indent;
 
     return true;
 }
 
-bool Context::Impl::tabItem(std::string_view label)
+bool Context::Impl::tabItem(std::string_view label, const Style& patch)
 {
     if (!_tabBar.open)
         return false;
 
+    const WidgetStyle style = _look(Part::Tab, patch);
+
     const u32 index = _tabBar.index++;
     u32& selected = _state(_tabBar.id, 0u);
 
-    const float width = measureText(label).x + _style.padding * 2.0f;
+    const float width = measureText(label).x + style.padding * 2.0f;
 
-    const Rect tab{{_tabBar.cursorX, _panel.rowTop},
-                   {_tabBar.cursorX + width, _panel.rowTop + _style.rowHeight}};
+    const Rect tab{{_tabBar.cursorX, _tabBar.rowTop},
+                   {_tabBar.cursorX + width, _tabBar.rowTop + _tabBar.rowHeight}};
 
     _tabBar.cursorX += width + 2.0f;
 
-    Item it = _behaviour(hashBytes(label, _tabBar.id), tab);
+    Item it = _behaviour(hashBytes(label, _tabBar.id), tab, style);
     _focusItem(it);
 
     if (it.activated)
@@ -1862,12 +2227,9 @@ bool Context::Impl::tabItem(std::string_view label)
 
     const bool active = selected == index;
 
-    _quad(tab, _fill(active, it.hovered));
-
-    if (it.focused)
-        _focusRing(tab);
-
-    _textCentered(label, tab);
+    _paint(it, active);
+    _label(label, tab, style);
+    _ring(it);
 
     return active;
 }
@@ -1877,14 +2239,16 @@ void Context::Impl::endTabBar() noexcept
     _tabBar.open = false;
 }
 
-void Context::Impl::tooltip(std::string_view text)
+void Context::Impl::tooltip(std::string_view text, const Style& patch)
 {
     if (!_panel.open || !_hovering(_panel.lastWidget))
         return;
 
     constexpr float kCursorGap = 12.0f;
 
-    const float pad = _style.padding * 0.5f;
+    const WidgetStyle style = _look(Part::Tooltip, patch);
+
+    const float pad = style.padding;
     const glm::vec2 corner = _input.mouse + kCursorGap;
 
     const Rect box{corner, corner + measureText(text) + pad * 2.0f};
@@ -1892,8 +2256,8 @@ void Context::Impl::tooltip(std::string_view text)
     const Rect savedClip = std::exchange(_clip, box);
     _deferring = true;
 
-    _quad(box, {0.05f, 0.05f, 0.07f, 0.96f});
-    _text(text, {box.min.x + pad, box.min.y + pad});
+    _surface(box, style, style.surface.normal, style.border.normal);
+    _text(text, {box.min.x + pad, box.min.y + pad}, style.text);
 
     _deferring = false;
     _clip = savedClip;
@@ -2008,9 +2372,10 @@ size_t Context::Impl::_caretFromX(std::string_view text, float originX, float x)
     size_t best = 0;
     float bestDistance = std::abs(originX - x);
 
-    walkGlyphs(*_atlas, text, _style.textScale,
+    walkGlyphs(*_atlas, text, _theme.metrics.textScale,
                [&](const GlyphInfo& glyph, float penX, size_t offsetAfter) {
-                   const float trailingEdge = originX + penX + glyph.advance * _style.textScale;
+                   const float trailingEdge =
+                       originX + penX + glyph.advance * _theme.metrics.textScale;
 
                    if (const float distance = std::abs(trailingEdge - x); distance < bestDistance)
                    {
@@ -2037,14 +2402,14 @@ glm::vec2 Context::Impl::measureText(std::string_view text)
         return {0.0f, 0.0f};
 
     const float width =
-        walkGlyphs(*_atlas, text, _style.textScale, [](const GlyphInfo&, float, size_t) {});
+        walkGlyphs(*_atlas, text, _theme.metrics.textScale, [](const GlyphInfo&, float, size_t) {});
 
     return {width, _lineHeight()};
 }
 
 float Context::Impl::_lineHeight() const noexcept
 {
-    return _atlas ? _atlas->lineHeight() * _style.textScale : 0.0f;
+    return _atlas ? _atlas->lineHeight() * _theme.metrics.textScale : 0.0f;
 }
 
 void Context::Impl::_quad(const Rect& bounds, const glm::vec4& color)
@@ -2052,10 +2417,83 @@ void Context::Impl::_quad(const Rect& bounds, const glm::vec4& color)
     _texturedQuad(bounds, _solidUv, _solidUv, color);
 }
 
-void Context::Impl::_texturedQuad(Rect bounds, glm::vec2 uvMin, glm::vec2 uvMax, const glm::vec4& color)
+void Context::Impl::_roundedQuad(const Rect& bounds, float radius, const glm::vec4& color)
+{
+    const float limit = std::min({bounds.width(), bounds.height()}) * 0.5f;
+    const float r = std::min({radius, limit, kMaxRounding});
+
+    if (r < 1.0f)
+    {
+        _quad(bounds, color);
+        return;
+    }
+
+    //! Capped at half the height as well as ceil(r): with a fractional radius
+    //! the two caps would otherwise overlap by a row, and on a translucent
+    //! surface a double-blended row is a visible seam.
+    const auto rows = std::min(static_cast<int>(std::ceil(r)),
+                               static_cast<int>(bounds.height() * 0.5f));
+    const auto capHeight = static_cast<float>(rows);
+
+    _quad({{bounds.min.x, bounds.min.y + capHeight}, {bounds.max.x, bounds.max.y - capHeight}},
+          color);
+
+    for (int i = 0; i < rows; ++i)
+    {
+        //! Distance from this row's centre to the cap's flat edge, and the
+        //! horizontal bite the circle takes out of the span there.
+        const float dy = r - (static_cast<float>(i) + 0.5f);
+        const float bite = r - std::sqrt(std::max(r * r - dy * dy, 0.0f));
+
+        const float left = bounds.min.x + bite;
+        const float right = bounds.max.x - bite;
+
+        const float top = bounds.min.y + static_cast<float>(i);
+        const float bottom = bounds.max.y - static_cast<float>(i);
+
+        _quad({{left, top}, {right, top + 1.0f}}, color);
+        _quad({{left, bottom - 1.0f}, {right, bottom}}, color);
+    }
+}
+
+void Context::Impl::_surface(const Rect& bounds, const WidgetStyle& style, const glm::vec4& fill,
+                             const glm::vec4& border)
+{
+    const bool outlined = style.borderWidth > 0.0f && border.a > 0.0f;
+
+    if (outlined)
+        _roundedQuad(bounds, style.rounding, border);
+
+    if (fill.a <= 0.0f)
+        return;
+
+    //! The fill is laid *over* the border rather than punched out of it: a
+    //! rounded ring would have to be built span by span for a difference
+    //! nothing can see, since a control's fill is opaque where it overlaps.
+    _roundedQuad(outlined ? bounds.inset(style.borderWidth) : bounds,
+                 outlined ? style.rounding - style.borderWidth : style.rounding, fill);
+}
+
+void Context::Impl::_paint(const Item& item, bool active)
+{
+    const WidgetStyle& style = item.style;
+
+    _surface(item.rect, style, style.surface.pick(active, item.hovered),
+             style.border.pick(active, item.hovered));
+}
+
+void Context::Impl::_texturedQuad(Rect bounds, glm::vec2 uvMin, glm::vec2 uvMax, glm::vec4 color)
 {
     const glm::vec2 size = bounds.size();
     if (size.x <= 0.0f || size.y <= 0.0f)
+        return;
+
+    //! One place, so nothing can be drawn inside a beginDisabled() and come out
+    //! at full strength -- surfaces, borders, glyphs, tick marks and all.
+    if (isDisabled())
+        color.a *= _theme.metrics.disabledAlpha;
+
+    if (color.a <= 0.0f)
         return;
 
     if (_deferring)
@@ -2068,18 +2506,33 @@ void Context::Impl::_texturedQuad(Rect bounds, glm::vec2 uvMin, glm::vec2 uvMax,
     if (visible.width() <= 0.0f || visible.height() <= 0.0f)
         return;
 
-    //! Quads are axis-aligned, so trimming the rectangle and moving the UVs by
-    //! the same fractions is exact: the surviving texels are pixel-identical to
-    //! what a scissor rectangle would have produced.
-    const glm::vec2 uv0{lerp(uvMin.x, uvMax.x, (visible.min.x - bounds.min.x) / size.x),
-                        lerp(uvMin.y, uvMax.y, (visible.min.y - bounds.min.y) / size.y)};
-    const glm::vec2 uv1{lerp(uvMin.x, uvMax.x, (visible.max.x - bounds.min.x) / size.x),
-                        lerp(uvMin.y, uvMax.y, (visible.max.y - bounds.min.y) / size.y)};
+    /*
+     * Quads are axis-aligned, so trimming the rectangle and moving the UVs by
+     * the same fractions is exact: the surviving texels are pixel-identical to
+     * what a scissor rectangle would have produced.
+     *
+     * The untrimmed case is the overwhelming majority -- only the quads
+     * straddling a scroll view's edge are ever cut -- and it is also the one
+     * where the arithmetic below is the identity. Taking it early skips four
+     * dependent float divisions per quad, which at Sandbox's ~1300 quads is
+     * the single largest saving in the emission path.
+     */
+    glm::vec2 uv0 = uvMin;
+    glm::vec2 uv1 = uvMax;
+
+    if (visible.min != bounds.min || visible.max != bounds.max)
+    {
+        const glm::vec2 inverse{1.0f / size.x, 1.0f / size.y};
+
+        uv0 = {lerp(uvMin.x, uvMax.x, (visible.min.x - bounds.min.x) * inverse.x),
+               lerp(uvMin.y, uvMax.y, (visible.min.y - bounds.min.y) * inverse.y)};
+        uv1 = {lerp(uvMin.x, uvMax.x, (visible.max.x - bounds.min.x) * inverse.x),
+               lerp(uvMin.y, uvMax.y, (visible.max.y - bounds.min.y) * inverse.y)};
+    }
 
     const auto base = static_cast<u32>(_vertices.size());
 
-    //! Top-left, top-right, bottom-right, bottom-left. endPanel() rewrites
-    //! vertices 2 and 3 of a panel background, so this order is load-bearing.
+    //! Top-left, top-right, bottom-right, bottom-left.
     _vertices.push_back({{visible.min.x, visible.min.y}, {uv0.x, uv0.y}, color});
     _vertices.push_back({{visible.max.x, visible.min.y}, {uv1.x, uv0.y}, color});
     _vertices.push_back({{visible.max.x, visible.max.y}, {uv1.x, uv1.y}, color});
@@ -2093,7 +2546,7 @@ void Context::Impl::_texturedQuad(Rect bounds, glm::vec2 uvMin, glm::vec2 uvMax,
     _indices.push_back(base + 0);
 }
 
-void Context::Impl::_text(std::string_view text, glm::vec2 origin)
+void Context::Impl::_text(std::string_view text, glm::vec2 origin, const glm::vec4& color)
 {
     if (!_atlas || text.empty())
         return;
@@ -2101,7 +2554,7 @@ void Context::Impl::_text(std::string_view text, glm::vec2 origin)
     _vertices.reserve(_vertices.size() + text.size() * kVerticesPerQuad);
     _indices.reserve(_indices.size() + text.size() * kIndicesPerQuad);
 
-    const float scale = _style.textScale;
+    const float scale = _theme.metrics.textScale;
 
     walkGlyphs(*_atlas, text, scale, [&](const GlyphInfo& glyph, float penX, size_t) {
         if (glyph.size.x <= 0.0f || glyph.size.y <= 0.0f)
@@ -2110,26 +2563,38 @@ void Context::Impl::_text(std::string_view text, glm::vec2 origin)
         const glm::vec2 topLeft{origin.x + penX + glyph.bearing.x * scale,
                                 origin.y + glyph.bearing.y * scale};
 
-        _texturedQuad({topLeft, topLeft + glyph.size * scale}, glyph.uvMin, glyph.uvMax,
-                      _style.text);
+        _texturedQuad({topLeft, topLeft + glyph.size * scale}, glyph.uvMin, glyph.uvMax, color);
     });
 }
 
-void Context::Impl::_textAt(std::string_view text, float x, const Rect& bounds)
+void Context::Impl::_textAt(std::string_view text, float x, const Rect& bounds,
+                            const glm::vec4& color)
 {
-    _text(text, {x, bounds.min.y + (bounds.height() - _lineHeight()) * 0.5f});
+    _text(text, {x, bounds.min.y + (bounds.height() - _lineHeight()) * 0.5f}, color);
 }
 
-void Context::Impl::_textCentered(std::string_view text, const Rect& bounds)
+void Context::Impl::_label(std::string_view text, const Rect& bounds, const WidgetStyle& style)
 {
-    const glm::vec2 size = measureText(text);
-    _textAt(text, bounds.min.x + (bounds.width() - size.x) * 0.5f, bounds);
+    float x = bounds.min.x + style.padding;
+
+    if (style.align != Align::Left)
+    {
+        const float slack = bounds.width() - style.padding * 2.0f - measureText(text).x;
+        x += style.align == Align::Center ? slack * 0.5f : slack;
+    }
+
+    _textAt(text, x, bounds, style.text);
 }
 
-void Context::Impl::_focusRing(const Rect& bounds)
+void Context::Impl::_ring(const Item& item)
 {
+    if (!item.focused)
+        return;
+
     constexpr float kThickness = 1.0f;
-    const glm::vec4& color = _style.accent;
+
+    const Rect& bounds = item.rect;
+    const glm::vec4& color = item.style.accent;
 
     _quad({bounds.min, {bounds.max.x, bounds.min.y + kThickness}}, color);
     _quad({{bounds.min.x, bounds.max.y - kThickness}, bounds.max}, color);
@@ -2137,22 +2602,38 @@ void Context::Impl::_focusRing(const Rect& bounds)
     _quad({{bounds.max.x - kThickness, bounds.min.y}, bounds.max}, color);
 }
 
-Rect Context::Impl::_marker(const Rect& row, bool hovered, bool on, float rowInset, float fillScale)
+Rect Context::Impl::_marker(const Item& item, bool on)
 {
-    const float size = std::max(_style.rowHeight - rowInset, 4.0f);
+    const WidgetStyle& style = item.style;
+    const Rect& row = item.rect;
+
+    const float size = std::max(row.height() * style.markScale, 4.0f);
     const float top = row.min.y + (row.height() - size) * 0.5f;
 
     const Rect box{{row.min.x, top}, {row.min.x + size, top + size}};
 
-    _quad(box, _fill(false, hovered));
+    _surface(box, style, style.surface.pick(false, item.hovered),
+             style.border.pick(false, item.hovered));
 
     if (on)
     {
-        const float inset = std::max(size * fillScale, 2.0f);
-        _quad({box.min + inset, box.max - inset}, _style.accent);
+        //! The mark keeps the box's shape -- a square inside a check box, a dot
+        //! inside a radio button -- because both come from the same rounding.
+        const float inset = std::max(size * style.markInset, 2.0f);
+        _roundedQuad(box.inset(inset), style.rounding - inset, style.accent);
     }
 
     return box;
+}
+
+float Context::Impl::_leadingGlyph(const Item& item, std::string_view glyph)
+{
+    const WidgetStyle& style = item.style;
+    const float x = item.rect.min.x + style.padding;
+
+    _textAt(glyph, x, item.rect, style.text);
+
+    return x + measureText(glyph).x + style.padding;
 }
 
 void Context::Impl::_uploadAtlasChanges()
@@ -2175,7 +2656,7 @@ void Context::Impl::_uploadAtlasChanges()
 // -----------------------------------------------------------------------------
 
 Context::Context(IRenderer* renderer, const ContextDesc& desc)
-    : _impl(std::make_unique<Impl>(renderer, desc))
+    : _impl(std::make_unique<Impl>(renderer, desc, theme))
 {
 }
 
@@ -2198,66 +2679,87 @@ bool Context::beginPanel(std::string_view title, glm::vec2 defaultPosition, floa
 
 void Context::endPanel() { _impl->endPanel(); }
 
-void Context::label(std::string_view text) { _impl->label(text); }
-bool Context::button(std::string_view text) { return _impl->button(text); }
-bool Context::checkbox(std::string_view text, bool& value) { return _impl->checkbox(text, value); }
+void Context::label(std::string_view text, const Style& style) { _impl->label(text, style); }
 
-bool Context::sliderFloat(std::string_view text, float& value, float min, float max)
+bool Context::button(std::string_view text, const Style& style)
 {
-    return _impl->sliderFloat(text, value, min, max);
+    return _impl->button(text, style);
 }
 
-bool Context::inputText(std::string_view label, std::string& value, size_t maxBytes)
+bool Context::checkbox(std::string_view text, bool& value, const Style& style)
 {
-    return _impl->inputText(label, value, maxBytes);
+    return _impl->checkbox(text, value, style);
 }
 
-bool Context::inputFloat(std::string_view label, float& value)
+bool Context::sliderFloat(std::string_view text, float& value, float min, float max,
+                          const Style& style)
 {
-    return _impl->inputFloat(label, value);
+    return _impl->sliderFloat(text, value, min, max, style);
 }
 
-bool Context::dropdown(std::string_view label, int& index, std::span<const std::string_view> items)
+bool Context::inputText(std::string_view label, std::string& value, size_t maxBytes,
+                        const Style& style)
 {
-    return _impl->dropdown(label, index, items);
+    return _impl->inputText(label, value, maxBytes, style);
 }
 
-bool Context::radioButton(std::string_view label, int& value, int buttonValue)
+bool Context::inputFloat(std::string_view label, float& value, const Style& style)
 {
-    return _impl->radioButton(label, value, buttonValue);
+    return _impl->inputFloat(label, value, style);
 }
 
-bool Context::collapsingHeader(std::string_view label, bool defaultOpen)
+bool Context::dropdown(std::string_view label, int& index,
+                       std::span<const std::string_view> items, const Style& style)
 {
-    return _impl->collapsingHeader(label, defaultOpen);
+    return _impl->dropdown(label, index, items, style);
 }
 
-bool Context::treeNode(std::string_view label, bool defaultOpen)
+bool Context::radioButton(std::string_view label, int& value, int buttonValue,
+                          const Style& style)
 {
-    return _impl->treeNode(label, defaultOpen);
+    return _impl->radioButton(label, value, buttonValue, style);
+}
+
+bool Context::collapsingHeader(std::string_view label, bool defaultOpen, const Style& style)
+{
+    return _impl->collapsingHeader(label, defaultOpen, style);
+}
+
+bool Context::treeNode(std::string_view label, bool defaultOpen, const Style& style)
+{
+    return _impl->treeNode(label, defaultOpen, style);
 }
 
 void Context::treePop() noexcept { _impl->treePop(); }
 
-bool Context::selectable(std::string_view label, bool selected)
+bool Context::selectable(std::string_view label, bool selected, const Style& style)
 {
-    return _impl->selectable(label, selected);
+    return _impl->selectable(label, selected, style);
 }
 
-bool Context::beginScroll(std::string_view id, float height)
+bool Context::beginScroll(std::string_view id, float height, const Style& style)
 {
-    return _impl->beginScroll(id, height);
+    return _impl->beginScroll(id, height, style);
 }
 
 void Context::endScroll() { _impl->endScroll(); }
 bool Context::beginTabBar(std::string_view id) { return _impl->beginTabBar(id); }
-bool Context::tabItem(std::string_view label) { return _impl->tabItem(label); }
+
+bool Context::tabItem(std::string_view label, const Style& style)
+{
+    return _impl->tabItem(label, style);
+}
+
 void Context::endTabBar() noexcept { _impl->endTabBar(); }
-void Context::tooltip(std::string_view text) { _impl->tooltip(text); }
+
+void Context::tooltip(std::string_view text, const Style& style)
+{
+    _impl->tooltip(text, style);
+}
 
 void Context::sameLine() noexcept { _impl->sameLine(); }
 void Context::setNextItemWidth(float width) noexcept { _impl->setNextItemWidth(width); }
-void Context::separator() { _impl->separator(); }
+void Context::separator(const Style& style) { _impl->separator(style); }
 void Context::spacing(float pixels) noexcept { _impl->spacing(pixels); }
 void Context::setKeyboardFocusHere() noexcept { _impl->setKeyboardFocusHere(); }
 
@@ -2265,9 +2767,24 @@ bool Context::isCapturingKeyboard() const noexcept { return _impl->isCapturingKe
 bool Context::isCapturingTextInput() const noexcept { return _impl->isCapturingTextInput(); }
 bool Context::isCapturingMouse() const noexcept { return _impl->isCapturingMouse(); }
 
-Style& Context::style() noexcept { return _impl->style(); }
-const Style& Context::style() const noexcept { return _impl->style(); }
+void Context::beginDisabled(bool disabled) { _impl->beginDisabled(disabled); }
+void Context::endDisabled() noexcept { _impl->endDisabled(); }
+bool Context::isDisabled() const noexcept { return _impl->isDisabled(); }
 
 glm::vec2 Context::measureText(std::string_view text) { return _impl->measureText(text); }
+
+StyleGuard::StyleGuard(Context& ui, Part part, const Style& style)
+    : _ui(ui), _part(part), _saved(ui.theme[part])
+{
+    //! Applied over the saved style rather than replacing it, so a scope that
+    //! wants one different colour says only that -- the same fall-through a
+    //! widget's own Style parameter gets.
+    _ui.theme[_part] = style.over(_saved);
+}
+
+StyleGuard::~StyleGuard()
+{
+    _ui.theme[_part] = _saved;
+}
 
 } // namespace aura3d::ui

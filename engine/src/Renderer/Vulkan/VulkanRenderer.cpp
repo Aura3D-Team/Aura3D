@@ -463,6 +463,9 @@ void VulkanRenderer::createDescriptorSets()
     _overlay2DIndexBuffers.resize(framesInFlight);
     _overlay2DVertexCapacity.resize(framesInFlight);
     _overlay2DIndexCapacity.resize(framesInFlight);
+    _overlay2DVertexUsed.resize(framesInFlight);
+    _overlay2DIndexUsed.resize(framesInFlight);
+    _overlay2DRetiredBuffers.resize(framesInFlight);
 
     for (u32 i = 0; i < framesInFlight; ++i) {
         _descSets[i] = _vkDescriptorManager->allocateDescriptorSet(
@@ -1084,6 +1087,20 @@ void VulkanRenderer::beginFrame()
     _sceneCmd = VK_NULL_HANDLE;
     _overlayCmd = VK_NULL_HANDLE;
     _overlayStateBound = false;
+
+    /*
+     * Past this frame slot's fence, so anything the previous use of it left
+     * behind is finished with. Both halves of the overlay's frame state belong
+     * here: the running offsets start over, and the buffers a mid-frame grow
+     * orphaned are only safe to free now.
+     */
+    _overlay2DVertexUsed[_currentFrame] = 0;
+    _overlay2DIndexUsed[_currentFrame] = 0;
+
+    for (AllocatedBuffer& retired : _overlay2DRetiredBuffers[_currentFrame])
+        _memoryManager->destroyBuffer(retired);
+
+    _overlay2DRetiredBuffers[_currentFrame].clear();
 }
 
 void VulkanRenderer::beginRenderPass()
@@ -1463,10 +1480,21 @@ void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes
     constexpr VmaAllocationCreateFlags kDynamicFlags =
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
+    /*
+     * The outgoing buffer is retired rather than destroyed: a grow can happen
+     * part-way through a frame, and the draws already recorded into _overlayCmd
+     * have bound the old handle. Freeing it here would leave the replay at
+     * endRenderPass() reading memory the allocator has taken back. beginFrame()
+     * releases the retired list once the slot's fence has passed.
+     *
+     * The batches already written to the old buffer stay there and stay valid,
+     * which is why nothing is copied across -- the running offset simply
+     * continues into the new buffer, and the prefix it skips goes unread.
+     */
     if (vertexBytes > _overlay2DVertexCapacity[frame])
     {
         if (_overlay2DVertexBuffers[frame].buffer != VK_NULL_HANDLE)
-            _memoryManager->destroyBuffer(_overlay2DVertexBuffers[frame]);
+            _overlay2DRetiredBuffers[frame].push_back(_overlay2DVertexBuffers[frame]);
 
         _overlay2DVertexBuffers[frame] = _memoryManager->createBuffer(
             vertexBytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sharingMode,
@@ -1477,7 +1505,7 @@ void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes
     if (indexBytes > _overlay2DIndexCapacity[frame])
     {
         if (_overlay2DIndexBuffers[frame].buffer != VK_NULL_HANDLE)
-            _memoryManager->destroyBuffer(_overlay2DIndexBuffers[frame]);
+            _overlay2DRetiredBuffers[frame].push_back(_overlay2DIndexBuffers[frame]);
 
         _overlay2DIndexBuffers[frame] = _memoryManager->createBuffer(
             indexBytes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, sharingMode,
@@ -1502,10 +1530,19 @@ void VulkanRenderer::destroyOverlay2DBuffers()
         if (_overlay2DIndexBuffers[frame].buffer != VK_NULL_HANDLE)
             _memoryManager->destroyBuffer(_overlay2DIndexBuffers[frame]);
 
+        //! Anything a mid-frame grow orphaned is still owed a free: teardown is
+        //! past every fence, so this is the last and safest chance to take it.
+        for (AllocatedBuffer& retired : _overlay2DRetiredBuffers[frame])
+            _memoryManager->destroyBuffer(retired);
+
+        _overlay2DRetiredBuffers[frame].clear();
+
         _overlay2DVertexBuffers[frame] = {};
         _overlay2DIndexBuffers[frame] = {};
         _overlay2DVertexCapacity[frame] = 0;
         _overlay2DIndexCapacity[frame] = 0;
+        _overlay2DVertexUsed[frame] = 0;
+        _overlay2DIndexUsed[frame] = 0;
     }
 }
 
@@ -1532,15 +1569,34 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     const VkDeviceSize vertexBytes = static_cast<VkDeviceSize>(vertices.size_bytes());
     const VkDeviceSize indexBytes = static_cast<VkDeviceSize>(indices.size_bytes());
 
-    ensureOverlay2DCapacity(_currentFrame, vertexBytes, indexBytes);
+    /*
+     * Appended, not overwritten. Every batch in the frame records into
+     * _overlayCmd and none of them executes until endRenderPass() replays it,
+     * so a batch that wrote at offset 0 would be reading whatever the last
+     * batch of the frame left there by the time the GPU got to it -- the text
+     * overlay drawing a slice of the UI's geometry, and so on.
+     *
+     * No alignment maths: vertexBytes is a whole number of Vertex2D and
+     * indexBytes a whole number of u32, so the running totals stay aligned for
+     * both binds by construction.
+     */
+    const VkDeviceSize vertexOffset = _overlay2DVertexUsed[_currentFrame];
+    const VkDeviceSize indexOffset = _overlay2DIndexUsed[_currentFrame];
+
+    ensureOverlay2DCapacity(_currentFrame, vertexOffset + vertexBytes, indexOffset + indexBytes);
 
     AllocatedBuffer& vertexBuffer = _overlay2DVertexBuffers[_currentFrame];
     AllocatedBuffer& indexBuffer = _overlay2DIndexBuffers[_currentFrame];
     if (!vertexBuffer.mappedData || !indexBuffer.mappedData)
         return;
 
-    std::memcpy(vertexBuffer.mappedData, vertices.data(), static_cast<size_t>(vertexBytes));
-    std::memcpy(indexBuffer.mappedData, indices.data(), static_cast<size_t>(indexBytes));
+    std::memcpy(static_cast<u8*>(vertexBuffer.mappedData) + vertexOffset,
+                vertices.data(), static_cast<size_t>(vertexBytes));
+    std::memcpy(static_cast<u8*>(indexBuffer.mappedData) + indexOffset,
+                indices.data(), static_cast<size_t>(indexBytes));
+
+    _overlay2DVertexUsed[_currentFrame] = vertexOffset + vertexBytes;
+    _overlay2DIndexUsed[_currentFrame] = indexOffset + indexBytes;
 
     /*
      * Opened on the frame's first batch and reused by every batch after, so a
@@ -1591,9 +1647,10 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
 
     _vkOverlay2DPipelineManager->cmdPushConstants(cmd, &pushConstants);
 
-    const VkDeviceSize vertexOffset = 0;
+    //! Bound at this batch's own slice, so its indices stay batch-relative and
+    //! firstIndex/vertexOffset below can both remain zero.
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, &vertexOffset);
-    vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, indexOffset, VK_INDEX_TYPE_UINT32);
 
     //! The whole batch in one call -- the point of the exercise.
     _vkOverlay2DPipelineManager->cmdIndexedDraw(

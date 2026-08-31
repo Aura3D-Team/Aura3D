@@ -254,6 +254,15 @@ service worker that re-serves responses with the headers attached (e.g.
 `coi-serviceworker`); anything you control directly (nginx, Caddy, CloudFront,
 S3 + Lambda\@Edge) can just add them.
 
+### The worker pool is pre-spawned
+
+The WASM link adds `-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency`.
+`JobSystem` builds its `ink::ThreadPool` lazily on the first `dispatch()`,
+which happens on the main thread — and a browser Worker only starts once the
+main thread returns to the event loop, which `dispatch()` never does before
+blocking on its band futures. Pre-spawning the pool at startup is what keeps
+that first call from deadlocking rather than merely being slow.
+
 `AURA_WASM_ASYNCIFY` (default `OFF`) only matters if your app ever blocks
 synchronously inside the frame callback (a blocking network call, a modal
 dialog); the render loop itself (`windowManager->process()`) already hands

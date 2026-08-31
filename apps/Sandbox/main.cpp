@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -54,6 +55,22 @@ struct SceneObject {
  */
 
 constexpr size_t kMaxSpawnedObjects = 48;
+
+//! One width and one row of x positions for all five panels, rather than five
+//! hand-placed rectangles that drift apart the moment one of them is widened.
+//! Only the first frame reads these -- a panel remembers where it was dragged
+//! to -- so they are the opening layout, not a constraint.
+constexpr float kPanelWidth = 252.0f;
+constexpr float kPanelY = 52.0f;
+constexpr float kPanelGap = 16.0f;
+
+constexpr std::array<float, 5> kPanelX = {
+    16.0f,
+    16.0f + (kPanelWidth + kPanelGap),
+    16.0f + (kPanelWidth + kPanelGap) * 2.0f,
+    16.0f + (kPanelWidth + kPanelGap) * 3.0f,
+    16.0f + (kPanelWidth + kPanelGap) * 4.0f,
+};
 
 //! Golden-angle spiral: each new object lands at a fixed angular step from the
 //! last, with radius growing as sqrt(index). That spacing is what keeps
@@ -145,6 +162,137 @@ void regenerateSprite(std::vector<u8>& pixels, u32 size, float time) noexcept
     return {1.0f, 0.0f, x};
 }
 
+/*
+ * The Sandbox's look
+ *
+ * Split in two on purpose. A palette is the colours; a theme is the palette
+ * plus every decision that is *not* a colour -- shape, spacing, weight. Keeping
+ * them separable is what lets the Theme panel's drop-down swap one without
+ * throwing the other away, and it is the same split Theme::applyPalette draws.
+ */
+
+/// A deep slate ground under one cyan accent. Sits cooler and darker than the
+/// engine default so the panels read as glass laid over the midnight-blue
+/// scene rather than as another grey box on top of it.
+[[nodiscard]] ui::Palette auraPalette()
+{
+    ui::Palette palette;
+    palette.window         = {0.063f, 0.075f, 0.106f, 0.965f};
+    palette.titleBar       = {0.110f, 0.133f, 0.184f, 1.000f};
+    palette.surface        = {0.149f, 0.173f, 0.231f, 1.000f};
+    palette.surfaceHovered = {0.204f, 0.239f, 0.310f, 1.000f};
+    palette.surfaceActive  = {0.157f, 0.451f, 0.529f, 1.000f};
+    palette.accent         = {0.310f, 0.765f, 0.831f, 1.000f};
+    palette.text           = {0.878f, 0.906f, 0.949f, 1.000f};
+    palette.border         = {1.000f, 1.000f, 1.000f, 0.070f};
+    palette.overlay        = {0.047f, 0.055f, 0.078f, 0.980f};
+    return palette;
+}
+
+/// @p palette plus this app's shape language and spacing.
+[[nodiscard]] ui::Theme shapedTheme(const ui::Palette& palette)
+{
+    ui::Theme theme(palette);
+
+    //! Room to breathe. The engine's defaults are sized for a debug overlay
+    //! squeezed into a corner; a tool panel that is the point of the screen can
+    //! afford two more pixels a row, and reads as designed rather than dense.
+    theme.metrics.rowHeight   = 24.0f;
+    theme.metrics.itemSpacing = 6.0f;
+    theme.metrics.padding     = 10.0f;
+    theme.metrics.indent      = 14.0f;
+
+    //! One shape language: controls are softly rounded, anything that slides is
+    //! a pill. Panels, bars and separators stay square deliberately -- there is
+    //! no antialiasing, so a large radius on a big translucent surface reads as
+    //! a staircase rather than a curve.
+    for (const ui::Part part : {ui::Part::Button, ui::Part::Checkbox, ui::Part::TextField,
+                                ui::Part::Dropdown, ui::Part::Header, ui::Part::Selectable,
+                                ui::Part::Tab, ui::Part::TreeNode})
+    {
+        theme[part].rounding = 5.0f;
+    }
+
+    theme[ui::Part::Slider].rounding = 1000.0f;
+    theme[ui::Part::ScrollThumb].rounding = 1000.0f;
+
+    //! A slider draws its caption *over* its own fill, so the fill cannot be
+    //! the full-strength accent -- the text stops being readable on the filled
+    //! half. Halfway to the surface, rather than a fixed colour: the surface is
+    //! whatever the text is *not*, in any palette, so this keeps its distance
+    //! from the caption in a light theme as well as a dark one.
+    theme[ui::Part::Slider].accent = glm::mix(palette.accent, palette.surface, 0.5f);
+
+    //! A hairline is what makes a button read as a raised thing rather than a
+    //! flat patch, when button and panel are two greys from the same family.
+    for (const ui::Part part : {ui::Part::Button, ui::Part::Dropdown, ui::Part::Tab})
+    {
+        theme[part].border = ui::ColorSet::flat(palette.border);
+        theme[part].borderWidth = 1.0f;
+    }
+
+    theme[ui::Part::Button].padding = 10.0f;
+    theme[ui::Part::TitleBar].height = 28.0f;
+
+    //! A tree node's padding is also the gap after its expand glyph (see
+    //! _leadingGlyph), and the engine default of 2px leaves ">Rendering" with
+    //! the arrow welded to the word.
+    theme[ui::Part::TreeNode].padding = 6.0f;
+
+    return theme;
+}
+
+/*
+ * Semantic one-off styles, as ui::Style patches. Each names only what it
+ * changes, so every one of them still follows the theme for everything else --
+ * which is why they keep tracking the Theme panel's Rounding slider while it is
+ * being dragged, instead of freezing whatever the shape was when they were
+ * written.
+ */
+
+/// A quieter label, for the small-caps headings that group a panel's rows.
+/// Labels draw no surface, so colour is the only thing separating a heading
+/// from body text.
+///
+/// The palette's own text at reduced alpha rather than a fixed grey: a heading
+/// has to sit one step below body text in *every* palette, and a colour picked
+/// against the dark one washes out on the light one.
+[[nodiscard]] ui::Style heading(const ui::Theme& theme)
+{
+    glm::vec4 muted = theme[ui::Part::Label].text;
+    muted.a *= 0.60f;
+
+    return ui::Style{}.textColor(muted);
+}
+
+/*
+ * The two semantic buttons name their *own* text colour as well as their fill.
+ * A style whose fill is dark in every palette cannot inherit the palette's text
+ * -- that is near-black in a light theme, and the label disappears into the
+ * button. Owning both halves is what makes these safe to drop anywhere.
+ */
+
+/// The affirmative action in a group: accent-tinted, so exactly one button in
+/// a panel pulls the eye.
+[[nodiscard]] ui::Style primary()
+{
+    return ui::Style{}
+        .fill(ui::ColorSet{{0.129f, 0.365f, 0.427f, 1.0f},
+                           {0.169f, 0.475f, 0.549f, 1.0f},
+                           {0.216f, 0.588f, 0.667f, 1.0f}})
+        .textColor({0.945f, 0.976f, 0.984f, 1.0f});
+}
+
+/// Destructive, and the only red on screen.
+[[nodiscard]] ui::Style danger()
+{
+    return ui::Style{}
+        .fill(ui::ColorSet{{0.396f, 0.153f, 0.180f, 1.0f},
+                           {0.522f, 0.196f, 0.227f, 1.0f},
+                           {0.647f, 0.243f, 0.278f, 1.0f}})
+        .textColor({0.988f, 0.925f, 0.925f, 1.0f});
+}
+
 /// Appends one axis-aligned textured quad to a 2D batch, matching the vertex
 /// order AuraUI and TextOverlay both use (top-left, top-right, bottom-right,
 /// bottom-left) so the two triangles share the quad's diagonal.
@@ -217,6 +365,11 @@ int main()
     uiDesc.pixelHeight = 15.0f;
     ui::Context gui(r, uiDesc);
 
+    //! Assigned whole rather than through applyPalette(): shapedTheme() sets
+    //! metrics and per-Part shape as well as colour, and applyPalette() would
+    //! discard exactly those.
+    gui.theme = shapedTheme(auraPalette());
+
     /*
      * Mouse-look and a pointer-driven UI want opposite things from the cursor:
      * the first needs it captured and invisible, the second needs it free and
@@ -244,6 +397,11 @@ int main()
     input.bindToggle(wma::KEY_F1, kTools);
     input.bindClose(wma::KEY_ESCAPE, kTools);
 
+    //! Said out loud, and drawn on screen below, because a toggle key nobody
+    //! can guess is a UI nobody finds: the obvious guess is Tab, which this
+    //! deliberately is not.
+    INK_INFO << "UI: F1 opens the tool panels, Escape closes them";
+
     //! gui.attachInput() is not called here: the router already did it, from
     //! inside the context of each mode that asked for a UI.
 
@@ -251,6 +409,20 @@ int main()
     //! Touch is the only pointer there is and it is never captured, so there is
     //! no mode to swap out of -- the panels are simply always up.
     input.switchTo(kTools);
+#endif
+
+#ifdef AURA_ENABLE_DEBUG_MODE
+    /*
+     * A benchmark run never presses F1, so every capture taken so far measured
+     * the panels-closed path twice and concluded the UI was free. Only the
+     * debug build reads this -- a shipping Sandbox has no env backdoor.
+     */
+    if (const char* panels = std::getenv("AURA_SANDBOX_PANELS");
+        panels != nullptr && *panels != '0')
+    {
+        input.switchTo(kTools);
+        INK_INFO << "Sandbox: AURA_SANDBOX_PANELS set; tool panels open from frame one";
+    }
 #endif
 #endif
 
@@ -572,6 +744,9 @@ int main()
     float spriteAlpha = 0.9f;
     float spriteTime = 0.0f;
 
+    //! Time banked towards the next sprite refresh; see where it is spent.
+    float spriteRefreshAccum = 0.0f;
+
     std::vector<gfx::Vertex2D> spriteVertices;
     std::vector<u32> spriteIndices;
 
@@ -582,6 +757,12 @@ int main()
     int shadingMode = 0;
     int detailLevel = 1;
     int selectedSpawned = -1;
+
+    // -- Theme demo state. The theme is edited live, mid-frame, because it is
+    // -- read as each widget is submitted rather than latched anywhere.
+    int themeChoice = 0;
+    float uiRounding = 3.0f;
+    bool advancedUnlocked = false;
 #endif
 
     //! Rotation runs off its own clock rather than off the wall clock, so
@@ -672,6 +853,37 @@ int main()
                             .up       = glm::vec3(0.0f, 1.0f, 0.0f)});
         audio->update(dt);
 
+#ifdef AURA_HAS_UI
+        /*
+         * The sprite is refreshed here -- before the render pass, and on its own
+         * clock rather than the frame's.
+         *
+         * Both halves matter. Regenerating 96x96 pixels costs ~95us of sin() on
+         * this machine, which on a scene that otherwise runs a 50us frame is
+         * twice the entire frame; and updateTextureRegion() is a queue
+         * submission, which belongs outside the render pass rather than in the
+         * middle of one. Sixty updates a second is already more than the eye
+         * resolves in a plasma animation, and it decouples the cost of the demo
+         * from how fast the renderer happens to be going.
+         */
+        if (spriteAnimate)
+        {
+            constexpr float kSpriteInterval = 1.0f / 60.0f;
+
+            spriteRefreshAccum += dt;
+            if (spriteRefreshAccum >= kSpriteInterval)
+            {
+                //! Subtracted rather than zeroed, so the update rate does not
+                //! drift with the frame rate.
+                spriteRefreshAccum = std::fmod(spriteRefreshAccum, kSpriteInterval);
+
+                regenerateSprite(spritePixels, kSpriteSize, spriteTime);
+                r->updateTextureRegion(spriteTexture, 0, 0, kSpriteSize, kSpriteSize,
+                                       spritePixels.data());
+            }
+        }
+#endif
+
         r->beginRenderPass();
 
         for (size_t i = 0; i < scene.size(); ++i)
@@ -751,12 +963,14 @@ int main()
         overlay.drawFPS(10.0f, 10.0f);
 
 #ifdef AURA_HAS_UI
+        //! Drawn only while the panels are down, so it stops being clutter the
+        //! moment it has done its job.
+        if (!input.isMode(kTools))
+            overlay.drawText("F1: tool panels", 10.0f, 10.0f + overlay.lineHeight());
+
         // -- 2D: the animated sprite, drawn independently of the UI ---------
-        if (spriteAnimate)
-        {
-            regenerateSprite(spritePixels, kSpriteSize, spriteTime);
-            r->updateTextureRegion(spriteTexture, 0, 0, kSpriteSize, kSpriteSize, spritePixels.data());
-        }
+        //! Regenerated above the render pass, not here; only the quad is
+        //! submitted at this point.
 
         // The margin grows with the scale slider, so the corner nearest the
         // edge stays a fixed 16px inset at every size instead of the sprite
@@ -788,12 +1002,26 @@ int main()
             // Rebuilt from scratch every frame, which is what keeps it from
             // ever disagreeing with the state it edits: there is no widget
             // object holding a stale copy of `spinning` or of the light.
-            if (gui.beginPanel("Scene", {16.0f, 48.0f}, 260.0f))
+            if (gui.beginPanel("Scene", {kPanelX[0], kPanelY}, kPanelWidth))
             {
+                gui.label("RENDERER", heading(gui.theme));
                 gui.label(RendererChoiceToString(r->getBackendType()));
+
+                //! overlay.fps() rather than a second average of our own:
+                //! drawFPS() above already smoothed it this frame, and reading
+                //! it back is what keeps the corner and the panel agreeing.
+                char fps[32];
+                std::snprintf(fps, sizeof(fps), "%.0f FPS", static_cast<double>(overlay.fps()));
+                gui.label(fps);
+
                 gui.separator();
 
+                gui.label("MOTION", heading(gui.theme));
                 gui.checkbox("Spin objects", spinning);
+
+                gui.separator();
+
+                gui.label("LIGHTING", heading(gui.theme));
 
                 // Light changes are pushed only when a slider actually moved,
                 // so a still frame costs no uniform upload.
@@ -811,7 +1039,7 @@ int main()
 
                 gui.separator();
 
-                if (gui.button("Reset camera"))
+                if (gui.button("Reset camera", primary()))
                 {
                     camYaw = -90.0f;
                     camPitch = -8.0f;
@@ -822,43 +1050,70 @@ int main()
                 gui.endPanel();
             }
 
-            (void)gui.beginPanel("Objects", {292.0f, 48.0f}, 240.0f);
+            if (gui.beginPanel("Objects", {kPanelX[1], kPanelY}, kPanelWidth))
             {
+                gui.label("POPULATION", heading(gui.theme));
+
                 char count[48];
                 std::snprintf(count, sizeof(count), "%zu / %zu spawned",
                               spawned.size(), kMaxSpawnedObjects);
                 gui.label(count);
+
                 gui.separator();
 
-                if (gui.button("+ Crate") && spawned.size() < kMaxSpawnedObjects)
+                //! The two spawns share the row, so "add" reads as one choice
+                //! of two rather than as two separate decisions stacked up.
+                //! Sizing the first is what splits it: the second takes the
+                //! rest of the row, and a widget cannot be narrowed after the
+                //! fact. See Context::sameLine().
+                gui.setNextItemWidth((kPanelWidth - gui.theme.metrics.padding * 2.0f -
+                                      gui.theme.metrics.itemSpacing) * 0.5f);
+
+                if (gui.button("+ Crate", primary()) && spawned.size() < kMaxSpawnedObjects)
                 {
                     spawned.push_back({cubeMesh, crateMat, spawnPosition(spawned.size()),
                                        glm::vec3(1.0f), 0.6f});
                 }
 
-                if (gui.button("+ Orb") && spawned.size() < kMaxSpawnedObjects)
+                gui.sameLine();
+
+                if (gui.button("+ Orb", primary()) && spawned.size() < kMaxSpawnedObjects)
                 {
                     spawned.push_back({sphereMesh, orbMat, spawnPosition(spawned.size()),
                                        glm::vec3(1.0f), -0.5f});
                 }
 
+                //! Disabled rather than hidden while there is nothing to
+                //! remove: the panel keeps its height, so the rows below it
+                //! don't jump every time the list empties.
+                gui.beginDisabled(spawned.empty());
                 if (gui.button("Remove last") && !spawned.empty())
                     spawned.pop_back();
+                gui.endDisabled();
 
                 gui.separator();
+
+                gui.label("MOTION", heading(gui.theme));
                 gui.checkbox("Spin", spawnSpinEnabled);
                 gui.sliderFloat("Spin speed", spawnSpinSpeedScale, 0.0f, 3.0f);
 
                 gui.endPanel();
             }
 
-            (void)gui.beginPanel("Sprite", {548.0f, 48.0f}, 240.0f);
+            if (gui.beginPanel("Sprite", {kPanelX[2], kPanelY}, kPanelWidth))
             {
-                gui.label("Regenerated live, 96x96");
+                gui.label("TEXTURE", heading(gui.theme));
+                gui.label("96x96 procedural");
+
                 gui.separator();
 
+                gui.label("ANIMATION", heading(gui.theme));
                 gui.checkbox("Animate", spriteAnimate);
                 gui.sliderFloat("Speed", spriteSpeed, 0.0f, 4.0f);
+
+                gui.separator();
+
+                gui.label("APPEARANCE", heading(gui.theme));
                 gui.sliderFloat("Hue", spriteHue, 0.0f, 1.0f);
                 gui.sliderFloat("Scale", spriteScale, 32.0f, 320.0f);
                 gui.sliderFloat("Alpha", spriteAlpha, 0.0f, 1.0f);
@@ -873,8 +1128,9 @@ int main()
              * to be reachable without a mouse. Tab and Shift+Tab walk every
              * control on screen.
              */
-            (void)gui.beginPanel("Inspector", {804.0f, 48.0f}, 260.0f);
+            if (gui.beginPanel("Inspector", {kPanelX[3], kPanelY}, kPanelWidth))
             {
+                gui.label("PROPERTIES", heading(gui.theme));
                 gui.inputText("Name", sceneName);
                 gui.inputFloat("Spin", spawnSpinSpeedScale);
 
@@ -896,7 +1152,7 @@ int main()
                     {
                         //! Fixed height, so a long list scrolls rather than
                         //! growing the panel past the bottom of the window.
-                        (void)gui.beginScroll("SpawnedList", 120.0f);
+                        if (gui.beginScroll("SpawnedList", 120.0f))
                         {
                             for (size_t i = 0; i < spawned.size(); ++i)
                             {
@@ -922,8 +1178,14 @@ int main()
                 }
 
                 gui.separator();
-                gui.setNextItemWidth(110.0f);
-                gui.button("Apply");
+
+                //! Half the content width, so Apply and Reset split the row
+                //! evenly instead of Apply taking a fixed 110px that stops
+                //! matching the moment the panel or the padding changes.
+                gui.setNextItemWidth((kPanelWidth - gui.theme.metrics.padding * 2.0f -
+                                      gui.theme.metrics.itemSpacing) * 0.5f);
+
+                gui.button("Apply", primary());
                 gui.tooltip("Nothing to apply -- this is a layout demo");
                 gui.sameLine();
                 if (gui.button("Reset"))
@@ -932,6 +1194,77 @@ int main()
                     detailLevel = 1;
                     shadingMode = 0;
                 }
+
+                gui.endPanel();
+            }
+
+            /*
+             * Styling, all four scopes of it. Nothing here reaches into a
+             * widget: a Part's entry in the theme is the whole description of
+             * how that component looks, so the same button() call draws a
+             * pill, a slab or a red danger button depending only on the table
+             * it reads.
+             */
+            if (gui.beginPanel("Theme", {kPanelX[4], kPanelY}, kPanelWidth))
+            {
+                static constexpr std::string_view kThemes[] = {"Aura", "Dark", "Light"};
+
+                gui.label("PALETTE", heading(gui.theme));
+
+                if (gui.dropdown("Palette", themeChoice, kThemes))
+                {
+                    //! Rebuilt through shapedTheme() rather than
+                    //! applyPalette(), so swapping the colours keeps this app's
+                    //! spacing and shape instead of falling back to the
+                    //! engine's. Colours and shape are separate decisions and
+                    //! the drop-down only makes one of them.
+                    const ui::Palette palette = themeChoice == 0   ? auraPalette()
+                                                : themeChoice == 1 ? ui::Palette::dark()
+                                                                   : ui::Palette::light();
+
+                    gui.theme = shapedTheme(palette);
+                    uiRounding = gui.theme[ui::Part::Button].rounding;
+                }
+
+                //! One slider, every control that shares a shape: restyling
+                //! them together is what keeps a theme coherent rather than a
+                //! pile of unrelated radii. The slider and scroll thumb are
+                //! left out on purpose -- they are pills, and a pill is a
+                //! decision, not a radius on a scale.
+                if (gui.sliderFloat("Rounding", uiRounding, 0.0f, 12.0f))
+                {
+                    for (const ui::Part part : {ui::Part::Button, ui::Part::Checkbox,
+                                                ui::Part::TextField, ui::Part::Dropdown,
+                                                ui::Part::Tab, ui::Part::Header,
+                                                ui::Part::Selectable, ui::Part::TreeNode})
+                    {
+                        gui.theme[part].rounding = uiRounding;
+                    }
+                }
+
+                gui.separator();
+
+                gui.label("DANGER ZONE", heading(gui.theme));
+
+                //! One instance, styled for itself. The patch names only the
+                //! colours; rounding, padding and height still come from
+                //! Part::Button, so the Rounding slider above still reaches it.
+                gui.beginDisabled(spawned.empty());
+                if (gui.button("Remove every object", danger()))
+                    spawned.clear();
+                gui.endDisabled();
+
+                gui.separator();
+
+                gui.label("GATED", heading(gui.theme));
+                gui.checkbox("Unlock advanced", advancedUnlocked);
+
+                //! Greyed out rather than hidden: the panel keeps its shape as
+                //! the option becomes available.
+                gui.beginDisabled(!advancedUnlocked);
+                gui.sliderFloat("Spin speed", spawnSpinSpeedScale, 0.0f, 3.0f);
+                gui.button("Recalculate");
+                gui.endDisabled();
 
                 gui.endPanel();
             }

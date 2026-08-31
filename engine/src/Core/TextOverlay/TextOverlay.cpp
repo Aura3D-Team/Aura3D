@@ -189,13 +189,20 @@ float TextOverlay::lineHeight(float scale) const noexcept
 
 void TextOverlay::drawFPS(float x, float y, float scale)
 {
-    wma::IWindowManager* windowManager = _renderer->getWindowManager();
-    const f64 fps = windowManager ? windowManager->getWindowFlags()->fps : 0.0;
+wma::IWindowManager* windowManager = _renderer->getWindowManager();
+    if (!windowManager) return;
 
-    char buffer[32];
+    const f64 currentFps = windowManager->getWindowFlags()->fps;
 
-    std::snprintf(buffer, sizeof(buffer), "FPS: %d", static_cast<int>(fps + 0.5));
-    drawText(buffer, x, y, scale);
+    // Only run snprintf when the core timer updates the smoothed FPS metric
+    if (currentFps != _fps)
+    {
+        _fps = currentFps;
+        std::snprintf(_cachedFpsString, sizeof(_cachedFpsString), 
+                      "FPS: %.0f", currentFps);
+    }
+
+    drawText(_cachedFpsString, x, y, scale);
 }
 
 } // namespace aura3d

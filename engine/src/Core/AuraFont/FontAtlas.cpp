@@ -295,10 +295,18 @@ float FontAtlas::kerning(char32_t left, char32_t right) const noexcept
     if (!_font)
         return 0.0f;
 
+    const u64 pair = (static_cast<u64>(left) << 32) | static_cast<u32>(right);
+    KernEntry& slot = _kernCache[pair & (kKernCacheSlots - 1)];
+
+    if (slot.pair == pair)
+        return slot.value;
+
     const int raw = stbtt_GetCodepointKernAdvance(&_font->info,
                                                   static_cast<int>(left),
                                                   static_cast<int>(right));
-    return static_cast<float>(raw) * _scale;
+
+    slot = {pair, static_cast<f32>(raw) * _scale};
+    return slot.value;
 }
 
 std::optional<glm::vec2> FontAtlas::solidTexelUv() noexcept

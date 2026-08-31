@@ -217,6 +217,17 @@ private:
     MtlFixedArray<size_t> _overlayVertexCapacity{};
     MtlFixedArray<size_t> _overlayIndexCapacity{};
 
+    /*
+     * Bytes of this frame's overlay buffers already spoken for. Every
+     * drawBatch2D() in a frame encodes into the same render command encoder and
+     * nothing executes until the command buffer is committed, so a batch that
+     * wrote at offset 0 would be read back as whatever the frame's last batch
+     * left there. Each batch appends here and binds at its own offset -- the
+     * same fix the Vulkan backend carries, for the same reason.
+     */
+    MtlFixedArray<size_t> _overlayVertexUsed{};
+    MtlFixedArray<size_t> _overlayIndexUsed{};
+
     //! 1x1 opaque white, created on first use; see resolveSampledTexture().
     TextureHandle _fallbackTexture;
 

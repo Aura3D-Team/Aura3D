@@ -84,7 +84,7 @@ game:
 | 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
 | 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Windows, Android, WebAssembly |
 | 11 | [Using a Release](docs/11-using-releases.md) | Consuming prebuilt release archives; building the dev container |
-| 12 | [Immediate-Mode UI](docs/12-immediate-mode-ui.md) | `aura3d::ui`: panels, buttons, checkboxes, sliders; a complete tool app |
+| 12 | [Immediate-Mode UI](docs/12-immediate-mode-ui.md) | `aura3d::ui`: panels, widgets, per-component theming; a complete tool app |
 | 13 | [How AuraUI Works](docs/13-auraui-internals.md) | UI internals: widget identity, interaction state, single-batch geometry |
 | 14 | [Audio](docs/14-audio.md) | `AudioEngine`: clips, one-shots, looping music, 3D positional sound |
 | 15 | [Debug & Benchmark Mode](docs/15-debug-benchmark-mode.md) | CPU/GPU allocation tracking, per-phase frame timing, the JSON metrics report |

@@ -100,29 +100,22 @@ jobs:
         # identically-named object files (e.g. two libraries each with a
         # "Utils.cpp.o") don't collide when re-archived together.
         #
-        # ink::threading (libthreading.a) is a separate static target from
-        # ink::ink -- see libink/src/CMakeLists.txt -- that backs
-        # ink::ThreadPool, used directly by CpuFrameBufferManager and
-        # VulkanRenderer. A normal (non-release) build resolves it fine
-        # without Aura3D's own CMakeLists ever naming it, because wma links
-        # it PRIVATEly and CMake still puts every static-lib dependency,
-        # PUBLIC or PRIVATE, on the final executable's link line. Folding
-        # libwma.a/libink.a alone into libAura3D.a would silently drop those
-        # symbols from the release archive, so it's merged in here too.
+        # ink::ThreadPool (used by CpuFrameBufferManager and VulkanRenderer)
+        # ships inside libink.a as of ink 0.3.0 -- there is no separate
+        # libthreading.a to merge any more.
         run: |
           FAT_LIB="$(pwd)/stage/aura3d-linux-x86_64/lib/libAura3D.a"
           WMA_LIB="$(find /usr/local -name 'libwma.a' | head -1)"
           INK_LIB="$(find /usr/local -name 'libink.a' | head -1)"
-          INK_THREADING_LIB="$(find /usr/local -name 'libthreading.a' | head -1)"
 
-          if [[ -z "$WMA_LIB" || -z "$INK_LIB" || -z "$INK_THREADING_LIB" ]]; then
-            echo "❌  libwma.a/libink.a/libthreading.a not found under /usr/local" >&2
+          if [[ -z "$WMA_LIB" || -z "$INK_LIB" ]]; then
+            echo "❌  libwma.a/libink.a not found under /usr/local" >&2
             exit 1
           fi
 
           MERGE_DIR="$(mktemp -d)"
           n=0
-          for lib in "$FAT_LIB" "$WMA_LIB" "$INK_LIB" "$INK_THREADING_LIB"; do
+          for lib in "$FAT_LIB" "$WMA_LIB" "$INK_LIB"; do
             dir="$MERGE_DIR/$n"
             mkdir -p "$dir"
             ar -x --output="$dir" "$lib"
@@ -206,9 +199,7 @@ jobs:
             "$STAGE/aura3d-sandbox-debug.apk"
 
       - name: Merge wma/ink into a self-contained static library
-        # Same reasoning as the linux-release job (including folding in
-        # libthreading.a -- see its Merge step comment for why that one's
-        # needed alongside libwma.a/libink.a): fold the (also static)
+        # Same reasoning as the linux-release job: fold the (also static)
         # arm64-v8a archives into libAura3D.a so embedding this release
         # doesn't also require building wma/ink for Android. Use the NDK's
         # own llvm-ar/llvm-ranlib rather than the host's, since these are
@@ -218,16 +209,15 @@ jobs:
           FAT_LIB="$(pwd)/stage/aura3d-android-arm64-v8a/lib/libAura3D.a"
           WMA_LIB="$(find /usr/local/android -name 'libwma.a' | head -1)"
           INK_LIB="$(find /usr/local/android -name 'libink.a' | head -1)"
-          INK_THREADING_LIB="$(find /usr/local/android -name 'libthreading.a' | head -1)"
 
-          if [[ -z "$WMA_LIB" || -z "$INK_LIB" || -z "$INK_THREADING_LIB" ]]; then
-            echo "❌  libwma.a/libink.a/libthreading.a not found under /usr/local/android" >&2
+          if [[ -z "$WMA_LIB" || -z "$INK_LIB" ]]; then
+            echo "❌  libwma.a/libink.a not found under /usr/local/android" >&2
             exit 1
           fi
 
           MERGE_DIR="$(mktemp -d)"
           n=0
-          for lib in "$FAT_LIB" "$WMA_LIB" "$INK_LIB" "$INK_THREADING_LIB"; do
+          for lib in "$FAT_LIB" "$WMA_LIB" "$INK_LIB"; do
             dir="$MERGE_DIR/$n"
             mkdir -p "$dir"
             "$LLVM_BIN/llvm-ar" -x --output="$dir" "$lib"
@@ -384,10 +374,8 @@ jobs:
       - name: Install Aura3D
         run: cmake --install aura3d/build --prefix stage/aura3d-macos-arm64
 
-      - name: Merge wma/ink/threading into a self-contained static library
-        # Same reasoning as the linux-release job (including folding in
-        # libthreading.a -- see its Merge step comment for why that one's
-        # needed alongside libwma.a/libink.a). Apple's libtool is used rather
+      - name: Merge wma/ink into a self-contained static library
+        # Same reasoning as the linux-release job. Apple's libtool is used rather
         # than ar: it merges member objects from every input archive directly
         # into -o and, unlike ar, renames colliding member names itself, so
         # this needs no extract-into-separate-directories dance. The output is
@@ -402,7 +390,7 @@ jobs:
           FAT_LIB="stage/aura3d-macos-arm64/lib/libAura3D.a"
 
           libtool -static -o "${FAT_LIB}.merged" \
-            "${FAT_LIB}" deps/lib/libwma.a deps/lib/libink.a deps/lib/libthreading.a
+            "${FAT_LIB}" deps/lib/libwma.a deps/lib/libink.a
           mv "${FAT_LIB}.merged" "${FAT_LIB}"
 
           # This staged Aura3DConfig.cmake no longer needs to find wma/ink
@@ -532,13 +520,11 @@ jobs:
       - name: Install Aura3D
         run: cmake --install aura3d/build --prefix stage/aura3d-windows-x86_64
 
-      - name: Merge wma/ink/threading into a self-contained static library
-        # deps/lib/{wma,ink,threading}.lib were built from source above (no
+      - name: Merge wma/ink into a self-contained static library
+        # deps/lib/{wma,ink}.lib were built from source above (no
         # vulkan-dev container on windows-latest to pull prebuilt copies
         # from), so fold them into Aura3D.lib the same way linux-release
-        # folds libwma.a/libink.a/libthreading.a into libAura3D.a -- see
-        # that job's Merge step comment for why threading.lib specifically
-        # is required, not just wma/ink. Unlike ar, MSVC's lib.exe merges
+        # folds libwma.a/libink.a into libAura3D.a. Unlike ar, MSVC's lib.exe merges
         # member objects from every input .lib it's given directly into
         # /OUT, so this needs no separate extract-then-re-archive step --
         # but /OUT still can't also be read as an input in the same
@@ -551,7 +537,7 @@ jobs:
           FAT_LIB="stage/aura3d-windows-x86_64/lib/Aura3D.lib"
 
           lib.exe /NOLOGO "/OUT:${FAT_LIB}.merged" \
-            "${FAT_LIB}" deps/lib/wma.lib deps/lib/ink.lib deps/lib/threading.lib
+            "${FAT_LIB}" deps/lib/wma.lib deps/lib/ink.lib
           mv "${FAT_LIB}.merged" "${FAT_LIB}"
 
           # This staged Aura3DConfig.cmake no longer needs to find wma/ink

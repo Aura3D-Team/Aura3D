@@ -12,6 +12,8 @@
 #include <glm/glm.hpp>
 #include <wma/wma.hpp>
 
+#include "aura/UI/Style.h"
+
 /**
  * @file AuraUI.h
  * @brief Aura3D's built-in immediate-mode user interface.
@@ -44,25 +46,6 @@ class IRenderer;
 } // namespace aura3d
 
 namespace aura3d::ui {
-
-/// Colours and metrics shared by every widget. Defaults are a neutral dark
-/// theme. Mutate through Context::style(); takes effect on the next widget
-/// drawn.
-struct Style {
-    glm::vec4 panelBackground{0.09f, 0.10f, 0.12f, 0.94f};
-    glm::vec4 panelTitle{0.16f, 0.18f, 0.22f, 1.00f};
-    glm::vec4 control{0.20f, 0.22f, 0.27f, 1.00f};
-    glm::vec4 controlHovered{0.27f, 0.30f, 0.37f, 1.00f};
-    glm::vec4 controlActive{0.20f, 0.45f, 0.75f, 1.00f};
-    glm::vec4 accent{0.24f, 0.52f, 0.85f, 1.00f}; //! Slider fill, check mark.
-    glm::vec4 text{0.92f, 0.93f, 0.95f, 1.00f};
-    glm::vec4 separator{1.00f, 1.00f, 1.00f, 0.12f};
-
-    float rowHeight = 22.0f;  //! Height of one widget row.
-    float itemSpacing = 4.0f; //! Vertical gap between rows.
-    float padding = 8.0f;     //! Panel border to content, all four sides.
-    float textScale = 1.0f;   //! Multiplier on the atlas rasterization size.
-};
 
 /// One key that went down (or auto-repeated) during a frame. Only presses and
 /// repeats are carried (repeat is what makes a held Backspace keep deleting);
@@ -139,6 +122,25 @@ struct ContextDesc {
 class Context {
 public:
     /**
+     * @brief The per-component theme, and the metrics every component shares.
+     *
+     * A plain value, edited in place -- there is nothing to notify, since each
+     * widget reads its Part as it is submitted, so an edit lands on the very
+     * next one, including mid-panel.
+     *
+     * @code
+     * gui.theme = ui::Theme::light();               // wholesale
+     * gui.theme.applyPalette(brand);                // from nine colours
+     * gui.theme[ui::Part::Button].rounding = 8.0f;  // one component
+     * gui.theme.metrics.rowHeight = 26.0f;          // shared layout
+     * @endcode
+     *
+     * Declared before @c _impl on purpose: the Impl is handed a reference to
+     * it, so it has to be alive first.
+     */
+    Theme theme{};
+
+    /**
      * @brief Builds the UI, its glyph atlas and its atlas texture.
      *
      * Never throws. A font that fails to load degrades to the embedded bitmap
@@ -205,20 +207,20 @@ public:
     void endPanel();
 
     /// Draws one row of static text.
-    void label(std::string_view text);
+    void label(std::string_view text, const Style& style = {});
 
     /**
      * @brief A full-width push button.
      * @return true on the frame the press is released over the button.
      */
-    bool button(std::string_view text);
+    bool button(std::string_view text, const Style& style = {});
 
     /**
      * @brief A labelled check box bound to @p value.
      * @param[in,out] value Toggled in place when the box is clicked.
      * @return true on the frame @p value changed.
      */
-    bool checkbox(std::string_view text, bool& value);
+    bool checkbox(std::string_view text, bool& value, const Style& style = {});
 
     /**
      * @brief A labelled horizontal slider bound to @p value.
@@ -232,7 +234,8 @@ public:
      * @param max Upper bound of the track; must be greater than @p min.
      * @return true on any frame @p value changed.
      */
-    bool sliderFloat(std::string_view text, float& value, float min, float max);
+    bool sliderFloat(std::string_view text, float& value, float min, float max,
+                     const Style& style = {});
 
     /**
      * @brief An editable single-line text field bound to @p value.
@@ -251,7 +254,8 @@ public:
      *                dropped rather than truncating a character mid-sequence.
      * @return true on any frame @p value changed.
      */
-    bool inputText(std::string_view label, std::string& value, size_t maxBytes = 1024);
+    bool inputText(std::string_view label, std::string& value, size_t maxBytes = 1024,
+                   const Style& style = {});
 
     /**
      * @brief A text field that parses its contents as a number.
@@ -263,7 +267,7 @@ public:
      * @param[in,out] value Updated whenever the field parses to a number.
      * @return true on any frame @p value changed.
      */
-    bool inputFloat(std::string_view label, float& value);
+    bool inputFloat(std::string_view label, float& value, const Style& style = {});
 
     /**
      * @brief A drop-down list of @p items bound to @p index.
@@ -274,27 +278,31 @@ public:
      * @param[in,out] index Selected element; clamped into @p items' range.
      * @return true on the frame the selection changed.
      */
-    bool dropdown(std::string_view label, int& index, std::span<const std::string_view> items);
+    bool dropdown(std::string_view label, int& index, std::span<const std::string_view> items,
+                  const Style& style = {});
 
     /**
      * @brief One button of a radio group bound to @p value.
      * @param[in,out] value Set to @p buttonValue when this button is clicked.
      * @return true on the frame this button took the selection.
      */
-    bool radioButton(std::string_view label, int& value, int buttonValue);
+    bool radioButton(std::string_view label, int& value, int buttonValue,
+                     const Style& style = {});
 
     /// A clickable header that shows or hides the widgets below it. Open
     /// state is retained by the context; emit contents inside
     /// `if (collapsingHeader(...))`.
     /// @param defaultOpen Applied the first time this header is seen.
     /// @return true when the section is open and its contents should be emitted.
-    [[nodiscard]] bool collapsingHeader(std::string_view label, bool defaultOpen = true);
+    [[nodiscard]] bool collapsingHeader(std::string_view label, bool defaultOpen = true,
+                                        const Style& style = {});
 
     /// An indented, collapsible node for hierarchical data. Pair with
     /// treePop() only when this returns true, like beginPanel()/endPanel().
     /// Nesting is unlimited; each level indents by the style's padding.
     /// @return true when the node is expanded and its children should be emitted.
-    [[nodiscard]] bool treeNode(std::string_view label, bool defaultOpen = false);
+    [[nodiscard]] bool treeNode(std::string_view label, bool defaultOpen = false,
+                                const Style& style = {});
 
     /// Closes the node opened by the matching treeNode().
     void treePop() noexcept;
@@ -304,7 +312,7 @@ public:
      * @param[in] selected Whether to draw this row as the current selection.
      * @return true on the frame the row is clicked.
      */
-    bool selectable(std::string_view label, bool selected);
+    bool selectable(std::string_view label, bool selected, const Style& style = {});
 
     /**
      * @brief Begins a fixed-height, clipped, scrollable region.
@@ -318,7 +326,7 @@ public:
      * @param height Visible height in pixels.
      * @return true when the region is open and its contents should be emitted.
      */
-    [[nodiscard]] bool beginScroll(std::string_view id, float height);
+    [[nodiscard]] bool beginScroll(std::string_view id, float height, const Style& style = {});
 
     /// Closes the region opened by the matching beginScroll().
     void endScroll();
@@ -329,14 +337,14 @@ public:
     [[nodiscard]] bool beginTabBar(std::string_view id);
 
     /// @return true when @p label is the selected tab in the current bar.
-    [[nodiscard]] bool tabItem(std::string_view label);
+    [[nodiscard]] bool tabItem(std::string_view label, const Style& style = {});
 
     /// Closes the bar opened by the matching beginTabBar().
     void endTabBar() noexcept;
 
     /// Shows @p text in a floating box beside the cursor. Call immediately
     /// after the widget it describes; draws only while that widget is hovered.
-    void tooltip(std::string_view text);
+    void tooltip(std::string_view text, const Style& style = {});
 
     /**
      * @brief Keeps the next widget on the current row rather than starting one.
@@ -360,7 +368,7 @@ public:
     void setNextItemWidth(float width) noexcept;
 
     /// A horizontal rule spanning the content width.
-    void separator();
+    void separator(const Style& style = {});
 
     /// Advances the layout cursor by @p pixels without drawing anything.
     void spacing(float pixels) noexcept;
@@ -385,9 +393,21 @@ public:
     /// most recently completed frame.
     [[nodiscard]] bool isCapturingMouse() const noexcept;
 
-    /// Mutable theme; see @ref Style.
-    [[nodiscard]] Style& style() noexcept;
-    [[nodiscard]] const Style& style() const noexcept;
+    /**
+     * @brief Draws the widgets until endDisabled() greyed out and inert.
+     *
+     * They still lay out, still draw and still return their value -- they
+     * simply take no input and enter no tab stop, so a panel doesn't reflow
+     * as options become available. Nests; @p disabled false pushes a level
+     * that changes nothing, so a condition needs no matching @c if.
+     */
+    void beginDisabled(bool disabled = true);
+
+    /// Closes the level opened by the matching beginDisabled().
+    void endDisabled() noexcept;
+
+    /// True inside a beginDisabled() that is actually disabling.
+    [[nodiscard]] bool isDisabled() const noexcept;
 
     /// Pixel size one line of @p text occupies at the current text scale.
     /// Rasterizes any glyph not yet cached, so not @c const. Line breaks are
@@ -405,6 +425,50 @@ private:
     //! how a widget remembers something recompiles one file.
     class Impl;
     std::unique_ptr<Impl> _impl;
+};
+
+/**
+ * @class StyleGuard
+ * @brief Restyles one @ref Part for a scope, and puts it back afterwards.
+ *
+ * The retained-mode escape hatch immediate mode is otherwise missing: a
+ * section of UI that looks different, without every widget in it repeating
+ * the override.
+ *
+ * Takes the same @ref Style patch a widget does, applied over whatever the
+ * Part currently looks like -- so a scope that only wants a different colour
+ * says only that.
+ *
+ * @code
+ * {
+ *     ui::StyleGuard scope(gui, ui::Part::Button,
+ *                          ui::Style{}.fill({0.66f, 0.20f, 0.22f, 1.0f}));
+ *
+ *     if (gui.button("Delete"))     deleteThing();
+ *     if (gui.button("Delete all")) deleteEverything();
+ * }
+ * @endcode
+ *
+ * For a single widget, pass the patch to it directly; this is for a run of
+ * them.
+ *
+ * @note Not copyable or movable -- it is a scope, and one scope cannot be two
+ *       places. Declare it; don't return it.
+ */
+class StyleGuard {
+public:
+    StyleGuard(Context& ui, Part part, const Style& style);
+    ~StyleGuard();
+
+    StyleGuard(const StyleGuard&) = delete;
+    StyleGuard& operator=(const StyleGuard&) = delete;
+    StyleGuard(StyleGuard&&) = delete;
+    StyleGuard& operator=(StyleGuard&&) = delete;
+
+private:
+    Context& _ui;
+    Part _part;
+    WidgetStyle _saved;
 };
 
 } // namespace aura3d::ui

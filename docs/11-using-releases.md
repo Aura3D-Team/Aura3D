@@ -18,7 +18,7 @@ Each release ships four archives — one per platform, from
 
 On Linux, Windows, and Android, `libAura3D.a`/`Aura3D.lib` already has
 `libwma`/`libink`'s object code merged into it (see the release workflow's
-"Merge wma/ink[/threading] into a self-contained static library" step) — you
+"Merge wma/ink into a self-contained static library" step) — you
 don't need to separately obtain those two. Vulkan/OpenGL stay external
 system dependencies either way, since those aren't things you'd bundle.
 

@@ -202,6 +202,8 @@ void MetalRenderer::cleanup()
         _overlayIndexBuffers[slot].reset();
         _overlayVertexCapacity[slot] = 0;
         _overlayIndexCapacity[slot] = 0;
+        _overlayVertexUsed[slot] = 0;
+        _overlayIndexUsed[slot] = 0;
     }
 
     //! The texture pool dies with _textureManager, so drop the cached handle.
@@ -334,6 +336,11 @@ void MetalRenderer::beginFrame()
         AURA_FRAME_SCOPE(FramePhase::WaitFence);
         _frameSlots->acquire();
     }
+
+    //! Past the throttle, so this slot's overlay buffers are the GPU's no
+    //! longer and the frame's batches can start appending from the top again.
+    _overlayVertexUsed[_currentFrame] = 0;
+    _overlayIndexUsed[_currentFrame] = 0;
 
     _framePool.emplace();
 
@@ -606,7 +613,18 @@ void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     const size_t vertexBytes = vertices.size_bytes();
     const size_t indexBytes = indices.size_bytes();
 
-    if (!ensureOverlay2DCapacity(vertexBytes, indexBytes))
+    /*
+     * Appended, not overwritten: nothing this encoder records runs until the
+     * command buffer is committed, so every batch needs its own slice rather
+     * than a shared offset 0 -- otherwise each draw reads whatever the frame's
+     * last batch left behind. vertexBytes is a whole number of Vertex2D and
+     * indexBytes a whole number of u32, so the running totals stay aligned for
+     * both binds without any rounding.
+     */
+    const size_t vertexOffset = _overlayVertexUsed[_currentFrame];
+    const size_t indexOffset = _overlayIndexUsed[_currentFrame];
+
+    if (!ensureOverlay2DCapacity(vertexOffset + vertexBytes, indexOffset + indexBytes))
         return;
 
     MTL::Buffer* vertexBuffer = _overlayVertexBuffers[_currentFrame].get();
@@ -618,8 +636,13 @@ void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
      * semaphore acquire already established that the last frame to use this slot
      * has completed on the GPU.
      */
-    std::memcpy(vertexBuffer->contents(), vertices.data(), vertexBytes);
-    std::memcpy(indexBuffer->contents(), indices.data(), indexBytes);
+    std::memcpy(static_cast<u8*>(vertexBuffer->contents()) + vertexOffset,
+                vertices.data(), vertexBytes);
+    std::memcpy(static_cast<u8*>(indexBuffer->contents()) + indexOffset,
+                indices.data(), indexBytes);
+
+    _overlayVertexUsed[_currentFrame] = vertexOffset + vertexBytes;
+    _overlayIndexUsed[_currentFrame] = indexOffset + indexBytes;
 
     const f32 width = static_cast<f32>(_layerManager->getWidth());
     const f32 height = static_cast<f32>(_layerManager->getHeight());
@@ -642,7 +665,7 @@ void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     overlay.proj = glm::orthoRH_ZO(0.0f, width, height, 0.0f, 0.0f, 1.0f);
 
     _overlayPipeline->bind(_encoder);
-    _encoder->setVertexBuffer(vertexBuffer, 0, kVertexGeometrySlot);
+    _encoder->setVertexBuffer(vertexBuffer, vertexOffset, kVertexGeometrySlot);
     _encoder->setVertexBytes(&overlay, sizeof(overlay), kVertexUniformSlot);
     _encoder->setFragmentTexture(resolveSampledTexture(texture), kFragmentAlbedoSlot);
     _encoder->setFragmentSamplerState(_textureManager->getSampler(), kFragmentAlbedoSlot);
@@ -652,7 +675,7 @@ void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
                                     static_cast<NS::UInteger>(indices.size()),
                                     MTL::IndexTypeUInt32,
                                     indexBuffer,
-                                    0);
+                                    static_cast<NS::UInteger>(indexOffset));
 
     /*
      * Hand the scene pipeline back, so a following 3D draw needs no knowledge

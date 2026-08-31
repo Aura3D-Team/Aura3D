@@ -249,12 +249,13 @@ beside the binary (see [01-getting-started.md](01-getting-started.md)).
 | `setNextItemWidth(px)` | — |
 | `separator()` | — |
 | `spacing(pixels)` | — |
+| `beginDisabled(bool)` / `endDisabled()` | — (widgets between them draw greyed and take no input) |
 | `measureText(text)` | pixel size of one line at the current text scale |
 | `isCapturingMouse()` | `true` when the UI is using the mouse |
 | `isCapturingKeyboard()` | `true` while any widget holds keyboard focus |
 | `isCapturingTextInput()` | `true` while a text field is focused |
 | `setKeyboardFocusHere()` | focuses the next focusable widget submitted |
-| `style()` | mutable `ui::Style` |
+| `theme` | public `ui::Theme` — one `WidgetStyle` per `Part`, plus `theme.metrics` |
 
 Panels are draggable by their title bar and remember their position between
 frames, keyed by title. `defaultPosition` therefore places a panel the first
@@ -335,18 +336,133 @@ keyboard.addKeyAction(wma::KEY_TAB, wma::KeyAction{[&]() {
 
 ## Styling
 
-`gui.style()` returns a mutable `ui::Style`: colours for each widget state,
-plus `rowHeight`, `itemSpacing`, `padding` and `textScale`. Nothing is
-retained between frames, so a change takes effect on the very next widget —
-including mid-panel:
+Every component is styled separately. `gui.theme` is a public member: a table
+of one `ui::WidgetStyle` per `ui::Part` — `Part::Button`, `Part::Slider`,
+`Part::Tab`, nineteen of them — plus the `ui::Metrics` they all share in
+`gui.theme.metrics`. A widget reads its Part's entry as it is submitted, so an
+edit lands on the very next widget, including mid-panel.
+
+### One WidgetStyle
+
+| Field | Meaning |
+|---|---|
+| `surface` | background fill, as a `ColorSet{normal, hovered, active}` |
+| `border` | outline colour, same three states |
+| `text` | label colour |
+| `accent` | slider fill, tick mark, caret, selection, focus ring |
+| `rounding` | corner radius in px; past half the shorter side it's a pill |
+| `borderWidth` | outline thickness; `0` draws none |
+| `padding` | text inset from the component's own edges |
+| `align` | `Align::Left` / `Center` / `Right` |
+| `height` | `std::optional<float>` — row height, when not `Metrics::rowHeight` |
+| `markScale`, `markInset` | checkbox and radio only: tick box size, mark inset |
+
+What "active" means is the widget's business: a button's is held, a text
+field's is focused, a header's is open.
+
+### ui::Style — a patch, not a replacement
+
+Anywhere you style *something specific*, you pass a `ui::Style`: a sparse
+override where **only the fields you set apply** and everything else falls
+through to the Part's entry in the theme.
+
+That fall-through is the point. A bare `WidgetStyle` is transparent by
+default, so a "just make it red" override built from one would draw an
+invisible button. A patch cannot:
 
 ```cpp
-gui.style().accent = {0.9f, 0.4f, 0.1f, 1.0f};
+gui.button("Delete", ui::Style{}.fill(red));   // red; still the theme's
+                                               // rounding, padding, height
 ```
+
+The setters chain, and there is a field behind each if you want it directly:
+
+| Setter | Sets |
+|---|---|
+| `.fill(color)` / `.fill(ColorSet)` | `surface` |
+| `.outline(color, width = 1.0f)` | `border`, `borderWidth` |
+| `.textColor(color)` | `text` |
+| `.accentColor(color)` | `accent` |
+| `.rounded(radius)` | `rounding` |
+| `.pad(inset)` | `padding` |
+| `.alignText(Align)` | `align` |
+| `.rowHeight(px)` | `height` |
+| `.mark(scale, inset)` | `markScale`, `markInset` |
+
+### Three scopes
+
+```cpp
+// 1. The whole UI, from nine colours.
+gui.theme.applyPalette(ui::Palette::light());
+
+// 2. Every button, from here on.
+gui.theme[ui::Part::Button].rounding = 10.0f;
+gui.theme[ui::Part::Button].height   = 30.0f;
+
+// 3. Every button in this scope.
+{
+    ui::StyleGuard scope(gui, ui::Part::Button,
+                         ui::Style{}.fill({0.66f, 0.20f, 0.22f, 1.0f}));
+
+    if (gui.button("Delete"))     deleteThing();
+    if (gui.button("Delete all")) deleteEverything();
+}
+
+// ...and one widget: every widget takes an optional trailing Style.
+if (gui.button("Remove every object", ui::Style{}.fill(danger)))
+    objects.clear();
+```
+
+`StyleGuard` puts the Part back when it goes out of scope, and nests. A Style
+passed to a widget applies to that call only and touches nothing else.
+
+### Palettes
+
+`ui::Palette` is nine colours — `window`, `titleBar`, `surface`,
+`surfaceHovered`, `surfaceActive`, `accent`, `text`, `border`, `overlay` — and
+`applyPalette` fans them out over every Part. `Palette::dark()` (the default)
+and `Palette::light()` ship; anything else is a struct you fill in.
+
+```cpp
+ui::Palette brand = ui::Palette::dark();
+brand.accent         = {0.90f, 0.40f, 0.10f, 1.0f};
+brand.surfaceActive  = {0.75f, 0.33f, 0.08f, 1.0f};
+
+gui.theme.applyPalette(brand);           // coherent base
+gui.theme[ui::Part::Radio].rounding = 0.0f;   // then the exceptions
+```
+
+`applyPalette` discards per-Part edits made before it, which is the point:
+apply the palette first, then the exceptions.
+
+### Metrics
+
+`gui.theme.metrics` holds what the whole UI shares: `rowHeight`, `itemSpacing`,
+`padding` (panel border to content), `indent`, `textScale`, `scrollbarWidth`
+and `disabledAlpha`.
 
 For permanently larger text prefer raising `ContextDesc::pixelHeight`, which
 rasterizes the glyphs bigger. `textScale` magnifies an already-rasterized
 bitmap and gets soft well before it gets large.
+
+Panels and their title bars are square by default. Rounding them works — the
+background is built to fit — but with no antialiasing a large translucent
+surface shows the corner as a stair rather than a curve.
+
+## Disabling widgets
+
+```cpp
+gui.beginDisabled(!hasSelection);
+if (gui.button("Delete selected"))
+    deleteSelected();
+gui.endDisabled();
+```
+
+Widgets between the two still lay out, still draw and still return their
+value — they simply take no click and no <kbd>Tab</kbd>. Greying out rather
+than hiding keeps the panel from reflowing as options come and go. It nests,
+and `beginDisabled(false)` pushes a level that changes nothing, so a condition
+needs no matching `if`.
 
 ## Building without it
 

@@ -20,7 +20,10 @@
  *    test would report.
  */
 
+#include <algorithm>
+#include <array>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "aura/Renderer/IRenderer.h"
@@ -99,10 +102,10 @@ constexpr glm::vec2 kPanelOrigin{100.0f, 100.0f};
 constexpr float kPanelWidth = 200.0f;
 
 /// Cursor placed over the first widget row of a panel at kPanelOrigin.
-[[nodiscard]] glm::vec2 firstRowPoint(const ui::Style& style)
+[[nodiscard]] glm::vec2 firstRowPoint(const ui::Metrics& metrics)
 {
     return {kPanelOrigin.x + kPanelWidth * 0.5f,
-            kPanelOrigin.y + style.rowHeight + style.padding + style.rowHeight * 0.5f};
+            kPanelOrigin.y + metrics.rowHeight + metrics.padding + metrics.rowHeight * 0.5f};
 }
 
 void testSingleBatchPerFrame()
@@ -202,7 +205,7 @@ void testButtonNeedsPressAndRelease()
     RecordingRenderer renderer;
     ui::Context gui(&renderer);
 
-    const glm::vec2 overButton = firstRowPoint(gui.style());
+    const glm::vec2 overButton = firstRowPoint(gui.theme.metrics);
     const glm::vec2 away{0.0f, 0.0f};
 
     AURA_CHECK(!buttonFrame(gui, overButton, false), "hovering alone is not a click");
@@ -228,7 +231,7 @@ void testCheckboxTogglesOnce()
     RecordingRenderer renderer;
     ui::Context gui(&renderer);
 
-    const glm::vec2 overBox = firstRowPoint(gui.style());
+    const glm::vec2 overBox = firstRowPoint(gui.theme.metrics);
     bool value = false;
 
     auto frame = [&](bool mouseDown) {
@@ -257,10 +260,10 @@ void testSliderTracksTheCursor()
     RecordingRenderer renderer;
     ui::Context gui(&renderer);
 
-    const ui::Style& style = gui.style();
-    const float rowY = firstRowPoint(style).y;
-    const float trackLeft = kPanelOrigin.x + style.padding;
-    const float trackWidth = kPanelWidth - 2.0f * style.padding;
+    const ui::Metrics& metrics = gui.theme.metrics;
+    const float rowY = firstRowPoint(metrics).y;
+    const float trackLeft = kPanelOrigin.x + metrics.padding;
+    const float trackWidth = kPanelWidth - 2.0f * metrics.padding;
 
     float value = 0.0f;
 
@@ -392,7 +395,7 @@ void testPanelGrowsWithItsContent()
     AURA_CHECK(oneRow > 0.0f, "a panel has a height");
     AURA_CHECK(fourRows > oneRow, "a panel's background grows to fit its content");
 
-    const float rowStride = gui.style().rowHeight + gui.style().itemSpacing;
+    const float rowStride = gui.theme.metrics.rowHeight + gui.theme.metrics.itemSpacing;
     AURA_CHECK(std::abs((fourRows - oneRow) - 3.0f * rowStride) < 0.01f,
                "the background grows by exactly one row stride per row");
 }
@@ -452,7 +455,7 @@ void testTitleBarDragMovesTheWholePanel()
 
     //! Middle of the title bar, which is the panel's top row.
     const glm::vec2 overTitle{kPanelOrigin.x + kPanelWidth * 0.5f,
-                              kPanelOrigin.y + gui.style().rowHeight * 0.5f};
+                              kPanelOrigin.y + gui.theme.metrics.rowHeight * 0.5f};
 
     auto frame = [&](glm::vec2 mouse, bool mouseDown) {
         renderer.batches.clear();
@@ -728,9 +731,9 @@ void testScrollRegionClipsAndScrolls()
 
     //! The panel must be sized by the viewport, not by the content: that is the
     //! whole point of a fixed-height region inside an auto-height panel.
-    const ui::Style& style = gui.style();
-    const float expectedBottom = kPanelOrigin.y + style.rowHeight + style.padding
-                               + kViewportHeight + style.padding;
+    const ui::Metrics& metrics = gui.theme.metrics;
+    const float expectedBottom = kPanelOrigin.y + metrics.rowHeight + metrics.padding
+                               + kViewportHeight + metrics.padding;
 
     float lowest = 0.0f;
     for (const auto& vertex : renderer.batches.front().vertices)
@@ -1063,6 +1066,550 @@ void testArgumentlessNewFrameOpensAFrame()
     AURA_CHECK(!gui.isCapturingKeyboard(), "an unattached context claims no keyboard");
 }
 
+//! An open dropdown list is emitted mid-panel but drawn over the widgets that
+//! follow it. Hit-testing walks submission order, so without deferred geometry
+//! outranking later claims the entry loses the cursor to whatever it covers,
+//! and the click lands on the wrong widget while looking perfectly correct.
+void testOpenDropdownOutranksTheWidgetsItCovers()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    const ui::Metrics& metrics = gui.theme.metrics;
+
+    static constexpr std::string_view kModes[] = {"Lit", "Unlit", "Wireframe"};
+    int shading = 0;
+    bool covered = false;
+
+    auto frame = [&](glm::vec2 mouse, bool mouseDown) {
+        gui.newFrame(ui::Input{mouse, mouseDown});
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            (void)gui.dropdown("Shading", shading, kModes);
+            (void)gui.checkbox("Covered", covered);
+            gui.endPanel();
+        }
+        gui.render();
+    };
+
+    auto click = [&](glm::vec2 point) {
+        frame(point, false);
+        frame(point, true);
+        frame(point, false);
+    };
+
+    const float dropdownTop = kPanelOrigin.y + metrics.rowHeight + metrics.padding;
+    const float checkboxTop = dropdownTop + metrics.rowHeight + metrics.itemSpacing;
+
+    click({kPanelOrigin.x + kPanelWidth * 0.4f, dropdownTop + metrics.rowHeight * 0.5f});
+
+    //! The list opens directly below its row, so its second entry and the
+    //! checkbox row overlap. That overlap is the whole point of the test.
+    const float entryTop = dropdownTop + metrics.rowHeight * 2.0f;
+    const glm::vec2 overlap{kPanelOrigin.x + kPanelWidth * 0.4f,
+                            std::max(entryTop, checkboxTop) + 1.0f};
+
+    AURA_CHECK(overlap.y < entryTop + metrics.rowHeight && overlap.y < checkboxTop + metrics.rowHeight,
+               "the probed point really is inside both the entry and the checkbox");
+
+    const bool checkboxBefore = covered;
+    click(overlap);
+
+    AURA_CHECK(shading == 1, "clicking an open list entry selects it");
+    AURA_CHECK(covered == checkboxBefore, "the widget the list covers takes no click");
+}
+
+//! Widget identity counts occurrences of a label within its panel rather than
+//! position in it. A widget's retained state -- an open flag here, but equally
+//! a caret or a scroll offset -- must therefore survive an `if` above it
+//! starting to emit, which a positional counter silently re-keys.
+void testRetainedStateSurvivesABranchAboveIt()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    const ui::Metrics& metrics = gui.theme.metrics;
+
+    bool groupOpen = false;
+    bool detailsOpen = false;
+
+    auto frame = [&](glm::vec2 mouse, bool mouseDown) {
+        gui.newFrame(ui::Input{mouse, mouseDown});
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            groupOpen = gui.collapsingHeader("Group", false);
+            if (groupOpen)
+            {
+                (void)gui.button("one");
+                (void)gui.button("two");
+            }
+            detailsOpen = gui.collapsingHeader("Details", true);
+            gui.endPanel();
+        }
+        gui.render();
+    };
+
+    auto clickRow = [&](int row) {
+        const glm::vec2 point{kPanelOrigin.x + kPanelWidth * 0.5f,
+                              kPanelOrigin.y + metrics.rowHeight + metrics.padding +
+                                  (metrics.rowHeight + metrics.itemSpacing) *
+                                      static_cast<float>(row) +
+                                  metrics.rowHeight * 0.5f};
+        frame(point, false);
+        frame(point, true);
+        frame(point, false);
+        frame({-1.0f, -1.0f}, false);
+    };
+
+    frame({-1.0f, -1.0f}, false);
+    AURA_CHECK(!groupOpen && detailsOpen, "both headers start at their defaults");
+
+    clickRow(1);
+    AURA_CHECK(!detailsOpen, "Details closes when clicked");
+
+    clickRow(0);
+    AURA_CHECK(groupOpen, "Group opens when clicked");
+    AURA_CHECK(!detailsOpen, "Details stays closed once Group emits two widgets above it");
+
+    clickRow(0);
+    AURA_CHECK(!groupOpen && !detailsOpen, "Details stays closed once Group collapses again");
+}
+
+//! The counter that identity folds in still has to separate two widgets that
+//! share a label, which is the collision it exists for.
+void testSameLabelTwiceStaysTwoWidgets()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    const ui::Metrics& metrics = gui.theme.metrics;
+
+    bool first = false;
+    bool second = false;
+
+    auto frame = [&](glm::vec2 mouse, bool mouseDown) {
+        gui.newFrame(ui::Input{mouse, mouseDown});
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            (void)gui.checkbox("Enabled", first);
+            (void)gui.checkbox("Enabled", second);
+            gui.endPanel();
+        }
+        gui.render();
+    };
+
+    auto clickRow = [&](int row) {
+        const glm::vec2 point{kPanelOrigin.x + kPanelWidth * 0.5f,
+                              kPanelOrigin.y + metrics.rowHeight + metrics.padding +
+                                  (metrics.rowHeight + metrics.itemSpacing) *
+                                      static_cast<float>(row) +
+                                  metrics.rowHeight * 0.5f};
+        frame(point, false);
+        frame(point, true);
+        frame(point, false);
+        frame({-1.0f, -1.0f}, false);
+    };
+
+    clickRow(0);
+    AURA_CHECK(first && !second, "clicking the first box toggles only the first");
+
+    clickRow(1);
+    AURA_CHECK(first && second, "clicking the second box toggles only the second");
+}
+
+/*
+ * The table behind widget identity is open-addressed and rehashes once a panel
+ * pushes it past its load factor, which only a panel far wider than the usual
+ * handful of rows reaches. A rehash that dropped or reordered the ordinals it
+ * had already handed out would make the widgets after it swap identities with
+ * the ones before -- silently, and only in the panels big enough to trigger it.
+ */
+/*
+ * The table behind widget identity is open-addressed and rehashes once a panel
+ * pushes it past its load factor -- which only a panel far wider than the usual
+ * handful of rows reaches, and only on the frame that first lays it out, since
+ * the table keeps its capacity from then on. A rehash that dropped the ordinals
+ * it had already handed out would let two widgets sharing a label collapse into
+ * one identity for exactly that frame.
+ *
+ * Asserted on the first frame and without any clicking: the two headers are
+ * given *different* defaults, so distinct identities mean distinct answers,
+ * while a collision makes the second header read back the first one's state.
+ */
+void testIdentitiesSurviveTheIdentityTableGrowing()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    //! Comfortably past the table's initial capacity, so it rehashes mid-panel.
+    constexpr int kDistinctRows = 200;
+
+    std::vector<std::string> labels;
+    labels.reserve(kDistinctRows);
+    for (int i = 0; i < kDistinctRows; ++i)
+        labels.push_back("Row " + std::to_string(i));
+
+    std::array<bool, kDistinctRows> distinct{};
+
+    /*
+     * Collapsing headers rather than checkboxes: a checkbox writes through to
+     * the caller's bool, so two of them sharing an identity still answer
+     * independently and the collision stays invisible. A header's open state is
+     * retained *by identity*, which is what makes the collision observable.
+     *
+     * The pair straddles the distinct rows so the rehashes land between them.
+     */
+    gui.newFrame(ui::Input{});
+
+    AURA_CHECK(gui.beginPanel("Panel", kPanelOrigin, kPanelWidth),
+               "the wide panel opens");
+
+    const bool firstOpen = gui.collapsingHeader("Shared", true);
+
+    for (size_t i = 0; i < static_cast<size_t>(kDistinctRows); ++i)
+        (void)gui.checkbox(labels[i], distinct[i]);
+
+    const bool secondOpen = gui.collapsingHeader("Shared", false);
+
+    gui.endPanel();
+    gui.render();
+
+    AURA_CHECK(firstOpen, "the first of two same-labelled headers keeps its own default");
+    AURA_CHECK(!secondOpen,
+               "the second keeps its own default across the rehash between them");
+}
+
+//! The rectangle every vertex of the last batch fits in. A panel's background
+//! is the outermost thing it draws, so for a single-panel frame this is the
+//! panel -- measured without assuming which vertex the background happens to
+//! be, which is exactly what a rounded or bordered panel changes.
+struct BatchBounds {
+    glm::vec2 min{0.0f};
+    glm::vec2 max{0.0f};
+
+    [[nodiscard]] float height() const { return max.y - min.y; }
+};
+
+[[nodiscard]] BatchBounds batchBounds(const RecordingRenderer& renderer)
+{
+    if (renderer.batches.empty() || renderer.batches.back().vertices.empty())
+        return BatchBounds{};
+
+    const auto& vertices = renderer.batches.back().vertices;
+
+    BatchBounds bounds{vertices.front().pos, vertices.front().pos};
+    for (const gfx::Vertex2D& vertex : vertices)
+    {
+        bounds.min = glm::min(bounds.min, vertex.pos);
+        bounds.max = glm::max(bounds.max, vertex.pos);
+    }
+
+    return bounds;
+}
+
+/**
+ * A Part's style reaches only that Part. Height is what makes this observable
+ * without inspecting colours: the panel grows by exactly what the button grew
+ * by, so the label under it moved and nothing else did.
+ */
+void testPerPartStyleChangesOnlyThatComponent()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    const auto panelHeight = [&]() {
+        renderer.batches.clear();
+        gui.newFrame(ui::Input{});
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            (void)gui.button("Press");
+            gui.label("row");
+            gui.endPanel();
+        }
+        gui.render();
+        return batchBounds(renderer).height();
+    };
+
+    const float before = panelHeight();
+
+    constexpr float kExtra = 18.0f;
+    gui.theme[ui::Part::Button].height = gui.theme.metrics.rowHeight + kExtra;
+
+    AURA_CHECK(std::abs((panelHeight() - before) - kExtra) < 0.01f,
+               "a taller Part grows its own row and nothing else");
+}
+
+//! A widget's own Style argument styles that call and nothing else -- neither
+//! the widget after it nor the Part's entry in the theme.
+void testStyleArgumentAppliesToOneWidgetOnly()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    constexpr float kExtra = 20.0f;
+    const float tall = gui.theme.metrics.rowHeight + kExtra;
+
+    const auto panelHeight = [&](bool styleFirst) {
+        renderer.batches.clear();
+        gui.newFrame(ui::Input{});
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            (void)gui.button("A", styleFirst ? ui::Style{}.rowHeight(tall) : ui::Style{});
+            (void)gui.button("B");
+            gui.endPanel();
+        }
+        gui.render();
+        return batchBounds(renderer).height();
+    };
+
+    const float plain = panelHeight(false);
+
+    AURA_CHECK(std::abs((panelHeight(true) - plain) - kExtra) < 0.01f,
+               "a Style argument grows the widget it is passed to, not the one after it");
+
+    AURA_CHECK(std::abs(panelHeight(false) - plain) < 0.01f,
+               "and leaves the Part's own entry untouched for the next frame");
+}
+
+/**
+ * The property the whole patch design exists for: a Style sets the fields it
+ * names and *falls through* to the Part for the rest. A bare WidgetStyle is
+ * transparent by default, so without this a one-field override would draw an
+ * invisible widget.
+ */
+void testStylePatchFallsThroughToTheTheme()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    const ui::WidgetStyle& base = gui.theme[ui::Part::Button];
+    const ui::WidgetStyle patched = ui::Style{}.rounded(7.0f).over(base);
+
+    AURA_CHECK(patched.rounding == 7.0f, "a patch applies the field it sets");
+    AURA_CHECK(patched.surface.normal == base.surface.normal,
+               "and leaves a field it does not set at the theme's value");
+    AURA_CHECK(patched.text == base.text && patched.padding == base.padding,
+               "including the ones a bare WidgetStyle would have zeroed");
+
+    AURA_CHECK(ui::Style{}.empty(), "an unset patch is empty, so a widget skips resolving it");
+    AURA_CHECK(!ui::Style{}.rounded(1.0f).empty(), "a patch with any field set is not empty");
+}
+
+/**
+ * Every tab in a bar sits on the bar's row. The selected tab's *contents* are
+ * emitted between one tabItem() and the next, so a bar that read the panel's
+ * live row cursor would draw its second tab beside whatever the first tab last
+ * emitted -- which is what it did, and is invisible to any test that only
+ * checks return values.
+ */
+void testTabsShareOneRowWhateverTheSelectedTabEmits()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    int unused = 0;
+    bool secondSelected = false;
+
+    //! The first tab deliberately emits several rows, which is what used to
+    //! push the panel's cursor past the bar before the second tab was placed.
+    const auto frame = [&](glm::vec2 mouse, bool mouseDown) {
+        gui.newFrame(ui::Input{mouse, mouseDown});
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            if (gui.beginTabBar("Bar"))
+            {
+                if (gui.tabItem("First"))
+                {
+                    (void)gui.button("inside one");
+                    (void)gui.button("inside two");
+                    (void)gui.radioButton("inside three", unused, 0);
+                }
+
+                secondSelected = gui.tabItem("Second");
+                gui.endTabBar();
+            }
+            gui.endPanel();
+        }
+        gui.render();
+    };
+
+    const ui::Metrics& metrics = gui.theme.metrics;
+
+    //! Where the second tab has to be: the bar's row, just past the first tab,
+    //! which is fitted to its label plus the Part's padding on each side.
+    const float barTop = kPanelOrigin.y + metrics.rowHeight + metrics.padding;
+    const float firstWidth =
+        gui.measureText("First").x + gui.theme[ui::Part::Tab].padding * 2.0f;
+
+    const glm::vec2 onSecondTab{kPanelOrigin.x + metrics.padding + firstWidth + 6.0f,
+                                barTop + metrics.rowHeight * 0.5f};
+
+    frame(onSecondTab, false);
+    AURA_CHECK(!secondSelected, "the first tab is selected to begin with");
+
+    frame(onSecondTab, true);
+    frame(onSecondTab, false);
+    frame({-1.0f, -1.0f}, false);
+
+    AURA_CHECK(secondSelected,
+               "a click on the bar's row selects the second tab, whatever the first emitted");
+}
+
+void testStyleGuardRestoresTheThemeItChanged()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    const ui::WidgetStyle original = gui.theme[ui::Part::Button];
+
+    {
+        const ui::StyleGuard scope(gui, ui::Part::Button,
+                                   ui::Style{}.fill({1.0f, 0.0f, 0.0f, 1.0f}));
+
+        AURA_CHECK(gui.theme[ui::Part::Button].surface.normal.r == 1.0f,
+                   "a StyleGuard restyles its Part inside the scope");
+        AURA_CHECK(gui.theme[ui::Part::Button].rounding == original.rounding,
+                   "a StyleGuard's patch falls through like any other");
+    }
+
+    AURA_CHECK(gui.theme[ui::Part::Button].surface.normal == original.surface.normal,
+               "a StyleGuard puts the Part back on the way out");
+}
+
+/**
+ * A disabled widget lays out and draws -- so a panel does not reflow as options
+ * come and go -- but takes no click and no Tab. Both halves matter: one without
+ * the other is either a widget that vanishes or one that only looks inert.
+ */
+void testDisabledWidgetsDrawButTakeNoInput()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    bool pressed = false;
+    size_t vertices = 0;
+
+    const auto frame = [&](bool disabled, const ui::Input& input) {
+        renderer.batches.clear();
+        gui.newFrame(input);
+        if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+        {
+            gui.beginDisabled(disabled);
+            if (gui.button("Press"))
+                pressed = true;
+            gui.endDisabled();
+            gui.endPanel();
+        }
+        gui.render();
+        vertices = renderer.batches.empty() ? 0 : renderer.batches.back().vertices.size();
+    };
+
+    const glm::vec2 over = firstRowPoint(gui.theme.metrics);
+
+    frame(true, ui::Input{over, false});
+    const size_t disabledVertices = vertices;
+
+    frame(true, ui::Input{over, true});
+    frame(true, ui::Input{over, false});
+
+    AURA_CHECK(disabledVertices > 0, "a disabled widget still draws");
+    AURA_CHECK(!pressed, "a disabled widget takes no click");
+
+    frame(true, pressing(wma::KEY_TAB));
+    AURA_CHECK(!gui.isCapturingKeyboard(), "a disabled widget is not a tab stop");
+
+    frame(false, ui::Input{over, false});
+    frame(false, ui::Input{over, true});
+    frame(false, ui::Input{over, false});
+
+    AURA_CHECK(pressed, "the same widget works again once it is enabled");
+
+    const size_t enabledVertices = vertices;
+    AURA_CHECK(enabledVertices == disabledVertices,
+               "enabling a widget changes its colour, not its geometry");
+}
+
+/**
+ * Rounded corners are built from axis-aligned spans rather than a fan, so they
+ * clip like everything else and cost no extra draw call. And a rounded panel
+ * is still spliced in behind its own content, which is the part that a
+ * "rewrite the background quad's bottom edge" approach cannot do.
+ */
+void testRoundedComponentsStayOneClippedBatch()
+{
+    RecordingRenderer renderer;
+    ui::Context gui(&renderer);
+
+    gui.theme.applyPalette(ui::Palette::light());
+    gui.theme[ui::Part::Panel].rounding = 10.0f;
+    gui.theme[ui::Part::Button].rounding = 8.0f;
+    gui.theme[ui::Part::TextField].borderWidth = 2.0f;
+
+    std::string name = "value";
+
+    gui.newFrame(ui::Input{});
+    if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+    {
+        (void)gui.button("Press");
+        (void)gui.inputText("Name", name);
+        bool toggle = true;
+        (void)gui.checkbox("Toggle", toggle);
+        gui.endPanel();
+    }
+    gui.render();
+
+    if (renderer.batches.empty())
+    {
+        AURA_CHECK(false, "a rounded panel submitted a batch");
+        return;
+    }
+
+    AURA_CHECK(renderer.batches.size() == 1, "rounded corners cost no extra draw call");
+
+    const auto& batch = renderer.batches.front();
+
+    AURA_CHECK(batch.vertices.front().color == gui.theme.palette().window,
+               "a rounded panel's background is still the first thing drawn");
+
+    const BatchBounds bounds = batchBounds(renderer);
+    AURA_CHECK(bounds.min.x >= kPanelOrigin.x - 0.001f &&
+                   bounds.max.x <= kPanelOrigin.x + kPanelWidth + 0.001f,
+               "rounded content is clipped to its panel like everything else");
+
+    //! Rounding is a corner treatment, not a size change: the same content must
+    //! still lay out to the same rectangle, or auto-height would drift with it.
+    const float rounded = bounds.height();
+
+    gui.theme[ui::Part::Panel].rounding = 0.0f;
+    gui.theme[ui::Part::Button].rounding = 0.0f;
+    gui.theme[ui::Part::TextField].borderWidth = 0.0f;
+
+    renderer.batches.clear();
+    gui.newFrame(ui::Input{});
+    if (gui.beginPanel("Panel", kPanelOrigin, kPanelWidth))
+    {
+        (void)gui.button("Press");
+        (void)gui.inputText("Name", name);
+        bool toggle = true;
+        (void)gui.checkbox("Toggle", toggle);
+        gui.endPanel();
+    }
+    gui.render();
+
+    AURA_CHECK(std::abs(batchBounds(renderer).height() - rounded) < 0.001f,
+               "rounding a panel changes its corners, not its size");
+
+    for (const u32 index : batch.indices)
+    {
+        if (index >= batch.vertices.size())
+        {
+            AURA_CHECK(false, "splicing the background keeps every index valid");
+            return;
+        }
+    }
+    AURA_CHECK(true, "splicing the background keeps every index valid");
+}
+
 int main()
 {
     testSingleBatchPerFrame();
@@ -1089,6 +1636,17 @@ int main()
     testSmallUIsAreNeverSwept();
     testPanelPositionSurvivesALongRun();
     testArgumentlessNewFrameOpensAFrame();
+    testOpenDropdownOutranksTheWidgetsItCovers();
+    testRetainedStateSurvivesABranchAboveIt();
+    testSameLabelTwiceStaysTwoWidgets();
+    testIdentitiesSurviveTheIdentityTableGrowing();
+    testPerPartStyleChangesOnlyThatComponent();
+    testStyleArgumentAppliesToOneWidgetOnly();
+    testStylePatchFallsThroughToTheTheme();
+    testTabsShareOneRowWhateverTheSelectedTabEmits();
+    testStyleGuardRestoresTheThemeItChanged();
+    testDisabledWidgetsDrawButTakeNoInput();
+    testRoundedComponentsStayOneClippedBatch();
 
     AURA_TEST_MAIN_RETURN();
 }

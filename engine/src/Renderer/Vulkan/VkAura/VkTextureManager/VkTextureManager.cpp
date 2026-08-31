@@ -254,6 +254,12 @@ void* VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
     if (bytes == 0)
         return nullptr;
 
+    //! Before the pointer is handed out, not before the submit: the caller is
+    //! about to memcpy over the very memory the previous upload may still be
+    //! reading. Every writer of the staging buffer comes through here, which is
+    //! what makes this the one place the wait has to be.
+    waitForPendingUpload();
+
     //! Already big enough: hand back the pointer mapped when it was created.
     if (bytes <= _stagingCapacity && _stagingMapped != nullptr)
         return _stagingMapped;
@@ -301,6 +307,11 @@ void* VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
 
 void VkTextureManager::cleanup()
 {
+    //! Nothing below may run while an upload is still reading its staging
+    //! buffer or writing one of these images -- and the fence destroyed at the
+    //! end is the very one that would have been waited on.
+    waitForPendingUpload();
+
     for (TextureData& texture : _textures) {
         destroyTextureData(texture);
     }
@@ -360,6 +371,11 @@ VkSampler VkTextureManager::createSampler()
 
 VkCommandBuffer VkTextureManager::beginSingleTimeCommands()
 {
+    //! The fence is reset and reused by endSingleTimeCommands(), so the
+    //! previous submission has to be accounted for before another starts. A
+    //! no-op when acquireStagingBuffer() already did it.
+    waitForPendingUpload();
+
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -400,9 +416,25 @@ void VkTextureManager::endSingleTimeCommands(VkCommandBuffer commandBuffer)
     submitInfo.pCommandBuffers = &commandBuffer;
 
     VK_RESULT_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submitInfo, _uploadFence));
+
+    /*
+     * Deliberately not waited for here -- see the header. The buffer is kept so
+     * waitForPendingUpload() can free it once the GPU has retired it; the upload
+     * pool is never reset (unlike the render pools), so holding one across a
+     * frame boundary is sound.
+     */
+    _pendingUploadCmd = commandBuffer;
+}
+
+void VkTextureManager::waitForPendingUpload()
+{
+    if (_pendingUploadCmd == VK_NULL_HANDLE)
+        return;
+
     VK_RESULT_CHECK(vkWaitForFences(*_device, 1, &_uploadFence, VK_TRUE, UINT64_MAX));
 
-    vkFreeCommandBuffers(*_device, _commandPool, 1, &commandBuffer);
+    vkFreeCommandBuffers(*_device, _commandPool, 1, &_pendingUploadCmd);
+    _pendingUploadCmd = VK_NULL_HANDLE;
 }
 
 void VkTextureManager::recordLayoutTransition(VkCommandBuffer cmd, VkImage image,

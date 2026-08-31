@@ -31,12 +31,12 @@ straight to whatever you need — each chapter links to the ones it builds on.
     release archives as a dependency, per platform, plus how to build the
     `vulkan-dev` dev container from `qt_dev`.
 12. **[Immediate-Mode UI](12-immediate-mode-ui.md)** — `aura3d::ui`: panels,
-    buttons, checkboxes and sliders for debug overlays, editors and
-    standalone tools, with a complete worked tool application. Builds on
-    chapter 7's 2D pipeline, and reads well straight after it.
+    buttons, checkboxes and sliders for debug overlays, editors and standalone
+    tools, per-component theming, and a complete worked tool application.
+    Builds on chapter 7's 2D pipeline, and reads well straight after it.
 13. **[How AuraUI Works](13-auraui-internals.md)** — the inside of chapter 12:
-    widget identity, the hot/active state machine, how the whole UI stays one
-    draw call, and how to add a widget.
+    widget identity, the hot/active state machine, how a Part's style reaches a
+    widget, how the whole UI stays one draw call, and how to add a widget.
 14. **[Audio](14-audio.md)** — `AudioEngine`: loading WAV/Ogg clips, one-shots
     and looping music, 3D positional sound, voice management, and the
     per-platform backends (ALSA, SDL3, null).

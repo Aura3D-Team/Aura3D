@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <expected>
 #include <memory>
@@ -203,6 +204,26 @@ private:
     std::vector<u8> _scratch;         //! RGBA staging for the pending upload.
 
     std::unordered_map<char32_t, GlyphInfo> _glyphs;
+
+    /*
+     * Direct-mapped kern cache, keyed by the packed codepoint pair.
+     *
+     * stbtt_GetCodepointKernAdvance() is not a lookup: it re-runs a cmap
+     * search for *both* codepoints and then a binary search of the kern table,
+     * and walkGlyphs() asks for every adjacent pair of every string it lays
+     * out -- twice over for a measured-then-drawn label, every frame. A fixed
+     * table keeps this allocation-free so kerning() can stay noexcept; the
+     * stored pair is compared before the value is trusted, so a collision
+     * costs a recompute and never a wrong advance.
+     */
+    static constexpr usize kKernCacheSlots = 512; //! Power of two; masked, not modulo.
+
+    struct KernEntry {
+        u64 pair = 0;       //! 0 is unreachable: walkGlyphs() stops at codepoint 0.
+        f32 value = 0.0f;
+    };
+
+    mutable std::array<KernEntry, kKernCacheSlots> _kernCache{};
 
     //! Cached result of solidTexelUv(); empty until the first call places it.
     std::optional<glm::vec2> _solidUv;
