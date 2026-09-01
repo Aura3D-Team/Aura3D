@@ -278,6 +278,37 @@ All notable changes to Aura3D are documented in this file.
   is headroom banked against heavier scenes. All 13 existing tests pass
   unchanged, including `test_ui.cpp`'s UTF-8-correct editing and single-batch
   coverage.
+- **Text fields never received a keystroke on the Wayland backend.** The
+  compositor sends `wl_keyboard`'s keymap once, immediately in reply to
+  `get_keyboard`, and libwayland drops an event that reaches a proxy with no
+  listener; wma subscribed a roundtrip later, in `setupInputDevices()`, so xkb
+  was never initialised. Key *bindings* still worked — those come from a static
+  evdev table — which is what made this look like a UI bug: a field focused,
+  drew its caret, and ignored everything typed into it. Fixed in libwma by
+  subscribing where the keyboard is created; `WaylandKeyboardListener::
+  initialize()` is now idempotent, since `setupInputDevices()` still calls it.
+- **A text field focused by clicking lost its Escape snapshot.** `inputText()`
+  detected the frame it gained focus by comparing `_focus.lastFrame`, which
+  cannot see a focus granted from inside the widget body — as a click's is, one
+  frame after `_focusItem()` has already resolved `focused`. Escape therefore
+  reverted a click-focused field to an empty string instead of its previous
+  value. Now tracked on the field's own retained state, and the caret is left
+  where the click put it rather than jumped to the end.
+- **Engine configuration can be set in code** (`aura3d::AuraConfig`), so an
+  application that has nothing for a user to edit — a viewer, a tool — ships
+  one binary instead of a binary plus a `settings.json` it must not lose.
+  `Engine(config)` runs with no file at all; `Engine(config, path)` lets a file
+  override it key by key, and a file that is missing or unreadable now warns
+  and falls back rather than silently reporting a load. The defaults are held
+  beside the JSON document rather than merged into it, so `reload()` cannot
+  drop them. Four fields are `std::optional`, where "unset" is a real state:
+  `window.vsyncMode`, `renderer.validationLayers`, `audio.backend` and
+  `logging.level`. See
+  [docs/02-project-configuration.md](docs/02-project-configuration.md).
+- **Tests:** `test_settings` covers the three-layer resolution, and
+  `test_ui_input` drives `Context::attachInput()` and `ui::InputRouter` from a
+  fake window manager — the wiring every application uses and that
+  `test_ui`'s synthetic `newFrame(const Input&)` path never touched.
 
 ## [0.1.0]
 

@@ -941,6 +941,10 @@ private:
 
         //! The value as it was when the field took focus, for Escape to revert.
         std::string original;
+
+        //! Whether the field held focus last frame, so the frame it *gains*
+        //! focus is detectable however focus arrived. See inputText().
+        bool editing = false;
     };
 
     RetainedMap<TextState> _textStates;
@@ -1851,21 +1855,46 @@ bool Context::Impl::inputText(std::string_view label, std::string& value, size_t
         const Rect row = it.rect;
         const WidgetStyle& style = it.style;
 
+        TextState& state = _textStates.touch(it.id, _frame).value;
+
+        //! A press grants focus from in here, so it is not yet reflected in
+        //! it.focused -- which _focusItem() resolved before the body ran.
+        bool takenByPointer = false;
+
         if (it.held && _pointer.pressed)
+        {
             _setFocus(it.id);
+            takenByPointer = true;
+        }
         else if (_pointer.pressed && !it.hovered && it.focused)
             _clearFocus(it.id);
 
-        TextState& state = _textStates.touch(it.id, _frame).value;
+        const bool editing = it.focused || takenByPointer;
 
-        //! The frame focus is gained: snapshot the value for Escape, and put
-        //! the caret at the end as every platform's field does.
-        if (it.focused && _focus.lastFrame != it.id)
+        /*
+         * The frame focus is gained: snapshot the value for Escape to revert
+         * to. Tracked on the state rather than by comparing _focus.lastFrame,
+         * which cannot see this frame at all: Tab grants focus before the
+         * widget runs and a click grants it from inside the body, so one of
+         * the two always looks like a frame that already had focus -- and the
+         * click was the one that lost its snapshot, leaving Escape to clear
+         * the field instead of restoring it.
+         */
+        if (editing && !state.editing)
         {
             state.original = value;
-            state.caret = value.size();
-            state.anchor = state.caret;
+
+            //! Only where the keyboard granted focus. A click places the caret
+            //! where it landed (see the end of this body), and jumping to the
+            //! end first would undo it.
+            if (!takenByPointer)
+            {
+                state.caret = value.size();
+                state.anchor = state.caret;
+            }
         }
+
+        state.editing = editing;
 
         bool changed = false;
 

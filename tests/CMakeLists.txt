@@ -23,6 +23,7 @@ set(AURA_TEST_SUITES
     test_image_loader
     test_mesh_loader
     test_renderer_factory
+    test_settings
     test_shader_loader
     test_texture_sampling
 )
@@ -30,7 +31,7 @@ set(AURA_TEST_SUITES
 # Guarded because AURA_ENABLE_UI=OFF leaves aura3d::ui out of the library
 # entirely, and this suite is the one thing in the tree that links against it.
 if(AURA_ENABLE_UI)
-    list(APPEND AURA_TEST_SUITES test_ui)
+    list(APPEND AURA_TEST_SUITES test_ui test_ui_input)
 endif()
 
 foreach(_aura_test_name IN LISTS AURA_TEST_SUITES)

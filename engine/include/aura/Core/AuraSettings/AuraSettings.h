@@ -2,6 +2,7 @@
 #define AURASETTINGS_H
 
 #include <cctype>
+#include <optional>
 #include <string>
 
 #include <ink/EnhancedJson.h>
@@ -158,6 +159,94 @@ inline const char* VSyncModeToString(VSyncMode mode)
 }
 
 /**
+ * @struct AuraConfig
+ * @brief The engine's configuration as a plain C++ value.
+ *
+ * Every field is the value the matching AuraSettings accessor returns when the
+ * JSON document says nothing about it. Hand one to Engine and the application
+ * needs no settings.json at all -- which is the point: a tool built on Aura3D
+ * (an image viewer, a level exporter) ships one binary rather than a binary
+ * plus a file it must not lose.
+ *
+ * With a file as well, the file wins key by key: an absent key reads from
+ * here, a present one overrides. Nothing merges the two documents -- the
+ * defaults are held separately, so reload() cannot drop them.
+ *
+ * @code
+ * aura3d::AuraConfig config;
+ * config.window.title  = "Viewer";
+ * config.window.width  = 1024;
+ * config.window.height = 768;
+ * config.renderer.backend = "opengl";
+ *
+ * Engine engine(config);                    // no settings.json anywhere
+ * Engine tweakable(config, "settings.json"); // ... or one that may override
+ * @endcode
+ */
+struct AuraConfig {
+    struct Window {
+        int width = 1280;
+        int height = 720;
+
+        //! Empty takes APPLICATION_NAME.
+        std::string title;
+
+        wma::WindowBackend backend = wma::WindowBackend::SDL3;
+
+        bool resizable = true;
+        bool fullscreen = false;
+        bool vsync = false;
+
+        //! Unset derives the mode from @c vsync: Fifo when on, AutoNoVsync off.
+        std::optional<VSyncMode> vsyncMode;
+
+        int fpsLimit = 60;
+    } window;
+
+    struct Renderer {
+        std::string backend = "vulkan";
+
+        //! Unset follows the build: on in a debug build, off under NDEBUG.
+        std::optional<bool> validationLayers;
+
+        int maxFramesInFlight = 2;
+    } renderer;
+
+    struct Graphics {
+        std::string gpuPreference = "discrete";
+        int msaaSamples = 1;
+        int cpuThreads = 0;
+    } graphics;
+
+    struct Audio {
+        //! Unset resolves through wma::getDefaultAudioBackend(), as the string
+        //! "auto" does in the JSON.
+        std::optional<wma::AudioBackend> backend;
+
+        f32 masterVolume = 1.0f;
+        int sampleRate = 48000;
+        int channels = 2;
+        int bufferFrames = 1024;
+        int maxVoices = 32;
+    } audio;
+
+    struct Paths {
+        std::string shaders = "./resources/shaders/";
+        std::string textures = "./resources/textures/";
+        std::string models = "./resources/models/";
+        std::string audio = "./resources/audio/";
+        std::string logs = "./logs/";
+    } paths;
+
+    struct Logging {
+        //! Unset follows the build: TRACE in a debug build, INFO under NDEBUG.
+        std::optional<ink::LogLevel> level;
+
+        bool toFile = false;
+    } logging;
+};
+
+/**
  * @class AuraSettings
  * @brief Process-wide access to the engine configuration document.
  *
@@ -173,10 +262,24 @@ public:
     ink::EnhancedJson* getSettings();
 
     /**
+     * @brief Installs the values every accessor falls back to.
+     *
+     * Held beside the JSON document rather than merged into it, so reload()
+     * cannot drop them. Call before anything reads a setting -- Engine's
+     * AuraConfig constructors do.
+     */
+    void setDefaults(const AuraConfig& defaults);
+
+    //! What an unset key currently reads as.
+    [[nodiscard]] const AuraConfig& defaults() const noexcept { return _defaults; }
+
+    /**
      * @brief Replaces the in-memory configuration with the contents of @p path.
      *
      * Intended for picking up hot-edited config at runtime. Values already read
      * by live subsystems are not re-applied; re-create or re-query them.
+     * Leaves setDefaults()' values standing, so a file that sets nothing -- or
+     * is not there at all -- degrades to them rather than to nothing.
      */
     void reload(const std::string& path);
 
@@ -241,7 +344,11 @@ public:
     bool          getLogToFile() const;       //! default false
 
 private:
-    ink::EnhancedJson _settings;
+    //! An object rather than a null document, so a lookup made before any
+    //! reload() is an ordinary miss instead of a thrown-and-caught type error.
+    ink::EnhancedJson _settings = ink::EnhancedJson::object();
+
+    AuraConfig _defaults{};
 };
 
 } // namespace aura3d

@@ -9,11 +9,26 @@
 #endif
 
 Engine::Engine(const std::string& configPath)
+    : Engine(aura3d::AuraConfig{}, configPath)
+{
+}
+
+Engine::Engine(const aura3d::AuraConfig& config)
+    : Engine(config, std::string{})
+{
+}
+
+Engine::Engine(const aura3d::AuraConfig& defaults, const std::string& configPath)
 {
     INK_CORE_LOGGER;
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
 
-    aura3d::AuraSettings::get()->reload(configPath);
+    //! Before the reload, so a file that fails to load leaves these standing
+    //! rather than the engine's own.
+    aura3d::AuraSettings::get()->setDefaults(defaults);
+
+    if (!configPath.empty())
+        aura3d::AuraSettings::get()->reload(configPath);
 
     const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
     ink::LogManager::getInstance().setGlobalLevel(config->getLogLevel());

@@ -1,11 +1,24 @@
 # 2. Project Configuration
 
-Every Aura3D app is driven by one JSON file, loaded by `Engine`'s
-constructor:
+An Aura3D app is configured from code, from a JSON file, or from both:
 
 ```cpp
-Engine engine("settings.json");
+Engine engine("settings.json");        // file only
+Engine engine(config);                 // code only — no settings.json anywhere
+Engine engine(config, "settings.json"); // code, overridden key by key by the file
 ```
+
+Resolution runs in three layers, each overriding the one below it:
+
+| Layer | Set by | Wins over |
+|---|---|---|
+| JSON document | `settings.json` | everything, key by key |
+| `aura3d::AuraConfig` | your code | the built-ins |
+| Built-in defaults | the engine | — |
+
+A key the file omits reads from your `AuraConfig`; one that names no
+`AuraConfig` field reads the engine's own default. A file that is missing or
+unreadable is a warning, not an error — the app runs on the layers beneath it.
 
 The engine reads it into an `aura3d::AuraSettings` singleton
 (`AuraSettings::get()`), reachable from your own code via
@@ -190,6 +203,7 @@ settings->getWindowBackend();    // wma::WindowBackend (SDL3/GLFW/X11/WAYLAND)
 settings->getRendererBackend();  // std::string
 settings->getMsaaSamples();      // int
 settings->getCpuThreads();       // int (0 = auto-detect)
+settings->defaults();            // the AuraConfig an unset key falls back to
 settings->getSettings();         // raw ink::EnhancedJson*, for bespoke schemas
                                   // (this is how memory.vma.* reads its own keys)
 ```
@@ -198,15 +212,49 @@ For anything not covered by a typed accessor, `getSettings()->getPath<T>("/your/
 reaches the raw document directly — the same mechanism every accessor above
 is built on.
 
+## Configuring in code
+
+`aura3d::AuraConfig` mirrors the schema above as a plain struct, one nested
+group per JSON object. Set only what you care about; the rest keeps the
+built-in default listed in each table.
+
+```cpp
+aura3d::AuraConfig config;
+
+config.window.title    = "Viewer";
+config.window.width    = 1024;
+config.window.height   = 768;
+config.window.backend  = wma::WindowBackend::SDL3;
+config.renderer.backend = "opengl";
+config.graphics.msaaSamples = 4;
+config.paths.textures  = "./art/";
+
+Engine engine(config);   // ships as one binary; no settings.json to lose
+```
+
+Four fields are `std::optional`, because "unset" is a real state distinct from
+any value they could hold:
+
+| Field | Unset means |
+|---|---|
+| `window.vsyncMode` | derive from `window.vsync` |
+| `renderer.validationLayers` | on in a debug build, off under `NDEBUG` |
+| `audio.backend` | `wma::getDefaultAudioBackend()` — what `"auto"` means in JSON |
+| `logging.level` | `TRACE` in a debug build, `INFO` under `NDEBUG` |
+
+`window.title` is the one string with a sentinel: empty takes
+`APPLICATION_NAME`.
+
 ## Reloading at runtime
 
 ```cpp
 aura3d::AuraSettings::get()->reload("settings.json");
 ```
 
-Replaces the in-memory document. Values already consumed by live subsystems
-(window size, the active renderer, ...) are **not** re-applied automatically
-— this is for picking up hand-edited config before creating something new,
-not a live-reload system.
+Replaces the in-memory document, leaving the `AuraConfig` layer standing — a
+reload that fails falls back to your code defaults, not to the engine's.
+Values already consumed by live subsystems (window size, the active renderer,
+...) are **not** re-applied automatically — this is for picking up hand-edited
+config before creating something new, not a live-reload system.
 
 Next: **[03-engine-and-renderer.md](03-engine-and-renderer.md)**.

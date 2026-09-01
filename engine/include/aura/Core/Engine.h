@@ -18,7 +18,28 @@
 class Engine
 {
 public:
+    //! Configured entirely from @p configPath, on the engine's built-in
+    //! defaults for anything it does not set.
     explicit Engine(const std::string& configPath);
+
+    /**
+     * @brief Configured entirely from code, with no settings.json involved.
+     *
+     * For an application that ships as one binary and has nothing to hand a
+     * user to edit -- a viewer, a tool, an exported demo.
+     */
+    explicit Engine(const aura3d::AuraConfig& config);
+
+    /**
+     * @brief @p defaults in code, overridden key by key by @p configPath.
+     *
+     * The file need not exist: what it does not set (or when it is not there
+     * at all) reads from @p defaults. This is the form to reach for when an
+     * application wants sensible built-in settings that a user may still
+     * override without the application shipping a file of its own.
+     */
+    Engine(const aura3d::AuraConfig& defaults, const std::string& configPath);
+
     ~Engine();
 
     aura3d::IRenderer* getRenderer() const { return _renderer.get(); }
