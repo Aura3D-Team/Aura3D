@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ranges>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -396,21 +397,20 @@ void appendFloat(std::string& out, float value)
 /**
  * @brief Moves @c [split,end) to sit at @p first, sliding @c [first,split) up.
  *
- * @p scratch parks the tail while the head slides and is owned by the caller
- * so that steady-state frames allocate nothing.
+ * @p end rather than the container's size: the vertex buffer keeps its
+ * high-water mark across frames, so only a prefix of it is live. @p scratch
+ * parks the tail while the head slides and is owned by the caller so that
+ * steady-state frames allocate nothing.
  */
-template <typename Vec>
-void rotateTailToFront(Vec& data, size_t first, size_t split, Vec& scratch)
+template <typename T, typename Scratch>
+void rotateTailToFront(T* data, size_t first, size_t split, size_t end, Scratch& scratch)
 {
-    if (split == first || split == data.size())
+    if (split == first || split == end)
         return;
 
-    const auto begin = data.begin();
-    const auto at = [begin](size_t i) { return begin + static_cast<ptrdiff_t>(i); };
-
-    scratch.assign(at(split), data.end());
-    std::move_backward(at(first), at(split), data.end());
-    std::copy(scratch.begin(), scratch.end(), at(first));
+    scratch.assign(data + split, data + end);
+    std::move_backward(data + first, data + split, data + end);
+    std::copy(scratch.begin(), scratch.end(), data + first);
 }
 
 template <typename Visit>
@@ -736,6 +736,12 @@ private:
     /// Pushes the atlas' pending dirty rectangle to the GPU, if any.
     void _uploadAtlasChanges();
 
+    /// Extends @ref _quadIndices to cover @p quads. Only ever grows.
+    void _growQuadIndices(size_t quads);
+
+    /// Claims the next four vertices of @ref _vertices, growing it if needed.
+    [[nodiscard]] gfx::Vertex2D* _quadSlot();
+
     IRenderer* _renderer;
     std::unique_ptr<FontAtlas> _atlas;
     TextureHandle _atlasTexture;
@@ -757,13 +763,29 @@ private:
                   "Vertex2D must stay 32 bytes for the aligned batch storage "
                   "below to align every vertex, not merely the array's base.");
 
+    /*
+     * Sized to the high-water mark and never shrunk; _vertexCount is how much
+     * of it this frame has filled. A vector's push_back() re-checks capacity
+     * per element, which on the emission path is four checks and four size
+     * bumps per quad for a bound the caller already knows -- _quadSlot() takes
+     * one check for the four.
+     */
     AlignedVector<gfx::Vertex2D> _vertices;
-    AlignedVector<u32> _indices;
+    size_t _vertexCount = 0;
+    /*
+     * The index stream is not data. Every quad is four vertices and six
+     * indices, so index[6q + k] = 4q + {0,1,2,2,3,0}[k]: a function of the
+     * slot, never of what is in it. Built once to the high-water mark and
+     * reused verbatim, which takes six pushes per quad out of the emission
+     * path and makes _insertPanelBackground's renumbering of it unnecessary --
+     * rotating whole quads changes which quad sits in a slot, and the slot's
+     * indices are the same either way.
+     */
+    AlignedVector<u32> _quadIndices;
 
-    //! Scratch for _insertPanelBackground()'s rotate. Members rather than
-    //! locals so their capacity survives the frame and the move never allocates.
+    //! Scratch for _insertPanelBackground()'s rotate. A member rather than a
+    //! local so its capacity survives the frame and the move never allocates.
     AlignedVector<gfx::Vertex2D> _vertexScratch;
-    AlignedVector<u32> _indexScratch;
 
     //! Frames since construction. Only RetainedMap reads it, and only to
     //! decide what nothing has asked for in a while.
@@ -978,7 +1000,6 @@ private:
         //! Where this panel's geometry starts. endPanel() emits the background
         //! at the end and rotates it back to here. See _insertPanelBackground().
         size_t vertexStart = 0;
-        size_t indexStart = 0;
 
         float indent = 0.0f; //! Left inset, grown by each open treeNode().
         u32 treeDepth = 0;   //! Open treeNode()s, so treePop() undoes its own indent.
@@ -1223,8 +1244,7 @@ void Context::Impl::_beginFrame() noexcept
             (press.mods.shift ? _focus.requestPrev : _focus.requestNext) = true;
     }
 
-    _vertices.clear();
-    _indices.clear();
+    _vertexCount = 0;
     _overlayQuads.clear();
     _deferring = false;
 
@@ -1261,12 +1281,17 @@ void Context::Impl::render()
     _disabledStack.clear();
     _flushOverlays();
 
-    if (!_usable || _indices.empty())
+    const size_t quads = _vertexCount / kVerticesPerQuad;
+
+    if (!_usable || quads == 0)
         return;
 
+    _growQuadIndices(quads);
     _uploadAtlasChanges();
 
-    _renderer->drawBatch2D(_vertices, _indices, _atlasTexture);
+    _renderer->drawBatch2D(std::span{_vertices}.first(_vertexCount),
+                           std::span{_quadIndices}.first(quads * kIndicesPerQuad),
+                           _atlasTexture);
 }
 
 void Context::Impl::_flushOverlays()
@@ -1610,8 +1635,7 @@ bool Context::Impl::beginPanel(std::string_view title, glm::vec2 defaultPosition
 
     //! Everything from here to endPanel() is this panel's geometry; the
     //! background is spliced in front of it once its height is known.
-    _panel.vertexStart = _vertices.size();
-    _panel.indexStart = _indices.size();
+    _panel.vertexStart = _vertexCount;
 
     _clip = Rect{state.position, {titleBar.max.x, state.position.y + kUnboundedBelow}};
 
@@ -1655,8 +1679,7 @@ void Context::Impl::endPanel()
  */
 void Context::Impl::_insertPanelBackground()
 {
-    const size_t vertexSplit = _vertices.size();
-    const size_t indexSplit = _indices.size();
+    const size_t vertexSplit = _vertexCount;
 
     const WidgetStyle& style = _look(Part::Panel);
 
@@ -1664,30 +1687,22 @@ void Context::Impl::_insertPanelBackground()
     _surface(_panel.bounds, style, style.surface.normal, style.border.normal);
     _clip = savedClip;
 
-    const auto added = static_cast<u32>(_vertices.size() - vertexSplit);
-    if (added == 0)
+    if (_vertexCount == vertexSplit)
         return;
-
-    const auto start = static_cast<u32>(_panel.vertexStart);
-    const auto split = static_cast<u32>(vertexSplit);
-
-    for (size_t i = _panel.indexStart; i < _indices.size(); ++i)
-    {
-        u32& index = _indices[i];
-        index = index >= split ? index - (split - start) : index + added;
-    }
 
     /*
      * Not std::rotate: for random-access iterators libstdc++ picks the
-     * gcd-cycle algorithm, which walks both buffers in strides and misses
-     * cache on nearly every step. The background is a handful of quads against
-     * a panel's worth of content, so lifting it into scratch, sliding the
-     * content up by that much and dropping it back in is three sequential
-     * passes over the small part and one memmove over the large one -- ~8 us a
-     * frame cheaper across five panels at Sandbox's geometry.
+     * gcd-cycle algorithm, which strides through the buffer and misses cache on
+     * nearly every step. The background is a handful of quads against a panel's
+     * worth of content, so lifting it into scratch, sliding the content up by
+     * that much and dropping it back in is two sequential passes over the small
+     * part and one memmove over the large one.
+     *
+     * Only the vertices move. The indices used to be rotated and renumbered
+     * alongside them, which is what _quadIndices made unnecessary.
      */
-    rotateTailToFront(_vertices, _panel.vertexStart, vertexSplit, _vertexScratch);
-    rotateTailToFront(_indices, _panel.indexStart, indexSplit, _indexScratch);
+    rotateTailToFront(_vertices.data(), _panel.vertexStart, vertexSplit, _vertexCount,
+                      _vertexScratch);
 }
 
 // -----------------------------------------------------------------------------
@@ -2428,32 +2443,61 @@ void Context::Impl::_roundedQuad(const Rect& bounds, float radius, const glm::ve
         return;
     }
 
-    //! Capped at half the height as well as ceil(r): with a fractional radius
-    //! the two caps would otherwise overlap by a row, and on a translucent
-    //! surface a double-blended row is a visible seam.
-    const auto rows = std::min(static_cast<int>(std::ceil(r)),
-                               static_cast<int>(bounds.height() * 0.5f));
-    const auto capHeight = static_cast<float>(rows);
+    /*
+     * Nine-slice against an atlas coverage mask: four corner quads plus three
+     * solid spans, seven quads whatever the radius. The scanline version this
+     * replaces cost 1 + 2*ceil(r) quads -- at Sandbox's theme that was 59% of
+     * all the UI's geometry, spent describing a shape that is one number --
+     * and, being a stack of hard-edged rows, it could not antialias, which is
+     * why panels default to square corners. The mask carries exact per-texel
+     * coverage, so these curves are smooth.
+     *
+     * Truncated, not rounded: the cell is drawn `cap` pixels wide, and a cap
+     * wider than half the shorter side would overlap its opposite number and
+     * double-blend the seam on a translucent surface.
+     */
+    const auto cell = static_cast<u32>(r);
+    const FontAtlas::UvRect* mask = _atlas ? _atlas->cornerMask(cell) : nullptr;
 
-    _quad({{bounds.min.x, bounds.min.y + capHeight}, {bounds.max.x, bounds.max.y - capHeight}},
-          color);
-
-    for (int i = 0; i < rows; ++i)
+    if (mask == nullptr)
     {
-        //! Distance from this row's centre to the cap's flat edge, and the
-        //! horizontal bite the circle takes out of the span there.
-        const float dy = r - (static_cast<float>(i) + 0.5f);
-        const float bite = r - std::sqrt(std::max(r * r - dy * dy, 0.0f));
-
-        const float left = bounds.min.x + bite;
-        const float right = bounds.max.x - bite;
-
-        const float top = bounds.min.y + static_cast<float>(i);
-        const float bottom = bounds.max.y - static_cast<float>(i);
-
-        _quad({{left, top}, {right, top + 1.0f}}, color);
-        _quad({{left, bottom - 1.0f}, {right, bottom}}, color);
+        //! Atlas full, or a radius past what it will place. A square corner is
+        //! wrong by a few pixels; dropping the surface is wrong by all of it.
+        _quad(bounds, color);
+        return;
     }
+
+    const float cap = static_cast<float>(cell);
+
+    const float left = bounds.min.x;
+    const float right = bounds.max.x;
+    const float top = bounds.min.y;
+    const float bottom = bounds.max.y;
+
+    const float innerLeft = left + cap;
+    const float innerRight = right - cap;
+    const float innerTop = top + cap;
+    const float innerBottom = bottom - cap;
+
+    const glm::vec2 uvOut = mask->min; //! The curve's outside edge.
+    const glm::vec2 uvIn = mask->max;
+
+    //! One cell serves all four corners: swapping the UV bounds on an axis
+    //! mirrors it, because _texturedQuad assigns them to corners in a fixed
+    //! order. Clockwise from the top left.
+    _texturedQuad({{left, top}, {innerLeft, innerTop}}, uvOut, uvIn, color);
+    _texturedQuad({{innerRight, top}, {right, innerTop}},
+                  {uvIn.x, uvOut.y}, {uvOut.x, uvIn.y}, color);
+    _texturedQuad({{innerRight, innerBottom}, {right, bottom}}, uvIn, uvOut, color);
+    _texturedQuad({{left, innerBottom}, {innerLeft, bottom}},
+                  {uvOut.x, uvIn.y}, {uvIn.x, uvOut.y}, color);
+
+    //! The bar between the caps spans the full width; the other two only reach
+    //! between the corners. Any of the three is empty when the radius meets in
+    //! the middle -- a pill or a circle -- and _texturedQuad drops it.
+    _quad({{left, innerTop}, {right, innerBottom}}, color);
+    _quad({{innerLeft, top}, {innerRight, innerTop}}, color);
+    _quad({{innerLeft, innerBottom}, {innerRight, bottom}}, color);
 }
 
 void Context::Impl::_surface(const Rect& bounds, const WidgetStyle& style, const glm::vec4& fill,
@@ -2530,20 +2574,14 @@ void Context::Impl::_texturedQuad(Rect bounds, glm::vec2 uvMin, glm::vec2 uvMax,
                lerp(uvMin.y, uvMax.y, (visible.max.y - bounds.min.y) * inverse.y)};
     }
 
-    const auto base = static_cast<u32>(_vertices.size());
+    //! Top-left, top-right, bottom-right, bottom-left. No indices: this quad's
+    //! six are implied by its position in the buffer -- see _quadIndices.
+    gfx::Vertex2D* out = _quadSlot();
 
-    //! Top-left, top-right, bottom-right, bottom-left.
-    _vertices.push_back({{visible.min.x, visible.min.y}, {uv0.x, uv0.y}, color});
-    _vertices.push_back({{visible.max.x, visible.min.y}, {uv1.x, uv0.y}, color});
-    _vertices.push_back({{visible.max.x, visible.max.y}, {uv1.x, uv1.y}, color});
-    _vertices.push_back({{visible.min.x, visible.max.y}, {uv0.x, uv1.y}, color});
-
-    _indices.push_back(base + 0);
-    _indices.push_back(base + 1);
-    _indices.push_back(base + 2);
-    _indices.push_back(base + 2);
-    _indices.push_back(base + 3);
-    _indices.push_back(base + 0);
+    out[0] = {{visible.min.x, visible.min.y}, {uv0.x, uv0.y}, color};
+    out[1] = {{visible.max.x, visible.min.y}, {uv1.x, uv0.y}, color};
+    out[2] = {{visible.max.x, visible.max.y}, {uv1.x, uv1.y}, color};
+    out[3] = {{visible.min.x, visible.max.y}, {uv0.x, uv1.y}, color};
 }
 
 void Context::Impl::_text(std::string_view text, glm::vec2 origin, const glm::vec4& color)
@@ -2551,8 +2589,12 @@ void Context::Impl::_text(std::string_view text, glm::vec2 origin, const glm::ve
     if (!_atlas || text.empty())
         return;
 
-    _vertices.reserve(_vertices.size() + text.size() * kVerticesPerQuad);
-    _indices.reserve(_indices.size() + text.size() * kIndicesPerQuad);
+    //! One growth for the whole run rather than one per glyph.
+    if (const size_t needed = _vertexCount + text.size() * kVerticesPerQuad;
+        needed > _vertices.size())
+    {
+        _vertices.resize(needed);
+    }
 
     const float scale = _theme.metrics.textScale;
 
@@ -2634,6 +2676,45 @@ float Context::Impl::_leadingGlyph(const Item& item, std::string_view glyph)
     _textAt(glyph, x, item.rect, style.text);
 
     return x + measureText(glyph).x + style.padding;
+}
+
+gfx::Vertex2D* Context::Impl::_quadSlot()
+{
+    if (_vertexCount + kVerticesPerQuad > _vertices.size())
+    {
+        //! Doubling, floored at a panel's worth: the buffer settles at the
+        //! busiest frame's size within a few frames and never grows again.
+        _vertices.resize(std::max({_vertices.size() * 2,
+                                   _vertexCount + kVerticesPerQuad,
+                                   size_t{1024}}));
+    }
+
+    gfx::Vertex2D* slot = _vertices.data() + _vertexCount;
+    _vertexCount += kVerticesPerQuad;
+
+    return slot;
+}
+
+void Context::Impl::_growQuadIndices(size_t quads)
+{
+    const size_t have = _quadIndices.size() / kIndicesPerQuad;
+    if (quads <= have)
+        return;
+
+    _quadIndices.resize(quads * kIndicesPerQuad);
+
+    for (size_t quad = have; quad < quads; ++quad)
+    {
+        const auto base = static_cast<u32>(quad * kVerticesPerQuad);
+        u32* out = _quadIndices.data() + quad * kIndicesPerQuad;
+
+        out[0] = base + 0;
+        out[1] = base + 1;
+        out[2] = base + 2;
+        out[3] = base + 2;
+        out[4] = base + 3;
+        out[5] = base + 0;
+    }
 }
 
 void Context::Impl::_uploadAtlasChanges()

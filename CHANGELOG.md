@@ -243,6 +243,41 @@ All notable changes to Aura3D are documented in this file.
     between two texels blends evenly, that a uniform texture is unaffected by
     UV including past `[0,1]`, and — the change's actual point — that two
     off-grid samples straddling an antialiased edge are no longer identical.
+- **AuraUI rounded corners: nine-slice against an analytic coverage mask,
+  replacing per-scanline quads.** `_roundedQuad()` used to emit one quad per
+  pixel row of each cap — `1 + 2*ceil(radius)` quads for a single rounded
+  rectangle, so a pill-shaped radio button cost 17 — and at Sandbox's default
+  theme this was 59% of the UI's geometry every frame, drawn as hard-edged,
+  unantialiased stair-steps (why `Part::Panel` and `Part::TitleBar` defaulted
+  to square corners). `FontAtlas` gains `cornerMask(radius)`, reserving a
+  quarter-disc cell whose coverage is the *exact* analytic area of the disc
+  inside each texel — the antiderivative of `sqrt(R^2-x^2)`, split at the two
+  x where the arc crosses a texel's column, not a point sample — so a rounded
+  rectangle is now four corner quads plus three solid spans, seven quads at
+  any radius, and the curve is antialiased for the first time. No shader or
+  backend change: the atlas already stored coverage-only glyphs and the 2D
+  fragment stage already does `texel * vertexColor`. Verified by rasterizing a
+  captured UI frame through a headless stub `IRenderer` before and after the
+  change and comparing pixel output, not just the existing widget tests, since
+  none of them render.
+- **AuraUI's per-frame vertex/index buffers stopped reshaping themselves every
+  frame.** The index stream for a quad batch is a pure function of a quad's
+  position in the buffer (`index[6q+k] = 4q + {0,1,2,2,3,0}[k]`), never of
+  what is in it, so it is now built once to the high-water mark and reused —
+  taking six `push_back`s per quad off the emission path, and with them the
+  renumbering pass `_insertPanelBackground()` used to run every time a panel's
+  background quad was rotated in front of its content. The vertex buffer is
+  now a `resize()`-once cursor (`_quadSlot()`) rather than `push_back`, which
+  was re-checking capacity per vertex for a bound the caller already knew.
+  Measured on Sandbox at 1920x1080 with its tool panels open (the
+  `AURA_ENABLE_DEBUG_MODE` benchmark, median of several thousand-frame runs):
+  UI build time from ~45us to ~19us per frame, CPU frame time from ~88us to
+  ~54us net of swapchain wait, with the heap allocation count unchanged. Below
+  the presentation ceiling of the test GPU/compositor this converts directly
+  to FPS (+30-50% depending on resolution in that environment); above it, it
+  is headroom banked against heavier scenes. All 13 existing tests pass
+  unchanged, including `test_ui.cpp`'s UTF-8-correct editing and single-batch
+  coverage.
 
 ## [0.1.0]
 

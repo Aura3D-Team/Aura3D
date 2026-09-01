@@ -96,9 +96,9 @@ Theme& Theme::applyPalette(const Palette& palette)
 
     //! Surfaces with no interaction of their own: they never change colour, so
     //! a flat ColorSet says so once instead of three identical lines.
-    //! A panel and its bar are square by default: with no antialiasing, a
-    //! rounded corner on a large translucent surface reads as a stair rather
-    //! than a curve. Both honour `rounding` if a theme asks for it.
+    //! A panel and its bar are square by default, now a taste rather than a
+    //! constraint: corners were stair-stepped until _roundedQuad() started
+    //! masking them, and are antialiased since. Both honour `rounding`.
     part(Part::Panel).surface = ColorSet::flat(palette.window);
     part(Part::Panel).rounding = 0.0f;
     part(Part::Panel).padding = 0.0f;

@@ -86,6 +86,12 @@ public:
         u32 height = 0;
     };
 
+    /// UV bounds of a reserved cell, top-left and bottom-right.
+    struct UvRect {
+        glm::vec2 min{0.0f};
+        glm::vec2 max{0.0f};
+    };
+
     /// A dirty rectangle expanded to RGBA8, ready for a sub-image upload.
     struct PendingUpload {
         DirtyRegion region;        //! Destination rectangle inside the atlas.
@@ -150,6 +156,27 @@ public:
      *         atlas is too full to place the cell.
      */
     [[nodiscard]] std::optional<glm::vec2> solidTexelUv() noexcept;
+
+    /**
+     * @brief Reserves (once per radius) a quarter-disc coverage mask.
+     *
+     * Lets a rounded rectangle be drawn as a nine-slice -- four corner quads
+     * plus three solid spans -- instead of one quad per scanline of the caps,
+     * which is O(radius) geometry for a shape whose description is a single
+     * number. Coverage is the exact area of the disc inside each texel, so the
+     * corner is antialiased rather than stepped.
+     *
+     * The cell is @p radius texels square with the curve's outside at uvMin,
+     * so a corner drawn @p radius pixels wide samples it one-to-one; the other
+     * three corners are the same cell with uvMin/uvMax swapped per axis.
+     *
+     * @return The cell's UV bounds, or nullopt when @p radius is out of range
+     *         or the atlas is too full to place it.
+     */
+    [[nodiscard]] const UvRect* cornerMask(u32 radius) noexcept;
+
+    /// Largest radius @ref cornerMask will place.
+    static constexpr u32 kMaxCornerRadius = 64;
 
     [[nodiscard]] float lineHeight() const noexcept { return _lineHeight; }
     [[nodiscard]] float ascent() const noexcept { return _ascent; }
@@ -227,6 +254,13 @@ private:
 
     //! Cached result of solidTexelUv(); empty until the first call places it.
     std::optional<glm::vec2> _solidUv;
+
+    /*
+     * cornerMask() results, indexed by radius. Flat rather than a map: the
+     * lookup is on the UI's per-rectangle path and the key is already a small
+     * dense integer, so there is nothing for a hash to buy.
+     */
+    std::array<std::optional<UvRect>, kMaxCornerRadius + 1> _cornerMasks{};
 
     //! Shelf allocator cursor.
     u32 _shelfX = 0;

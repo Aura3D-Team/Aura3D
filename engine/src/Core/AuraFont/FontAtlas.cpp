@@ -333,6 +333,80 @@ std::optional<glm::vec2> FontAtlas::solidTexelUv() noexcept
     return _solidUv;
 }
 
+const FontAtlas::UvRect* FontAtlas::cornerMask(u32 radius) noexcept
+{
+    if (radius == 0 || radius > kMaxCornerRadius)
+        return nullptr;
+
+    std::optional<UvRect>& slot = _cornerMasks[radius];
+    if (slot)
+        return &*slot;
+
+    const auto origin = reserveCell(radius, radius);
+    if (!origin)
+        return nullptr;
+
+    /*
+     * Exact coverage, not a point sample: each texel gets the area of the disc
+     * that actually falls inside it. Point sampling would put a hard 0/255
+     * edge back on the curve and undo the reason for the mask.
+     *
+     * F is the antiderivative of sqrt(R^2 - x^2), so the area under the arc
+     * over [a, b] is F(b) - F(a). Within one texel column the arc is either
+     * above the texel, crossing it, or below it; xa and xb are the two x where
+     * it enters and leaves, which splits the integral into a full-height part,
+     * an under-the-arc part and an empty part.
+     */
+    const auto R = static_cast<float>(radius);
+
+    const auto F = [R](float x) noexcept {
+        const float clamped = std::clamp(x / R, -1.0f, 1.0f);
+        return 0.5f * (x * std::sqrt(std::max(R * R - x * x, 0.0f)) + R * R * std::asin(clamped));
+    };
+
+    std::vector<u8> cell(static_cast<size_t>(radius) * radius);
+
+    for (u32 j = 0; j < radius; ++j)
+    {
+        //! Measured from the disc's centre, which sits at the cell's far
+        //! corner -- so texel (0,0) is the outermost and least covered.
+        const float y0 = R - static_cast<float>(j) - 1.0f;
+        const float y1 = R - static_cast<float>(j);
+
+        const float xa = std::sqrt(std::max(R * R - y1 * y1, 0.0f));
+        const float xb = std::sqrt(std::max(R * R - y0 * y0, 0.0f));
+
+        for (u32 i = 0; i < radius; ++i)
+        {
+            const float x0 = R - static_cast<float>(i) - 1.0f;
+            const float x1 = R - static_cast<float>(i);
+
+            const float a = std::clamp(xa, x0, x1);
+            const float b = std::clamp(xb, x0, x1);
+
+            const float area = (a - x0) * (y1 - y0) + (F(b) - F(a)) - (b - a) * y0;
+
+            cell[static_cast<size_t>(j) * radius + i] =
+                static_cast<u8>(std::lround(std::clamp(area, 0.0f, 1.0f) * 255.0f));
+        }
+    }
+
+    blitCoverage(cell.data(), radius, *origin, radius, radius);
+    markDirty(origin->x, origin->y, radius, radius);
+
+    const auto atlasW = static_cast<float>(_desc.width);
+    const auto atlasH = static_cast<float>(_desc.height);
+
+    //! Cell edges, not texel centres: a corner drawn `radius` pixels wide then
+    //! samples each texel at its centre, one to one.
+    slot = UvRect{{static_cast<float>(origin->x) / atlasW,
+                   static_cast<float>(origin->y) / atlasH},
+                  {static_cast<float>(origin->x + radius) / atlasW,
+                   static_cast<float>(origin->y + radius) / atlasH}};
+
+    return &*slot;
+}
+
 std::optional<glm::uvec2> FontAtlas::reserveCell(u32 w, u32 h) noexcept
 {
     const u32 padding = _desc.padding;
