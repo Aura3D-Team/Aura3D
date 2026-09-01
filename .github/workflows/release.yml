@@ -178,16 +178,8 @@ jobs:
       - name: Build
         run: cmake --build build-android --parallel
 
-      - name: Stage
-        # cmake/Install.cmake skips install() entirely for Android (the .a
-        # is meant to be linked into a host app's own build, not installed
-        # to a system prefix), so stage the static lib + public headers by
-        # hand instead of `cmake --install`.
-        run: |
-          STAGE="stage/aura3d-android-arm64-v8a"
-          mkdir -p "$STAGE/lib"
-          cp build-android/libAura3D.a "$STAGE/lib/"
-          cp -r engine/include "$STAGE/include"
+      - name: Install
+        run: cmake --install build-android --prefix stage/aura3d-android-arm64-v8a
 
       - name: Build Sandbox debug APK (bundled example)
         run: |
@@ -227,6 +219,11 @@ jobs:
           "$LLVM_BIN/llvm-ar" -qc "$FAT_LIB.merged" $(find "$MERGE_DIR" -name '*.o')
           "$LLVM_BIN/llvm-ranlib" "$FAT_LIB.merged"
           mv "$FAT_LIB.merged" "$FAT_LIB"
+
+          # Same reasoning as the linux-release job: wma/ink now live inside
+          # libAura3D.a, so the staged config must not go looking for them.
+          CONFIG="stage/aura3d-android-arm64-v8a/lib/cmake/Aura3D/Aura3DConfig.cmake"
+          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
 
       - name: Package
         run: |
@@ -325,7 +322,7 @@ jobs:
       - name: Install dependencies (Homebrew)
         # Same package set as ci.yml's macos-build job -- see its Install
         # dependencies step for why each one is here.
-        run: brew install ninja sdl3 nlohmann-json
+        run: brew install ninja sdl3 nlohmann-json glm
 
       - name: Configure ink
         run: >
@@ -455,12 +452,14 @@ jobs:
       - name: Install dependencies (vcpkg)
         # windows-latest ships vcpkg preinstalled at $VCPKG_INSTALLATION_ROOT.
         # Same package set as ci.yml's windows-build job -- see its Install
-        # dependencies step for why each one is here.
+        # dependencies step for why each one is here, and for why every
+        # Configure step below passes CMAKE_MSVC_RUNTIME_LIBRARY.
         run: >
           vcpkg install
           nlohmann-json:x64-windows-static
           sdl3:x64-windows-static
           glfw3:x64-windows-static
+          glm:x64-windows-static
           vulkan-headers:x64-windows-static
           vulkan-loader:x64-windows-static
 
@@ -470,6 +469,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
           -DINK_BUILD_TESTS=OFF
           -DINK_NATIVE_OPTIMIZE=OFF
 
@@ -487,6 +487,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DWMA_BUILD_EXAMPLES=OFF
           -DWMA_BUILD_TESTS=OFF
@@ -510,6 +511,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DAURA_BUILD_TESTS=OFF
           -DAURA_NATIVE_OPTIMIZE=OFF
