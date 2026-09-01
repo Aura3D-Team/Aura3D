@@ -212,6 +212,18 @@ if(EMSCRIPTEN)
     # graceful fallback. Actually emit and support C++ exception unwinding
     target_compile_options(Aura3D PUBLIC "-fexceptions")
     target_link_options(Aura3D PUBLIC "-fexceptions")
+
+    # ink carries -pthread (see its src/CMakeLists.txt), so JobSystem's
+    # ink::ThreadPool is real threads here. It is built lazily on the first
+    # dispatch() -- on the main thread, which in a browser cannot block while a
+    # worker spins up: a Worker only starts once the main thread returns to the
+    # event loop, and dispatch() blocks on its band futures immediately after.
+    # Pre-spawning the pool at startup is what keeps that first dispatch() from
+    # deadlocking. Sized from the same navigator.hardwareConcurrency that
+    # std::thread::hardware_concurrency() reports, and JobSystem only ever asks
+    # for workerCount() - 1, so the pool is never exhausted.
+    target_link_options(Aura3D PUBLIC
+        "-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency")
 endif()
 
 ################################################################################
