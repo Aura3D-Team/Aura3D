@@ -120,13 +120,22 @@ public:
 
     void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex, wma::WindowFlags* windowFlags);
 
+    /**
+     * @brief src/dst pipeline-stage and access-mask pair for one barrier.
+     *
+     * A true fixed pair -- always exactly {src, dst} -- unrelated to frames
+     * in flight, unlike VkFixedArray<T>. It used to borrow that alias purely
+     * because both happened to be "2" once, which stopped being true the
+     * moment MAX_FRAMES_IN_FLIGHT became a runtime setting instead of a
+     * compile-time 2.
+     */
     void transitionImageLayout(
         VkCommandBuffer commandBuffer,
         const u32& imageIndex,
         VkImageLayout oldLayout,
         VkImageLayout newLayout,
-        VkFixedArray<VkPipelineStageFlags> stages,
-        VkFixedArray<VkAccessFlags> accessFlags);
+        std::array<VkPipelineStageFlags, 2> stages,
+        std::array<VkAccessFlags, 2> accessFlags);
 
     void cleanup();
 private:

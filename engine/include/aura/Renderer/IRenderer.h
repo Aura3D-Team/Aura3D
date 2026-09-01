@@ -11,12 +11,21 @@
 #include <wma/wma.hpp>
 #include <glm/glm.hpp>
 
-#include "aura/Utils/PlatformCompat.h"
+#include "aura/Platform/PlatformCompat.h"
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Renderer/Material.h"
 #include "aura/Renderer/RenderHandles.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+
+//! Forward-declared, not included: only initialize()'s parameter type needs
+//! the name, and every backend but the software rasteriser ignores it, so
+//! there is no reason to pull JobSystem.h into a header this widely included.
+namespace aura3d { class JobSystem; }
+
+//! Likewise: gpuDebugSource() returns a pointer, so the interface's definition
+//! is only needed by the backends that implement it and by the report writer.
+namespace aura3d { class IGpuDebugSource; }
 
 /**
  * @brief List of available graphics backend renderers.
@@ -26,6 +35,7 @@
     X(SOFTWARE)       \
     X(OPENGL)         \
     X(VULKAN)         \
+    X(METAL)          \
 
 /**
  * @brief List of supported dimensions/modes for rendering.
@@ -80,6 +90,7 @@ inline const char* RendererChoiceToString(RendererChoice c)
         case RendererChoice::SOFTWARE: return "SOFTWARE";
         case RendererChoice::OPENGL:   return "OPENGL";
         case RendererChoice::VULKAN:   return "VULKAN";
+        case RendererChoice::METAL:    return "METAL";
     }
     return "UNKNOWN";
 }
@@ -109,8 +120,14 @@ public:
     /**
      * @brief Configures underlying graphics libraries and hardware contexts using engine settings.
      * * @param[in] settings Pointer to the foundational application runtime configuration.
+     * @param[in] jobs The engine's shared worker pool (see JobSystem), constructed before any
+     *            renderer and outliving every backend switch. Only the software rasteriser uses
+     *            it today -- to dispatch rasterisation and presentation across the same pool
+     *            JobSystem already owns rather than building one of its own -- but it is handed
+     *            to every backend uniformly so that stays an implementation detail of CPURenderer,
+     *            not a special case Engine has to know about.
      */
-    virtual void initialize(AuraSettings* settings) = 0;
+    virtual void initialize(AuraSettings* settings, const JobSystem* jobs) = 0;
 
     /**
      * @brief Refreshes viewport contexts and internal buffers following user sizing adjustments.
@@ -162,7 +179,7 @@ public:
      * @param[in] rgbaPixels Pointer to @p width * @p height * 4 bytes, RGBA order.
      * @param[in] width Texture width in pixels.
      * @param[in] height Texture height in pixels.
-     * @return TextureHandle Binding reference, or INVALID_HANDLE on failure.
+     * @return TextureHandle Binding reference, or an invalid handle on failure.
      */
     virtual TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) = 0;
 
@@ -180,7 +197,7 @@ public:
      *
      * @param[in] width Texture width in pixels.
      * @param[in] height Texture height in pixels.
-     * @return TextureHandle for the new texture, or INVALID_HANDLE on failure.
+     * @return TextureHandle for the new texture, or an invalid handle on failure.
      */
     virtual TextureHandle createDynamicTexture(u32 width, u32 height) = 0;
 
@@ -226,10 +243,31 @@ public:
 
     /**
      * @brief Uploads a CPU-side mesh as a GPU-resident vertex + index buffer pair.
-     * @param[in] mesh Geometry to upload; an empty mesh yields INVALID_HANDLE.
+     *
+     * Copies @p mesh's arrays, because the backends take ownership of what they
+     * upload and the caller keeps its own copy. Prefer the rvalue overload when
+     * the mesh is not needed afterwards -- a loaded model is typically several
+     * megabytes of vertices, and that copy is pure waste when the source is
+     * about to be destroyed anyway.
+     *
+     * @param[in] mesh Geometry to upload; an empty mesh yields an invalid handle.
      * @return MeshHandle referencing the uploaded pair.
      */
     virtual MeshHandle createMesh(const gfx::Mesh3D& mesh);
+
+    /**
+     * @brief Uploads a mesh the caller is finished with, moving its arrays
+     *        into the backend rather than copying them.
+     *
+     * Not virtual, and deliberately so: it forwards to the same
+     * createVertexBuffer/createIndexBuffer pair every backend already
+     * overrides, so there is nothing backend-specific left for it to
+     * customise.
+     *
+     * @param[in,out] mesh Geometry to upload; left empty on return.
+     * @return MeshHandle referencing the uploaded pair.
+     */
+    MeshHandle createMesh(gfx::Mesh3D&& mesh);
 
     /**
      * @brief Draws a whole mesh, replacing the bind-VB / bind-IB / drawIndexed triple.
@@ -238,9 +276,39 @@ public:
      * available for advanced use.
      *
      * @param[in] mesh Mesh to draw.
-     * @param[in] texture Optional texture; INVALID_HANDLE keeps the current binding.
+     * @param[in] texture Optional texture; an invalid handle keeps the current binding.
      */
-    virtual void drawMesh(MeshHandle mesh, TextureHandle texture = INVALID_HANDLE);
+    virtual void drawMesh(MeshHandle mesh, TextureHandle texture = {});
+
+    /**
+     * @struct DrawItem
+     * @brief One drawable submitted through drawMeshes(): what to draw, with
+     *        which surface, and where.
+     */
+    struct DrawItem {
+        MeshHandle mesh;
+        //! An invalid handle leaves whatever bindMaterial()/bindTexture() last selected.
+        MaterialHandle material;
+        glm::mat4 model{1.0f};
+    };
+
+    /**
+     * @brief Draws a batch of meshes given up front, rather than one
+     *        setTransform/bindMaterial/drawMesh triple at a time.
+     *
+     * Semantically identical to that loop -- items are drawn in order, and the
+     * base implementation is literally that loop -- but handing the whole list
+     * over at once lets a backend do things a stateful, one-call-at-a-time API
+     * cannot. The Vulkan backend splits the list across worker threads that
+     * record into separate command buffers, which is only possible because no
+     * item depends on renderer state left behind by the previous one.
+     *
+     * Prefer this for scene submission at high object counts; the per-item
+     * calls remain available and unchanged.
+     *
+     * @param[in] items Drawables for this frame, drawn in the given order.
+     */
+    virtual void drawMeshes(std::span<const DrawItem> items);
 
     /**
      * @brief Registers a material so it can be bound by handle.
@@ -352,7 +420,7 @@ public:
      *
      * @param[in] vertices Batch vertices in window-pixel space.
      * @param[in] indices Triangle list into @p vertices.
-     * @param[in] texture Texture sampled by the batch; INVALID_HANDLE draws
+     * @param[in] texture Texture sampled by the batch; an invalid handle draws
      *        untextured (vertex colour only).
      */
     virtual void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
@@ -392,6 +460,22 @@ public:
      */
     const wma::WindowDetails& getWindowDetails() const { return _windowDetails; }
 
+    /**
+     * @brief GPU allocation and timing counters, when this backend keeps them.
+     *
+     * Consumed by aura3d::DebugMode to fill the report's `gpu` section. The
+     * default returns nullptr, which is the honest answer for a backend with no
+     * device to measure (the software rasteriser) or no query mechanism wired
+     * up yet (OpenGL); only VulkanRenderer overrides it, and only in a build
+     * with AURA_ENABLE_DEBUG_MODE.
+     *
+     * Declared unconditionally so that application and report code needs no
+     * `#ifdef` around a null check that is already the normal case.
+     *
+     * @return Owned by the renderer and valid until it is destroyed, or nullptr.
+     */
+    [[nodiscard]] virtual const IGpuDebugSource* gpuDebugSource() const noexcept { return nullptr; }
+
 protected:
     /**
      * @brief Low-level window factory function implemented by specialized API backends.
@@ -405,8 +489,8 @@ protected:
      * @brief The vertex/index buffer pair a MeshHandle resolves to.
      */
     struct MeshRecord {
-        VertexBufferHandle vertexBuffer = INVALID_HANDLE;
-        IndexBufferHandle indexBuffer  = INVALID_HANDLE;
+        VertexBufferHandle vertexBuffer;
+        IndexBufferHandle indexBuffer;
         u32 indexCount   = 0;
     };
 
@@ -427,6 +511,14 @@ protected:
     std::vector<Material> _materials;   //! Material registry; handle == index + 1
     gfx::LightUBO _light{};             //! Directional light for the built-in shaders
     Material _currentMaterial{};        //! Material bound by the last bindMaterial()
+
+    /*
+     * Transform from the last setTransform(). Lives here rather than being
+     * duplicated in each backend because drawMeshes() needs to vary only the
+     * model matrix while preserving the caller's view/proj. Every backend's
+     * setTransform() override assigns it.
+     */
+    gfx::TransformUBO _currentTransform{};
 };
 
 } // namespace aura3d

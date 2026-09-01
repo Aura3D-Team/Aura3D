@@ -21,7 +21,7 @@ public:
     OpenGLRenderer(const wma::WindowDetails& windowDetails);
     virtual ~OpenGLRenderer();
 
-    void initialize(AuraSettings* settings) override;
+    void initialize(AuraSettings* settings, const JobSystem* jobs) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
@@ -83,18 +83,26 @@ private:
     GLuint _overlay2DProgram = 0;
     GLint _overlay2DProjLoc = -1;    //! Cached uniform location of uProj.
     GLint _overlay2DSamplerLoc = -1; //! Cached uniform location of textureSampler.
+
+    /*
+     * Location of the 3D program's textureSampler, resolved once at link time.
+     * Queried per bindTexture() before -- glGetUniformLocation hashes the name
+     * string inside the driver on every call, which is a real cost when it
+     * happens once per textured object per frame. The value it sets (unit 0)
+     * is program state and never changes, so nothing re-writes it per draw.
+     */
+    GLint _sampler3DLoc = -1;
     GLuint _overlay2DVao = 0;
     GLuint _overlay2DVbo = 0;
     GLuint _overlay2DEbo = 0;
     size_t _overlay2DVboBytes = 0; //! Current VBO allocation, in bytes.
     size_t _overlay2DEboBytes = 0; //! Current EBO allocation, in bytes.
     //! 1x1 opaque white, substituted when a batch asks for no texture.
-    TextureHandle _white2DTexture = INVALID_HANDLE;
+    TextureHandle _white2DTexture;
 
-    VertexBufferHandle _currentVertexBuffer = INVALID_HANDLE;
-    IndexBufferHandle _currentIndexBuffer  = INVALID_HANDLE;
-    TextureHandle _currentTexture = INVALID_HANDLE;
-    gfx::TransformUBO _currentTransform;
+    VertexBufferHandle _currentVertexBuffer;
+    IndexBufferHandle _currentIndexBuffer;
+    TextureHandle _currentTexture;
     f32 _clearR = 0.05f, _clearG = 0.05f, _clearB = 0.05f, _clearA = 1.0f;
 };
 

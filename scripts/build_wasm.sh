@@ -96,5 +96,32 @@ cp "$ROOT/index.html" "$BUILD_DIR/"
 if [[ "$SERVE" -eq 1 ]]; then
   echo "▶  Starting HTTP server at http://localhost:8080 (Ctrl-C to stop)"
   cd "$BUILD_DIR"
-  python3 -m http.server 8080
+
+  # Plain `python3 -m http.server` is NOT enough. ink propagates -pthread as an
+  # INTERFACE option, so Emscripten emits
+  #     new WebAssembly.Memory({..., shared:true})
+  # and a shared memory needs SharedArrayBuffer. Browsers only expose
+  # SharedArrayBuffer to a *cross-origin isolated* page, which requires both
+  # headers below -- without them the module throws on instantiation and the
+  # canvas stays blank with no obvious cause.
+  #
+  # Any real deployment (GitHub Pages, nginx, S3+CloudFront, ...) must send
+  # these same two headers, or the build will not run there either.
+  python3 - <<'PY'
+import functools, http.server, socketserver
+
+class CrossOriginIsolatedHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+        # Emscripten's glue fetches the .wasm; keep it out of the disk cache so
+        # a rebuild is picked up without a hard refresh.
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("", 8080), CrossOriginIsolatedHandler) as httpd:
+    print("    (serving with COOP/COEP so SharedArrayBuffer is available)")
+    httpd.serve_forever()
+PY
 fi

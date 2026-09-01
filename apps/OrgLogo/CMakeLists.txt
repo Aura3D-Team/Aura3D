@@ -1,6 +1,10 @@
-# OrgLogo — procedural organization-logo demo for the Aura3D engine.
+# OrgLogo — procedurally generated, animated organization logo for the Aura3D engine.
 
-add_executable(OrgLogo main.cpp)
+add_executable(OrgLogo
+    main.cpp
+    LogoAssets.cpp
+    StarField.cpp
+)
 
 target_link_libraries(OrgLogo
     PRIVATE

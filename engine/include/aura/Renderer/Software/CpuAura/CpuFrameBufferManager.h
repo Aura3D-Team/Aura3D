@@ -6,6 +6,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <vector>
 #include <glm/glm.hpp>
 
 static const float PI_FLOAT = std::acos(-1.0f);
@@ -20,10 +21,11 @@ static const float PI_FLOAT = std::acos(-1.0f);
 /// wma/SDL headers out of this public header.
 namespace wma { class IWindowManager; }
 
-//! Forward-declared for the same reason: keeps ink/ThreadPool.h (and its
-//! <thread>/<mutex> transitive includes) out of every translation unit that
-//! merely includes this header to draw a triangle.
-namespace ink { class ThreadPool; }
+//! Forward-declared for the same reason this class used to forward-declare
+//! ink::ThreadPool: keeps JobSystem.h out of every translation unit that
+//! merely includes this header to draw a triangle. See the constructor's
+//! comment for why a ThreadPool of its own is gone entirely now.
+namespace aura3d { class JobSystem; }
 
 namespace aura3d {
 namespace cpu {
@@ -88,11 +90,75 @@ struct Texture {
     i32 width;
     i32 height;
 
-    u32 sample(f32 u, f32 v) const noexcept 
+    /// Texel at (x, y), clamped to the texture's bounds -- clamp-to-edge,
+    /// matching the wrap mode every GPU backend sets on its dynamic textures.
+    [[nodiscard]] u32 texelClamped(int x, int y) const noexcept
     {
-        int x = INK_CLAMP(static_cast<int>(u * static_cast<f32>(width)),  0, width  - 1);
-        int y = INK_CLAMP(static_cast<int>(v * static_cast<f32>(height)), 0, height - 1);
+        x = INK_CLAMP(x, 0, width - 1);
+        y = INK_CLAMP(y, 0, height - 1);
         return data[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)];
+    }
+
+    /**
+     * @brief Bilinearly filtered sample at normalized (u, v), ARGB8888.
+     *
+     * Point sampling would throw away exactly the thing FontAtlas exists to
+     * produce: stb_truetype rasterizes glyphs with antialiased (grayscale)
+     * coverage, not 1-bit edges, but a pen position is essentially never on an
+     * integer pixel boundary, since it accumulates fractional glyph advances.
+     * Reading the nearest texel instead of blending its neighbours turns that
+     * soft coverage back into a hard, jagged edge the moment a glyph lands
+     * off-grid -- which is always. Vulkan, OpenGL and Metal all sample the
+     * atlas linearly already (see each backend's texture manager); this is
+     * what brings the software rasteriser's text to the same quality.
+     *
+     * Applies to every texture sampled here, not only glyphs -- consistent
+     * with the GPU backends, which do not special-case fonts either.
+     */
+    [[nodiscard]] u32 sample(f32 u, f32 v) const noexcept
+    {
+        /*
+         * Texel-centre convention: texel i's centre sits at (i + 0.5) / size,
+         * so subtracting 0.5 converts a UV back into continuous texel space
+         * where whole numbers land exactly on texel centres -- matching every
+         * GPU sampler this mirrors, rather than being offset half a texel
+         * from them.
+         */
+        const f32 fx = u * static_cast<f32>(width)  - 0.5f;
+        const f32 fy = v * static_cast<f32>(height) - 0.5f;
+
+        const f32 floorX = std::floor(fx);
+        const f32 floorY = std::floor(fy);
+        const int x0 = static_cast<int>(floorX);
+        const int y0 = static_cast<int>(floorY);
+
+        const f32 tx = fx - floorX;
+        const f32 ty = fy - floorY;
+
+        const u32 c00 = texelClamped(x0,     y0);
+        const u32 c10 = texelClamped(x0 + 1, y0);
+        const u32 c01 = texelClamped(x0,     y0 + 1);
+        const u32 c11 = texelClamped(x0 + 1, y0 + 1);
+
+        return lerpArgb(lerpArgb(c00, c10, tx), lerpArgb(c01, c11, tx), ty);
+    }
+
+private:
+    /// Per-channel linear interpolation between two ARGB8888 texels.
+    [[nodiscard]] static u32 lerpArgb(u32 a, u32 b, f32 t) noexcept
+    {
+        const auto lerpChannel = [a, b, t](u32 shift) noexcept -> u32 {
+            const f32 ca = static_cast<f32>((a >> shift) & 0xFFu);
+            const f32 cb = static_cast<f32>((b >> shift) & 0xFFu);
+            //! +0.5f rounds to nearest rather than truncating, which otherwise
+            //! biases every blended channel down by up to one part in 255.
+            return static_cast<u32>(ca + (cb - ca) * t + 0.5f) & 0xFFu;
+        };
+
+        return (lerpChannel(24) << 24)
+             | (lerpChannel(16) << 16)
+             | (lerpChannel( 8) <<  8)
+             |  lerpChannel( 0);
     }
 };
 
@@ -113,10 +179,46 @@ struct ScreenVertex {
 };
 
 //! One triangle's worth of already-projected vertices, as consumed by the
-//! batched/parallel drawTriangles()/drawTriangles2D() entry points.
+//! batched/parallel submitTriangles()/submitTriangles2D() entry points.
 struct ScreenTriangle {
     ScreenVertex v0, v1, v2;
 };
+
+/**
+ * @brief Twice the signed area of a screen-space triangle.
+ *
+ * Doubles as the edge-function denominator inside the rasteriser and as the
+ * winding test outside it; the two must agree, which is why there is one
+ * definition rather than one per caller.
+ */
+[[nodiscard]]
+constexpr f32 signedArea2(const ScreenVertex& v0, const ScreenVertex& v1,
+                          const ScreenVertex& v2) noexcept
+{
+    return (v1.x - v0.x) * (v2.y - v0.y)
+         - (v1.y - v0.y) * (v2.x - v0.x);
+}
+
+/**
+ * @brief True when a projected triangle faces the camera.
+ *
+ * The convention has to match the GPU backends, which cull back faces with a
+ * counter-clockwise front face, or the same asset renders solid under Vulkan
+ * and inside-out here.
+ *
+ * Front faces have a *negative* signed area rather than a positive one because
+ * this rasteriser's screen space has Y growing downwards, while the clip space
+ * feeding it is the OpenGL [-1,1] convention with +Y up. That single flip
+ * reverses the apparent winding of every triangle, so the test reverses with
+ * it. (Exercised directly by tests/test_cpu_raster.cpp, which checks the sign
+ * against face normals on a cube.)
+ */
+[[nodiscard]]
+constexpr bool isFrontFacing(const ScreenVertex& v0, const ScreenVertex& v1,
+                             const ScreenVertex& v2) noexcept
+{
+    return signedArea2(v0, v1, v2) < 0.0f;
+}
 
 class CpuFrameBufferManager
 {
@@ -125,24 +227,27 @@ public:
         i32 width = 1280;
         i32 height = 720;
         bool useDepthBuffer = true;
-        //! Worker threads drawTriangles()/drawTriangles2D() split a frame
-        //! across. 0 auto-detects via std::thread::hardware_concurrency();
-        //! see AuraSettings::getCpuThreads(), which feeds this in practice.
-        i32 threadCount = 0;
     };
 
     /// @param windowManager  wma window created with GraphicsAPI::CPU. Must
     ///                        outlive this manager (owned by the CPURenderer).
     /// @param config          Framebuffer dimensions and depth-buffer settings.
-    CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config);
+    /// @param jobs            Engine-wide worker pool (see JobSystem) this
+    ///                        manager dispatches rasterisation and
+    ///                        presentation across, instead of building a
+    ///                        pool of its own. Must outlive this manager --
+    ///                        Engine guarantees that: JobSystem is
+    ///                        constructed before any renderer and survives
+    ///                        every backend switch.
+    CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config, const JobSystem& jobs);
     ~CpuFrameBufferManager() = default;
 
     // Core rendering
     void clear(u32 color = 0);
 
     /// Present the color plane by locking the backend's software framebuffer
-    /// (wma::IWindowManager::lockFramebuffer()), blitting into it in parallel
-    /// across CPU cores via wma::parallelFill(), then presenting it.
+    /// (wma::IWindowManager::lockFramebuffer()) and blitting into it in
+    /// parallel across the same worker pool flush() rasterises with.
     void renderFramebuffer();
 
     // Memory management
@@ -165,7 +270,7 @@ public:
      * Implements a half-space (edge-function) rasteriser with:
      *   - Barycentric perspective-correct attribute interpolation
      *   - Per-pixel depth test (when Config::useDepthBuffer is true)
-     *   - Optional nearest-neighbour texture sampling
+     *   - Optional bilinear texture sampling (see Texture::sample())
      *   - Vertex-colour × texture-colour modulation
      *
      * @param v0,v1,v2  Screen-space vertices from the vertex transform stage.
@@ -195,34 +300,51 @@ public:
                         const ScreenVertex& v2, const Texture* texture);
 
     /**
-     * @brief Rasterises a whole triangle list across every CPU core.
+     * @brief Queues an already-projected triangle list for this frame.
      *
-     * drawTriangle() alone leaves rasterisation entirely on the calling
-     * thread -- only the final present blit (renderFramebuffer()) is
-     * parallel -- which is fine for a handful of triangles but is exactly
-     * where a several-thousand-triangle mesh spends its time. This splits the
-     * framebuffer into one horizontal row-band per hardware thread (the same
-     * partitioning renderFramebuffer() uses) and has each thread rasterise
-     * every triangle, clipped to its own band. Because bands own disjoint
-     * rows, there is no shared mutable state between threads and no locking:
-     * two threads never write the same pixel.
+     * Copies the triangles into the frame's batch queue and returns
+     * immediately -- nothing is rasterised until flush().
      *
-     * Every thread scans the full triangle list -- the redundant iteration
-     * cost is a handful of bounding-box comparisons per triangle per band,
-     * negligible next to the per-pixel shading work an in-band triangle
-     * actually costs.
-     *
-     * Blocks until every band has finished, so the framebuffer is complete
-     * when this returns.
+     * That deferral is the point. Rasterising here instead would mean one
+     * thread-pool fan-out *per draw call*: a scene of 200 objects paid 200
+     * rounds of waking every worker, splitting the framebuffer and joining
+     * again, and each round's fixed cost is paid whether the draw covers the
+     * screen or four pixels. Queuing lets a whole frame's geometry go out in a
+     * single dispatch.
      *
      * @param triangles Already-projected triangles (see @ref ScreenTriangle).
      * @param texture   Optional shared texture; pass nullptr for untextured.
+     *                  Must stay alive until flush() returns.
      */
-    void drawTriangles(std::span<const ScreenTriangle> triangles, const Texture* texture);
+    void submitTriangles(std::span<const ScreenTriangle> triangles, const Texture* texture);
 
-    /// The drawTriangle2D() analogue of drawTriangles(): unlit, alpha-blended,
-    /// affine-interpolated, parallel across row-bands.
-    void drawTriangles2D(std::span<const ScreenTriangle> triangles, const Texture* texture);
+    /// The drawTriangle2D() analogue of submitTriangles(): unlit, alpha-blended,
+    /// affine-interpolated. Queued into the same list, so an overlay submitted
+    /// after the scene still composites on top of it.
+    void submitTriangles2D(std::span<const ScreenTriangle> triangles, const Texture* texture);
+
+    /**
+     * @brief Rasterises everything queued this frame, then empties the queue.
+     *
+     * The framebuffer is split into horizontal row-bands and each band is
+     * rasterised by a worker thread. Because bands own disjoint rows there is
+     * no shared mutable state and no locking: two threads never write the same
+     * pixel.
+     *
+     * Within a band, batches are replayed in submission order, so the result is
+     * pixel-identical to having rasterised each draw call as it arrived -- the
+     * property the alpha-blended 2D overlay depends on, since blending is not
+     * commutative.
+     *
+     * Each band rasterises only the triangles that actually reach its rows:
+     * a binning pass buckets triangles by the bands their bounding boxes span
+     * first, so a band no longer scans the whole frame's triangle list to
+     * discover that most of it lies elsewhere.
+     *
+     * Blocks until every band has finished, so the framebuffer is complete
+     * when this returns. Safe to call with an empty queue.
+     */
+    void flush();
 
     // Text rendering
     void drawText(const std::string& text, Point p, u32 color, u32 fontSize = 2);
@@ -230,8 +352,10 @@ public:
     // Getters
     i32 getWidth() const { return settings.width; }
     i32 getHeight() const { return settings.height; }
-    //! Worker count drawTriangles()/drawTriangles2D() actually dispatch across
-    //! (the resolved value of Config::threadCount, after auto-detection).
+    //! Worker count flush() and renderFramebuffer() dispatch across -- the
+    //! engine's shared JobSystem::workerCount(), cached at construction. One
+    //! row-band per worker (see updateBandRanges()), so this is also the band
+    //! count.
     i32 getWorkerCount() const noexcept { return _workerCount; }
     i32 getTextWidth(const std::string& text, u32 fontSize = 2);
     i32 getTextHeight(const std::string& text, u32 fontSize = 2);
@@ -251,7 +375,7 @@ private:
      * @brief Core of drawTriangle(), restricted to rows @c [yStart, yEnd).
      *
      * drawTriangle() itself is this called with the full framebuffer height;
-     * drawTriangles() calls it once per row-band from worker threads. Callers
+     * flush() calls it once per row-band from worker threads. Callers
      * are responsible for the bands being disjoint -- that disjointness is
      * the entire basis for this being safe to call concurrently.
      */
@@ -264,10 +388,38 @@ private:
                                  const ScreenVertex& v2, const Texture* texture,
                                  i32 yStart, i32 yEnd);
 
-    //! Splits [0, settings.height) into row-bands and runs @p rasterizeBand(yStart,
-    //! yEnd) on each, one per hardware thread, blocking until all complete.
-    //! Shared by drawTriangles() and drawTriangles2D().
-    void dispatchRowBands(const std::function<void(i32 yStart, i32 yEnd)>& rasterizeBand);
+    //! Splits [0, settings.height) into row-bands and runs @p rasterizeBand(band,
+    //! yStart, yEnd) on each, blocking until all complete. Band boundaries come
+    //! from _bandRanges, so binning and rasterisation always agree on them.
+    void dispatchRowBands(const std::function<void(i32 band, i32 yStart, i32 yEnd)>& rasterizeBand);
+
+    //! Recomputes _bandRanges for the current height and worker count. Cheap,
+    //! and called once per flush() so a resize cannot leave stale boundaries.
+    void updateBandRanges();
+
+    //! Buckets every queued triangle into the bands its bounding box touches.
+    void binQueuedTriangles();
+
+    /**
+     * @brief One draw call's worth of queued triangles.
+     *
+     * `first`/`count` name a contiguous range of _queuedTriangles; batches
+     * partition that array in submission order, which is what lets a band walk
+     * its (ascending) bin and its batch list together in one linear pass.
+     */
+    struct QueuedBatch {
+        const Texture* texture = nullptr;
+        //! true -> rasterizeTriangle2DSpan (unlit, blended, no depth).
+        bool overlay = false;
+        u32 first = 0;
+        u32 count = 0;
+    };
+
+    //! Half-open row range [yStart, yEnd) owned by one band.
+    struct BandRange {
+        i32 yStart = 0;
+        i32 yEnd = 0;
+    };
 
 private:
 
@@ -278,17 +430,51 @@ private:
     //! guarantees it outlives this manager.
     wma::IWindowManager* _windowManager;
 
-    //! Config::threadCount resolved once at construction (auto-detection
-    //! applied). Declared before _rasterPool so it is initialized first --
-    //! the pool's size depends on it -- and reused by every dispatchRowBands()
-    //! call so the number of bands always matches the pool's actual size.
+    /*
+     * Non-owning handle to the engine's shared worker pool. Both flush()
+     * (rasterisation) and renderFramebuffer() (the copy into the locked
+     * window surface) dispatch through it, via JobSystem::dispatch() -- so a
+     * CPU-backend run spins up exactly one pool for the whole frame, not one
+     * per workload. This used to be two: a ThreadPool this class built for
+     * itself, plus a second, separate one wma's parallelFill() owned
+     * internally for the presentation copy. Neither is needed once both
+     * halves go through the same dispatch() call; wma is left with nothing
+     * but lockFramebuffer()/presentFramebuffer(), the raw surface handoff,
+     * which is all a *window* manager should own -- the parallel fill was
+     * arguably the renderer's job in the first place, and the renderer here
+     * is aura3d, not wma.
+     */
+    const JobSystem* _jobs;
+
+    //! JobSystem::workerCount(), cached at construction so getWorkerCount()
+    //! and updateBandRanges() don't re-derive it every frame.
     i32 _workerCount = 1;
 
-    //! Backs drawTriangles()/drawTriangles2D(). Owned here (rather than shared
-    //! with wma's presentation pool) because rasterisation and presentation
-    //! are logically separate workloads that happen to both want "one task
-    //! per core"; owning it also keeps this class usable independent of wma.
-    std::unique_ptr<ink::ThreadPool> _rasterPool;
+    /*
+     * Everything below is frame-scratch: cleared between frames but never
+     * shrunk, so a steady-state frame rasterises without touching the
+     * allocator. They used to be locals rebuilt per draw call -- a fresh
+     * triangle vector per drawIndexed(), a fresh futures vector per dispatch --
+     * which is allocation churn proportional to the scene's object count.
+     */
+
+    //! Every triangle queued this frame, in submission order.
+    std::vector<ScreenTriangle> _queuedTriangles;
+    //! Contiguous, ordered partition of _queuedTriangles; one per draw call.
+    std::vector<QueuedBatch> _queuedBatches;
+    /*
+     * Per-band indices into _queuedTriangles, ascending. Built by
+     * binQueuedTriangles() so a band rasterises only the triangles whose
+     * bounding box actually reaches its rows, instead of scanning the whole
+     * frame's list to reject most of it.
+     */
+    std::vector<std::vector<u32>> _bandBins;
+    //! Row range owned by each band; index-aligned with _bandBins. One band
+    //! per worker (see updateBandRanges()) -- JobSystem::dispatch() statically
+    //! partitions its item range across the pool, so oversplitting into more
+    //! bands than workers no longer buys anything: there is no shared task
+    //! queue left for an idle worker to steal extra bands from.
+    std::vector<BandRange> _bandRanges;
 
     // Aura Font
     const AuraBitmapFont& _font;

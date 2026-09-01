@@ -1,7 +1,6 @@
 #include "aura/Core/Engine.h"
 #include "aura/Renderer/RendererFactory.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
-#include "aura/Core/Camera/Camera.h"
 
 #include <filesystem>
 
@@ -10,11 +9,26 @@
 #endif
 
 Engine::Engine(const std::string& configPath)
+    : Engine(aura3d::AuraConfig{}, configPath)
+{
+}
+
+Engine::Engine(const aura3d::AuraConfig& config)
+    : Engine(config, std::string{})
+{
+}
+
+Engine::Engine(const aura3d::AuraConfig& defaults, const std::string& configPath)
 {
     INK_CORE_LOGGER;
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
 
-    aura3d::AuraSettings::get()->reload(configPath);
+    //! Before the reload, so a file that fails to load leaves these standing
+    //! rather than the engine's own.
+    aura3d::AuraSettings::get()->setDefaults(defaults);
+
+    if (!configPath.empty())
+        aura3d::AuraSettings::get()->reload(configPath);
 
     const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
     ink::LogManager::getInstance().setGlobalLevel(config->getLogLevel());
@@ -25,11 +39,25 @@ Engine::Engine(const std::string& configPath)
         ink::LogManager::getInstance().setLogToFile(logsPath + APPLICATION_NAME + ".log");
     }
 
+    _jobs = std::make_unique<aura3d::JobSystem>(config->getCpuThreads());
+
     _configureWindow();
     _createRenderer();
+
+    _createAudio();
+
+    _createDebugMode();
 }
 
-Engine::~Engine() = default;
+Engine::~Engine()
+{
+#ifdef AURA_ENABLE_DEBUG_MODE
+    aura3d::installFrameObserver(nullptr);
+    _debugMode.reset();
+#endif
+
+    _audio.reset();
+}
 
 const aura3d::AuraSettings* Engine::getSettings() const
 {
@@ -49,19 +77,10 @@ void Engine::_configureWindow()
     _windowDetails.targetFPS = config->getFPSLimit();
 
     if (_windowDetails.vsync) {
-        //! The display drives pacing; an extra limiter would only fight it
         _windowDetails.targetFPS = 0;
     }
 
 #ifdef __EMSCRIPTEN__
-    // settings.json's window.width/height describe a fixed native window;
-    // on the web there is no "window", only whatever CSS size the canvas
-    // actually has in the browser viewport (index.html's canvas is styled
-    // width:100%/height:100%). Override with the real viewport size here so
-    // wma creates a window matching it from the very first frame, instead
-    // of blindly creating whatever fixed size the config asked for -- SDL3
-    // is the only window backend that works on Emscripten, and "#canvas"
-    // is its default (and this project's only) canvas selector.
     double cssWidth = 0.0, cssHeight = 0.0;
     if (emscripten_get_element_css_size("#canvas", &cssWidth, &cssHeight) == EMSCRIPTEN_RESULT_SUCCESS
         && cssWidth > 0.0 && cssHeight > 0.0) {
@@ -75,8 +94,6 @@ void Engine::_createRenderer()
 {
     const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
 
-    /* Use the compile-time default as the fallback so that WASM/Android
-       builds work even if settings.json still says "vulkan". */
     const std::string defaultBackend =
         aura3d::RendererChoiceToString(aura3d::RendererFactory::defaultChoice());
 
@@ -89,23 +106,60 @@ void Engine::_createRenderer()
         requested = aura3d::RendererFactory::defaultChoice();
     }
 
-    // create() resolves an unavailable backend along VULKAN -> OPENGL ->
-    // SOFTWARE, so record what we actually ended up with.
-    _renderer = aura3d::RendererFactory::create(requested, _windowDetails);
+    _adoptRenderer(requested);
+
+    INK_INFO << "Window backend: " << aura3d::WindowBackendToString(config->getWindowBackend());
+}
+
+void Engine::_createAudio()
+{
+    const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
+
+    wma::AudioDeviceConfig deviceConfig;
+    deviceConfig.sampleRate      = static_cast<u32>(config->getAudioSampleRate());
+    deviceConfig.channelCount    = static_cast<u16>(config->getAudioChannels());
+    deviceConfig.framesPerBuffer = static_cast<u32>(config->getAudioBufferFrames());
+
+    _audio = std::make_unique<aura3d::AudioEngine>(
+        wma::openAudioDevice(deviceConfig, config->getAudioBackend()),
+        static_cast<u32>(config->getAudioMaxVoices()));
+
+    _audio->setMasterVolume(config->getMasterVolume());
+
+    if (_resources)
+        _resources->setAudioEngine(_audio.get());
+}
+
+void Engine::_createDebugMode()
+{
+#ifdef AURA_ENABLE_DEBUG_MODE
+    _debugMode = std::make_unique<aura3d::DebugMode>(
+        aura3d::DebugModeConfig::fromSettings(aura3d::AuraSettings::get()));
+
+    _debugMode->attachRenderer(_renderer.get());
+
+    aura3d::installFrameObserver(_debugMode.get());
+#endif
+}
+
+void Engine::_adoptRenderer(aura3d::RendererChoice choice)
+{
+    _renderer = aura3d::RendererFactory::create(choice, _windowDetails);
     _rendererChoice = _renderer->getBackendType();
-    aura3d::Camera::setClipSpace(_rendererChoice == aura3d::RendererChoice::VULKAN
-                                 ? aura3d::Camera::ClipSpace::Vulkan
-                                 : aura3d::Camera::ClipSpace::OpenGL);
 
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
-    INK_INFO << "Window backend: " << aura3d::WindowBackendToString(config->getWindowBackend());
 
-    _renderer->initialize(aura3d::AuraSettings::get());
+    _renderer->initialize(aura3d::AuraSettings::get(), _jobs.get());
 
     if (_resources)
         _resources->setRenderer(_renderer.get());
     else
         _resources = std::make_unique<aura3d::ResourceManager>(_renderer.get());
+
+#ifdef AURA_ENABLE_DEBUG_MODE
+    if (_debugMode)
+        _debugMode->attachRenderer(_renderer.get());
+#endif
 }
 
 void Engine::switchBackend(aura3d::RendererChoice choice)
@@ -121,31 +175,21 @@ void Engine::switchBackend(aura3d::RendererChoice choice)
     INK_INFO << "switchBackend: " << aura3d::RendererChoiceToString(_rendererChoice)
              << " -> " << aura3d::RendererChoiceToString(resolved);
 
-    /*
-     * Drop the cache before the renderer dies: its handles refer to resources
-     * owned by the outgoing backend and mean nothing to the incoming one.
-     */
     if (_resources)
         _resources->unloadAll();
 
-    if (_renderer) 
+#ifdef AURA_ENABLE_DEBUG_MODE
+    if (_debugMode)
+        _debugMode->attachRenderer(nullptr);
+#endif
+
+    if (_renderer)
     {
         _renderer->cleanup();
         _renderer.reset();
     }
 
-    // Re-read the window config so a hot-edited settings.json takes effect here.
     _configureWindow();
 
-    _renderer = aura3d::RendererFactory::create(resolved, _windowDetails);
-    _rendererChoice = _renderer->getBackendType();
-    aura3d::Camera::setClipSpace(_rendererChoice == aura3d::RendererChoice::VULKAN
-                                 ? aura3d::Camera::ClipSpace::Vulkan
-                                 : aura3d::Camera::ClipSpace::OpenGL);
-    _renderer->initialize(aura3d::AuraSettings::get());
-
-    if (_resources)
-        _resources->setRenderer(_renderer.get());
-    else
-        _resources = std::make_unique<aura3d::ResourceManager>(_renderer.get());
+    _adoptRenderer(resolved);
 }

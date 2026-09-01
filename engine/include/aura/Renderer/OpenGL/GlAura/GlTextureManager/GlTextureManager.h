@@ -4,8 +4,9 @@
 #pragma once
 
 #include <glad/glad.h>
-#include <unordered_map>
+#include <array>
 #include <string>
+#include <unordered_map>
 
 #include "aura/Renderer/RenderHandles.h"
 
@@ -55,13 +56,42 @@ public:
      */
     void updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8* rgba);
 
+    /**
+     * @brief Binds @p handle to texture @p unit, skipping the pair of GL calls
+     *        when that texture is already bound there.
+     *
+     * The scene draws bind a texture per object, and a scene overwhelmingly
+     * shares a handful of materials between many objects, so most of those
+     * binds ask for the texture that is already current.
+     */
     void bind(TextureHandle handle, GLuint unit = 0);
+
     GlTextureData* get(TextureHandle handle);
     void cleanup();
 
 private:
+    //! Texture units this manager tracks bindings for. The renderer samples
+    //! from unit 0 only; the spare slots cost nothing and keep the cache
+    //! correct if a second sampler is ever added.
+    static constexpr GLuint kTrackedUnits = 8;
+
     std::unordered_map<TextureHandle, GlTextureData> _textures;
-    TextureHandle _nextHandle = 1;
+    TextureHandle _nextHandle{1};
+
+    //! GL texture name bound to each tracked unit; 0 means none/unknown.
+    std::array<GLuint, kTrackedUnits> _boundToUnit{};
+    //! Last unit made current with glActiveTexture, so a run of binds to the
+    //! same unit issues that call once rather than per bind.
+    GLuint _activeUnit = 0;
+
+    /**
+     * @brief Drops every cached binding.
+     *
+     * Called from the paths that bind a texture behind bind()'s back (creation
+     * and updateRegion(), which must make their target current to upload into
+     * it) and from cleanup(), where the names become invalid outright.
+     */
+    void invalidateBindings() noexcept;
 };
 
 } // namespace gl

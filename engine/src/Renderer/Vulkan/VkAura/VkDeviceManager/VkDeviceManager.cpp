@@ -1,9 +1,12 @@
 #include "aura/Renderer/Vulkan/VkAura/VkDeviceManager/VkDeviceManager.h"
 
+#include <algorithm>
+#include <limits>
 #include <set>
 
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkCountingAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -19,7 +22,7 @@ VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceDa
 VkDeviceManager::~VkDeviceManager() {
     if (_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(_device);
-        vkDestroyDevice(_device, nullptr);
+        vkDestroyDevice(_device, hostAllocationCallbacks());
         _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
@@ -139,8 +142,43 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
                     "VulkanMemoryManager will not request it either.";
     }
 
+    // Same probe-before-request reasoning as bufferDeviceAddress above, for
+    // the descriptor-indexing features VulkanRenderer's bindless texture
+    // array (set 1) needs:
+    //   - partiallyBound: most table slots hold no texture yet, and a slot is
+    //     only ever sampled after a write, so leaving them unwritten is legal.
+    //   - sampledImageUpdateAfterBind: a newly created texture is written into
+    //     the table while command buffers recorded earlier still reference it.
+    //   - runtimeDescriptorArray: the table is declared unsized in GLSL, so its
+    //     real length comes from the layout built at runtime against the
+    //     device's own limits (see _maxBindlessTextures below) rather than a
+    //     constant baked into the shipped SPIR-V.
+    // All three are core Vulkan 1.2 -- no extension enablement -- but support
+    // is still per-device.
+    _bindlessTexturesSupported =
+        supportedVk12Features.descriptorBindingPartiallyBound == VK_TRUE &&
+        supportedVk12Features.descriptorBindingSampledImageUpdateAfterBind == VK_TRUE &&
+        supportedVk12Features.runtimeDescriptorArray == VK_TRUE;
+
+    // Unlike bufferDeviceAddress, there is no fallback path: VulkanRenderer's
+    // texture-binding scheme assumes a bindless array unconditionally. Fail
+    // clearly here, at device-selection time, rather than limping into a
+    // pipeline/descriptor-layout mismatch much later.
+    if (!_bindlessTexturesSupported) {
+        throw AuraException(
+            "Selected physical device does not support the core Vulkan 1.2 "
+            "descriptor-indexing features (descriptorBindingPartiallyBound, "
+            "descriptorBindingSampledImageUpdateAfterBind, runtimeDescriptorArray) "
+            "that VulkanRenderer's bindless texture array requires.");
+    }
+
+    _maxBindlessTextures = _queryMaxBindlessTextures();
+
     VkPhysicalDeviceVulkan12Features enabledVk12Features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+        .descriptorBindingPartiallyBound = VK_TRUE,
+        .runtimeDescriptorArray = VK_TRUE,
         //! Resolves your VUID-VkMemoryAllocateInfo-flags-03331 error -- but
         //! only when the device actually supports it (see above).
         .bufferDeviceAddress = _bufferDeviceAddressSupported ? VK_TRUE : VK_FALSE
@@ -157,7 +195,9 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     _deviceInfo.ppEnabledExtensionNames = _vkDeviceCreationData.vkDeviceExtensions.data();
     _deviceInfo.pEnabledFeatures = nullptr; //! No need to be &_deviceFeatures;
 
-    result = vkCreateDevice(_physicalDevice, &_deviceInfo, nullptr, &_device);
+    //! Paired with the vkDestroyDevice in the destructor; see
+    //! hostAllocationCallbacks() for why neither site is #ifdef'd.
+    result = vkCreateDevice(_physicalDevice, &_deviceInfo, hostAllocationCallbacks(), &_device);
     VK_RESULT_CHECK(result);
 
     u32 familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);
@@ -168,6 +208,69 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     }
 
     INK_VERBOSE << "Logical Vulkan device created successfully.";
+}
+
+u32 VkDeviceManager::_queryMaxBindlessTextures() const
+{
+    VkPhysicalDeviceDescriptorIndexingProperties indexingProperties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES
+    };
+    VkPhysicalDeviceProperties2 properties2{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &indexingProperties
+    };
+    vkGetPhysicalDeviceProperties2(_physicalDevice, &properties2);
+
+    /*
+     * A COMBINED_IMAGE_SAMPLER descriptor is charged against the sampler
+     * *and* the sampled-image budget simultaneously, at both per-stage and
+     * per-set scope, so the table can only be as large as the smallest of
+     * those four update-after-bind limits. Desktop drivers report values in
+     * the millions here and clamp to nothing; mobile drivers are where this
+     * matters, and requesting more than they allow fails outright inside
+     * vkCreateDescriptorSetLayout rather than degrading.
+     */
+    u32 deviceBudget = std::numeric_limits<u32>::max();
+    for (const u32 deviceLimit : {
+             indexingProperties.maxPerStageDescriptorUpdateAfterBindSampledImages,
+             indexingProperties.maxPerStageDescriptorUpdateAfterBindSamplers,
+             indexingProperties.maxDescriptorSetUpdateAfterBindSampledImages,
+             indexingProperties.maxDescriptorSetUpdateAfterBindSamplers }) {
+        deviceBudget = std::min(deviceBudget, deviceLimit);
+    }
+
+    /*
+     * Headroom, subtracted from the *device* budget rather than from the
+     * request: the limits above are budgets for the whole pipeline layout,
+     * not for this binding alone, and the 3D pipeline also spends
+     * update-after-bind-capable slots on its transform and light UBOs.
+     * Claiming the entire advertised budget for textures would leave a device
+     * sitting exactly on its cap with nothing left for them -- but a device
+     * whose budget is already far above the request should still get exactly
+     * the request, with no clamp and no warning.
+     */
+    constexpr u32 kReservedForOtherBindings = 16;
+    deviceBudget = (deviceBudget > kReservedForOtherBindings)
+                       ? (deviceBudget - kReservedForOtherBindings)
+                       : 0;
+
+    const u32 limit = std::min(kDesiredBindlessTextures, deviceBudget);
+
+    if (limit < kMinBindlessTextures) {
+        throw AuraException(
+            "Selected physical device advertises the descriptor-indexing features but "
+            "its update-after-bind limits are too small to host the bindless texture "
+            "table VulkanRenderer requires.");
+    }
+
+    if (limit < kDesiredBindlessTextures) {
+        INK_WARN << "Bindless texture table clamped to " << limit
+                 << " slots by device descriptor-indexing limits (asked for "
+                 << kDesiredBindlessTextures << ").";
+    }
+
+    INK_VERBOSE << "Bindless texture table capacity: " << limit << " slots.";
+    return limit;
 }
 
 VkDevice* VkDeviceManager::getDevice()

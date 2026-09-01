@@ -7,7 +7,7 @@
     "window": {
         "width": 1440,
         "height": 1024,
-        "title": "Aura3D — Organization Logo",
+        "title": "Aura3D \u2014 Organization Logo",
         "backend": "SDL3",
         "resizable": false,
         "fullscreen": false,
@@ -16,16 +16,26 @@
     },
     "renderer": {
         "backend": "software",
-        "validation_layers": true
+        "validation_layers": true,
+        "max_frames_in_flight": 2
     },
     "graphics": {
         "gpu_preference": "discrete",
         "msaa_samples": 4
     },
+    "audio": {
+        "backend": "auto",
+        "master_volume": 1.0,
+        "sample_rate": 48000,
+        "channels": 2,
+        "buffer_frames": 1024,
+        "max_voices": 32
+    },
     "paths": {
         "shaders": "./resources/shaders/",
         "textures": "./resources/textures/",
         "models": "./resources/models/",
+        "audio": "./resources/audio/",
         "logs": "./logs/"
     },
     "memory": {
@@ -39,6 +49,6 @@
     },
     "logging": {
         "level": "info",
-        "write_to_file": true
+        "write_to_file": false
     }
 }

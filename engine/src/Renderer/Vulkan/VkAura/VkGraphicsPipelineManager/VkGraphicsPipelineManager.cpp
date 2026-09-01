@@ -149,6 +149,8 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
 
         // Convert our bindings to VkDescriptorSetLayoutBinding
         std::vector<VkDescriptorSetLayoutBinding> layoutBindings;
+        std::vector<VkDescriptorBindingFlags> bindingFlags;
+        bool anyBindingFlags = false;
         for (const auto& binding : setInfo.bindings) {
             VkDescriptorSetLayoutBinding layoutBinding{};
             layoutBinding.binding = binding.binding;
@@ -157,6 +159,8 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
             layoutBinding.stageFlags = binding.stageFlags;
             layoutBinding.pImmutableSamplers = binding.pImmutableSamplers;
             layoutBindings.push_back(layoutBinding);
+            bindingFlags.push_back(binding.bindingFlags);
+            anyBindingFlags = anyBindingFlags || binding.bindingFlags != 0;
         }
 
         // Create descriptor set layout
@@ -164,6 +168,19 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layoutInfo.bindingCount = static_cast<u32>(layoutBindings.size());
         layoutInfo.pBindings = layoutBindings.data();
+
+        //! Only a bindless-style binding (e.g. VulkanRenderer's texture array)
+        //! sets any DescriptorBindingInfo::bindingFlags; ordinary UBO bindings
+        //! leave every flag at 0, so this chain -- and the pool-compatibility
+        //! flag it requires on the layout -- is skipped for them entirely.
+        VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
+        if (anyBindingFlags) {
+            bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+            bindingFlagsInfo.bindingCount = static_cast<u32>(bindingFlags.size());
+            bindingFlagsInfo.pBindingFlags = bindingFlags.data();
+            layoutInfo.pNext = &bindingFlagsInfo;
+            layoutInfo.flags |= VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+        }
 
         VkDescriptorSetLayout layout;
         VK_RESULT_CHECK(vkCreateDescriptorSetLayout(*_device, &layoutInfo, nullptr, &layout));
@@ -434,15 +451,9 @@ void VkGraphicsPipelineManager::cmdBindDescriptorSets(VkCommandBuffer commandBuf
                             pDynamicOffsets);
 }
 
-void VkGraphicsPipelineManager::cmdIndexedDraw(VkCommandBuffer commandBuffer,
-                                               VkExtent2D extent,
-                                               u32 indexCount,
-                                               u32 instanceCount,
-                                               u32 firstIndex,
-                                               i32 vertexOffset,
-                                               u32 firstInstance)
+void VkGraphicsPipelineManager::cmdSetViewportAndScissor(VkCommandBuffer commandBuffer,
+                                                         VkExtent2D extent) noexcept
 {
-    // Set dynamic viewport and scissor
     VkViewport viewport = {};
     viewport.x = 0.0f;
     /*
@@ -468,8 +479,17 @@ void VkGraphicsPipelineManager::cmdIndexedDraw(VkCommandBuffer commandBuffer,
     scissor.offset = {0, 0};
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+}
 
-    // Draw vertices
+void VkGraphicsPipelineManager::cmdIndexedDraw(VkCommandBuffer commandBuffer,
+                                               VkExtent2D extent,
+                                               u32 indexCount,
+                                               u32 instanceCount,
+                                               u32 firstIndex,
+                                               i32 vertexOffset,
+                                               u32 firstInstance)
+{
+    cmdSetViewportAndScissor(commandBuffer, extent);
     vkCmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
@@ -480,23 +500,7 @@ void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer,
                                         u32 firstVertex,
                                         u32 firstInstance)
 {
-    // Set dynamic viewport and scissor
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    //! Same Y-flip as cmdIndexedDraw(); see the comment there.
-    viewport.y = static_cast<f32>(extent.height);
-    viewport.width = static_cast<f32>(extent.width);
-    viewport.height = -static_cast<f32>(extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-    VkRect2D scissor = {};
-    scissor.offset = {0, 0};
-    scissor.extent = extent;
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-    // Draw vertices
+    cmdSetViewportAndScissor(commandBuffer, extent);
     vkCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 

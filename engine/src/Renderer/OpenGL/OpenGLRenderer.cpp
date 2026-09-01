@@ -10,6 +10,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "aura/aura.h"
+#include "aura/Core/Profiling/FrameProfiler.h"
 
 namespace aura3d {
 namespace gl {
@@ -25,9 +26,12 @@ OpenGLRenderer::~OpenGLRenderer()
     cleanup();
 }
 
-void OpenGLRenderer::initialize(AuraSettings* settings)
+void OpenGLRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
 {
     if (_isInitialized) return;
+
+    //! Unused: this backend has no CPU-side worker pool of its own to share.
+    (void)jobs;
 
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
     loadOpenGLEntryPoints();
@@ -137,11 +141,33 @@ void OpenGLRenderer::compileBuiltInShaders()
 {
     _shaderProgram = linkShaderProgram(GL_VERTEX_3D, GL_FRAGMENT_3D);
 
+    /*
+     * Point the 3D sampler at texture unit 0 once, here. Sampler uniforms are
+     * part of the program object and survive until it is relinked, so there is
+     * nothing to re-assert per draw -- the renderer binds every texture to
+     * unit 0 and never moves it.
+     */
+    _sampler3DLoc = glGetUniformLocation(_shaderProgram, "textureSampler");
+    if (_sampler3DLoc >= 0)
+    {
+        glUseProgram(_shaderProgram);
+        glUniform1i(_sampler3DLoc, 0);
+    }
+
     //! The overlay pipeline is a second, entirely separate program: unlit, no
     //! light block, and its projection supplied per batch rather than per frame.
     _overlay2DProgram = linkShaderProgram(GL_VERTEX_2D, GL_FRAGMENT_2D);
     _overlay2DProjLoc = glGetUniformLocation(_overlay2DProgram, "uProj");
     _overlay2DSamplerLoc = glGetUniformLocation(_overlay2DProgram, "textureSampler");
+
+    //! Same reasoning for the overlay program's sampler.
+    if (_overlay2DSamplerLoc >= 0)
+    {
+        glUseProgram(_overlay2DProgram);
+        glUniform1i(_overlay2DSamplerLoc, 0);
+    }
+
+    glUseProgram(_shaderProgram);
 }
 
 void OpenGLRenderer::createOverlay2DBuffers()
@@ -200,9 +226,9 @@ void OpenGLRenderer::cleanup()
     _overlay2DProgram = 0;
     _overlay2DVao = _overlay2DVbo = _overlay2DEbo = 0;
     _overlay2DVboBytes = _overlay2DEboBytes = 0;
-    _overlay2DProjLoc = _overlay2DSamplerLoc = -1;
+    _overlay2DProjLoc = _overlay2DSamplerLoc = _sampler3DLoc = -1;
     //! The texture pool dies with _textureMgr below, so drop the cached handle.
-    _white2DTexture = INVALID_HANDLE;
+    _white2DTexture = {};
 
     _vertexMgr.reset();
     _indexMgr.reset();
@@ -239,7 +265,7 @@ TextureHandle OpenGLRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 
 
 TextureHandle OpenGLRenderer::createDynamicTexture(u32 width, u32 height)
 {
-    if (!_textureMgr) return INVALID_HANDLE;
+    if (!_textureMgr) return {};
     return _textureMgr->createDynamicTexture(width, height);
 }
 
@@ -264,9 +290,11 @@ void OpenGLRenderer::beginFrame()
 
 void OpenGLRenderer::beginRenderPass()
 {
+    AURA_FRAME_SCOPE(FramePhase::BeginPass);
+
     //! cleanup() can run mid-frame (the ESC key action calls it), which drops
     //! the managers while the frame loop is still executing.
-    if (!_uniformMgr) 
+    if (!_uniformMgr)
         return;
 
     glClearColor(_clearR, _clearG, _clearB, _clearA);
@@ -284,7 +312,9 @@ void OpenGLRenderer::endRenderPass()
      * here mirrors the Vulkan backend's vkCmdEndRenderPass and unbinds the VAO
      * so state does not leak into whatever the caller does next.
      */
-    if (!_vertexMgr) 
+    AURA_FRAME_SCOPE(FramePhase::EndPass);
+
+    if (!_vertexMgr)
         return;
 
     _vertexMgr->unbind();
@@ -293,12 +323,29 @@ void OpenGLRenderer::endRenderPass()
 
 void OpenGLRenderer::endFrame()
 {
-    if (!_windowManagerApi) return;
+    /*
+     * Present is where a vsynced GL frame actually spends its wall time: the
+     * driver blocks inside SDL_GL_SwapWindow until the display is ready for the
+     * buffer, so the whole pipeline's backpressure lands on this one scope and
+     * nowhere else. WaitFence/Acquire/Submit stay at zero for this backend --
+     * GL has no explicit counterpart to any of them, and reporting zero says
+     * exactly that rather than inventing an attribution.
+     */
+    if (_windowManagerApi)
+    {
+        AURA_FRAME_SCOPE(FramePhase::Present);
 
-    auto* window = static_cast<SDL_Window*>(_windowManagerApi->getWindowInstance());
-    if (window) {
-        SDL_GL_SwapWindow(window);
+        auto* window = static_cast<SDL_Window*>(_windowManagerApi->getWindowInstance());
+        if (window) {
+            SDL_GL_SwapWindow(window);
+        }
     }
+
+    //! Outside the scope above so the present is closed and counted before the
+    //! frame is, and unconditional so a frame still closes when the window
+    //! manager has already gone (a cleanup() mid-loop) rather than stalling the
+    //! sample stream on a backend that is shutting down.
+    AURA_FRAME_END();
 }
 
 void OpenGLRenderer::setTransform(const gfx::TransformUBO& ubo)
@@ -327,7 +374,14 @@ void OpenGLRenderer::setLight(const gfx::LightUBO& light)
 void OpenGLRenderer::bindVertexBuffer(VertexBufferHandle handle)
 {
     _currentVertexBuffer = handle;
-    _vertexMgr->bind(handle);
+
+    /*
+     * A VAO switch carries the element-array binding with it, so the index
+     * manager's cache stops describing reality the moment a different VAO
+     * becomes current. bind() reports exactly that case.
+     */
+    if (_vertexMgr->bind(handle) && _indexMgr)
+        _indexMgr->invalidateBinding();
 }
 
 void OpenGLRenderer::bindIndexBuffer(IndexBufferHandle handle)
@@ -340,7 +394,12 @@ void OpenGLRenderer::bindTexture(TextureHandle handle)
 {
     _currentTexture = handle;
     _textureMgr->bind(handle, 0);
-    glUniform1i(glGetUniformLocation(_shaderProgram, "textureSampler"), 0);
+
+    /*
+     * The sampler uniform is *program* state: it keeps its value until the
+     * program is relinked, so it is set once at link time (see
+     * compileBuiltInShaders) rather than re-asserted here.
+     */
 }
 
 void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
@@ -368,6 +427,8 @@ void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
                                  std::span<const u32> indices,
                                  TextureHandle texture)
 {
+    AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
+
     if (!_overlay2DProgram || !_textureMgr || vertices.empty() || indices.empty())
         return;
 
@@ -397,10 +458,20 @@ void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
 
     glUseProgram(_overlay2DProgram);
     glUniformMatrix4fv(_overlay2DProjLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    glUniform1i(_overlay2DSamplerLoc, 0);
+    //! The sampler was pointed at unit 0 when the program was linked and is
+    //! program state, so it needs no per-batch re-assertion.
     _textureMgr->bind(sampled, 0);
 
+    /*
+     * The overlay owns its VAO directly rather than going through
+     * _vertexMgr, so the managers' bind caches cannot see this switch. Tell
+     * them, or the next scene draw skips a VAO/EBO bind it genuinely needs and
+     * renders the overlay's geometry with the scene's shader.
+     */
     glBindVertexArray(_overlay2DVao);
+    _vertexMgr->invalidateBinding();
+    _indexMgr->invalidateBinding();
+
     glBindBuffer(GL_ARRAY_BUFFER, _overlay2DVbo);
 
     /*
@@ -437,7 +508,7 @@ void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
 
     //! Hand the 3D program and VAO state back, so a following scene draw needs
     //! no knowledge that an overlay ran.
-    glBindVertexArray(0);
+    _vertexMgr->unbind();
     glUseProgram(_shaderProgram);
 }
 

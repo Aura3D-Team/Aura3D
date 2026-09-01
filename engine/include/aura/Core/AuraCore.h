@@ -4,9 +4,14 @@
 #pragma once
 
 #define GLM_FORCE_RADIANS
-#ifdef USE_VULKAN_API
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#endif
+
+/*
+ * Not GLM_FORCE_DEPTH_ZERO_TO_ONE: backends disagree on clip-space depth
+ * (Vulkan wants [0,1], OpenGL/software want [-1,1]) and the choice is made at
+ * runtime by switchBackend(), so a compile-time global can't be right for
+ * both. Camera::setClipSpace() instead picks perspectiveRH_ZO vs _NO per
+ * projection, from the live backend.
+ */
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -19,9 +24,8 @@
 namespace aura3d {
 namespace gfx {
 
-////////////////////////////////////
-//// Geometry
-////////////////////////////////////
+/// Geometry
+
 /**
  * @struct TransformUBO
  * @brief Uniform buffer object (UBO).

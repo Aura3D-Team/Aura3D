@@ -9,6 +9,7 @@ layout(location = 0) out vec2 fragTexCoord;
 layout(location = 1) out vec4 fragColor;
 layout(location = 2) out vec3 fragNormal;
 layout(location = 3) out vec3 fragPos;
+layout(location = 4) flat out uint fragTextureIndex;
 
 // Written once per frame. The model matrix lives in the push constants instead,
 // so that many objects can be drawn from one render pass.
@@ -19,6 +20,10 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 } ubo;
 
 // Per-draw transform: 128 bytes, the guaranteed push-constant budget.
+// normalMatrix's 4th column is always (0,0,0,1) -- a mat3 widened to mat4 only
+// for std430/push-constant padding -- so its x component is repurposed to
+// carry the bound texture's bindless array index, bit-cast since push
+// constants have no separate integer lane (see VulkanRenderer::bindDrawState()).
 layout(push_constant) uniform PushConstants {
     mat4 model;
     mat4 normalMatrix;
@@ -33,4 +38,5 @@ void main()
     fragColor = inColor;
     fragNormal = mat3(pc.normalMatrix) * inNormal;
     fragPos = worldPos.xyz;
+    fragTextureIndex = floatBitsToUint(pc.normalMatrix[3].x);
 }

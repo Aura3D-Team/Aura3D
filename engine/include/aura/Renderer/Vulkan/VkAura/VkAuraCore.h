@@ -5,12 +5,13 @@
 
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
+#include <algorithm>
 #include <array>
 #include <vector>
 
 #include "aura/Core/AuraCore.h"
+#include "aura/Core/AuraSettings/AuraSettings.h"
 
-#define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_ATTRIBUTE_DESCRIPTION_2D 3
 #define MAX_ATTRIBUTE_DESCRIPTION_3D 4
 #define MAX_ATTRIBUTE_DESCRIPTION MAX_ATTRIBUTE_DESCRIPTION_3D
@@ -29,9 +30,63 @@ inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_3;
 inline constexpr u32 kVulkanApiVersion = VK_API_VERSION_1_2;
 #endif
 
+/**
+ * @brief Size the engine *asks* for the bindless texture table.
+ *
+ * Not the size it gets: descriptor-indexing limits are per-device, and a
+ * layout requesting more than the device's
+ * maxPerStageDescriptorUpdateAfterBind* / maxDescriptorSetUpdateAfterBind*
+ * allows fails outright at vkCreateDescriptorSetLayout. Desktop drivers
+ * report limits in the millions, but mobile drivers do not, so this is only
+ * an upper bound -- VkDeviceManager::maxBindlessTextures() clamps it against
+ * the real device and is the value every allocation, descriptor write and
+ * bounds check must actually use.
+ *
+ * 4096 simultaneously-resident textures is a deliberately generous ceiling
+ * for a scene; the table costs one descriptor per slot (tens of bytes), not
+ * one texture.
+ */
+inline constexpr u32 kDesiredBindlessTextures = 4096;
+
+//! Floor below which the bindless design is not viable at all. Any device
+//! advertising the descriptor-indexing features but unable to host a table
+//! this size is rejected at device selection rather than silently limping.
+inline constexpr u32 kMinBindlessTextures = 128;
+
+namespace aura3d {
+namespace vk {
+
+/**
+ * @brief Frames the CPU may record ahead of the GPU.
+ *
+ * Every per-frame resource is replicated this many times -- command buffers,
+ * fences, semaphores, the transform/light uniform buffers and their descriptor
+ * sets, the overlay's vertex/index buffers -- so that recording frame N+1
+ * never touches memory frame N is still being rendered from. The per-frame
+ * fence waited on in beginFrame() is what enforces that, and it is indexed by
+ * frame slot, so anything the CPU rewrites per frame must be indexed by frame
+ * slot too (not by swapchain image, whose index acquire hands back before the
+ * presentation engine has actually released it).
+ *
+ * Resolved from renderer.max_frames_in_flight (default 2) rather than fixed
+ * at compile time: every VkFixedArray<T> below is sized from this at
+ * construction, not from a template parameter, so raising it to 3 trades a
+ * little latency and per-frame-resource memory for one more frame of
+ * CPU/GPU overlap -- see AuraSettings::getMaxFramesInFlight(). Clamped to at
+ * least 1: beginFrame()'s modulo-indexed frame slot requires a non-empty set
+ * of resources to index into.
+ */
+[[nodiscard]] inline u32 GetMaxFramesInFlight() noexcept
+{
+    return static_cast<u32>(std::max(1, AuraSettings::get()->getMaxFramesInFlight()));
+}
+
+} // namespace vk
+} // namespace aura3d
+
 // Template array definitions
 template <typename T>
-using VkFixedArray = std::array<T, MAX_FRAMES_IN_FLIGHT>;
+using VkFixedArray = std::vector<T>;
 
 template <typename T>
 using AttributeDescriptionArray = std::array<T, MAX_ATTRIBUTE_DESCRIPTION>;
@@ -64,6 +119,17 @@ struct PushConstantBlock {
 
 static_assert(sizeof(PushConstantBlock) == 128,
               "PushConstantBlock must fit the guaranteed 128-byte push-constant budget");
+
+/**
+ * @brief Per-draw push constant for the unlit 2D overlay pipeline.
+ *
+ * Mirrors PushConstantBlock's "fits the guaranteed budget, no capability
+ * check needed" reasoning: 68 of the 128 guaranteed bytes are used.
+ */
+struct Overlay2DPushConstants {
+    glm::mat4 projection{1.0f};
+    u32 textureIndex = 0;
+};
 
 /**
  * @brief The fixed-function state that actually differs between the engine's
@@ -166,6 +232,11 @@ struct DescriptorBindingInfo {
     u32 descriptorCount; //! Number of descriptors at this binding.
     VkShaderStageFlags stageFlags; //! Shader stages that access this binding.
     const VkSampler* pImmutableSamplers; //! Optional immutable samplers (may be nullptr).
+    //! Left at 0 for ordinary bindings (transform/light UBOs). A bindless
+    //! texture array sets PARTIALLY_BOUND | UPDATE_AFTER_BIND |
+    //! VARIABLE_DESCRIPTOR_COUNT here so VkGraphicsPipelineManager knows to
+    //! chain a VkDescriptorSetLayoutBindingFlagsCreateInfo for its set.
+    VkDescriptorBindingFlags bindingFlags = 0;
 
     DescriptorBindingInfo() : binding(0), descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
         descriptorCount(1), stageFlags(VK_SHADER_STAGE_VERTEX_BIT),

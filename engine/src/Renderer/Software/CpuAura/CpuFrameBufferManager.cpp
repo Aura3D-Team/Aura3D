@@ -3,34 +3,59 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
-#include <future>
-#include <thread>
 #include <vector>
 
-#include <ink/ThreadPool.h>
 #include <wma/managers/IWindowManager.hpp>
-#include <wma/rendering/SoftwareRenderer.hpp>
+
+#include "aura/Core/JobSystem/JobSystem.h"
 
 namespace aura3d {
 namespace cpu {
+
+namespace {
+
+/**
+ * @brief Whether the directed edge @p a -> @p b is a top or left edge of a
+ *        positive-area triangle, in this rasteriser's Y-down screen space.
+ *
+ * The fill rule's classification, derived from the same edge function the
+ * rasteriser uses, @c edgeFn(A,B,P) = (B-A) x (P-A):
+ *
+ *  - A horizontal edge (@c ey == 0) has the interior below it exactly when
+ *    @c ex > 0, which makes it the triangle's *top* edge.
+ *  - A non-horizontal edge has the interior to its right exactly when
+ *    @c ey < 0, which makes it a *left* edge.
+ *
+ * Note this is the mirror of the classification usually quoted for Y-up
+ * rasterisers: flipping the Y axis reverses every winding with it.
+ */
+[[nodiscard]] constexpr bool isTopLeftEdge(const ScreenVertex& a, const ScreenVertex& b) noexcept
+{
+    const f32 ex = b.x - a.x;
+    const f32 ey = b.y - a.y;
+    return (ey == 0.0f && ex > 0.0f) || (ey < 0.0f);
+}
+
+} // namespace
 
 /**
  * Constructor - allocates the CPU colour/depth plane. Presentation is delegated
  * to the wma window manager, so no backend (SDL/X11/Wayland) objects are owned
  * here; wma::IWindowManager::lockFramebuffer() hands us the surface each frame.
  * @param windowManager wma window created with GraphicsAPI::CPU.
- * @param config        Width, height, depth-buffer and worker-count settings.
+ * @param config        Width, height and depth-buffer settings.
+ * @param jobs          Engine-wide worker pool this manager dispatches
+ *                       rasterisation and presentation across; see _jobs.
  */
-CpuFrameBufferManager::CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config) :
+CpuFrameBufferManager::CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config, const JobSystem& jobs) :
     settings(config),
     // Initialize framebuffer with Pixel objects: black color (0) and max depth (1.0f)
     framebuffer(static_cast<size_t>(config.width) * static_cast<size_t>(config.height), Pixel{0, 1.0f}),
     _windowManager(&windowManager),
-    _rasterPool(std::make_unique<ink::ThreadPool>(static_cast<size_t>(_workerCount))),
+    _jobs(&jobs),
+    _workerCount(jobs.workerCount()),
     _font(GetDefaultBitmapFont())
 {
-    const unsigned count = std::thread::hardware_concurrency();
-    _workerCount = config.threadCount > 0 ? config.threadCount : count > 0 ? static_cast<i32>(count) : 1;
 }
 
 /**
@@ -52,12 +77,18 @@ void CpuFrameBufferManager::clear(u32 color)
  * Process:
  * 1. Acquire the backend's CPU-writable surface via lockFramebuffer().
  * 2. Copy our packed ARGB8888 colours into it — honouring the surface pitch —
- *    in parallel across CPU cores with wma::parallelFill(), the software
- *    analogue of a GPU spreading pixel work across its execution units.
+ *    in parallel row-bands across the engine's shared worker pool (the same
+ *    one flush() rasterises with; see _jobs), the software analogue of a GPU
+ *    spreading pixel work across its execution units.
  * 3. Hand the surface back with presentFramebuffer(), which blits it to screen.
  *
- * This works on every wma backend that supports GraphicsAPI::CPU, with no
- * direct dependency on any windowing library.
+ * wma's role here is purely the raw surface handoff (lockFramebuffer() /
+ * presentFramebuffer()) -- the parallel fill itself used to run through wma's
+ * own parallelFill() helper, backed by a second, separate process-wide pool
+ * of wma's own. wma is the window manager, not the renderer; the renderer is
+ * this class, so the parallelism the renderer needs belongs to it too.
+ * parallelFill() and the pool behind it are gone from wma entirely now --
+ * this class was its only real consumer.
  */
 void CpuFrameBufferManager::renderFramebuffer()
 {
@@ -73,12 +104,25 @@ void CpuFrameBufferManager::renderFramebuffer()
     // every sample to the plane we actually own.
     const i32 planeWidth  = settings.width;
     const i32 planeHeight = settings.height;
+    const Pixel* plane = framebuffer.data();
 
-    wma::parallelFill(target, [this, planeWidth, planeHeight](i32 x, i32 y) noexcept -> u32 {
-        if (x < planeWidth && y < planeHeight)
-            return framebuffer[static_cast<size_t>(y) * static_cast<size_t>(planeWidth)
-                             + static_cast<size_t>(x)].rgb;
-        return 0u;
+    void* const dstPixels = target.pixels;
+    const i32 dstPitch = target.pitch;
+    const i32 dstWidth = target.width;
+
+    _jobs->dispatch(target.height, [=](i32 yStart, i32 yEnd) {
+        for (i32 y = yStart; y < yEnd; ++y)
+        {
+            auto* row = reinterpret_cast<u32*>(static_cast<u8*>(dstPixels) + static_cast<size_t>(y) * dstPitch);
+            const bool rowInPlane = y < planeHeight;
+
+            for (i32 x = 0; x < dstWidth; ++x)
+            {
+                row[x] = (rowInPlane && x < planeWidth)
+                             ? plane[static_cast<size_t>(y) * static_cast<size_t>(planeWidth) + static_cast<size_t>(x)].rgb
+                             : 0u;
+            }
+        }
     });
 
     _windowManager->presentFramebuffer();
@@ -412,7 +456,7 @@ void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex& v0, const 
                                         (b0 * col0w + b1 * col1w + b2 * col2w) * perspW,
                                         0.0f, 1.0f);
 
-            // Texture sample (nearest-neighbour)
+            // Texture sample (bilinear; see Texture::sample())
             const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
 
             // Unpack texel (ARGB8888 — matches SDL_PIXELFORMAT_ARGB8888)
@@ -459,14 +503,41 @@ void CpuFrameBufferManager::rasterizeTriangle2DSpan(const ScreenVertex& v0, cons
     if (xmin > xmax || ymin > ymax)
         return;
 
-    //! Twice the signed area, doubling as the edge-function denominator.
-    const float area2 = (v1.x - v0.x) * (v2.y - v0.y)
-                      - (v1.y - v0.y) * (v2.x - v0.x);
+    /*
+     * Reordered to a positive area so a single fill rule covers both windings.
+     * Swapping two vertices flips the sign of the area and reverses every edge,
+     * which is exactly the transformation isTopLeftEdge() is stated for; the
+     * barycentrics below follow the reordered vertices, so attributes are
+     * unaffected.
+     */
+    const ScreenVertex* p0 = &v0;
+    const ScreenVertex* p1 = &v1;
+    const ScreenVertex* p2 = &v2;
 
-    if (std::abs(area2) < 1e-6f)
+    float area2 = signedArea2(v0, v1, v2);
+    if (area2 < 0.0f)
+    {
+        std::swap(p1, p2);
+        area2 = -area2;
+    }
+
+    if (area2 < 1e-6f)
         return; //! Degenerate: zero-area triangle covers nothing.
 
     const float invArea2 = 1.0f / area2;
+
+    /*
+     * Top-left fill rule. Without it a pixel falling exactly on the edge two
+     * triangles share belongs to *both*, and since this path blends rather than
+     * overwrites, it is composited twice: the second pass adds
+     * a*(1-a)*(src - dst) on top of the first. Along the diagonal every quad is
+     * split on, that draws a seam -- brighter than its surroundings where the
+     * source out-glows the destination, darker where it does not. Awarding a
+     * shared edge to exactly one of the two triangles is what removes it.
+     */
+    const bool topLeft0 = isTopLeftEdge(*p1, *p2);
+    const bool topLeft1 = isTopLeftEdge(*p2, *p0);
+    const bool topLeft2 = isTopLeftEdge(*p0, *p1);
 
     for (int y = ymin; y <= ymax; ++y)
     {
@@ -476,24 +547,22 @@ void CpuFrameBufferManager::rasterizeTriangle2DSpan(const ScreenVertex& v0, cons
         {
             const float px = static_cast<float>(x) + 0.5f;
 
-            const float w0 = (v2.x - v1.x) * (py - v1.y) - (v2.y - v1.y) * (px - v1.x);
-            const float w1 = (v0.x - v2.x) * (py - v2.y) - (v0.y - v2.y) * (px - v2.x);
-            const float w2 = (v1.x - v0.x) * (py - v0.y) - (v1.y - v0.y) * (px - v0.x);
+            const float w0 = (p2->x - p1->x) * (py - p1->y) - (p2->y - p1->y) * (px - p1->x);
+            const float w1 = (p0->x - p2->x) * (py - p2->y) - (p0->y - p2->y) * (px - p2->x);
+            const float w2 = (p1->x - p0->x) * (py - p0->y) - (p1->y - p0->y) * (px - p0->x);
 
-            //! Inside test, normalised by the area's sign so either winding works.
-            if (area2 > 0.0f) {
-                if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
-            } else {
-                if (w0 > 0.0f || w1 > 0.0f || w2 > 0.0f) continue;
-            }
+            //! Inside test: strictly inside, or on an edge this triangle owns.
+            if (w0 < 0.0f || (w0 == 0.0f && !topLeft0)) continue;
+            if (w1 < 0.0f || (w1 == 0.0f && !topLeft1)) continue;
+            if (w2 < 0.0f || (w2 == 0.0f && !topLeft2)) continue;
 
             //! Affine barycentrics: orthographic projection means w is constant.
             const float b0 = w0 * invArea2;
             const float b1 = w1 * invArea2;
             const float b2 = w2 * invArea2;
 
-            const glm::vec2 uv = b0 * v0.uv + b1 * v1.uv + b2 * v2.uv;
-            const glm::vec4 vcolor = glm::clamp(b0 * v0.color + b1 * v1.color + b2 * v2.color,
+            const glm::vec2 uv = b0 * p0->uv + b1 * p1->uv + b2 * p2->uv;
+            const glm::vec4 vcolor = glm::clamp(b0 * p0->color + b1 * p1->color + b2 * p2->color,
                                                 0.0f, 1.0f);
 
             const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
@@ -538,17 +607,32 @@ void CpuFrameBufferManager::rasterizeTriangle2DSpan(const ScreenVertex& v0, cons
     }
 }
 
-void CpuFrameBufferManager::dispatchRowBands(const std::function<void(i32 yStart, i32 yEnd)>& rasterizeBand)
+void CpuFrameBufferManager::updateBandRanges()
 {
+    _bandRanges.clear();
+
     if (settings.height <= 0)
         return;
 
+    /*
+     * One band per worker, not several: dispatchRowBands() now runs every
+     * band through JobSystem::dispatch(), which statically partitions
+     * [0, bandCount) into contiguous per-worker chunks ahead of time rather
+     * than handing tasks out through a shared queue. Splitting finer than the
+     * worker count used to help exactly because that queue let an idle
+     * worker steal the next outstanding band from a busy one; a static
+     * partition has nothing to steal from, so the extra bands would only add
+     * more (now-pointless) dispatch overhead without recovering any of the
+     * load-balance they used to buy. See the JobSystem/CpuFrameBufferManager
+     * pool-consolidation notes for the trade this made: dynamic load
+     * balancing traded for roughly a 4x cut in per-frame task submissions,
+     * which measurement showed mattered far more for typical scene sizes.
+     */
     const i32 bands = std::min(_workerCount, settings.height);
     const i32 rowsPerBand = settings.height / bands;
     const i32 remainder = settings.height % bands;
 
-    std::vector<std::future<void>> futures;
-    futures.reserve(static_cast<size_t>(bands));
+    _bandRanges.reserve(static_cast<size_t>(bands));
 
     i32 y = 0;
     for (i32 b = 0; b < bands; ++b)
@@ -557,39 +641,149 @@ void CpuFrameBufferManager::dispatchRowBands(const std::function<void(i32 yStart
         //! than dumping it all on the last one, so no single thread is left
         //! with a visibly taller slice than its neighbours.
         const i32 bandRows = rowsPerBand + (b < remainder ? 1 : 0);
-        const i32 yStart = y;
-        const i32 yEnd = y + bandRows;
-        y = yEnd;
+        _bandRanges.push_back({y, y + bandRows});
+        y += bandRows;
+    }
+}
 
-        futures.push_back(_rasterPool->submit([&rasterizeBand, yStart, yEnd] {
-            rasterizeBand(yStart, yEnd);
-        }));
+void CpuFrameBufferManager::dispatchRowBands(
+    const std::function<void(i32 band, i32 yStart, i32 yEnd)>& rasterizeBand)
+{
+    if (_bandRanges.empty())
+        return;
+
+    //! JobSystem::dispatch() itself splits [0, bandCount) across the shared
+    //! pool and blocks until every worker's slice is done; this just walks
+    //! whichever contiguous slice of _bandRanges a given worker was handed.
+    _jobs->dispatch(static_cast<i32>(_bandRanges.size()), [this, &rasterizeBand](i32 begin, i32 end) {
+        for (i32 band = begin; band < end; ++band)
+        {
+            const BandRange range = _bandRanges[static_cast<size_t>(band)];
+            rasterizeBand(band, range.yStart, range.yEnd);
+        }
+    });
+}
+
+void CpuFrameBufferManager::binQueuedTriangles()
+{
+    _bandBins.resize(_bandRanges.size());
+    for (std::vector<u32>& bin : _bandBins)
+        bin.clear();
+
+    if (_bandRanges.empty())
+        return;
+
+    /*
+     * Bands are contiguous and ordered, so the band a row belongs to is found
+     * by walking forward from the previous triangle's band rather than
+     * searching. In practice the whole loop is two comparisons per triangle.
+     */
+    const i32 bandCount = static_cast<i32>(_bandRanges.size());
+
+    for (u32 index = 0; index < _queuedTriangles.size(); ++index)
+    {
+        const ScreenTriangle& tri = _queuedTriangles[index];
+
+        const float minYf = std::min({tri.v0.y, tri.v1.y, tri.v2.y});
+        const float maxYf = std::max({tri.v0.y, tri.v1.y, tri.v2.y});
+
+        //! Matches the row range rasterizeTriangleSpan() derives from the same
+        //! vertices, so a triangle is never binned away from a row it covers.
+        const i32 minY = std::max(0, static_cast<i32>(std::floor(minYf)));
+        const i32 maxY = std::min(settings.height - 1, static_cast<i32>(std::ceil(maxYf)));
+
+        if (minY > maxY)
+            continue; //! Entirely above or below the framebuffer.
+
+        for (i32 band = 0; band < bandCount; ++band)
+        {
+            const BandRange range = _bandRanges[band];
+            if (range.yStart > maxY)
+                break; //! Bands are ordered; nothing further can overlap.
+            if (range.yEnd > minY)
+                _bandBins[band].push_back(index);
+        }
+    }
+}
+
+void CpuFrameBufferManager::submitTriangles(std::span<const ScreenTriangle> triangles,
+                                            const Texture* texture)
+{
+    if (triangles.empty())
+        return;
+
+    QueuedBatch batch;
+    batch.texture = texture;
+    batch.overlay = false;
+    batch.first = static_cast<u32>(_queuedTriangles.size());
+    batch.count = static_cast<u32>(triangles.size());
+
+    _queuedTriangles.insert(_queuedTriangles.end(), triangles.begin(), triangles.end());
+    _queuedBatches.push_back(batch);
+}
+
+void CpuFrameBufferManager::submitTriangles2D(std::span<const ScreenTriangle> triangles,
+                                              const Texture* texture)
+{
+    if (triangles.empty())
+        return;
+
+    QueuedBatch batch;
+    batch.texture = texture;
+    batch.overlay = true;
+    batch.first = static_cast<u32>(_queuedTriangles.size());
+    batch.count = static_cast<u32>(triangles.size());
+
+    _queuedTriangles.insert(_queuedTriangles.end(), triangles.begin(), triangles.end());
+    _queuedBatches.push_back(batch);
+}
+
+void CpuFrameBufferManager::flush()
+{
+    if (_queuedTriangles.empty())
+    {
+        _queuedBatches.clear();
+        return;
     }
 
-    for (auto& f : futures)
-        f.get();
-}
+    updateBandRanges();
+    binQueuedTriangles();
 
-void CpuFrameBufferManager::drawTriangles(std::span<const ScreenTriangle> triangles, const Texture* texture)
-{
-    if (triangles.empty())
-        return;
+    dispatchRowBands([this](i32 band, i32 yStart, i32 yEnd) {
+        const std::vector<u32>& bin = _bandBins[static_cast<size_t>(band)];
 
-    dispatchRowBands([this, triangles, texture](i32 yStart, i32 yEnd) {
-        for (const ScreenTriangle& tri : triangles)
-            rasterizeTriangleSpan(tri.v0, tri.v1, tri.v2, texture, yStart, yEnd);
+        /*
+         * Walk the band's (ascending) triangle indices and the batch list
+         * together. Batches partition _queuedTriangles into contiguous ranges
+         * in submission order, so one linear pass visits every triangle in
+         * exactly the order it was submitted -- which is what keeps the
+         * blended 2D overlay compositing on top of the scene rather than
+         * under it -- while carrying each triangle's texture and mode along
+         * without storing them per triangle.
+         */
+        size_t cursor = 0;
+
+        for (const QueuedBatch& batch : _queuedBatches)
+        {
+            const u32 end = batch.first + batch.count;
+
+            while (cursor < bin.size() && bin[cursor] < end)
+            {
+                const ScreenTriangle& tri = _queuedTriangles[bin[cursor]];
+
+                if (batch.overlay)
+                    rasterizeTriangle2DSpan(tri.v0, tri.v1, tri.v2, batch.texture, yStart, yEnd);
+                else
+                    rasterizeTriangleSpan(tri.v0, tri.v1, tri.v2, batch.texture, yStart, yEnd);
+
+                ++cursor;
+            }
+        }
     });
-}
 
-void CpuFrameBufferManager::drawTriangles2D(std::span<const ScreenTriangle> triangles, const Texture* texture)
-{
-    if (triangles.empty())
-        return;
-
-    dispatchRowBands([this, triangles, texture](i32 yStart, i32 yEnd) {
-        for (const ScreenTriangle& tri : triangles)
-            rasterizeTriangle2DSpan(tri.v0, tri.v1, tri.v2, texture, yStart, yEnd);
-    });
+    //! clear() keeps the capacity: the next frame reuses these allocations.
+    _queuedTriangles.clear();
+    _queuedBatches.clear();
 }
 
 /**

@@ -4,6 +4,8 @@
 
 #include "aura/aura.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Core/JobSystem/JobSystem.h"
+#include "aura/Core/Profiling/FrameProfiler.h"
 
 namespace aura3d {
 namespace cpu {
@@ -19,11 +21,17 @@ CPURenderer::~CPURenderer()
     cleanup();
 }
 
-void CPURenderer::initialize(aura3d::AuraSettings* settings)
+void CPURenderer::initialize(aura3d::AuraSettings* settings, const JobSystem* jobs)
 {
     _vertexBufferPool3d.reserve(256);
     _indexBufferPool.reserve(256);
     _texturePool.reserve(64);
+
+    //! Stored before createWindow(): it builds _frameBufferManager, which
+    //! dispatches both rasterisation and presentation through this pool
+    //! instead of owning one of its own (see CpuFrameBufferManager's
+    //! constructor comment).
+    _jobs = jobs;
 
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
 }
@@ -38,14 +46,11 @@ void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBac
     cfg.width  = _windowDetails.width;
     cfg.height = _windowDetails.height;
     cfg.useDepthBuffer = true;
-    //! 0 (the JSON default) auto-detects inside CpuFrameBufferManager; a
-    //! positive value pins the row-band rasteriser to that many threads.
-    cfg.threadCount = aura3d::AuraSettings::get()->getCpuThreads();
 
-    _frameBufferManager = std::make_unique<CpuFrameBufferManager>(*_windowManagerApi, cfg);
+    _frameBufferManager = std::make_unique<CpuFrameBufferManager>(*_windowManagerApi, cfg, *_jobs);
 
     INK_INFO << "CPURenderer: rasterising across "
-             << _frameBufferManager->getWorkerCount() << " worker thread(s)";
+             << _frameBufferManager->getWorkerCount() << " worker thread(s) (shared engine pool)";
 }
 
 void CPURenderer::handleWindowChanges()
@@ -68,7 +73,7 @@ void CPURenderer::cleanup()
 }
 
 //! Pools are indexed 0-based but handles are 1-based, so that no valid handle
-//! collides with INVALID_HANDLE and 0 stays reserved as "nothing bound".
+//! collides with the invalid-handle sentinel, and 0 stays reserved as "nothing bound".
 VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
 {
     _vertexBufferPool3d.push_back(std::move(vertices));
@@ -99,10 +104,10 @@ TextureHandle CPURenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 
 TextureHandle CPURenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
 {
-    if (!rgbaPixels || width == 0 || height == 0) 
+    if (!rgbaPixels || width == 0 || height == 0)
     {
         INK_ERROR << "CPURenderer: refusing to upload an empty texture";
-        return INVALID_HANDLE;
+        return {};
     }
 
     Texture tex(static_cast<int>(width), static_cast<int>(height));
@@ -123,7 +128,7 @@ TextureHandle CPURenderer::createTextureFromPixels(const u8* rgbaPixels, u32 wid
     }
 
     //! Textures are stored as mip-level vectors.
-    //! Handle is 1-based so that no valid handle collides with INVALID_HANDLE.
+    //! Handle is 1-based so that no valid handle collides with the invalid-handle sentinel.
     _texturePool.push_back({ std::move(tex) });
     return static_cast<TextureHandle>(_texturePool.size()); // 1-based
 }
@@ -133,7 +138,7 @@ TextureHandle CPURenderer::createDynamicTexture(u32 width, u32 height)
     if (width == 0 || height == 0)
     {
         INK_ERROR << "CPURenderer: refusing to allocate a zero-sized dynamic texture";
-        return INVALID_HANDLE;
+        return {};
     }
 
     //! Texture's constructor zero-fills, i.e. transparent black.
@@ -148,13 +153,13 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
     if (!rgbaPixels || width == 0 || height == 0)
         return;
 
-    if (!isValidHandle(handle) || handle > static_cast<TextureHandle>(_texturePool.size()))
+    if (!isValidHandle(handle) || handle.value() > _texturePool.size())
     {
         INK_ERROR << "CPURenderer: updateTextureRegion on an unknown texture";
         return;
     }
 
-    auto& mips = _texturePool[handle - 1];
+    auto& mips = _texturePool[handle.value() - 1];
     if (mips.empty())
         return;
 
@@ -188,19 +193,44 @@ void CPURenderer::beginFrame()
 
 void CPURenderer::beginRenderPass()
 {
+    AURA_FRAME_SCOPE(FramePhase::BeginPass);
+
     if (_frameBufferManager)
         _frameBufferManager->clear(_clearColorU32);
 }
 
 void CPURenderer::endRenderPass()
 {
-    // Nothing: present happens in endFrame.
+    /*
+     * The frame's whole triangle queue is rasterised here, in one parallel
+     * dispatch. This is the pass boundary in exactly the sense the GPU
+     * backends use it -- the point past which no further geometry can arrive --
+     * which is what makes it the right place to stop deferring. Present still
+     * happens in endFrame().
+     *
+     * Which also makes EndPass the phase that owns essentially all of this
+     * backend's cost: on the GPU backends the same scope closes a command
+     * buffer, here it runs the rasteriser. Reading a phase breakdown across
+     * backends means reading what each phase does on that backend, not
+     * comparing the numbers directly.
+     */
+    AURA_FRAME_SCOPE(FramePhase::EndPass);
+
+    if (_frameBufferManager)
+        _frameBufferManager->flush();
 }
 
 void CPURenderer::endFrame()
 {
-    if (_frameBufferManager)
-        _frameBufferManager->renderFramebuffer();
+    {
+        AURA_FRAME_SCOPE(FramePhase::Present);
+
+        if (_frameBufferManager)
+            _frameBufferManager->renderFramebuffer();
+    }
+
+    //! Braced above so the present scope has closed before the frame does.
+    AURA_FRAME_END();
 }
 
 void CPURenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
@@ -314,10 +344,10 @@ glm::mat3 makeNormalMatrix(const glm::mat4& model) noexcept
 const Texture* CPURenderer::_resolveTexture(TextureHandle handle) const
 {
     // Handles are 1-based; anything else means "no texture".
-    if (!isValidHandle(handle) || handle > static_cast<TextureHandle>(_texturePool.size()))
+    if (!isValidHandle(handle) || handle.value() > _texturePool.size())
         return nullptr;
 
-    const auto& mips = _texturePool[handle - 1];
+    const auto& mips = _texturePool[handle.value() - 1];
     return mips.empty() ? nullptr : &mips[0];
 }
 
@@ -326,14 +356,14 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     if (!_frameBufferManager)
         return;
 
-    if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer > _vertexBufferPool3d.size())
+    if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer.value() > _vertexBufferPool3d.size())
         return;
 
-    if (!isValidHandle(_boundIndexBuffer) || _boundIndexBuffer > _indexBufferPool.size())
+    if (!isValidHandle(_boundIndexBuffer) || _boundIndexBuffer.value() > _indexBufferPool.size())
         return;
 
-    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer - 1];
-    const auto& indices = _indexBufferPool   [_boundIndexBuffer - 1];
+    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer.value() - 1];
+    const auto& indices = _indexBufferPool   [_boundIndexBuffer.value() - 1];
 
     const Texture* texture = _resolveTexture(_boundTexture);
 
@@ -346,14 +376,13 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     const u32 triCount  = safeCount / 3;
 
     /*
-     * Project every triangle first and rasterise the whole list in one
-     * dispatchRowBands() call, rather than one dispatch per triangle: with the
-     * list in hand, the framebuffer can be split into row-bands once and every
-     * core rasterises across the full mesh concurrently, instead of the work
-     * staying serialised on this thread one triangle at a time.
+     * Project the whole draw call, then hand the list over as one batch. The
+     * manager queues it and rasterises every batch of the frame in a single
+     * parallel dispatch (see CpuFrameBufferManager::flush), so the thread-pool
+     * fan-out is paid once per frame rather than once per draw call.
      */
-    std::vector<ScreenTriangle> triangles;
-    triangles.reserve(triCount);
+    _projectedTriangles.clear();
+    _projectedTriangles.reserve(triCount);
 
     for (u32 t = 0; t < triCount; ++t)
     {
@@ -372,10 +401,14 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
         if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
             continue;
 
-        triangles.push_back({sv0, sv1, sv2});
+        //! Matches the GPU backends' back-face culling; see isFrontFacing().
+        if (!isFrontFacing(sv0, sv1, sv2))
+            continue;
+
+        _projectedTriangles.push_back({sv0, sv1, sv2});
     }
 
-    _frameBufferManager->drawTriangles(triangles, texture);
+    _frameBufferManager->submitTriangles(_projectedTriangles, texture);
 
     (void)instanceCount;
 }
@@ -385,10 +418,10 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     if (!_frameBufferManager)
         return;
 
-    if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer > _vertexBufferPool3d.size())
+    if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer.value() > _vertexBufferPool3d.size())
         return;
 
-    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer - 1];
+    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer.value() - 1];
 
     const Texture* texture = _resolveTexture(_boundTexture);
 
@@ -400,8 +433,8 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     const u32 safeCount = std::min(vertexCount, static_cast<u32>(verts.size()));
     const u32 triCount  = safeCount / 3;
 
-    std::vector<ScreenTriangle> triangles;
-    triangles.reserve(triCount);
+    _projectedTriangles.clear();
+    _projectedTriangles.reserve(triCount);
 
     for (u32 t = 0; t < triCount; ++t)
     {
@@ -412,10 +445,14 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
         if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
             continue;
 
-        triangles.push_back({sv0, sv1, sv2});
+        //! Matches the GPU backends' back-face culling; see isFrontFacing().
+        if (!isFrontFacing(sv0, sv1, sv2))
+            continue;
+
+        _projectedTriangles.push_back({sv0, sv1, sv2});
     }
 
-    _frameBufferManager->drawTriangles(triangles, texture);
+    _frameBufferManager->submitTriangles(_projectedTriangles, texture);
 
     (void)instanceCount;
 }
@@ -424,6 +461,8 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
                               std::span<const u32> indices,
                               TextureHandle texture)
 {
+    AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
+
     if (!_frameBufferManager || vertices.empty() || indices.empty())
         return;
 
@@ -447,8 +486,8 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     };
 
     const size_t triCount = indices.size() / 3;
-    std::vector<ScreenTriangle> triangles;
-    triangles.reserve(triCount);
+    _projectedTriangles.clear();
+    _projectedTriangles.reserve(triCount);
 
     for (size_t t = 0; t < triCount; ++t)
     {
@@ -459,12 +498,18 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
         if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())
             continue;
 
-        triangles.push_back({toScreenVertex(vertices[i0]),
-                             toScreenVertex(vertices[i1]),
-                             toScreenVertex(vertices[i2])});
+        /*
+         * No back-face test here, matching the GPU overlay pipelines, which
+         * disable culling outright (see overlayOptions.cullBackFaces). UI
+         * quads carry no meaningful winding and a glyph must draw whichever
+         * way its two triangles happen to be wound.
+         */
+        _projectedTriangles.push_back({toScreenVertex(vertices[i0]),
+                                       toScreenVertex(vertices[i1]),
+                                       toScreenVertex(vertices[i2])});
     }
 
-    _frameBufferManager->drawTriangles2D(triangles, sampled);
+    _frameBufferManager->submitTriangles2D(_projectedTriangles, sampled);
 }
 
 } // namespace cpu

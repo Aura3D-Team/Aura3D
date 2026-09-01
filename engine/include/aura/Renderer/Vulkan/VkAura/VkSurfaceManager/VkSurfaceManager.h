@@ -27,13 +27,19 @@ public:
      * @brief Constructs a VkSurfaceManager with the specified Vulkan instance and window.
      *
      * This constructor initializes the VkSurfaceManager, creating a Vulkan surface
-     * that links the Vulkan instance to the provided GLFW window. The surface allows
+     * that links the Vulkan instance to the provided window, dispatching on
+     * `windowBackend` to the matching `vkCreate*SurfaceKHR` call. The surface allows
      * Vulkan to render on the window across different platforms.
      *
      * @param vkInstance A pointer to the Vulkan instance, used to create the surface.
-     * @param window A pointer to the GLFW window for which the surface will be created.
+     * @param windowBackend Which windowing backend `window` (and `nativeDisplay`) came from.
+     * @param window The backend's native window/surface handle (as returned by
+     *        `IWindowManager::getWindowInstance()`).
+     * @param nativeDisplay The backend's native display/connection handle (as returned
+     *        by `IWindowManager::getNativeDisplayHandle()`). Required for X11
+     *        (`Display*`) and Wayland (`wl_display*`); unused otherwise.
      */
-    VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window);
+    VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window, void* nativeDisplay = nullptr);
 
     /**
      * @brief Destroys the Vulkan surface and cleans up resources.

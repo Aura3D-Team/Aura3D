@@ -6,12 +6,33 @@
 
 set(AURA_TEST_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 
+# Unguarded, including the three debug-mode suites: AllocationTracker,
+# BenchmarkStats and DebugMode are all compiled regardless of
+# AURA_ENABLE_DEBUG_MODE (only the global allocation hooks and Engine's
+# instance are gated), so these run in a default build too. The parts that
+# genuinely need the hooks are skipped from inside test_allocation_tracker,
+# which reports the skip rather than passing silently.
 set(AURA_TEST_SUITES
+    test_allocation_tracker
+    test_audio_clip_loader
+    test_audio_engine
+    test_benchmark_stats
+    test_cpu_raster
+    test_debug_mode_report
     test_font_atlas
     test_image_loader
     test_mesh_loader
+    test_renderer_factory
+    test_settings
     test_shader_loader
+    test_texture_sampling
 )
+
+# Guarded because AURA_ENABLE_UI=OFF leaves aura3d::ui out of the library
+# entirely, and this suite is the one thing in the tree that links against it.
+if(AURA_ENABLE_UI)
+    list(APPEND AURA_TEST_SUITES test_ui test_ui_input)
+endif()
 
 foreach(_aura_test_name IN LISTS AURA_TEST_SUITES)
     add_executable(${_aura_test_name} ${_aura_test_name}.cpp)

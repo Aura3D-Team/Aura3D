@@ -3,10 +3,15 @@ name: Release
 # Triggered by pushing a version tag, e.g.:
 #   git tag v0.1.0 && git push origin v0.1.0
 #
-# Builds libAura3D.a (+ public headers) for Linux and Android, and the WASM
-# pkg/ output, then attaches one archive per platform to a GitHub Release.
-# These are separate binaries for separate toolchains/ABIs -- there is no
-# single artifact that covers all three (see docs/10-platform-builds.md).
+# Builds libAura3D.a/Aura3D.lib (+ public headers) for Linux, Android, macOS
+# and Windows, and the WASM pkg/ output, then attaches one archive per platform
+# to a GitHub Release. These are separate binaries for separate
+# toolchains/ABIs -- there is no single artifact that covers all five (see
+# docs/10-platform-builds.md).
+#
+# iOS is intentionally absent: ci.yml builds it to prove the Metal backend
+# compiles for the device, but a distributable .app needs a signing identity
+# this workflow does not hold.
 
 on:
   push:
@@ -94,6 +99,10 @@ jobs:
         # platform. Extract each archive into its own subdirectory first so
         # identically-named object files (e.g. two libraries each with a
         # "Utils.cpp.o") don't collide when re-archived together.
+        #
+        # ink::ThreadPool (used by CpuFrameBufferManager and VulkanRenderer)
+        # ships inside libink.a as of ink 0.3.0 -- there is no separate
+        # libthreading.a to merge any more.
         run: |
           FAT_LIB="$(pwd)/stage/aura3d-linux-x86_64/lib/libAura3D.a"
           WMA_LIB="$(find /usr/local -name 'libwma.a' | head -1)"
@@ -191,10 +200,10 @@ jobs:
 
       - name: Merge wma/ink into a self-contained static library
         # Same reasoning as the linux-release job: fold the (also static)
-        # arm64-v8a libwma.a/libink.a into libAura3D.a so embedding this
-        # release doesn't also require building wma/ink for Android. Use the
-        # NDK's own llvm-ar/llvm-ranlib rather than the host's, since these
-        # are arm64 ELF objects.
+        # arm64-v8a archives into libAura3D.a so embedding this release
+        # doesn't also require building wma/ink for Android. Use the NDK's
+        # own llvm-ar/llvm-ranlib rather than the host's, since these are
+        # arm64 ELF objects.
         run: |
           LLVM_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           FAT_LIB="$(pwd)/stage/aura3d-android-arm64-v8a/lib/libAura3D.a"
@@ -280,9 +289,280 @@ jobs:
           path: aura3d-${{ github.ref_name }}-wasm.tar.gz
           retention-days: 1
 
+  macos-release:
+    name: Package macOS
+    needs: create-release
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    # Metal-only, arm64: cmake/Platform.cmake forces AURA_ENABLE_METAL ON and
+    # Vulkan/OpenGL OFF on APPLE. See ci.yml's macos-build job, whose dependency
+    # chain this mirrors.
+    steps:
+      - name: Checkout Aura3D
+        uses: actions/checkout@v4
+        with:
+          path: aura3d
+
+      - name: Checkout ink
+        # macos-latest has no vulkan-dev container to pull prebuilt ink/wma
+        # from (unlike the Linux/Android/WASM jobs above), so build+install
+        # both dependencies from source here into a shared local prefix --
+        # same approach as ci.yml's macos-build job and windows-release below.
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: ink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: wma
+
+      - name: Install dependencies (Homebrew)
+        # Same package set as ci.yml's macos-build job -- see its Install
+        # dependencies step for why each one is here.
+        run: brew install ninja sdl3 nlohmann-json
+
+      - name: Configure ink
+        run: >
+          cmake -S ink -B ink/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DINK_BUILD_TESTS=OFF
+          -DINK_NATIVE_OPTIMIZE=OFF
+
+      - name: Build ink
+        run: cmake --build ink/build --parallel
+
+      - name: Install ink
+        run: cmake --install ink/build --prefix deps
+
+      - name: Configure wma
+        run: >
+          cmake -S wma -B wma/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DWMA_BUILD_EXAMPLES=OFF
+          -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_SDL=ON
+          -DWMA_ENABLE_GLFW=OFF
+
+      - name: Build wma
+        run: cmake --build wma/build --parallel
+
+      - name: Install wma
+        run: cmake --install wma/build --prefix deps
+
+      - name: Configure Aura3D
+        # AURA_NATIVE_OPTIMIZE=OFF for the same reason as the other release
+        # jobs: a binary that leaves this runner must not carry -march=native
+        # baked in for this specific CPU.
+        run: >
+          cmake -S aura3d -B aura3d/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DAURA_BUILD_TESTS=OFF
+          -DAURA_NATIVE_OPTIMIZE=OFF
+
+      - name: Build Aura3D
+        run: cmake --build aura3d/build --parallel
+
+      - name: Install Aura3D
+        run: cmake --install aura3d/build --prefix stage/aura3d-macos-arm64
+
+      - name: Merge wma/ink into a self-contained static library
+        # Same reasoning as the linux-release job. Apple's libtool is used rather
+        # than ar: it merges member objects from every input archive directly
+        # into -o and, unlike ar, renames colliding member names itself, so
+        # this needs no extract-into-separate-directories dance. The output is
+        # written to a sibling file and moved over libAura3D.a afterwards,
+        # since an archive cannot be both an input and the -o target.
+        #
+        # Nothing Metal-specific is merged: Metal/QuartzCore/Foundation are
+        # system frameworks, linked by the consumer (Aura3DConfig.cmake carries
+        # the -framework flags through the exported target), and metal-cpp is
+        # header-only.
+        run: |
+          FAT_LIB="stage/aura3d-macos-arm64/lib/libAura3D.a"
+
+          libtool -static -o "${FAT_LIB}.merged" \
+            "${FAT_LIB}" deps/lib/libwma.a deps/lib/libink.a
+          mv "${FAT_LIB}.merged" "${FAT_LIB}"
+
+          # This staged Aura3DConfig.cmake no longer needs to find wma/ink
+          # separately -- their code is now inside libAura3D.a. Leave the
+          # Threads find_dependency alone; that stays external. Does not touch
+          # cmake/Aura3DConfig.cmake.in, so a normal (non-release)
+          # `cmake --install` elsewhere is unaffected. BSD sed needs an explicit
+          # (empty) -i suffix, unlike the GNU sed the Linux/Windows jobs use.
+          CONFIG="stage/aura3d-macos-arm64/lib/cmake/Aura3D/Aura3DConfig.cmake"
+          sed -i '' '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
+
+      - name: Package
+        run: |
+          tar -C stage -czf aura3d-${{ github.ref_name }}-macos-arm64.tar.gz \
+            aura3d-macos-arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: aura3d-${{ github.ref_name }}-macos-arm64.tar.gz
+          retention-days: 1
+
+  windows-release:
+    name: Package Windows
+    needs: create-release
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Aura3D
+        uses: actions/checkout@v4
+        with:
+          path: aura3d
+
+      - name: Checkout ink
+        # windows-latest has no vulkan-dev container to pull prebuilt
+        # ink/wma from (unlike the Linux/Android/WASM jobs above), so
+        # build+install both dependencies from source here into a shared
+        # local prefix -- same approach as ci.yml's windows-build job.
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: ink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: wma
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v4
+
+      - name: Install dependencies (vcpkg)
+        # windows-latest ships vcpkg preinstalled at $VCPKG_INSTALLATION_ROOT.
+        # Same package set as ci.yml's windows-build job -- see its Install
+        # dependencies step for why each one is here.
+        run: >
+          vcpkg install
+          nlohmann-json:x64-windows-static
+          sdl3:x64-windows-static
+          glfw3:x64-windows-static
+          vulkan-headers:x64-windows-static
+          vulkan-loader:x64-windows-static
+
+      - name: Configure ink
+        run: >
+          cmake -S ink -B ink/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DINK_BUILD_TESTS=OFF
+          -DINK_NATIVE_OPTIMIZE=OFF
+
+      - name: Build ink
+        run: cmake --build ink/build --parallel
+
+      - name: Install ink
+        run: cmake --install ink/build --prefix deps
+
+      - name: Configure wma
+        # WMA_ENABLE_X11/WAYLAND are Linux-only (cmake/Dependencies.cmake
+        # forces them off on Windows) so only SDL3/GLFW are requested here.
+        run: >
+          cmake -S wma -B wma/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DWMA_BUILD_EXAMPLES=OFF
+          -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_SDL=ON
+          -DWMA_ENABLE_GLFW=ON
+
+      - name: Build wma
+        run: cmake --build wma/build --parallel
+
+      - name: Install wma
+        run: cmake --install wma/build --prefix deps
+
+      - name: Configure Aura3D
+        # AURA_NATIVE_OPTIMIZE=OFF for the same reason as ink/wma's own
+        # release jobs: a binary that leaves this runner must not carry
+        # -march=native baked in for this specific CPU (MSVC has no such
+        # flag anyway -- see cmake/Platform.cmake -- so this is a no-op here,
+        # kept only for consistency with the other release jobs).
+        run: >
+          cmake -S aura3d -B aura3d/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DAURA_BUILD_TESTS=OFF
+          -DAURA_NATIVE_OPTIMIZE=OFF
+
+      - name: Build Aura3D
+        run: cmake --build aura3d/build --parallel
+
+      - name: Install Aura3D
+        run: cmake --install aura3d/build --prefix stage/aura3d-windows-x86_64
+
+      - name: Merge wma/ink into a self-contained static library
+        # deps/lib/{wma,ink}.lib were built from source above (no
+        # vulkan-dev container on windows-latest to pull prebuilt copies
+        # from), so fold them into Aura3D.lib the same way linux-release
+        # folds libwma.a/libink.a into libAura3D.a. Unlike ar, MSVC's lib.exe merges
+        # member objects from every input .lib it's given directly into
+        # /OUT, so this needs no separate extract-then-re-archive step --
+        # but /OUT still can't also be read as an input in the same
+        # invocation (lib.exe truncates it before the merge finishes
+        # reading), so this merges into a sibling file first and moves it
+        # over Aura3D.lib after, the same way the ar-based jobs merge into
+        # "$FAT_LIB.merged" and mv it into place rather than overwriting
+        # $FAT_LIB directly mid-read.
+        run: |
+          FAT_LIB="stage/aura3d-windows-x86_64/lib/Aura3D.lib"
+
+          lib.exe /NOLOGO "/OUT:${FAT_LIB}.merged" \
+            "${FAT_LIB}" deps/lib/wma.lib deps/lib/ink.lib
+          mv "${FAT_LIB}.merged" "${FAT_LIB}"
+
+          # This staged Aura3DConfig.cmake no longer needs to find wma/ink
+          # separately -- their code is now inside Aura3D.lib. Leave
+          # Vulkan/OpenGL/Threads find_dependency calls alone; those stay
+          # external. Does not touch cmake/Aura3DConfig.cmake.in, so a
+          # normal (non-release) `cmake --install` elsewhere is unaffected.
+          CONFIG="stage/aura3d-windows-x86_64/lib/cmake/Aura3D/Aura3DConfig.cmake"
+          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
+
+      - name: Package
+        run: |
+          cd stage
+          7z a -tzip "../aura3d-${{ github.ref_name }}-windows-x86_64.zip" aura3d-windows-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: aura3d-${{ github.ref_name }}-windows-x86_64.zip
+          retention-days: 1
+
   publish-release:
     name: Publish release
-    needs: [linux-release, android-release, wasm-release]
+    needs: [linux-release, android-release, wasm-release, windows-release, macos-release]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -294,7 +574,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.ref_name }}" artifacts/*/*.tar.gz \
+          gh release upload "${{ github.ref_name }}" artifacts/*/*.tar.gz artifacts/*/*.zip \
             --repo "${{ github.repository }}"
           gh release edit "${{ github.ref_name }}" --draft=false \
             --repo "${{ github.repository }}"

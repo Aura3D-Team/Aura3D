@@ -6,20 +6,21 @@ not building Aura3D itself, but consuming the prebuilt archives attached to a
 project. If you're contributing to Aura3D itself, skip to
 [Development environment](#development-environment) below instead.
 
-Each release ships three archives — one per platform, from
+Each release ships four archives — one per platform, from
 `.github/workflows/release.yml`:
 
 | Archive | Contents | What it is |
 |---|---|---|
 | `aura3d-vX.Y.Z-linux-x86_64.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | A library to link into your own app |
+| `aura3d-vX.Y.Z-windows-x86_64.zip` | `lib/Aura3D.lib`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | The Windows/MSVC equivalent of the Linux archive above |
 | `aura3d-vX.Y.Z-android-arm64-v8a.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `examples/aura3d-sandbox-debug.apk` | A library to embed in your own Android app, plus a ready-to-install debug build of the Sandbox demo |
 | `aura3d-vX.Y.Z-wasm.tar.gz` | `index.html`, `pkg/{Aura3D.js,Aura3D.wasm,settings.json,resources/}` | The compiled **Sandbox demo**, ready to run in a browser — not a linkable library (see [WebAssembly](#webassembly) below) |
 
-On Linux and Android, `libAura3D.a` already has `libwma`/`libink`'s object
-code merged into it (see the release workflow's "Merge wma/ink into a
-self-contained static library" step) — you don't need to separately obtain
-those two. Vulkan/OpenGL stay external system dependencies either way, since
-those aren't things you'd bundle.
+On Linux, Windows, and Android, `libAura3D.a`/`Aura3D.lib` already has
+`libwma`/`libink`'s object code merged into it (see the release workflow's
+"Merge wma/ink into a self-contained static library" step) — you
+don't need to separately obtain those two. Vulkan/OpenGL stay external
+system dependencies either way, since those aren't things you'd bundle.
 
 ## Linux
 
@@ -42,6 +43,34 @@ target_link_libraries(MyGame PRIVATE Aura3D::Aura3D)
 the machine needs a working Vulkan driver + loader (or a Mesa OpenGL driver,
 depending which backend `settings.json` selects) — the same requirement any
 Vulkan/OpenGL application has, nothing Aura3D-specific.
+
+## Windows
+
+**Prerequisites to build against it**: an MSVC C++23 toolchain (Visual Studio
+2022 17.10+ or the Build Tools equivalent) and CMake. Same as Linux, you do
+**not** need `libwma`/`libink` installed separately — they're already inside
+`Aura3D.lib`.
+
+```powershell
+Expand-Archive aura3d-vX.Y.Z-windows-x86_64.zip -DestinationPath .
+```
+
+```cmake
+find_package(Aura3D REQUIRED PATHS /path/to/aura3d-windows-x86_64)
+add_executable(MyGame main.cpp)
+target_link_libraries(MyGame PRIVATE Aura3D::Aura3D)
+```
+
+`Aura3D::Aura3D` (like the rest of the archive) was built with
+`vulkan-headers`/`vulkan-loader` and `sdl3`/`glfw3` from vcpkg's
+`x64-windows-static` triplet — matching your own app's runtime library
+(`/MT` vs `/MD`) avoids a mismatched-CRT link error; the simplest way to get
+that automatically is configuring your app with the same
+`-DVCPKG_TARGET_TRIPLET=x64-windows-static` and vcpkg toolchain file.
+
+**To run**: the machine needs a working Vulkan driver + loader (or an OpenGL
+driver, depending which backend `settings.json` selects) — ordinary GPU
+driver requirements, nothing Aura3D-specific.
 
 ## Android
 
@@ -126,3 +155,9 @@ Inside the running container, `libink`/`libwma` are already built and
 installed for every platform Aura3D targets, so
 [01-getting-started.md](01-getting-started.md) works immediately with no
 further setup.
+
+Windows has no equivalent container — there's no Linux-container escape
+hatch for an MSVC toolchain — so `libink`/`libwma` are built from source
+with vcpkg on every Windows CI/release run instead; see
+[10-platform-builds.md#windows](10-platform-builds.md#windows) for the same
+steps done locally.

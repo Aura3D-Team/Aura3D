@@ -56,7 +56,7 @@ r->drawMesh(handle);
 ```
 
 `createMesh` uploads a CPU mesh to a GPU-resident vertex+index buffer pair
-and returns a `MeshHandle`; an empty mesh yields `INVALID_HANDLE`.
+and returns a `MeshHandle`; an empty mesh yields an invalid handle.
 `drawMesh` is the primary 3D draw path — it replaces the lower-level
 bind-vertex-buffer / bind-index-buffer / `drawIndexed` triple, which remains
 available on `IRenderer` for advanced use (instancing, manual state control).
@@ -107,7 +107,7 @@ ImageData fallback = ImageLoader::makeCheckerboard(64, 8); // size, cells-per-ed
 
 ```cpp
 struct Material {
-    TextureHandle albedo = INVALID_HANDLE;
+    TextureHandle albedo; // default-constructed: invalid, see below
     glm::vec4 tint = {1, 1, 1, 1};
     float roughness = 0.5f;
     float metallic = 0.0f;
@@ -131,8 +131,8 @@ directional light (see [06-lighting.md](06-lighting.md)); `tint`,
 they're part of the API so the shading model can grow later without another
 break. If you write your own shaders, they're already there to read.
 
-`INVALID_HANDLE` for `albedo` means "leave whatever texture is already
-bound" rather than "no texture" — bind a real texture (even the
+An invalid (default-constructed) `albedo` means "leave whatever texture is
+already bound" rather than "no texture" — bind a real texture (even the
 checkerboard) before the first draw that uses a material.
 
 ## `ResourceManager`: caching by path
@@ -164,15 +164,24 @@ everything else on `IRenderer`.
 ## Handles
 
 ```cpp
-using TextureHandle = u32; // same for MeshHandle, MaterialHandle, VertexBufferHandle, IndexBufferHandle
-constexpr u32 INVALID_HANDLE = UINT32_MAX;
-bool isValidHandle(u32 handle) noexcept;
+template <typename Tag> class Handle { /* ... */ };
+
+using TextureHandle = Handle<TextureTag>; // one instantiation per resource kind:
+                                           // MeshHandle, MaterialHandle,
+                                           // VertexBufferHandle, IndexBufferHandle, ...
 ```
 
+Each resource kind gets its own `Handle<Tag>` instantiation, so the compiler
+rejects a `TextureHandle` passed where a `MeshHandle` is expected — a class of
+bug a bare `u32` cannot catch. A default-constructed handle (`{}`) is always
+invalid; `isValidHandle(handle)` (or `handle.isValid()`) tests for it, and
+`handle.value()` recovers the raw `u32` for the rare call site that needs it
+(e.g. indexing into a backend's pool).
+
 Handles are 1-based indices into a per-renderer pool (`index + 1`), so `0`
-is never a valid handle and never collides with the `INVALID_HANDLE`
-sentinel. They are meaningful only to the renderer that issued them — see
-the backend-switching caveat in
+is never a valid handle and never collides with the invalid-handle sentinel
+(`Handle<Tag>::kInvalidValue`). They are meaningful only to the renderer that
+issued them — see the backend-switching caveat in
 [03-engine-and-renderer.md](03-engine-and-renderer.md#switching-backends-at-runtime).
 
 Next: **[06-lighting.md](06-lighting.md)**.

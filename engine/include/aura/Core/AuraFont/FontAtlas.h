@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <expected>
 #include <memory>
@@ -47,14 +48,8 @@ struct GlyphInfo {
  */
 [[nodiscard]] char32_t decodeUtf8(std::string_view text, size_t& offset) noexcept;
 
-/**
- * @brief Construction parameters for a @ref FontAtlas.
- *
- * At namespace scope rather than nested in FontAtlas because a nested class'
- * default member initializers are not usable inside the enclosing class'
- * own declarations, which is exactly where this type is wanted as a defaulted
- * parameter.
- */
+/// Construction parameters for a @ref FontAtlas. Namespace-scope (not nested)
+/// so it can be used as a defaulted parameter of FontAtlas' own methods.
 struct FontAtlasDesc {
     u32 width = 2048;          //! Atlas width in texels.
     u32 height = 2048;         //! Atlas height in texels.
@@ -89,6 +84,12 @@ public:
         u32 y = 0;
         u32 width = 0;
         u32 height = 0;
+    };
+
+    /// UV bounds of a reserved cell, top-left and bottom-right.
+    struct UvRect {
+        glm::vec2 min{0.0f};
+        glm::vec2 max{0.0f};
     };
 
     /// A dirty rectangle expanded to RGBA8, ready for a sub-image upload.
@@ -139,6 +140,43 @@ public:
 
     /// Kerning adjustment to apply between @p left and @p right, in pixels.
     [[nodiscard]] float kerning(char32_t left, char32_t right) const noexcept;
+
+    /**
+     * @brief Reserves (once) a fully opaque cell and returns the UV of its centre.
+     *
+     * The atlas is a coverage map, so a plain filled rectangle has no UV to
+     * sample without this: it lets a batcher mixing solid quads and text (a UI)
+     * sample both from one atlas and stay in a single draw call.
+     *
+     * The cell is 4x4 with the UV addressing its centre, so bilinear filtering
+     * never reaches a neighbouring glyph. Allocated on first call and cached
+     * thereafter; call early if failure is not tolerable.
+     *
+     * @return The UV to give every vertex of a solid quad, or nullopt when the
+     *         atlas is too full to place the cell.
+     */
+    [[nodiscard]] std::optional<glm::vec2> solidTexelUv() noexcept;
+
+    /**
+     * @brief Reserves (once per radius) a quarter-disc coverage mask.
+     *
+     * Lets a rounded rectangle be drawn as a nine-slice -- four corner quads
+     * plus three solid spans -- instead of one quad per scanline of the caps,
+     * which is O(radius) geometry for a shape whose description is a single
+     * number. Coverage is the exact area of the disc inside each texel, so the
+     * corner is antialiased rather than stepped.
+     *
+     * The cell is @p radius texels square with the curve's outside at uvMin,
+     * so a corner drawn @p radius pixels wide samples it one-to-one; the other
+     * three corners are the same cell with uvMin/uvMax swapped per axis.
+     *
+     * @return The cell's UV bounds, or nullopt when @p radius is out of range
+     *         or the atlas is too full to place it.
+     */
+    [[nodiscard]] const UvRect* cornerMask(u32 radius) noexcept;
+
+    /// Largest radius @ref cornerMask will place.
+    static constexpr u32 kMaxCornerRadius = 64;
 
     [[nodiscard]] float lineHeight() const noexcept { return _lineHeight; }
     [[nodiscard]] float ascent() const noexcept { return _ascent; }
@@ -193,6 +231,36 @@ private:
     std::vector<u8> _scratch;         //! RGBA staging for the pending upload.
 
     std::unordered_map<char32_t, GlyphInfo> _glyphs;
+
+    /*
+     * Direct-mapped kern cache, keyed by the packed codepoint pair.
+     *
+     * stbtt_GetCodepointKernAdvance() is not a lookup: it re-runs a cmap
+     * search for *both* codepoints and then a binary search of the kern table,
+     * and walkGlyphs() asks for every adjacent pair of every string it lays
+     * out -- twice over for a measured-then-drawn label, every frame. A fixed
+     * table keeps this allocation-free so kerning() can stay noexcept; the
+     * stored pair is compared before the value is trusted, so a collision
+     * costs a recompute and never a wrong advance.
+     */
+    static constexpr usize kKernCacheSlots = 512; //! Power of two; masked, not modulo.
+
+    struct KernEntry {
+        u64 pair = 0;       //! 0 is unreachable: walkGlyphs() stops at codepoint 0.
+        f32 value = 0.0f;
+    };
+
+    mutable std::array<KernEntry, kKernCacheSlots> _kernCache{};
+
+    //! Cached result of solidTexelUv(); empty until the first call places it.
+    std::optional<glm::vec2> _solidUv;
+
+    /*
+     * cornerMask() results, indexed by radius. Flat rather than a map: the
+     * lookup is on the UI's per-rectangle path and the key is already a small
+     * dense integer, so there is nothing for a hash to buy.
+     */
+    std::array<std::optional<UvRect>, kMaxCornerRadius + 1> _cornerMasks{};
 
     //! Shelf allocator cursor.
     u32 _shelfX = 0;

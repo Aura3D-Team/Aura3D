@@ -4,6 +4,7 @@
 
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkCountingAllocator.h"
 
 namespace aura3d {
 namespace vk {
@@ -22,7 +23,9 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData,
     validateInstanceExtensions();
     validateValidationLayers(enableValidationLayers);
 
-    VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, nullptr, &_vkInstance));
+    //! Paired with the vkDestroyInstance in the destructor; see
+    //! hostAllocationCallbacks() for why neither site is #ifdef'd.
+    VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, hostAllocationCallbacks(), &_vkInstance));
 
     if (vkDebuggerPreparationResult == VK_SUCCESS) {
         createDebuggerInstance(&_debugCreateInfo);
@@ -33,7 +36,7 @@ VkInstanceManager::~VkInstanceManager()
 {
     _vkDebugger.reset();
     if (_vkInstance != VK_NULL_HANDLE) {
-        vkDestroyInstance(_vkInstance, nullptr);
+        vkDestroyInstance(_vkInstance, hostAllocationCallbacks());
         _vkInstance = VK_NULL_HANDLE;
         INK_DEBUG << "VkInstance deleted";
     }

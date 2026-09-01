@@ -1,6 +1,7 @@
 #include "aura/Renderer/IRenderer.h"
 
 #include "aura/Core/ImageLoader/ImageLoader.h"
+#include "aura/Core/Profiling/FrameProfiler.h"
 
 namespace aura3d {
 
@@ -51,21 +52,33 @@ TextureHandle IRenderer::createCheckerboardTexture(u32 size)
 
 MeshHandle IRenderer::createMesh(const gfx::Mesh3D& mesh)
 {
-    if (mesh.empty()) 
+    //! The caller keeps its mesh, so its arrays are copied here and the copies
+    //! are what gets moved onward.
+    return createMesh(gfx::Mesh3D{mesh.vertices, mesh.indices});
+}
+
+MeshHandle IRenderer::createMesh(gfx::Mesh3D&& mesh)
+{
+    if (mesh.empty())
     {
         INK_WARN << "createMesh: refusing to upload an empty mesh";
-        return INVALID_HANDLE;
+        return {};
     }
 
     MeshRecord record;
-    record.indexCount   = static_cast<u32>(mesh.indices.size());
-    record.vertexBuffer = createVertexBuffer(std::vector<gfx::Vertex3D>(mesh.vertices));
-    record.indexBuffer  = createIndexBuffer(std::vector<u32>(mesh.indices));
+    record.indexCount = static_cast<u32>(mesh.indices.size());
 
-    if (!isValidHandle(record.vertexBuffer) || !isValidHandle(record.indexBuffer)) 
+    /*
+     * Moved, not copied. createVertexBuffer/createIndexBuffer already take
+     * their arrays by rvalue reference
+     */
+    record.vertexBuffer = createVertexBuffer(std::move(mesh.vertices));
+    record.indexBuffer  = createIndexBuffer(std::move(mesh.indices));
+
+    if (!isValidHandle(record.vertexBuffer) || !isValidHandle(record.indexBuffer))
     {
         INK_ERROR << "createMesh: backend failed to allocate the buffer pair";
-        return INVALID_HANDLE;
+        return {};
     }
 
     _meshes.push_back(record);
@@ -85,6 +98,39 @@ void IRenderer::drawMesh(MeshHandle mesh, TextureHandle texture)
         bindTexture(texture);
 
     drawIndexed(record->indexCount);
+}
+
+void IRenderer::drawMeshes(std::span<const DrawItem> items)
+{
+    /*
+     * The straightforward serial reading of the batch, and the definition of
+     * what any overriding backend must reproduce. A backend that records the
+     * items concurrently is still expected to produce this exact draw order.
+     *
+     * setTransform() takes a full TransformUBO, so the caller's view/proj have
+     * to be preserved while only the model matrix varies per item; the last
+     * value the caller set is read back here rather than being re-derived.
+     *
+     * Scoped as RecordScene here rather than in each backend: this body *is*
+     * the scene-recording phase for OpenGL and the software rasteriser, which
+     * both inherit it. VulkanRenderer overrides drawMeshes() and opens its own
+     * RecordScene scope around the threaded version, so the phase means the
+     * same thing on all three and is never double-counted.
+     */
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+
+    gfx::TransformUBO transform = _currentTransform;
+
+    for (const DrawItem& item : items)
+    {
+        transform.model = item.model;
+        setTransform(transform);
+
+        if (isValidHandle(item.material))
+            bindMaterial(item.material);
+
+        drawMesh(item.mesh);
+    }
 }
 
 MaterialHandle IRenderer::createMaterial(const Material& material)
@@ -112,18 +158,18 @@ void IRenderer::setLight(const gfx::LightUBO& light)
 
 const IRenderer::MeshRecord* IRenderer::getMesh(MeshHandle handle) const
 {
-    if (!isValidHandle(handle) || handle > _meshes.size())
+    if (!isValidHandle(handle) || handle.value() > _meshes.size())
         return nullptr;
 
-    return &_meshes[handle - 1];
+    return &_meshes[handle.value() - 1];
 }
 
 const Material* IRenderer::getMaterial(MaterialHandle handle) const
 {
-    if (!isValidHandle(handle) || handle > _materials.size())
+    if (!isValidHandle(handle) || handle.value() > _materials.size())
         return nullptr;
 
-    return &_materials[handle - 1];
+    return &_materials[handle.value() - 1];
 }
 
 void IRenderer::clearSharedResources()

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.3.3)
 
 project(Aura3D
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "Aura3D Multi Backend Engine"
     LANGUAGES C CXX
 )
@@ -23,8 +23,44 @@ option(AURA_ENABLE_VULKAN "Compile the Vulkan backend"            ON)
 option(AURA_ENABLE_OPENGL "Compile the OpenGL backend"            ON)
 option(AURA_ENABLE_CPU    "Compile the software (CPU) backend"    ON)
 
+# Default OFF rather than ON like the others: the Metal backend only exists on
+# Apple platforms, so an ON default would make every Linux/Windows/Android/WASM
+# configure fail on headers that cannot be found. cmake/Platform.cmake forces it
+# ON for APPLE (and forces it back OFF elsewhere if someone passes -D).
+option(AURA_ENABLE_METAL  "Compile the Metal backend (Apple only)" OFF)
+
+# The built-in immediate-mode UI (aura3d::ui). Backend-agnostic -- it is built
+# entirely on IRenderer::drawBatch2D and the glyph atlas, so it needs no
+# per-backend code and no third-party dependency. ON by default because it costs
+# one small translation unit; switch it off for a UI-free library.
+option(AURA_ENABLE_UI     "Compile the built-in immediate-mode UI" ON)
+
 option(AURA_ENABLE_LTO      "Enable link-time optimization"       ON)
 option(AURA_NATIVE_OPTIMIZE "Tune codegen for the host CPU"       ON)
+
+# Reports the CPU time drawMeshes() spends recording, averaged over 240 frames.
+# OFF by default: it is a profiling aid, not something a normal run should pay
+# a steady_clock read per frame for
+option(AURA_PROFILE_DRAW_RECORDING "Instrument and log drawMeshes() recording time" OFF)
+
+# Per-phase frame timing (wait/acquire/record/submit/present) from the render
+# loop itself. OFF by default -- it costs two clock reads per phase per frame,
+# which is material at several thousand FPS. See FrameProfiler.h: with this
+# off the scopes expand to nothing, so there is no counter and no branch left
+# in the build.
+option(AURA_PROFILE_FRAME "Instrument and log per-phase frame timing" OFF)
+
+# Benchmark/debug mode: CPU and GPU allocation tracking, per-frame sample
+# capture and a JSON metrics report, for pipeline performance tests and for
+# answering "did this change regress" in dev builds.
+#
+# OFF by default, and more emphatically so than the two profiling switches
+# above: it replaces the global operator new/delete pair with a counting one,
+# which is not something a shipping build should carry. Implies
+# AURA_PROFILE_FRAME below -- the report's per-phase breakdown *is*
+# FrameProfiler's output, so enabling one without the other would produce a
+# report with an empty timing section.
+option(AURA_ENABLE_DEBUG_MODE "Enable CPU/GPU allocation tracking and benchmark report generation" OFF)
 
 # WASM (Emscripten) output. Only meaningful for the Sandbox target when
 # EMSCRIPTEN; see apps/Sandbox/CMakeLists.txt for how these are consumed.
@@ -53,15 +89,22 @@ file(GLOB_RECURSE AURA_ENGINE_ALL_HEADERS
 
 # A game only ever touches aura3d::IRenderer (obtained from Engine or
 # RendererFactory) plus the backend-agnostic Core/Renderer/Utils API never
-# a concrete VulkanRenderer/OpenGLRenderer/CPURenderer or the manager classes
-# behind it (VkDeviceManager, GlTextureManager, ...). Those per-backend
-# directories are therefore split into their own, non-installed file set below:
-# still compiled and still visible to IDEs, just never copied by `cmake --install`.
+# a concrete VulkanRenderer/OpenGLRenderer/MetalRenderer/CPURenderer or the
+# manager classes behind it (VkDeviceManager, GlTextureManager, MtlLayerManager,
+# ...). Those per-backend directories are therefore split into their own,
+# non-installed file set below: still compiled and still visible to IDEs, just
+# never copied by `cmake --install`.
+#
+# Metal's exclusion carries extra weight: its headers include metal-cpp out of
+# vendor/, which is a PRIVATE include directory. Installing them would hand a
+# consumer headers it has no include path for.
+set(AURA_ENGINE_BACKEND_DIR_REGEX "/engine/include/aura/Renderer/(Vulkan|OpenGL|Metal|Software)/")
+
 set(AURA_ENGINE_PUBLIC_HEADERS ${AURA_ENGINE_ALL_HEADERS})
-list(FILTER AURA_ENGINE_PUBLIC_HEADERS EXCLUDE REGEX "/engine/include/aura/Renderer/(Vulkan|OpenGL|Software)/")
+list(FILTER AURA_ENGINE_PUBLIC_HEADERS EXCLUDE REGEX "${AURA_ENGINE_BACKEND_DIR_REGEX}")
 
 set(AURA_ENGINE_BACKEND_HEADERS ${AURA_ENGINE_ALL_HEADERS})
-list(FILTER AURA_ENGINE_BACKEND_HEADERS INCLUDE REGEX "/engine/include/aura/Renderer/(Vulkan|OpenGL|Software)/")
+list(FILTER AURA_ENGINE_BACKEND_HEADERS INCLUDE REGEX "${AURA_ENGINE_BACKEND_DIR_REGEX}")
 
 # Backends are selected at configure time: drop the sources of any backend that
 # is switched off so their API headers are never required.
@@ -75,9 +118,21 @@ if(NOT AURA_ENABLE_OPENGL)
     list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/OpenGL/")
 endif()
 
+if(NOT AURA_ENABLE_METAL)
+    list(FILTER AURA_ENGINE_PRIVATE_SOURCES  EXCLUDE REGEX "/engine/src/Renderer/Metal/")
+    list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/Metal/")
+endif()
+
 if(NOT AURA_ENABLE_CPU)
     list(FILTER AURA_ENGINE_PRIVATE_SOURCES  EXCLUDE REGEX "/engine/src/Renderer/Software/")
     list(FILTER AURA_ENGINE_BACKEND_HEADERS  EXCLUDE REGEX "/engine/include/aura/Renderer/Software/")
+endif()
+
+# The UI is a consumer of the renderer rather than a backend, so its headers are
+# public and drop out of AURA_ENGINE_PUBLIC_HEADERS rather than the backend set.
+if(NOT AURA_ENABLE_UI)
+    list(FILTER AURA_ENGINE_PRIVATE_SOURCES EXCLUDE REGEX "/engine/src/UI/")
+    list(FILTER AURA_ENGINE_PUBLIC_HEADERS  EXCLUDE REGEX "/engine/include/aura/UI/")
 endif()
 
 add_library(Aura3D STATIC)
@@ -104,9 +159,44 @@ target_include_directories(Aura3D
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/engine/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
-    # Header-only third-party loaders (stb_image, tinyobjloader).
+    # Third-party loaders: stb_image and tinyobjloader are header-only,
+    # stb_vorbis is compiled below.
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/stb
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/tinyobj
+)
+
+################################################################################
+# Ogg Vorbis decoding
+#
+# stb_vorbis is the one vendored stb library upstream ships as a .c rather than
+# a header, so it is compiled as its own translation unit the way vendor/glad's
+# loader is, instead of being pulled into a #define ..._IMPLEMENTATION TU.
+# AudioClipLoader.cpp includes it with STB_VORBIS_HEADER_ONLY for the
+# declarations alone.
+#
+# The two defines are PRIVATE on the target rather than set in either file so
+# that the compiled TU and the header-only include cannot disagree about which
+# API exists:
+#   NO_STDIO       - the engine reads the file itself (see readEntireFile), so
+#                    only the in-memory entry point is ever called. Also keeps
+#                    fopen out of the WASM and Android builds.
+#   NO_PUSHDATA_API- the pull API is the one AudioClipLoader uses.
+################################################################################
+
+target_sources(Aura3D PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/stb/stb_vorbis.c)
+
+target_compile_definitions(Aura3D PRIVATE
+    STB_VORBIS_NO_STDIO
+    STB_VORBIS_NO_PUSHDATA_API
+)
+
+# stb_vorbis is third-party C that does not build warning-clean under the
+# engine's own flags; its warnings are not actionable here and would drown the
+# ones that are.
+set_source_files_properties(
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/stb/stb_vorbis.c
+    PROPERTIES COMPILE_OPTIONS
+        "$<$<NOT:$<C_COMPILER_ID:MSVC>>:-w>$<$<C_COMPILER_ID:MSVC>:/w>"
 )
 
 target_link_libraries(Aura3D
@@ -122,6 +212,18 @@ if(EMSCRIPTEN)
     # graceful fallback. Actually emit and support C++ exception unwinding
     target_compile_options(Aura3D PUBLIC "-fexceptions")
     target_link_options(Aura3D PUBLIC "-fexceptions")
+
+    # ink carries -pthread (see its src/CMakeLists.txt), so JobSystem's
+    # ink::ThreadPool is real threads here. It is built lazily on the first
+    # dispatch() -- on the main thread, which in a browser cannot block while a
+    # worker spins up: a Worker only starts once the main thread returns to the
+    # event loop, and dispatch() blocks on its band futures immediately after.
+    # Pre-spawning the pool at startup is what keeps that first dispatch() from
+    # deadlocking. Sized from the same navigator.hardwareConcurrency that
+    # std::thread::hardware_concurrency() reports, and JobSystem only ever asks
+    # for workerCount() - 1, so the pool is never exhausted.
+    target_link_options(Aura3D PUBLIC
+        "-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency")
 endif()
 
 ################################################################################
@@ -163,8 +265,60 @@ if(AURA_ENABLE_OPENGL)
     endif()
 endif()
 
+if(AURA_ENABLE_METAL)
+    target_compile_definitions(Aura3D PUBLIC AURA_HAS_METAL)
+
+    # PRIVATE, unlike the OpenGL/Vulkan include dirs above: nothing in the
+    # installed public header set includes metal-cpp (the Metal backend headers
+    # are in the non-installed backend_headers file set), so a consumer never
+    # needs this on its own include path. vendor/metal-cpp is the include root so
+    # that <Metal/Metal.hpp>, <Foundation/Foundation.hpp> and
+    # <QuartzCore/QuartzCore.hpp> resolve the way Apple's own samples spell them.
+    target_include_directories(Aura3D PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/metal-cpp)
+
+    # metal-cpp is inline bindings over objc_msgSend, so the frameworks have to be
+    # linked even though this repository contains no Objective-C at all:
+    #   Metal      — MTLDevice/MTLBuffer/MTLTexture and the objc classes behind them
+    #   QuartzCore — CAMetalLayer/CAMetalDrawable
+    #   Foundation — NSString/NSError/NSAutoreleasePool
+    # PUBLIC because Aura3D is a static library: its consumers' final link is
+    # where these symbols actually have to resolve.
+    target_link_libraries(Aura3D PUBLIC
+        "-framework Metal"
+        "-framework QuartzCore"
+        "-framework Foundation")
+endif()
+
 if(AURA_ENABLE_CPU)
     target_compile_definitions(Aura3D PUBLIC AURA_HAS_CPU)
+endif()
+
+# PUBLIC so an application can guard its UI code on the same switch that decided
+# whether the module is in the library at all.
+if(AURA_ENABLE_UI)
+    target_compile_definitions(Aura3D PUBLIC AURA_HAS_UI)
+endif()
+
+# PUBLIC for the same reason as AURA_PROFILE_FRAME below: DebugMode.h and
+# AllocationTracker.h are public headers whose class layouts do not change with
+# the switch, but Engine::debugMode() returns null without it, and the global
+# operator new/delete hooks only exist with it. A consumer that disagreed with
+# the library about the macro would read a null subsystem as a bug.
+#
+# The `set()` (a normal variable shadowing the cache entry) is what makes debug
+# mode imply frame profiling: it is read by the if() immediately below, and
+# leaves the user's own -DAURA_PROFILE_FRAME cache value untouched.
+if(AURA_ENABLE_DEBUG_MODE)
+    target_compile_definitions(Aura3D PUBLIC AURA_ENABLE_DEBUG_MODE)
+    set(AURA_PROFILE_FRAME ON)
+    message(STATUS "Aura3D: debug/benchmark mode ON (implies AURA_PROFILE_FRAME)")
+endif()
+
+# PUBLIC: FrameProfiler.h is a public header, so the macro must agree between
+# the library's own translation units and any consumer that includes it
+if(AURA_PROFILE_FRAME)
+    target_compile_definitions(Aura3D PUBLIC AURA_PROFILE_FRAME)
 endif()
 
 ################################################################################
@@ -200,6 +354,7 @@ endif()
 if(AURA_BUILD_ORGLOGO)
     add_subdirectory(apps/OrgLogo)
 endif()
+
 
 ################################################################################
 # Tests

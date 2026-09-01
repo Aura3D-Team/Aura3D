@@ -24,3 +24,77 @@ if(ANDROID)
     # frames up in VulkanRenderer::beginFrame(), still aborted the process).
     set(AURA_ENABLE_LTO OFF CACHE BOOL "" FORCE)
 endif()
+
+if(NOT APPLE AND AURA_ENABLE_METAL)
+    message(WARNING
+        "[Aura3D] AURA_ENABLE_METAL is not supported on ${CMAKE_SYSTEM_NAME} — "
+        "forcing OFF (Metal is macOS/iOS only)"
+    )
+    set(AURA_ENABLE_METAL OFF CACHE BOOL "" FORCE)
+endif()
+
+if(APPLE)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(_AURA_APPLE_TARGET "iOS")
+    else()
+        set(_AURA_APPLE_TARGET "macOS")
+    endif()
+
+    message(STATUS "[Aura3D] Target platform: ${_AURA_APPLE_TARGET}  "
+                   "Arch=${CMAKE_OSX_ARCHITECTURES}  Compiler=${CMAKE_CXX_COMPILER_ID}")
+
+    # Metal is the only native GPU API Apple still ships, and the reason this
+    # backend exists:
+    #   - OpenGL was deprecated in macOS 10.14, caps out at 4.1, and never
+    #     existed on iOS at all (only OpenGL ES, itself deprecated).
+    #   - Vulkan is available solely through MoltenVK, a translation layer over
+    #     Metal. Explicitly out of scope: a native backend is the point.
+    set(AURA_ENABLE_METAL  ON  CACHE BOOL "" FORCE)
+    set(AURA_ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
+    set(AURA_ENABLE_OPENGL OFF CACHE BOOL "" FORCE)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        # A software rasteriser on a phone is neither useful nor exercised: it
+        # would rely on wma's SDL surface-blit path, which has no iOS coverage.
+        set(AURA_ENABLE_CPU OFF CACHE BOOL "" FORCE)
+
+        # -march=native is meaningless when cross-compiling for the device.
+        set(AURA_NATIVE_OPTIMIZE OFF CACHE BOOL "" FORCE)
+
+        # CTest cannot launch a test binary on a device or simulator from here;
+        # the iOS CI job is build-only for the same reason.
+        set(AURA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+        # An iOS executable is only launchable as an app bundle, so the Sandbox is
+        # built as one (see apps/Sandbox/CMakeLists.txt, which also embeds
+        # resources/ inside it rather than beside the binary).
+        set(CMAKE_MACOSX_BUNDLE ON)
+    endif()
+
+    unset(_AURA_APPLE_TARGET)
+endif()
+
+if(WIN32 AND NOT EMSCRIPTEN)
+    message(STATUS "[Aura3D] Target platform: Windows  Compiler=${CMAKE_CXX_COMPILER_ID}")
+
+    # <windows.h>'s min/max macros collide with std::min/std::max (Camera,
+    # VkAura's extent-clamping, ...) -- both ink and wma already keep this off
+    # their own targets, but Aura3D pulls in <windows.h> too via glad.c's WGL
+    # loader path when AURA_ENABLE_OPENGL is on, so the same guard applies
+    # here. WIN32_LEAN_AND_MEAN additionally keeps the winsock/GDI surface
+    # (unused by this engine) out of the build. Applies to every target in
+    # the tree, including consumers that pull in <windows.h> themselves.
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+
+    if(MSVC)
+        # /EHsc: standard C++ exception unwinding (off by default under
+        # cl.exe; AuraException and VK_RESULT_CHECK -- plus ink and wma
+        # underneath -- all throw). /utf-8: source and execution charset,
+        # matching GCC/Clang defaults.
+        # /Zc:__cplusplus: cl.exe reports __cplusplus as 199711L regardless
+        # of the active /std: flag unless this is set, which trips ink's
+        # `#if __cplusplus < 202100L` C++23 guard even when
+        # CMAKE_CXX_STANDARD 23 has correctly selected -std:c++latest.
+        add_compile_options(/EHsc /utf-8 /Zc:__cplusplus)
+    endif()
+endif()

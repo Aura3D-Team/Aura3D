@@ -4,9 +4,12 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <atomic>
+#include <memory>
 #include <unordered_map>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 
@@ -16,9 +19,24 @@ namespace vk {
 /**
  * @brief Manages Vulkan command pools and command buffers in a multi-threaded environment.
  *
- * The `VkCommandManager` class handles the creation and management of Vulkan command pools and
- * command buffers. It supports multi-threaded applications by providing thread-local command pools
- * and synchronized access to shared resources.
+ * Two distinct families of pool, because they have incompatible lifetimes:
+ *
+ *  - **Upload pools** (getThreadCommandPool()): one per thread, never reset by
+ *    this class. Serve the one-off transfer buffers that vertex/index/texture
+ *    creation allocates and frees itself.
+ *
+ *  - **Render pools** (getRenderCommandPool()): one per thread *per frame in
+ *    flight*, reset as a group by resetRenderPools() at the top of each frame.
+ *    The per-frame split is what makes the reset safe: vkResetCommandPool
+ *    recycles every buffer in the pool, so a single pool shared across frames
+ *    would recycle the other frame-in-flight's buffer while the GPU could
+ *    still be executing it -- the renderer only ever waits on the fence for
+ *    the frame it is about to record. Keying by frame means a reset only
+ *    touches buffers whose fence has just been waited on.
+ *
+ * Recording several command buffers concurrently is the reason for the
+ * per-thread split: a VkCommandPool must be externally synchronized, so
+ * threads cannot share one.
  */
 class VkCommandManager
 {
@@ -44,19 +62,64 @@ public:
     ~VkCommandManager();
 
     /**
-     * @brief Retrieves the command pool associated with the current thread.
+     * @brief Retrieves the upload command pool associated with the current thread.
      *
      * Ensures that each thread has its own command pool for safe multi-threaded command buffer allocation.
+     * Never reset by this class -- callers allocating from it are expected to
+     * free their own buffers (see VkBufferManager / VkTextureManager).
      *
-     * @return VkCommandPool The thread-local command pool.
+     * @return VkCommandPool The thread-local upload command pool.
      */
     VkCommandPool getThreadCommandPool();
 
+    /**
+     * @brief Allocates the primary command buffers, one per frame in flight.
+     *
+     * Each is allocated from the calling thread's render pool for its own
+     * frame index, so resetRenderPools(frame) recycles exactly one of them.
+     */
     VkFixedArray<VkCommandBuffer> createCommandBuffer();
+
+    /**
+     * @brief Hands out a secondary command buffer for @p frameIndex, for
+     *        recording draws that a primary buffer will vkCmdExecuteCommands.
+     *
+     * Allocated from the calling thread's render pool for that frame, so
+     * concurrent callers on different threads never touch the same pool.
+     * Buffers are recycled rather than reallocated: resetRenderPools() returns
+     * the frame's buffers to the pool and rewinds the hand-out cursor, so a
+     * steady-state frame stops allocating entirely after the first few.
+     *
+     * @param frameIndex Frame in flight being recorded, < GetMaxFramesInFlight().
+     * @return A secondary command buffer in the initial state, ready to begin.
+     */
+    VkCommandBuffer acquireSecondaryCommandBuffer(u32 frameIndex);
+
+    /**
+     * @brief Begins @p commandBuffer as a secondary buffer that will execute
+     *        inside @p renderPass / @p framebuffer.
+     *
+     * Sets RENDER_PASS_CONTINUE, which is what makes the buffer legal inside a
+     * render pass begun with VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS.
+     */
+    static void beginSecondaryCommandBuffer(VkCommandBuffer commandBuffer,
+                                            VkRenderPass renderPass,
+                                            VkFramebuffer framebuffer);
 
     static void resetCommandBuffer(VkCommandBuffer commandBuffer);
 
-    void resetCommandPool();
+    /**
+     * @brief Resets every thread's render pool for @p frameIndex.
+     *
+     * Called once per frame from the render thread, before any recording for
+     * that frame begins. Resetting other threads' pools from here is safe
+     * precisely because it happens at that point: vkResetCommandPool requires
+     * external synchronization only against concurrent *use* of the pool, and
+     * no worker is recording between frames.
+     *
+     * @param frameIndex Frame in flight whose fence the caller has just waited on.
+     */
+    void resetRenderPools(u32 frameIndex);
 
     /**
      * @brief Begins one or more command buffers for recording commands.
@@ -81,12 +144,68 @@ public:
     void freeCmdBuffer(VkCommandBuffer* commandBuffer);
 
 private:
+    /**
+     * @brief One thread's render pool for one frame in flight, plus the
+     *        secondary buffers recycled from it.
+     */
+    struct RenderPool {
+        VkCommandPool pool = VK_NULL_HANDLE;
+        //! Allocated on demand and reused every frame thereafter.
+        std::vector<VkCommandBuffer> secondaries;
+        //! How many of `secondaries` have been handed out this frame; rewound
+        //! to 0 by resetRenderPools().
+        size_t handedOut = 0;
+    };
+
+    //! Every pool belonging to one thread: the frame-agnostic upload pool plus
+    //! one render pool per frame in flight.
+    struct ThreadPools {
+        //! Sizes `render` to the configured frame count up front: it is
+        //! indexed directly by frame slot (see createCommandBuffer(),
+        //! acquireSecondaryCommandBuffer()) with no resize anywhere else, so
+        //! a default-constructed (empty) vector would make the very first
+        //! access on a freshly-created thread's pool set go out of bounds.
+        ThreadPools() : render(GetMaxFramesInFlight()) {}
+
+        VkCommandPool upload = VK_NULL_HANDLE;
+        VkFixedArray<RenderPool> render;
+    };
+
+    /**
+     * @brief Returns the calling thread's pool set, creating it on first use.
+     *
+     * The returned pointer stays valid for this object's lifetime:
+     * unordered_map never invalidates references to existing elements on
+     * rehash, and the mapped type is separately heap-allocated on top of that.
+     * That is what lets callers drop @c _poolMutex before touching their own
+     * entry -- only the map lookup needs to be serialized, not the recording
+     * that follows it.
+     */
+    ThreadPools& _threadPools();
+
+    VkCommandPool _createPool(VkCommandPoolCreateFlags flags) const;
+
     VkDevice* _device;
     u32 _queueFamilyIndex; /**< The queue family index for command pool allocation. */
 
-    // Map of command pools by thread ID
-    static std::unordered_map<std::thread::id, VkCommandPool> _threadCommandPools;
-    static std::mutex _poolMutex; /**< Mutex to protect access to the command pool map. */
+    /**
+     * @brief Process-unique id for this manager, assigned at construction.
+     *
+     * Identifies the instance in _threadPools()' thread_local cache. An
+     * address cannot serve: a manager destroyed by switchBackend() can be
+     * replaced by a new one at the same address, and a cache keyed on that
+     * would hand back pools belonging to the dead VkDevice.
+     */
+    u64 _managerId;
+
+    /*
+     * Per-instance, not static: a static map would be shared by every
+     * VkCommandManager ever constructed, so a second renderer (or a renderer
+     * recreated after teardown) would inherit pools belonging to a destroyed
+     * VkDevice.
+     */
+    std::unordered_map<std::thread::id, std::unique_ptr<ThreadPools>> _threadCommandPools;
+    mutable std::mutex _poolMutex; /**< Mutex to protect access to the command pool map. */
 };
 
 }

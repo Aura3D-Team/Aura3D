@@ -8,11 +8,20 @@ convention to target.
 ## Clip space — handled automatically
 
 Vulkan uses `[0,1]` depth and Y-down NDC; OpenGL uses `[-1,1]` depth and
-Y-up. `Engine` calls `Camera::setClipSpace(...)` for you right after the
-renderer is created, matching whatever backend actually ended up active —
-you don't need to call this yourself in normal usage. It's a process-wide
-static setting because every `Camera` you construct afterward reads it, and
-because `Engine::switchBackend` needs to be able to flip it later.
+Y-up. `RendererFactory::create` calls `Camera::setClipSpace(...)` for you as
+part of constructing a backend, matching whatever one actually ended up
+active — so this is handled whether you go through `Engine`, through
+`Engine::switchBackend`, or construct a renderer from the factory yourself.
+You don't need to call it in normal usage.
+
+It's a process-wide static setting because every `Camera` you construct
+afterward reads it, and because a backend switch has to be able to flip it
+later.
+
+`RendererFactory::clipSpaceFor(choice)` exposes the mapping on its own if you
+need the answer without constructing anything. Getting it wrong is worth
+knowing about because of how quietly it fails: the scene still renders, and
+then z-fights against its own rasteriser.
 
 ## Creating a camera
 

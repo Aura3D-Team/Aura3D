@@ -1,13 +1,14 @@
 # 10. Platform Builds
 
-Aura3D targets three platforms from one CMake project: Linux (native), Android
-(NDK), and WebAssembly (Emscripten). Each has its own preset and its own
-backend restrictions, applied automatically by `cmake/Platform.cmake` — you
-don't set `AURA_ENABLE_*` by hand per platform.
+Aura3D targets four platforms from one CMake project: Linux (native), Windows
+(native), Android (NDK), and WebAssembly (Emscripten). Each has its own preset
+and its own backend restrictions, applied automatically by `cmake/Platform.cmake`
+— you don't set `AURA_ENABLE_*` by hand per platform.
 
 | Platform | Backends compiled in | Why |
 |---|---|---|
 | Linux | Vulkan, OpenGL, CPU | Everything — the default dev target. |
+| Windows | Vulkan, OpenGL, CPU | Everything, same as Linux — MSVC gets `/EHsc /utf-8 /Zc:__cplusplus` plus `NOMINMAX`/`WIN32_LEAN_AND_MEAN` in place of the GCC/Clang flags (`cmake/Platform.cmake`). |
 | Android | Vulkan only | `AURA_ENABLE_OPENGL`/`AURA_ENABLE_CPU` are force-disabled; Vulkan is the modern mobile GPU path. |
 | WASM | OpenGL only | Compiles to WebGL2; `AURA_ENABLE_VULKAN`/`AURA_ENABLE_CPU` are force-disabled (no browser Vulkan, and the CPU backend's `wma` framebuffer path isn't wired for Emscripten). |
 
@@ -29,6 +30,44 @@ cmake --build --preset linux-release
 
 Output lands under `build/linux/release/`. No Emscripten or NDK needed —
 this is the fast inner-loop target for actual gameplay iteration.
+
+## Windows
+
+Prerequisites: a C++23 MSVC toolchain (Visual Studio 2022 17.10+, or the
+Build Tools equivalent) on `PATH` — open a "Developer Command Prompt"/"Developer
+PowerShell", or run `vcvarsall.bat x64` yourself first — plus
+[vcpkg](https://vcpkg.io) for `libink`/`libwma`'s own dependencies
+(`nlohmann_json`, SDL3, GLFW) and Aura3D's Vulkan headers/loader. `windows-latest`
+GitHub runners ship vcpkg preinstalled at `%VCPKG_INSTALLATION_ROOT%`; locally,
+[clone and bootstrap it](https://learn.microsoft.com/vcpkg/get_started/get-started)
+if you don't have it yet.
+
+```powershell
+vcpkg install nlohmann-json:x64-windows-static sdl3:x64-windows-static `
+    glfw3:x64-windows-static vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static
+
+# windows-release below, or windows-debug for a Debug build
+cmake --preset windows-release `
+    -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+    -DVCPKG_TARGET_TRIPLET=x64-windows-static
+cmake --build --preset windows-release
+```
+
+Output lands under `build/windows/release/`, same layout as Linux. Unlike
+Linux/Android/WASM, `libink`/`libwma` have no prebuilt copy waiting in a
+container for Windows — build and `cmake --install` each into the same
+prefix first (see [Cross-repo build order](#cross-repo-build-order) below),
+then point `CMAKE_PREFIX_PATH` at it: `windows-release`'s
+`CMAKE_PREFIX_PATH` cache variable already resolves to
+`$env:LOCAL_PREFIX/windows/release`, matching `cmake/Dependencies.cmake`'s
+platform-prefix lookup. `.github/workflows/ci.yml`'s `windows-build` job is
+a complete worked example of the whole ink → wma → Aura3D chain built from
+source with vcpkg, if you'd rather read a script than prose.
+
+`AURA_ENABLE_VULKAN`/`AURA_ENABLE_OPENGL`/`AURA_ENABLE_CPU` all stay `ON` by
+default here — MSVC has no `-march=native` equivalent, so
+`AURA_NATIVE_OPTIMIZE` is silently a no-op rather than something you need to
+turn off yourself (`check_cxx_compiler_flag` fails cleanly under `cl.exe`).
 
 ## Android
 
@@ -192,6 +231,38 @@ top-level `index.html` copied alongside — open that (via the `--serve`
 server, or any static file server; `file://` won't work for WASM fetches)
 to run in a browser.
 
+### The server must send COOP/COEP headers
+
+`ink` propagates `-pthread`, so Emscripten emits a **shared**
+`WebAssembly.Memory`. A shared memory requires `SharedArrayBuffer`, and every
+current browser only exposes that to a *cross-origin isolated* page. The
+server therefore has to send both of these on every response:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+`--serve` already does this. A plain `python3 -m http.server` does **not**, and
+neither do most static hosts by default — without the headers the module
+throws while instantiating its memory and the canvas just stays blank, with
+nothing obviously wrong in the console. If a deployed build shows a blank
+canvas, check these headers first.
+
+On GitHub Pages, which cannot set custom headers, the usual workaround is a
+service worker that re-serves responses with the headers attached (e.g.
+`coi-serviceworker`); anything you control directly (nginx, Caddy, CloudFront,
+S3 + Lambda\@Edge) can just add them.
+
+### The worker pool is pre-spawned
+
+The WASM link adds `-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency`.
+`JobSystem` builds its `ink::ThreadPool` lazily on the first `dispatch()`,
+which happens on the main thread — and a browser Worker only starts once the
+main thread returns to the event loop, which `dispatch()` never does before
+blocking on its band futures. Pre-spawning the pool at startup is what keeps
+that first call from deadlocking rather than merely being slow.
+
 `AURA_WASM_ASYNCIFY` (default `OFF`) only matters if your app ever blocks
 synchronously inside the frame callback (a blocking network call, a modal
 dialog); the render loop itself (`windowManager->process()`) already hands
@@ -238,3 +309,19 @@ platform. If `find_package(wma CONFIG REQUIRED)` or
 `find_package(ink CONFIG REQUIRED)` fails during Aura3D's configure step,
 it means one of these wasn't built for the platform you're targeting, or
 wasn't installed where `CMAKE_PREFIX_PATH` is looking.
+
+On Windows specifically, `libink` doesn't ship its own `windows-debug`/
+`windows-release` presets (only `libwma` and Aura3D do), so build it with a
+plain out-of-preset invocation first:
+
+```powershell
+cmake -S libink -B libink/build -G Ninja `
+    -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+    -DVCPKG_TARGET_TRIPLET=x64-windows-static
+cmake --build libink/build --parallel
+cmake --install libink/build --prefix "$env:LOCAL_PREFIX/windows/release"
+```
+
+then `libwma`'s and Aura3D's own `windows-release` presets (pointed at the
+same `CMAKE_PREFIX_PATH`) pick it up normally.

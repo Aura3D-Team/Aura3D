@@ -15,10 +15,13 @@ layout(location = 2) in vec4 inColor;
 
 layout(location = 0) out vec2 fragTexCoord;
 layout(location = 1) out vec4 fragColor;
+layout(location = 2) flat out uint fragTextureIndex;
 
-//! Screen-space projection, pushed once per batch (64 bytes).
+//! Screen-space projection plus a bindless texture-array index, pushed once
+//! per batch (68 of the guaranteed 128 push-constant bytes).
 layout(push_constant) uniform Overlay2D {
     mat4 proj;
+    uint textureIndex;
 } overlay;
 
 void main()
@@ -26,4 +29,5 @@ void main()
     gl_Position = overlay.proj * vec4(inPosition, 0.0, 1.0);
     fragTexCoord = inTexCoord;
     fragColor = inColor;
+    fragTextureIndex = overlay.textureIndex;
 }

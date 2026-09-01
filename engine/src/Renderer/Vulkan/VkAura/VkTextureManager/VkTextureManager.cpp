@@ -43,26 +43,19 @@ void VkTextureManager::destroyTextureData(TextureData& texture)
     }
 }
 
-VkTextureManager::TextureData VkTextureManager::createSolidColorTexture(
-    const std::string& name, u8 r, u8 g, u8 b, u8 a)
+VkTextureManager::TextureId VkTextureManager::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 {
     const u8 pixel[4] = {r, g, b, a};
-    return createTextureFromPixels(name, pixel, 1, 1);
+    return createTextureFromPixels(pixel, 1, 1);
 }
 
-VkTextureManager::TextureData VkTextureManager::createTextureFromPixels(
-    const std::string& name, const u8* rgba, u32 width, u32 height)
+VkTextureManager::TextureId VkTextureManager::createTextureFromPixels(
+    const u8* rgba, u32 width, u32 height)
 {
     if (!rgba || width == 0 || height == 0)
     {
-        INK_ERROR << "VkTextureManager: refusing to upload an empty texture: " << name;
-        return TextureData{};
-    }
-
-    auto it = _textures.find(name);
-    if (it != _textures.end()) {
-        destroyTextureData(it->second);
-        _textures.erase(it);
+        INK_ERROR << "VkTextureManager: refusing to upload an empty texture";
+        return kInvalidTextureId;
     }
 
     TextureData textureData{};
@@ -71,12 +64,10 @@ VkTextureManager::TextureData VkTextureManager::createTextureFromPixels(
 
     const VkDeviceSize imageBytes = static_cast<VkDeviceSize>(width) * height * 4u;
 
-    AllocatedBuffer staging = _memoryManager->createUploadBuffer(imageBytes, VK_SHARING_MODE_EXCLUSIVE);
-    void* data = staging.mappedData ? staging.mappedData : _memoryManager->map(staging);
+    void* data = acquireStagingBuffer(imageBytes);
+    if (!data)
+        return kInvalidTextureId;
     std::memcpy(data, rgba, static_cast<size_t>(imageBytes));
-    if (!staging.mappedData) {
-        _memoryManager->unmap(staging);
-    }
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -95,31 +86,36 @@ VkTextureManager::TextureData VkTextureManager::createTextureFromPixels(
     textureData.image = gpuImage.image;
     textureData.allocation = gpuImage.allocation;
 
-    transitionImageLayout(textureData.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    copyBufferToImage(staging.buffer, textureData.image, width, height);
-    transitionImageLayout(textureData.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    /*
+     * Acquire -> copy -> release, as one command buffer and one submit. Split
+     * across three submissions (which is what a transition/copy/transition
+     * built from self-submitting helpers produces) the same work costs three
+     * full pipeline drains, and the two barriers in between are exactly the
+     * synchronisation that makes a single buffer correct anyway.
+     */
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    recordLayoutTransition(commandBuffer, textureData.image,
+                           VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    recordCopyBufferToImageRegion(commandBuffer, _staging.buffer, textureData.image,
+                                  0, 0, width, height);
+    recordLayoutTransition(commandBuffer, textureData.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    endSingleTimeCommands(commandBuffer);
 
     textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
     textureData.sampler = createSampler();
 
-    _memoryManager->destroyBuffer(staging);
-    _textures[name] = textureData;
-    return textureData;
+    _textures.push_back(textureData);
+    return static_cast<TextureId>(_textures.size());
 }
 
-VkTextureManager::TextureData VkTextureManager::createDynamicTexture(
-    const std::string& name, u32 width, u32 height)
+VkTextureManager::TextureId VkTextureManager::createDynamicTexture(u32 width, u32 height)
 {
     if (width == 0 || height == 0)
     {
-        INK_ERROR << "VkTextureManager: refusing to allocate an empty dynamic texture: " << name;
-        return TextureData{};
-    }
-
-    auto it = _textures.find(name);
-    if (it != _textures.end()) {
-        destroyTextureData(it->second);
-        _textures.erase(it);
+        INK_ERROR << "VkTextureManager: refusing to allocate an empty dynamic texture";
+        return kInvalidTextureId;
     }
 
     TextureData textureData{};
@@ -148,9 +144,10 @@ VkTextureManager::TextureData VkTextureManager::createDynamicTexture(
      * atlas would otherwise mean pushing 16 MB across the bus just to write
      * zeroes. vkCmdClearColorImage does it without any host memory at all.
      */
-    transitionImageLayout(textureData.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    recordLayoutTransition(commandBuffer, textureData.image,
+                           VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     const VkClearColorValue transparentBlack{{0.0f, 0.0f, 0.0f, 0.0f}};
     VkImageSubresourceRange range{};
@@ -164,77 +161,169 @@ VkTextureManager::TextureData VkTextureManager::createDynamicTexture(
                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                          &transparentBlack, 1, &range);
 
-    endSingleTimeCommands(commandBuffer);
+    recordLayoutTransition(commandBuffer, textureData.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    transitionImageLayout(textureData.image,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    endSingleTimeCommands(commandBuffer);
 
     textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
     textureData.sampler = createSampler();
 
-    _textures[name] = textureData;
-    return textureData;
+    _textures.push_back(textureData);
+    return static_cast<TextureId>(_textures.size());
 }
 
-void VkTextureManager::updateRegion(const std::string& name,
+void VkTextureManager::updateRegion(TextureId id,
                                     u32 x, u32 y, u32 width, u32 height,
                                     const u8* rgba)
 {
     if (!rgba || width == 0 || height == 0)
         return;
 
-    auto it = _textures.find(name);
-    if (it == _textures.end())
+    if (id == kInvalidTextureId || id > _textures.size())
     {
-        INK_ERROR << "VkTextureManager: updateRegion on an unknown texture: " << name;
+        INK_ERROR << "VkTextureManager: updateRegion on an unknown texture id " << id;
         return;
     }
 
-    TextureData& textureData = it->second;
+    TextureData& textureData = _textures[id - 1];
     if (x + width > textureData.width || y + height > textureData.height)
     {
-        INK_ERROR << "VkTextureManager: updateRegion rectangle exceeds the bounds of " << name;
+        INK_ERROR << "VkTextureManager: updateRegion rectangle exceeds the bounds of texture " << id;
         return;
     }
 
     const VkDeviceSize regionBytes = static_cast<VkDeviceSize>(width) * height * 4u;
 
-    AllocatedBuffer staging = _memoryManager->createUploadBuffer(regionBytes, VK_SHARING_MODE_EXCLUSIVE);
-    void* data = staging.mappedData ? staging.mappedData : _memoryManager->map(staging);
+    void* data = acquireStagingBuffer(regionBytes);
+    if (!data)
+        return;
     std::memcpy(data, rgba, static_cast<size_t>(regionBytes));
 
-    if (!staging.mappedData)
-        _memoryManager->unmap(staging);
-
-    transitionImageLayout(textureData.image,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-    copyBufferToImageRegion(staging.buffer, textureData.image, x, y, width, height);
-
-    transitionImageLayout(textureData.image,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-    _memoryManager->destroyBuffer(staging);
+    /*
+     * The whole patch as one submission. This is the path the text overlay
+     * takes for every character it meets for the first time, so the three
+     * queue drains this used to cost landed mid-frame, once per new glyph.
+     */
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    recordLayoutTransition(commandBuffer, textureData.image,
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    recordCopyBufferToImageRegion(commandBuffer, _staging.buffer, textureData.image,
+                                  x, y, width, height);
+    recordLayoutTransition(commandBuffer, textureData.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    endSingleTimeCommands(commandBuffer);
 }
 
-const VkTextureManager::TextureData* VkTextureManager::getTexture(const std::string& name) const
+const VkTextureManager::TextureData* VkTextureManager::getTexture(TextureId id) const noexcept
 {
-    auto it = _textures.find(name);
-    if (it != _textures.end()) {
-        return &it->second;
+    if (id == kInvalidTextureId || id > _textures.size())
+        return nullptr;
+    return &_textures[id - 1];
+}
+
+void VkTextureManager::releaseStagingBuffer()
+{
+    if (_staging.buffer == VK_NULL_HANDLE)
+    {
+        _staging = {};
+        _stagingCapacity = 0;
+        _stagingMapped = nullptr;
+        _stagingManuallyMapped = false;
+        return;
     }
-    return nullptr;
+
+    //! Only balance a mapping this class established; a VMA-persistent one is
+    //! released by destroyBuffer along with the allocation.
+    if (_stagingManuallyMapped)
+        _memoryManager->unmap(_staging);
+
+    _memoryManager->destroyBuffer(_staging);
+
+    _staging = {};
+    _stagingCapacity = 0;
+    _stagingMapped = nullptr;
+    _stagingManuallyMapped = false;
+}
+
+void* VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
+{
+    if (bytes == 0)
+        return nullptr;
+
+    //! Before the pointer is handed out, not before the submit: the caller is
+    //! about to memcpy over the very memory the previous upload may still be
+    //! reading. Every writer of the staging buffer comes through here, which is
+    //! what makes this the one place the wait has to be.
+    waitForPendingUpload();
+
+    //! Already big enough: hand back the pointer mapped when it was created.
+    if (bytes <= _stagingCapacity && _stagingMapped != nullptr)
+        return _stagingMapped;
+
+    releaseStagingBuffer();
+
+    _staging = _memoryManager->createUploadBuffer(bytes, VK_SHARING_MODE_EXCLUSIVE);
+    if (_staging.buffer == VK_NULL_HANDLE)
+    {
+        INK_ERROR << "VkTextureManager: could not allocate a " << bytes
+                  << "-byte staging buffer";
+        return nullptr;
+    }
+
+    /*
+     * Mapped once here, at creation, and never again -- which is the other
+     * half of why the buffer is held across uploads. createUploadBuffer() asks
+     * VMA for a persistently mapped allocation, so mappedData is the normal
+     * case; the explicit map() is the fallback for a driver that refused, and
+     * is flagged so releaseStagingBuffer() knows to balance it. Calling map()
+     * per upload instead would raise VMA's map refcount every time with no
+     * matching unmap, leaving the allocation mapped at destruction.
+     */
+    if (_staging.mappedData != nullptr)
+    {
+        _stagingMapped = _staging.mappedData;
+        _stagingManuallyMapped = false;
+    }
+    else
+    {
+        _stagingMapped = _memoryManager->map(_staging);
+        _stagingManuallyMapped = _stagingMapped != nullptr;
+    }
+
+    if (_stagingMapped == nullptr)
+    {
+        INK_ERROR << "VkTextureManager: staging buffer could not be mapped";
+        releaseStagingBuffer();
+        return nullptr;
+    }
+
+    _stagingCapacity = bytes;
+    return _stagingMapped;
 }
 
 void VkTextureManager::cleanup()
 {
-    for (auto& pair : _textures) {
-        destroyTextureData(pair.second);
+    //! Nothing below may run while an upload is still reading its staging
+    //! buffer or writing one of these images -- and the fence destroyed at the
+    //! end is the very one that would have been waited on.
+    waitForPendingUpload();
+
+    for (TextureData& texture : _textures) {
+        destroyTextureData(texture);
     }
     _textures.clear();
+
+    releaseStagingBuffer();
+
+    if (_uploadFence != VK_NULL_HANDLE)
+    {
+        vkDestroyFence(*_device, _uploadFence, nullptr);
+        _uploadFence = VK_NULL_HANDLE;
+    }
 }
 
 VkImageView VkTextureManager::createImageView(VkImage image, VkFormat format)
@@ -282,6 +371,11 @@ VkSampler VkTextureManager::createSampler()
 
 VkCommandBuffer VkTextureManager::beginSingleTimeCommands()
 {
+    //! The fence is reset and reused by endSingleTimeCommands(), so the
+    //! previous submission has to be accounted for before another starts. A
+    //! no-op when acquireStagingBuffer() already did it.
+    waitForPendingUpload();
+
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -301,22 +395,51 @@ VkCommandBuffer VkTextureManager::beginSingleTimeCommands()
 
 void VkTextureManager::endSingleTimeCommands(VkCommandBuffer commandBuffer)
 {
-    vkEndCommandBuffer(commandBuffer);
+    VK_RESULT_CHECK(vkEndCommandBuffer(commandBuffer));
+
+    if (_uploadFence == VK_NULL_HANDLE)
+    {
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, nullptr, &_uploadFence));
+    }
+    else
+    {
+        //! Left signalled by the previous upload; a fence must be unsignalled
+        //! when it is passed to vkQueueSubmit.
+        VK_RESULT_CHECK(vkResetFences(*_device, 1, &_uploadFence));
+    }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    vkQueueSubmit(_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(_graphicsQueue);
-    vkFreeCommandBuffers(*_device, _commandPool, 1, &commandBuffer);
+    VK_RESULT_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submitInfo, _uploadFence));
+
+    /*
+     * Deliberately not waited for here -- see the header. The buffer is kept so
+     * waitForPendingUpload() can free it once the GPU has retired it; the upload
+     * pool is never reset (unlike the render pools), so holding one across a
+     * frame boundary is sound.
+     */
+    _pendingUploadCmd = commandBuffer;
 }
 
-void VkTextureManager::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout)
+void VkTextureManager::waitForPendingUpload()
 {
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    if (_pendingUploadCmd == VK_NULL_HANDLE)
+        return;
 
+    VK_RESULT_CHECK(vkWaitForFences(*_device, 1, &_uploadFence, VK_TRUE, UINT64_MAX));
+
+    vkFreeCommandBuffers(*_device, _commandPool, 1, &_pendingUploadCmd);
+    _pendingUploadCmd = VK_NULL_HANDLE;
+}
+
+void VkTextureManager::recordLayoutTransition(VkCommandBuffer cmd, VkImage image,
+                                              VkImageLayout oldLayout, VkImageLayout newLayout) const
+{
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
@@ -364,20 +487,12 @@ void VkTextureManager::transitionImageLayout(VkImage image, VkImageLayout oldLay
         throw AuraException("Unsupported layout transition!");
     }
 
-    vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    endSingleTimeCommands(commandBuffer);
+    vkCmdPipelineBarrier(cmd, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-void VkTextureManager::copyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height)
+void VkTextureManager::recordCopyBufferToImageRegion(VkCommandBuffer cmd, VkBuffer buffer, VkImage image,
+                                                     u32 x, u32 y, u32 width, u32 height) const
 {
-    copyBufferToImageRegion(buffer, image, 0, 0, width, height);
-}
-
-void VkTextureManager::copyBufferToImageRegion(VkBuffer buffer, VkImage image,
-                                               u32 x, u32 y, u32 width, u32 height)
-{
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
-
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
     /*
@@ -394,14 +509,12 @@ void VkTextureManager::copyBufferToImageRegion(VkBuffer buffer, VkImage image,
     region.imageOffset = {static_cast<i32>(x), static_cast<i32>(y), 0};
     region.imageExtent = {width, height, 1};
 
-    vkCmdCopyBufferToImage(commandBuffer,
+    vkCmdCopyBufferToImage(cmd,
                            buffer,
                            image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            1,
                            &region);
-
-    endSingleTimeCommands(commandBuffer);
 }
 
 } // namespace vk

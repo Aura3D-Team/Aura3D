@@ -16,7 +16,7 @@ public:
     CPURenderer(const wma::WindowDetails& windowDetails);
     virtual ~CPURenderer();
 
-    void initialize(aura3d::AuraSettings* settings) override;
+    void initialize(aura3d::AuraSettings* settings, const JobSystem* jobs) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
@@ -60,15 +60,26 @@ private:
     std::unique_ptr<wma::IWindowManager>   _windowManagerApi;
     std::unique_ptr<CpuFrameBufferManager> _frameBufferManager;
 
+    //! Set once, in initialize(), before createWindow() builds
+    //! _frameBufferManager from it. Non-owning: Engine's JobSystem outlives
+    //! every renderer, including this one across a backend switch.
+    const JobSystem* _jobs = nullptr;
+
     u32 _clearColorU32 = 0;
     std::vector<std::vector<gfx::Vertex3D>> _vertexBufferPool3d;
     std::vector<std::vector<u32>> _indexBufferPool;
     std::vector<std::vector<cpu::Texture>> _texturePool;
 
-    VertexBufferHandle _boundVertexBuffer = INVALID_HANDLE;
-    IndexBufferHandle _boundIndexBuffer = INVALID_HANDLE;
-    TextureHandle _boundTexture = INVALID_HANDLE;
-    gfx::TransformUBO  _currentTransform;
+    /*
+     * Staging area the vertex stage projects into before handing a whole draw
+     * call to the framebuffer manager. A member, cleared but never shrunk, so
+     * the per-draw path allocates nothing once a scene reaches steady state
+     */
+    std::vector<cpu::ScreenTriangle> _projectedTriangles;
+
+    VertexBufferHandle _boundVertexBuffer;
+    IndexBufferHandle _boundIndexBuffer;
+    TextureHandle _boundTexture;
 };
 
 } // namespace cpu

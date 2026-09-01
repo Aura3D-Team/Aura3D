@@ -37,7 +37,7 @@ in one draw":
 - **The whole batch is one draw call** — a 500-quad HUD costs the same as a
   single quad. Vertex/index data is copied into backend-owned buffers, so
   your arrays can be reused or discarded the instant this returns.
-- `texture = INVALID_HANDLE` draws untextured, vertex-color only.
+- an invalid `texture` (a default-constructed `TextureHandle{}`) draws untextured, vertex-color only.
 
 Call it **between `beginRenderPass()`/`endRenderPass()`, after your 3D
 draws** — it leaves no 2D pipeline state bound, so the next 3D draw call
@@ -77,7 +77,7 @@ TextOverlay overlay(r, desc); // built once — allocates the glyph atlas textur
 // per frame, between beginRenderPass()/endRenderPass():
 overlay.drawText("Score: 1200", 10.0f, 10.0f);
 overlay.drawText("Warning!", 10.0f, 40.0f, glm::vec4(1, 0.3f, 0.3f, 1)); // per-call color
-overlay.drawFPS(10.0f, 60.0f); // formats "FPS: <n>" from live frame timing
+overlay.drawFPS(10.0f, 60.0f); // smoothed "FPS: <n>  (<ms> ms)"; overlay.fps() reads it back
 ```
 
 **Font loading never fails visibly**: leave `fontPath` empty, or point it at
@@ -113,5 +113,9 @@ one per new character would exhaust the pool within minutes.
 Drawing a string walks it once, appends one quad per glyph into two vectors
 reused across frames, and hands the whole thing to `drawBatch2D` as a single
 draw call — a 500-character string costs one draw call, not 500.
+
+The engine's built-in UI is the other consumer of this pipeline: panels,
+buttons and sliders, drawn entirely through `drawBatch2D` and this same glyph
+atlas — see **[12-immediate-mode-ui.md](12-immediate-mode-ui.md)**.
 
 Next: **[08-input.md](08-input.md)**.

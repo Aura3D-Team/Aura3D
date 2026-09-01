@@ -5,19 +5,16 @@ namespace aura3d {
 AuraException::AuraException() noexcept
     : std::exception()
 {
-    //Empty
 }
 
 AuraException::AuraException(const char* msg)
     : _msg(msg)
 {
-    // Empty
 }
 
 AuraException::AuraException(const std::string& msg)
     : _msg(msg.c_str())
 {
-    // Empty
 }
 
 #ifdef AURA_HAS_VULKAN
@@ -35,7 +32,7 @@ AuraException::~AuraException() noexcept = default;
 
 const char* AuraException::what() const noexcept
 {
-    return _msg.c_str();;
+    return _msg.c_str();
 }
 
 }

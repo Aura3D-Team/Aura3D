@@ -20,6 +20,10 @@
 
 #include "aura/Core/AuraException/AuraException.h"
 
+#ifdef AURA_ENABLE_DEBUG_MODE
+#include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkDebugMetrics.h"
+#endif
+
 namespace aura3d {
 namespace vk {
 
@@ -109,6 +113,19 @@ void VulkanMemoryManager::initialize(VkInstance instance,
         .physicalDevice = physicalDevice,
         .device = device,
         .preferredLargeHeapBlockSize = config.preferredLargeHeapBlockSize,
+#ifdef AURA_ENABLE_DEBUG_MODE
+        /*
+         * The one place device memory can be counted honestly. VMA calls these
+         * with the exact VkDeviceSize of every VkDeviceMemory block it creates
+         * or destroys -- which is genuine VRAM, unlike the host bytes a
+         * VkAllocationCallbacks on vkAllocateMemory would report. See
+         * VkDeviceMemoryCounters for the full reasoning.
+         *
+         * The pointer is to static storage, so it stays valid for the
+         * allocator's whole life including vmaDestroyAllocator's own frees.
+         */
+        .pDeviceMemoryCallbacks = VkDeviceMemoryCounters::vmaCallbacks(),
+#endif
         .instance = instance,
         .vulkanApiVersion = config.vulkanApiVersion,
 #ifdef ANDROID

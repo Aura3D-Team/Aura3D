@@ -3,6 +3,7 @@
 /bin/
 /out/
 .qtcreator
+.claude
 
 # Ignore compiled object files
 *.o

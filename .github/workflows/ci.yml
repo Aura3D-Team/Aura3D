@@ -77,6 +77,118 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build/linux/release --output-on-failure
 
+  linux-benchmark:
+    name: Linux Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    container:
+      image: arthurrl/vulkan-dev:lts
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        # AURA_ENABLE_DEBUG_MODE implies AURA_PROFILE_FRAME (see the root
+        # CMakeLists.txt), which is what fills the report's phase breakdown.
+        # Release rather than Debug: an -O0 build's frame times measure the
+        # compiler, not the engine.
+        run: >
+          cmake -S . -B build/benchmark -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DAURA_BUILD_SANDBOX=ON
+          -DAURA_BUILD_TESTS=ON
+          -DAURA_ENABLE_DEBUG_MODE=ON
+
+      - name: Build
+        run: cmake --build build/benchmark --parallel
+
+      - name: Run tests
+        # The three debug-mode suites (allocation tracker, benchmark stats,
+        # report round-trip) run in every leg; here they additionally exercise
+        # the paths that only exist with the allocation hooks compiled in.
+        run: ctest --test-dir build/benchmark --output-on-failure
+
+      - name: Run headless benchmark
+        # No GPU on the runner, so the software rasteriser is the backend under
+        # test and SDL gets the dummy video driver. AURA_DEBUG_* override
+        # settings.json (see docs/15), which is what lets an unmodified binary
+        # be pointed at a different frame count and report path per job.
+        #
+        # `timeout` plus `|| true` is the belt: AURA_DEBUG_EXIT=1 ends the run
+        # itself once the frame target is met, and if it somehow does not, the
+        # report already on disk is still uploaded below.
+        working-directory: build/benchmark/apps/Sandbox
+        env:
+          SDL_VIDEODRIVER: dummy
+          AURA_DEBUG_REPORT: benchmark-report.json
+          AURA_DEBUG_FRAMES: "2000"
+          AURA_DEBUG_WARMUP: "120"
+          AURA_DEBUG_EXIT: "1"
+        run: |
+          python3 - <<'PY'
+          import json
+          # The Sandbox ships a Vulkan/Wayland config for a developer desktop;
+          # a headless container has neither. Patched here rather than in the
+          # committed settings.json so the demo keeps its normal defaults.
+          with open("settings.json") as f:
+              config = json.load(f)
+          config["renderer"]["backend"] = "software"
+          config["window"]["backend"] = "SDL3"
+          config["window"]["width"] = 640
+          config["window"]["height"] = 480
+          config["audio"]["backend"] = "null"
+          with open("settings.json", "w") as f:
+              json.dump(config, f, indent=2)
+          PY
+          timeout 300 ./Sandbox || true
+          test -s benchmark-report.json
+
+      - name: Summarize
+        # Reported, not gated. A shared runner has no GPU and unpredictable
+        # neighbours, so its absolute frame times are not a regression signal --
+        # the artifact is the deliverable, and gating on .verdict.status belongs
+        # on dedicated hardware with a budget chosen for that machine.
+        working-directory: build/benchmark/apps/Sandbox
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          report = json.load(open("benchmark-report.json"))
+          frame, memory = report["frame"], report["memory"]["cpu"]
+          print("## Benchmark (software backend, no GPU)\n")
+          print(f"- backend: `{report['run']['backend']}`, "
+                f"frames: {report['run']['frames_captured']}, "
+                f"verdict: **{report['verdict']['status']}**")
+          print(f"- frame ms: median {frame['cpu_ms']['median']:.3f}, "
+                f"p99 {frame['cpu_ms']['p99']:.3f}, "
+                f"1% low {frame['fps']['one_percent_low']:.1f} FPS")
+          print(f"- over budget: {100 * frame['budget']['over_budget_ratio']:.2f}% "
+                f"of frames past {frame['budget']['target_ms']} ms")
+          print(f"- allocations/frame: {memory['window']['allocations_per_frame']:.1f}, "
+                f"retained: {memory['trend']['slope_bytes_per_frame']:.3f} bytes/frame\n")
+          print("| phase | share |\n|---|---|")
+          for name, phase in sorted(report["phases"].items(),
+                                    key=lambda kv: -kv[1]["share_percent"]):
+              if phase["share_percent"] >= 0.5:
+                  print(f"| {name} | {phase['share_percent']:.1f}% |")
+          for check in report["verdict"]["checks"]:
+              print(f"\n- `{check['name']}` — **{check['status']}**: {check['detail']}")
+          PY
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        # Uploaded even when a step above failed: a report from a run that
+        # crashed is exactly the one worth looking at.
+        if: always()
+        with:
+          name: benchmark-report
+          path: build/benchmark/apps/Sandbox/benchmark-report.json
+          if-no-files-found: warn
+
   wasm-build:
     name: WASM
     runs-on: ubuntu-latest
@@ -145,3 +257,323 @@ jobs:
 
       - name: Build
         run: cmake --build build-android --parallel
+
+  macos-build:
+    name: macOS
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    # Metal is the only backend compiled here: cmake/Platform.cmake forces
+    # AURA_ENABLE_METAL ON and Vulkan/OpenGL OFF on APPLE (Apple's OpenGL is
+    # deprecated and capped at 4.1, and Vulkan there means MoltenVK, which this
+    # engine deliberately does not use).
+    #
+    # wma supplies the window: opened with wma::GraphicsAPI::Metal, it arrives with
+    # a CAMetalLayer already hosted in the right view, which is why nothing in
+    # Aura3D needs AppKit or an Objective-C++ compiler.
+    steps:
+      - name: Checkout Aura3D
+        uses: actions/checkout@v4
+        with:
+          path: aura3d
+
+      - name: Checkout ink
+        # macos-latest has no vulkan-dev container to pull prebuilt ink/wma from
+        # (unlike the Linux/Android/WASM jobs above), so build+install both
+        # dependencies from source here into a shared local prefix -- the same
+        # approach as windows-build below.
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: ink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: wma
+
+      - name: Install dependencies (Homebrew)
+        # nlohmann-json is ink's dependency; sdl3 is wma's. Metal, QuartzCore and
+        # Foundation need no package -- they ship with the Xcode SDK that
+        # macos-latest already has, and vendor/metal-cpp is checked in.
+        # Ninja matches CMakePresets.json's generator.
+        run: brew install ninja sdl3 nlohmann-json
+
+      - name: Configure ink
+        run: >
+          cmake -S ink -B ink/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DINK_BUILD_TESTS=OFF
+          -DINK_NATIVE_OPTIMIZE=OFF
+
+      - name: Build ink
+        run: cmake --build ink/build --parallel
+
+      - name: Install ink
+        run: cmake --install ink/build --prefix deps
+
+      - name: Configure wma
+        # SDL3 only: X11/Wayland are Linux windowing protocols, and GLFW is a
+        # second Metal-layer route inside wma rather than anything Aura3D sees
+        # differently, so enabling it here would add no coverage of this repo.
+        run: >
+          cmake -S wma -B wma/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DWMA_BUILD_EXAMPLES=OFF
+          -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_SDL=ON
+          -DWMA_ENABLE_GLFW=OFF
+
+      - name: Build wma
+        run: cmake --build wma/build --parallel
+
+      - name: Install wma
+        run: cmake --install wma/build --prefix deps
+
+      - name: Configure Aura3D
+        # Mirrors CMakePresets.json's "macos-release" preset (deployment target)
+        # rather than using it directly, since that preset's CMAKE_PREFIX_PATH is
+        # wired through $env{LOCAL_PREFIX}, which isn't set to anything useful
+        # here. deps/ holds both ink and wma, so one prefix entry resolves both.
+        run: >
+          cmake -S aura3d -B aura3d/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DAURA_BUILD_SANDBOX=ON
+          -DAURA_BUILD_TESTS=ON
+
+      - name: Build Aura3D
+        run: cmake --build aura3d/build --parallel
+
+      - name: Run tests
+        # No GPU work in the suite: every case exercises loader/parsing paths
+        # only (see tests/CMakeLists.txt), so this needs no MTLDevice, same as
+        # the Linux and Windows jobs.
+        run: ctest --test-dir aura3d/build --output-on-failure
+
+  ios-build:
+    name: iOS (build only)
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    # Build-only, deliberately: GitHub's macOS runners can launch a simulator but
+    # nothing in this repo drives one, and on-device execution needs a signing
+    # identity this workflow has no business holding. What this job proves is that
+    # the Metal backend and the Sandbox's app bundle both compile and link for
+    # arm64-apple-ios.
+    #
+    # Unlike macos-build, SDL3 also has to be built from source: Homebrew only
+    # ships macOS-native binaries, so its sdl3 bottle cannot be linked into an
+    # iOS target.
+    steps:
+      - name: Checkout Aura3D
+        uses: actions/checkout@v4
+        with:
+          path: aura3d
+
+      - name: Checkout ink
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: ink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: wma
+
+      - name: Checkout SDL3
+        uses: actions/checkout@v4
+        with:
+          repository: libsdl-org/SDL
+          ref: release-3.2.x
+          path: SDL
+
+      - name: Install host tools (Homebrew)
+        # nlohmann-json is header-only, so the macOS-native package is usable
+        # from an iOS target as long as find_package can see it -- the same
+        # reasoning as the wasm-build job's CMAKE_FIND_ROOT_PATH_MODE_PACKAGE
+        # note. Ninja is the generator every preset here uses.
+        run: brew install ninja nlohmann-json
+
+      - name: Build and install SDL3 for iOS
+        run: |
+          cmake -S SDL -B SDL/build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_SHARED=OFF \
+            -DSDL_STATIC=ON \
+            -DSDL_TESTS=OFF \
+            -DSDL_EXAMPLES=OFF
+          cmake --build SDL/build-ios --parallel
+          cmake --install SDL/build-ios --prefix deps-ios
+
+      - name: Build and install ink for iOS
+        run: |
+          cmake -S ink -B ink/build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -DINK_BUILD_TESTS=OFF \
+            -DINK_NATIVE_OPTIMIZE=OFF
+          cmake --build ink/build-ios --parallel
+          cmake --install ink/build-ios --prefix deps-ios
+
+      - name: Build and install wma for iOS
+        run: |
+          cmake -S wma -B wma/build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps-ios" \
+            -DWMA_BUILD_EXAMPLES=OFF \
+            -DWMA_BUILD_TESTS=OFF \
+            -DWMA_ENABLE_SDL=ON \
+            -DWMA_ENABLE_GLFW=OFF
+          cmake --build wma/build-ios --parallel
+          cmake --install wma/build-ios --prefix deps-ios
+
+      - name: Configure Aura3D
+        # Mirrors CMakePresets.json's "ios" preset. AURA_ENABLE_CPU,
+        # AURA_NATIVE_OPTIMIZE and AURA_BUILD_TESTS are forced off for iOS by
+        # cmake/Platform.cmake, so they are not repeated here.
+        run: >
+          cmake -S aura3d -B aura3d/build-ios -G Ninja
+          -DCMAKE_SYSTEM_NAME=iOS
+          -DCMAKE_OSX_SYSROOT=iphoneos
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps-ios"
+          -DAURA_BUILD_SANDBOX=ON
+
+      - name: Build Aura3D
+        run: cmake --build aura3d/build-ios --parallel
+
+  windows-build:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Aura3D
+        uses: actions/checkout@v4
+        with:
+          path: aura3d
+
+      - name: Checkout ink
+        # windows-latest has no vulkan-dev container to pull prebuilt
+        # ink/wma from (unlike the Linux/Android/WASM jobs above), so
+        # build+install both dependencies from source here into a shared
+        # local prefix; Aura3D's own Configure step below points
+        # CMAKE_PREFIX_PATH at it.
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: ink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: wma
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v4
+
+      - name: Install dependencies (vcpkg)
+        # windows-latest ships vcpkg preinstalled at $VCPKG_INSTALLATION_ROOT.
+        # nlohmann_json is ink's dependency; SDL3/GLFW are wma's;
+        # vulkan-headers/vulkan-loader are Aura3D's own (AURA_ENABLE_VULKAN
+        # defaults ON). OpenGL needs no package here -- opengl32.lib ships
+        # with the Windows SDK that msvc-dev-cmd already put on PATH. The
+        # static triplet matches the /MT-equivalent static-library build all
+        # three libraries produce.
+        run: >
+          vcpkg install
+          nlohmann-json:x64-windows-static
+          sdl3:x64-windows-static
+          glfw3:x64-windows-static
+          vulkan-headers:x64-windows-static
+          vulkan-loader:x64-windows-static
+
+      - name: Configure ink
+        run: >
+          cmake -S ink -B ink/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DINK_BUILD_TESTS=OFF
+          -DINK_NATIVE_OPTIMIZE=OFF
+
+      - name: Build ink
+        run: cmake --build ink/build --parallel
+
+      - name: Install ink
+        run: cmake --install ink/build --prefix deps
+
+      - name: Configure wma
+        # WMA_ENABLE_X11/WAYLAND are Linux-only (cmake/Dependencies.cmake
+        # forces them off on Windows) so only SDL3/GLFW are requested here.
+        run: >
+          cmake -S wma -B wma/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DWMA_BUILD_EXAMPLES=OFF
+          -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_SDL=ON
+          -DWMA_ENABLE_GLFW=OFF
+
+      - name: Build wma
+        run: cmake --build wma/build --parallel
+
+      - name: Install wma
+        run: cmake --install wma/build --prefix deps
+
+      - name: Configure Aura3D
+        # deps/ now holds both ink and wma installed to the same prefix, so
+        # one CMAKE_PREFIX_PATH entry resolves both find_package() calls.
+        run: >
+          cmake -S aura3d -B aura3d/build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
+          -DAURA_BUILD_SANDBOX=ON
+          -DAURA_BUILD_TESTS=ON
+
+      - name: Build Aura3D
+        run: cmake --build aura3d/build --parallel
+
+      - name: Run tests
+        # Every suite here only exercises loader/parsing code paths that
+        # don't need a live GL context or VkDevice (see tests/CMakeLists.txt
+        # and each suite's own file-level comment), so this passes with no
+        # GPU on the runner, same as the Linux jobs above.
+        run: ctest --test-dir aura3d/build --output-on-failure

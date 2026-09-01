@@ -14,114 +14,35 @@
 
 namespace aura3d {
 
-/**
- * @class AuraException
- *
- * Custom exception class to handle Vulkan-related errors.
- *
- * This class extends `std::exception` and is designed to handle Vulkan-specific error codes (`VkResult`).
- * It provides constructors that accept error codes or custom messages and can be used to throw and catch
- * Vulkan-related exceptions. The error code can be mapped to a human-readable string for easier debugging
- * and logging.
- */
+/// Exception carrying a Vulkan VkResult (mapped to a readable message via
+/// vkResultToString) or a plain custom message.
 class AuraException : public std::exception
 {
 public:
-    /**
-     * Default constructor.
-     *
-     * Creates a `AuraException` with no specific message.
-     * The default message will be "Unknown Vulkan exception" if not set.
-     */
     AuraException() noexcept;
-
-    /**
-     * Destructor.
-     *
-     * Cleans up the exception object. No custom cleanup is necessary for this class.
-     */
     virtual ~AuraException() noexcept;
 
-    /**
-     * Constructor with custom message.
-     *
-     * Creates a `AuraException` with a specified message. This can be used to throw an exception
-     * with a custom error message.
-     *
-     * @param msg Custom error message.
-     */
     AuraException(const char* msg);
     AuraException(const std::string& msg);
 
-    /**
-     * Constructor with Vulkan error code (`VkResult`).
-     *
-     * Creates a `AuraException` using a Vulkan error code. The error code is mapped to a descriptive
-     * error message using the static map `vkResultToString`. If the error code is not found in the
-     * map, the message defaults to "Unknown Vulkan error code".
-     *
-     * @param code Vulkan result code (`VkResult`) representing the error.
-     */
 #ifdef AURA_HAS_VULKAN
+    /// @param code Mapped via vkResultToString; unmapped codes get a generic message.
     AuraException(const VkResult code);
 #endif
 
-    /**
-     * Copy constructor.
-     *
-     * Creates a copy of another `AuraException` object.
-     */
     AuraException(const AuraException&) = default;
-
-    /**
-     * Assignment operator.
-     *
-     * Copies the contents of one `AuraException` to another.
-     */
     AuraException& operator=(const AuraException&) = default;
-
-    /**
-     * Move constructor.
-     *
-     * Moves a `AuraException` object, transferring ownership of resources.
-     */
     AuraException(AuraException&&) = default;
-
-    /**
-     * Move assignment operator.
-     *
-     * Moves the contents of one `AuraException` to another, transferring ownership of resources.
-     */
     AuraException& operator=(AuraException&&) = default;
 
-    /**
-     * Overrides the what() function from `std::exception`.
-     *
-     * This function provides the error message associated with the Vulkan exception.
-     * The message can be either the custom message provided during exception construction or
-     * the string corresponding to the Vulkan error code.
-     *
-     * @return const char* A string describing the Vulkan error.
-     */
     virtual const char* what() const noexcept override;
 
 private:
-    /**
-     * Error message associated with the Vulkan exception.
-     *
-     * This message is either set via a custom string or automatically mapped from a Vulkan error code.
-     */
     std::string _msg;
 };
 
 #ifdef AURA_HAS_VULKAN
-/**
- * Static map of Vulkan result codes (`VkResult`) to human-readable error messages.
- *
- * This map contains most Vulkan error codes and their corresponding string descriptions.
- * It is used in the `AuraException` constructor that takes a `VkResult` as input to convert
- * the result code into a meaningful error message.
- */
+/// VkResult -> readable message, for the AuraException(VkResult) constructor.
 static const std::unordered_map<i64, const char*> vkResultToString = {
     { VK_NOT_READY, "A fence or query has not yet completed" },
     { VK_TIMEOUT, "A wait operation has not completed in the specified time" },
@@ -175,4 +96,4 @@ if (result != VK_SUCCESS)       \
 
 }
 
-#endif // AuraException_H
+#endif // AURAEXCEPTION_H

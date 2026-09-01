@@ -3,27 +3,24 @@
 #include "aura/Core/MeshLoader/MeshLoader.h"
 
 namespace aura3d {
-
-ResourceManager::ResourceManager(IRenderer* renderer)
+ResourceManager::ResourceManager(IRenderer* renderer, AudioEngine* audio)
     : _renderer(renderer)
+    , _audio(audio)
 {
 }
 
 TextureHandle ResourceManager::loadTexture(const std::string& path)
 {
-    if (!_renderer) 
+    if (!_renderer)
     {
         INK_ERROR << "ResourceManager: no renderer bound; cannot load " << path;
-        return INVALID_HANDLE;
+        return {};
     }
 
     auto it = _textureCache.find(path);
     if (it != _textureCache.end())
         return it->second;
 
-    // createTextureFromFile already substitutes the checkerboard for a missing
-    // file, so the result is always usable and always worth caching: a broken
-    // path should not be retried on every frame.
     const TextureHandle handle = _renderer->createTextureFromFile(path);
     _textureCache.emplace(path, handle);
 
@@ -35,7 +32,7 @@ MeshHandle ResourceManager::loadMesh(const std::string& path)
 {
     if (!_renderer) {
         INK_ERROR << "ResourceManager: no renderer bound; cannot load " << path;
-        return INVALID_HANDLE;
+        return {};
     }
 
     auto it = _meshCache.find(path);
@@ -43,12 +40,30 @@ MeshHandle ResourceManager::loadMesh(const std::string& path)
         return it->second;
     }
 
-    // loadOBJ falls back to a cube rather than failing, mirroring the texture path.
-    const gfx::Mesh3D mesh = MeshLoader::loadOBJ(path);
-    const MeshHandle handle = _renderer->createMesh(mesh);
+    gfx::Mesh3D mesh = MeshLoader::loadOBJ(path);
+    const MeshHandle handle = _renderer->createMesh(std::move(mesh));
     _meshCache.emplace(path, handle);
 
     INK_DEBUG << "ResourceManager: cached mesh '" << path << "' as handle " << handle;
+    return handle;
+}
+
+AudioClipHandle ResourceManager::loadSound(const std::string& path, AudioClipMode mode)
+{
+    if (!_audio)
+    {
+        INK_ERROR << "ResourceManager: no audio engine bound; cannot load " << path;
+        return {};
+    }
+
+    auto it = _soundCache.find(path);
+    if (it != _soundCache.end())
+        return it->second;
+
+    const AudioClipHandle handle = _audio->loadClip(path, mode);
+    _soundCache.emplace(path, handle);
+
+    INK_DEBUG << "ResourceManager: cached sound '" << path << "' as handle " << handle;
     return handle;
 }
 
@@ -58,11 +73,27 @@ void ResourceManager::unloadAll()
     _meshCache.clear();
 }
 
+void ResourceManager::unloadSounds()
+{
+    if (_audio)
+    {
+        for (const auto& [path, handle] : _soundCache)
+            _audio->unloadClip(handle);
+    }
+
+    _soundCache.clear();
+}
+
 void ResourceManager::setRenderer(IRenderer* renderer)
 {
-    // Handles are only meaningful to the renderer that issued them.
     unloadAll();
     _renderer = renderer;
+}
+
+void ResourceManager::setAudioEngine(AudioEngine* audio)
+{
+    unloadSounds();
+    _audio = audio;
 }
 
 } // namespace aura3d
