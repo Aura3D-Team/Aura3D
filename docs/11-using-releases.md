@@ -13,7 +13,7 @@ Each release ships four archives — one per platform, from
 |---|---|---|
 | `aura3d-vX.Y.Z-linux-x86_64.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | A library to link into your own app |
 | `aura3d-vX.Y.Z-windows-x86_64.zip` | `lib/Aura3D.lib`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | The Windows/MSVC equivalent of the Linux archive above |
-| `aura3d-vX.Y.Z-android-arm64-v8a.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `examples/aura3d-sandbox-debug.apk` | A library to embed in your own Android app, plus a ready-to-install debug build of the Sandbox demo |
+| `aura3d-vX.Y.Z-android-arm64-v8a.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*`, `examples/aura3d-sandbox-debug.apk` | A library to embed in your own Android app, plus a ready-to-install debug build of the Sandbox demo |
 | `aura3d-vX.Y.Z-wasm.tar.gz` | `index.html`, `pkg/{Aura3D.js,Aura3D.wasm,settings.json,resources/}` | The compiled **Sandbox demo**, ready to run in a browser — not a linkable library (see [WebAssembly](#webassembly) below) |
 
 On Linux, Windows, and Android, `libAura3D.a`/`Aura3D.lib` already has
@@ -75,22 +75,20 @@ driver requirements, nothing Aura3D-specific.
 ## Android
 
 **Prerequisites**: the Android NDK (27+) and Gradle/CMake, same as building
-Aura3D itself. Unlike Linux, `cmake/Install.cmake` doesn't export a CMake
-package for Android, so there's no `find_package(Aura3D)` here — link the
-archive's contents by hand in your app's `CMakeLists.txt`:
+Aura3D itself. The archive carries the same CMake package as the Linux and
+Windows ones, so it is consumed the same way:
 
 ```cmake
-set(AURA3D_RELEASE "/path/to/aura3d-android-arm64-v8a")
-
+find_package(Aura3D REQUIRED PATHS /path/to/aura3d-android-arm64-v8a)
 add_library(mygame SHARED main.cpp)
-
-target_include_directories(mygame PRIVATE "${AURA3D_RELEASE}/include")
-target_link_libraries(mygame PRIVATE
-    "${AURA3D_RELEASE}/lib/libAura3D.a"
-    Vulkan::Vulkan   # find_package(Vulkan REQUIRED) first; Android's own
-                     # libvulkan.so ships with the OS on Vulkan-capable devices
-)
+target_link_libraries(mygame PRIVATE Aura3D::Aura3D)
 ```
+
+`Aura3D::Aura3D` pulls in `Vulkan::Vulkan` itself — Android's `libvulkan.so`
+ships with the OS on Vulkan-capable devices, so nothing needs bundling. glm
+does have to be reachable: it is header-only and appears in Aura3D's public
+headers, so the config looks for `glm/glm.hpp` outside the NDK sysroot and any
+host copy will do.
 
 Match `ANDROID_STL=c++_shared` and `ANDROID_PLATFORM=android-29` (or newer)
 in your own app's CMake configuration — this is what the released `.a` was

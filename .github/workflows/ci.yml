@@ -296,11 +296,13 @@ jobs:
           path: wma
 
       - name: Install dependencies (Homebrew)
-        # nlohmann-json is ink's dependency; sdl3 is wma's. Metal, QuartzCore and
+        # nlohmann-json is ink's dependency; sdl3 is wma's; glm is Aura3D's own
+        # (header-only, but cmake/Dependencies.cmake looks for it explicitly --
+        # it reaches the engine's public headers). Metal, QuartzCore and
         # Foundation need no package -- they ship with the Xcode SDK that
         # macos-latest already has, and vendor/metal-cpp is checked in.
         # Ninja matches CMakePresets.json's generator.
-        run: brew install ninja sdl3 nlohmann-json
+        run: brew install ninja sdl3 nlohmann-json glm
 
       - name: Configure ink
         run: >
@@ -370,6 +372,13 @@ jobs:
     # Unlike macos-build, SDL3 also has to be built from source: Homebrew only
     # ships macOS-native binaries, so its sdl3 bottle cannot be linked into an
     # iOS target.
+    #
+    # 16.3 is the floor rather than 16.0 because libc++'s <format> is
+    # availability-gated: its floating-point path calls std::to_chars, which
+    # Apple marks as introduced in iOS 16.3, so ink (which formats its log
+    # timestamps with std::format_to) does not compile below it. All four
+    # builds below use the same value so nothing links against a slice with a
+    # different minimum.
     steps:
       - name: Checkout Aura3D
         uses: actions/checkout@v4
@@ -398,11 +407,11 @@ jobs:
           path: SDL
 
       - name: Install host tools (Homebrew)
-        # nlohmann-json is header-only, so the macOS-native package is usable
-        # from an iOS target as long as find_package can see it -- the same
-        # reasoning as the wasm-build job's CMAKE_FIND_ROOT_PATH_MODE_PACKAGE
+        # nlohmann-json and glm are header-only, so the macOS-native packages are
+        # usable from an iOS target as long as find_package can see them -- the
+        # same reasoning as the wasm-build job's CMAKE_FIND_ROOT_PATH_MODE_PACKAGE
         # note. Ninja is the generator every preset here uses.
-        run: brew install ninja nlohmann-json
+        run: brew install ninja nlohmann-json glm
 
       - name: Build and install SDL3 for iOS
         run: |
@@ -410,7 +419,7 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.3 \
             -DCMAKE_BUILD_TYPE=Release \
             -DSDL_SHARED=OFF \
             -DSDL_STATIC=ON \
@@ -425,7 +434,7 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.3 \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
             -DINK_BUILD_TESTS=OFF \
@@ -439,7 +448,7 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.3 \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps-ios" \
@@ -459,9 +468,10 @@ jobs:
           -DCMAKE_SYSTEM_NAME=iOS
           -DCMAKE_OSX_SYSROOT=iphoneos
           -DCMAKE_OSX_ARCHITECTURES=arm64
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=16.3
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps-ios"
+          -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
           -DAURA_BUILD_SANDBOX=ON
 
       - name: Build Aura3D
@@ -507,17 +517,20 @@ jobs:
 
       - name: Install dependencies (vcpkg)
         # windows-latest ships vcpkg preinstalled at $VCPKG_INSTALLATION_ROOT.
-        # nlohmann_json is ink's dependency; SDL3/GLFW are wma's;
+        # nlohmann_json is ink's dependency; SDL3/GLFW are wma's; glm and
         # vulkan-headers/vulkan-loader are Aura3D's own (AURA_ENABLE_VULKAN
         # defaults ON). OpenGL needs no package here -- opengl32.lib ships
         # with the Windows SDK that msvc-dev-cmd already put on PATH. The
-        # static triplet matches the /MT-equivalent static-library build all
-        # three libraries produce.
+        # static triplet builds these ports against the static CRT (/MT), which
+        # is why every Configure step below also passes
+        # CMAKE_MSVC_RUNTIME_LIBRARY: CMake otherwise defaults the project
+        # itself to /MD and the link fails with LNK2038.
         run: >
           vcpkg install
           nlohmann-json:x64-windows-static
           sdl3:x64-windows-static
           glfw3:x64-windows-static
+          glm:x64-windows-static
           vulkan-headers:x64-windows-static
           vulkan-loader:x64-windows-static
 
@@ -527,6 +540,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
           -DINK_BUILD_TESTS=OFF
           -DINK_NATIVE_OPTIMIZE=OFF
 
@@ -544,6 +558,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DWMA_BUILD_EXAMPLES=OFF
           -DWMA_BUILD_TESTS=OFF
@@ -564,6 +579,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DAURA_BUILD_SANDBOX=ON
           -DAURA_BUILD_TESTS=ON

@@ -19,7 +19,9 @@ Linux — Android and WASM builds only ever have one backend available, and
 
 Aura3D depends on `libink` and `libwma`, built for the **same platform**
 first — each preset's `CMAKE_PREFIX_PATH` points at where those two are
-expected to already be installed.
+expected to already be installed. glm is the third dependency; it is
+header-only, so one copy serves every target, but `cmake/Dependencies.cmake`
+does look for it explicitly and a configure fails without it.
 
 ## Linux
 
@@ -37,19 +39,22 @@ Prerequisites: a C++23 MSVC toolchain (Visual Studio 2022 17.10+, or the
 Build Tools equivalent) on `PATH` — open a "Developer Command Prompt"/"Developer
 PowerShell", or run `vcvarsall.bat x64` yourself first — plus
 [vcpkg](https://vcpkg.io) for `libink`/`libwma`'s own dependencies
-(`nlohmann_json`, SDL3, GLFW) and Aura3D's Vulkan headers/loader. `windows-latest`
-GitHub runners ship vcpkg preinstalled at `%VCPKG_INSTALLATION_ROOT%`; locally,
+(`nlohmann_json`, SDL3, GLFW) and Aura3D's own glm and Vulkan
+headers/loader. `windows-latest` GitHub runners ship vcpkg preinstalled at
+`%VCPKG_INSTALLATION_ROOT%`; locally,
 [clone and bootstrap it](https://learn.microsoft.com/vcpkg/get_started/get-started)
 if you don't have it yet.
 
 ```powershell
 vcpkg install nlohmann-json:x64-windows-static sdl3:x64-windows-static `
-    glfw3:x64-windows-static vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static
+    glfw3:x64-windows-static glm:x64-windows-static `
+    vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static
 
 # windows-release below, or windows-debug for a Debug build
 cmake --preset windows-release `
     -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-    -DVCPKG_TARGET_TRIPLET=x64-windows-static
+    -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+    -DCMAKE_MSVC_RUNTIME_LIBRARY='MultiThreaded$<$<CONFIG:Debug>:Debug>'
 cmake --build --preset windows-release
 ```
 
@@ -63,6 +68,11 @@ then point `CMAKE_PREFIX_PATH` at it: `windows-release`'s
 platform-prefix lookup. `.github/workflows/ci.yml`'s `windows-build` job is
 a complete worked example of the whole ink → wma → Aura3D chain built from
 source with vcpkg, if you'd rather read a script than prose.
+
+`x64-windows-static` puts the vcpkg ports on the static CRT (`/MT`), so
+`CMAKE_MSVC_RUNTIME_LIBRARY` has to say the same for this project — CMake's
+own default is `/MD`, and the mismatch surfaces as `LNK2038` at the first
+executable link, not at configure time.
 
 `AURA_ENABLE_VULKAN`/`AURA_ENABLE_OPENGL`/`AURA_ENABLE_CPU` all stay `ON` by
 default here — MSVC has no `-march=native` equivalent, so
@@ -89,6 +99,7 @@ cmake -S . -B build/android \
     -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared \
     -DCMAKE_BUILD_TYPE=Release
 cmake --build build/android -j"$(nproc)"
+cmake --install build/android --prefix "$LOCAL_PREFIX/android"   # optional
 ```
 
 `AURA_BUILD_SANDBOX` is force-disabled on Android (`cmake/Platform.cmake`) —

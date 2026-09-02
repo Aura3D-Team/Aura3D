@@ -204,6 +204,7 @@ target_link_libraries(Aura3D
     wma::wma
     ink::ink
     Threads::Threads
+    glm::glm
 )
 
 if(EMSCRIPTEN)
