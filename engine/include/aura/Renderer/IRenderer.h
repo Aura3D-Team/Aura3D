@@ -339,22 +339,40 @@ public:
     const Material& getCurrentMaterial() const { return _currentMaterial; }
 
     /**
-     * @brief Prepares hardware commands to execute a synchronized drawing pass cycle.
+     * @brief Acquires the frame's render target (swapchain image / drawable)
+     *        and readies the backend for a new frame.
+     *
+     * run() already calls this once per iteration -- do not call it yourself
+     * if you are using run(), or the backend acquires two frames for one
+     * present/endFrame(). Call it directly only when you drive the loop
+     * yourself through getWindowManager() instead of run(), immediately
+     * before that frame's first beginRenderPass().
      */
     virtual void beginFrame() = 0;
 
     /**
-     * @brief Signals target attachment boundaries that a visual group collection sequence is commencing.
+     * @brief Opens a render pass: clears the target and readies it for draw
+     *        calls.
+     *
+     * Unlike beginFrame()/endFrame(), always called by hand -- run() has no
+     * opinion on how many passes a frame has. Pair with endRenderPass()
+     * around every draw()/drawIndexed()/drawBatch2D() call, whether inside
+     * run()'s callback or a hand-rolled loop.
      */
     virtual void beginRenderPass() = 0;
 
     /**
-     * @brief Wraps structural and execution contexts for the current visual pass.
+     * @brief Closes the render pass opened by beginRenderPass(), submitting
+     *        its queued draws.
      */
     virtual void endRenderPass() = 0;
 
     /**
-     * @brief Completes target operations and presents final image frame updates to monitor screens.
+     * @brief Submits the frame and presents it to the window.
+     *
+     * run() already calls this once per iteration, matching its own
+     * beginFrame() call -- see that comment. Call it directly only in a
+     * hand-rolled loop, after the frame's last endRenderPass().
      */
     virtual void endFrame() = 0;
 
@@ -437,8 +455,13 @@ public:
     virtual void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) = 0;
 
     /**
-     * @brief Initializes execution loop parameters, executing callback functions inside standard frame limits.
-     * * @param[in] onFrame Callable callback structure managing system updates per game tick iteration.
+     * @brief Drives the render loop: polls window events, then wraps
+     *        @p onFrame in beginFrame()/endFrame() every iteration, blocking
+     *        until the window closes.
+     *
+     * @p onFrame is where beginRenderPass()/draw calls/endRenderPass()
+     * belong -- beginFrame()/endFrame() are this function's job, not yours.
+     * @param[in] onFrame Called once per frame, between beginFrame() and endFrame().
      */
     void run(move_only_function<void()> onFrame);
 

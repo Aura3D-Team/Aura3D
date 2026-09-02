@@ -2,6 +2,19 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.2.1]
+
+### Fixed
+
+- `cmake/Dependencies.cmake` never actually looked for glm — it resolved by accident wherever ink/wma's own `/usr/local/include` interface path happened to carry it, which is why a from-scratch Windows configure failed on `glm/glm.hpp: No such file or directory`. Now `find_package(glm CONFIG)` first, falling back to `find_path` + an imported target where glm ships no CMake package (the `vulkan-dev` image); linked `PUBLIC`, and `cmake/Aura3DConfig.cmake.in` reproduces whichever path was taken so `find_package(Aura3D)` resolves it for consumers too
+- `cmake/Install.cmake` skipped `install()` entirely on Android, so the release archive's `.a` had no CMake package and no `find_package(Aura3D)` route — docs told consumers to link it by hand, which also meant retyping the `AURA_HAS_*` defines a Linux/Windows consumer gets for free. Android now installs the same way Linux and Windows do
+- iOS builds failed to compile ink's `std::format_to` call — libc++'s `<format>` calls `std::to_chars`, which Apple marks unavailable below iOS 16.3. Deployment target raised 16.0 → 16.3 in `CMakePresets.json` and every iOS job in `.github/workflows/ci.yml`
+- Windows CI/release jobs configured against vcpkg's `x64-windows-static` triplet (`/MT`) without setting `CMAKE_MSVC_RUNTIME_LIBRARY`, which defaults this project to `/MD` and fails the link with `LNK2038`. Every Windows `Configure` step now passes it explicitly
+
+### Docs
+
+- `IRenderer::beginFrame()`/`endFrame()`/`beginRenderPass()`/`endRenderPass()`/`run()`: replaced comments that restated the function names with ones that say what most often trips consumers up — `run()` already calls `beginFrame()`/`endFrame()` per iteration, so a hand-written loop only needs them when it isn't going through `run()`, while `beginRenderPass()`/`endRenderPass()` are always the caller's own to place
+
 ## [0.2.0]
 
 - **Audio** (issue #19). `aura3d::AudioEngine`, reached from `Engine::audio()`,
