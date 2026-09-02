@@ -60,3 +60,27 @@ endif()
 if(AURA_ENABLE_VULKAN)
     find_package(Vulkan REQUIRED)
 endif()
+
+# glm reaches the engine's *public* headers (AuraMath.h and everything that
+# includes it), so it has to be a real link dependency rather than something
+# each translation unit happens to find. vcpkg and Homebrew ship a CMake
+# package; the vulkan-dev image carries only the headers under
+# /usr/local/include, where they were resolving by accident through ink/wma's
+# own interface include directory -- which is why the Windows build, whose deps
+# live in a private prefix, could not find them at all.
+find_package(glm CONFIG QUIET)
+
+if(TARGET glm::glm)
+    set(AURA_GLM_HAS_PACKAGE ON)
+else()
+    # NO_CMAKE_FIND_ROOT_PATH: glm is header-only, so the host prefix's copy is
+    # the right one for a cross build too, and the NDK/Emscripten toolchains
+    # otherwise confine the search to their sysroot.
+    find_path(AURA_GLM_INCLUDE_DIR glm/glm.hpp NO_CMAKE_FIND_ROOT_PATH REQUIRED)
+
+    add_library(glm::glm INTERFACE IMPORTED GLOBAL)
+    set_target_properties(glm::glm PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${AURA_GLM_INCLUDE_DIR}")
+
+    set(AURA_GLM_HAS_PACKAGE OFF)
+endif()

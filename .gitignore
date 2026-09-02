@@ -1,5 +1,6 @@
 # Ignore build directories
 /build/
+tests/build
 /bin/
 /out/
 .qtcreator

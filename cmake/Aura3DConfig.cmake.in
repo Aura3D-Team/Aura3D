@@ -6,6 +6,19 @@ find_dependency(Threads)
 find_dependency(wma)
 find_dependency(ink)
 
+# glm::glm is in this target's link interface either way; how it is obtained
+# depends on how it was found when Aura3D was built. Where glm ships no CMake
+# package (the vulkan-dev image, for one) the imported target is rebuilt here
+# from the headers, exactly as cmake/Dependencies.cmake does.
+if(@AURA_GLM_HAS_PACKAGE@)
+    find_dependency(glm)
+elseif(NOT TARGET glm::glm)
+    find_path(AURA_GLM_INCLUDE_DIR glm/glm.hpp NO_CMAKE_FIND_ROOT_PATH REQUIRED)
+    add_library(glm::glm INTERFACE IMPORTED)
+    set_target_properties(glm::glm PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${AURA_GLM_INCLUDE_DIR}")
+endif()
+
 if(@AURA_ENABLE_VULKAN@)
     find_dependency(Vulkan)
 endif()

@@ -1,4 +1,10 @@
-if(NOT EMSCRIPTEN AND NOT ANDROID)
+# Emscripten is the one target with nothing to install: its deliverable is the
+# Sandbox's pkg/ output (see apps/Sandbox/CMakeLists.txt), not a library plus
+# headers. Android does get the normal install rules -- the .a is meant to be
+# linked into a host app's own build, but that app still needs the headers and
+# the package config, and ink/wma both install to their own android prefix the
+# same way.
+if(NOT EMSCRIPTEN)
 
 include(CMakePackageConfigHelpers)
 
