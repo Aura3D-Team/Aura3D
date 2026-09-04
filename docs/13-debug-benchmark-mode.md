@@ -1,4 +1,4 @@
-# 15 — Debug & Benchmark Mode
+# 13. Debug & Benchmark Mode
 
 Aura3D can be built to instrument itself: count every CPU and GPU allocation,
 time every phase of every frame, and write the whole thing out as one JSON

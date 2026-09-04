@@ -1,5 +1,5 @@
-#ifndef AURA_UI_STYLE_H
-#define AURA_UI_STYLE_H
+#ifndef AURA_UI_THEME_H
+#define AURA_UI_THEME_H
 
 #pragma once
 
@@ -9,9 +9,11 @@
 #include <glm/glm.hpp>
 #include <ink/ink_base.hpp>
 
+#include "aura/UI/Core/Geometry.h"
+
 /**
- * @file Style.h
- * @brief Per-component theming for aura3d::ui.
+ * @file Theme.h
+ * @brief Per-component theming, shared by every AuraUI widget.
  *
  * A @ref Theme holds one @ref WidgetStyle per @ref Part, so buttons, sliders
  * and tabs are styled independently instead of sharing one palette of
@@ -21,17 +23,13 @@
  * Three scopes, widest first:
  *
  * @code
- * gui.theme.applyPalette(ui::Palette::light()); // the whole UI
- * gui.theme[ui::Part::Button].rounding = 8.0f;  // every button, from now on
- * ui::StyleGuard scope(gui, ui::Part::Button, ui::Style{}.rounded(2.0f)); // this scope
- * gui.button("Delete", ui::Style{}.fill(red));  // this one widget
+ * theme.applyPalette(ui::Palette::light()); // the whole UI
+ * theme[ui::Part::Button].rounding = 8.0f;  // every button, from now on
+ * button.style() = ui::Style{}.fill(red);   // this one widget
  * @endcode
  */
 
 namespace aura3d::ui {
-
-/// Horizontal placement of a component's text within its rectangle.
-enum class Align : u8 { Left, Center, Right };
 
 /**
  * @brief Every component a @ref Theme styles separately.
@@ -41,6 +39,10 @@ enum class Align : u8 { Left, Center, Right };
  * theme routinely wants the viewport dark and the thumb bright.
  */
 enum class Part : u8 {
+    /// A layout node with no appearance of its own. Transparent in every
+    /// palette, so a Column or a Grid draws nothing unless asked to.
+    Container,
+
     Panel,
     TitleBar,
     Label,
@@ -60,6 +62,7 @@ enum class Part : u8 {
     ScrollThumb,
     Tooltip,
     Separator,
+    ProgressBar,
 
     Count
 };
@@ -128,8 +131,8 @@ struct WidgetStyle {
  * default) would.
  *
  * @code
- * gui.button("Delete", ui::Style{}.fill({0.66f, 0.20f, 0.22f, 1.0f}));
- * gui.label("Heading", ui::Style{}.alignText(ui::Align::Center));
+ * button.style() = ui::Style{}.fill({0.66f, 0.20f, 0.22f, 1.0f});
+ * heading.style() = ui::Style{}.alignText(ui::Align::Center);
  * @endcode
  *
  * The setters chain and return @c *this, so a temporary reads as one
@@ -190,6 +193,7 @@ struct Style {
 
 /// Layout every component shares. Pixels, unless said otherwise.
 struct Metrics {
+    float fontSize = 14.0f;    //! Default text size, in logical pixels.
     float rowHeight = 22.0f;   //! Height of one widget row, unless its Part overrides it.
     float itemSpacing = 4.0f;  //! Vertical gap between rows.
     float padding = 8.0f;      //! Panel border to content, all four sides.
@@ -202,7 +206,7 @@ struct Metrics {
 /**
  * @brief The handful of colours a whole theme is generated from.
  *
- * Nine colours reach every one of the ~19 Parts through
+ * Nine colours reach every one of the ~20 Parts through
  * Theme::applyPalette(), which is the difference between restyling the UI and
  * editing a table.
  */
@@ -230,9 +234,9 @@ struct Palette {
  * are the ones that make a component look like itself.
  *
  * @code
- * gui.theme = ui::Theme::light();
- * gui.theme[ui::Part::Button].rounding = 10.0f;
- * gui.theme[ui::Part::Button].height = 30.0f;
+ * root.theme() = ui::Theme::light();
+ * root.theme()[ui::Part::Button].rounding = 10.0f;
+ * root.theme()[ui::Part::Button].height = 30.0f;
  * @endcode
  */
 class Theme {
@@ -275,4 +279,4 @@ private:
 
 } // namespace aura3d::ui
 
-#endif // AURA_UI_STYLE_H
+#endif // AURA_UI_THEME_H

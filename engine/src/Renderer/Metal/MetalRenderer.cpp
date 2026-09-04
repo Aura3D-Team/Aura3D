@@ -24,7 +24,7 @@
 #if !defined(WMA_HAS_METAL) || !WMA_HAS_METAL
 #  error "AURA_ENABLE_METAL requires a libwma built with Metal support: an Apple \
 target with the SDL3 or GLFW backend enabled. See WMA_HAS_METAL in \
-wma/core/BuildConfig.hpp."
+wma::wma's compile definitions."
 #endif
 
 namespace aura3d {

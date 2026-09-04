@@ -3,7 +3,7 @@ name: Release
 # Triggered by pushing a version tag, e.g.:
 #   git tag v0.1.0 && git push origin v0.1.0
 #
-# Builds libAura3D.a/Aura3D.lib (+ public headers) for Linux, Android, macOS
+# Builds libaura3d.a/aura3d.lib (+ public headers) for Linux, Android, macOS
 # and Windows, and the WASM pkg/ output, then attaches one archive per platform
 # to a GitHub Release. These are separate binaries for separate
 # toolchains/ABIs -- there is no single artifact that covers all five (see
@@ -93,7 +93,7 @@ jobs:
 
       - name: Merge wma/ink into a self-contained static library
         # libwma.a and libink.a in this image are themselves static, so fold
-        # their object files into libAura3D.a: a consumer of the release
+        # their object files into libaura3d.a: a consumer of the release
         # archive then only needs Vulkan/OpenGL/Threads (system libraries,
         # not bundled) rather than separately building wma/ink for their
         # platform. Extract each archive into its own subdirectory first so
@@ -104,12 +104,12 @@ jobs:
         # ships inside libink.a as of ink 0.3.0 -- there is no separate
         # libthreading.a to merge any more.
         run: |
-          FAT_LIB="$(pwd)/stage/aura3d-linux-x86_64/lib/libAura3D.a"
-          WMA_LIB="$(find /usr/local -name 'libwma.a' | head -1)"
-          INK_LIB="$(find /usr/local -name 'libink.a' | head -1)"
+          FAT_LIB="$(pwd)/stage/aura3d-linux-x86_64/lib/libaura3d_linux_x86_64.a"
+          WMA_LIB="$(find /usr/local/lib -name 'libwma_linux_x86_64.a' | head -1)"
+          INK_LIB="$(find /usr/local/lib -name 'libink_linux_x86_64.a' | head -1)"
 
           if [[ -z "$WMA_LIB" || -z "$INK_LIB" ]]; then
-            echo "❌  libwma.a/libink.a not found under /usr/local" >&2
+            echo "❌  libwma/libink for linux_x86_64 not found under /usr/local/lib" >&2
             exit 1
           fi
 
@@ -126,13 +126,15 @@ jobs:
           ranlib "$FAT_LIB.merged"
           mv "$FAT_LIB.merged" "$FAT_LIB"
 
-          # This staged Aura3DConfig.cmake no longer needs to find wma/ink
-          # separately -- their code is now inside libAura3D.a. Leave
-          # Vulkan/OpenGL/Threads find_dependency calls alone; those stay
-          # external. Does not touch cmake/Aura3DConfig.cmake.in, so a normal
+          # This staged Aura3D-deps-<tag>.cmake -- not Aura3DConfig.cmake itself,
+          # which is shared across every platform in the archive's prefix and
+          # carries no find_dependency() calls of its own -- no longer needs to
+          # find wma/ink separately: their code is now inside libaura3d.a. Leave
+          # the Vulkan/OpenGL/glm/Threads find_dependency calls alone; those stay
+          # external. Does not touch cmake/Aura3D-deps.cmake.in, so a normal
           # (non-release) `cmake --install` elsewhere is unaffected.
-          CONFIG="stage/aura3d-linux-x86_64/lib/cmake/Aura3D/Aura3DConfig.cmake"
-          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
+          DEPS="stage/aura3d-linux-x86_64/lib/cmake/Aura3D/Aura3D-deps-linux_x86_64.cmake"
+          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$DEPS"
 
       - name: Package
         run: |
@@ -183,7 +185,7 @@ jobs:
 
       - name: Build Sandbox debug APK (bundled example)
         run: |
-          ./scripts/build_android.sh --apk --debug --prefix /usr/local/android
+          ./scripts/build_android.sh --apk --debug --prefix /usr/local
 
           STAGE="stage/aura3d-android-arm64-v8a/examples"
           mkdir -p "$STAGE"
@@ -192,18 +194,18 @@ jobs:
 
       - name: Merge wma/ink into a self-contained static library
         # Same reasoning as the linux-release job: fold the (also static)
-        # arm64-v8a archives into libAura3D.a so embedding this release
+        # arm64-v8a archives into libaura3d.a so embedding this release
         # doesn't also require building wma/ink for Android. Use the NDK's
         # own llvm-ar/llvm-ranlib rather than the host's, since these are
         # arm64 ELF objects.
         run: |
           LLVM_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          FAT_LIB="$(pwd)/stage/aura3d-android-arm64-v8a/lib/libAura3D.a"
-          WMA_LIB="$(find /usr/local/android -name 'libwma.a' | head -1)"
-          INK_LIB="$(find /usr/local/android -name 'libink.a' | head -1)"
+          FAT_LIB="$(pwd)/stage/aura3d-android-arm64-v8a/lib/libaura3d_android_arm64_v8a.a"
+          WMA_LIB="$(find /usr/local/lib -name 'libwma_android_arm64_v8a.a' | head -1)"
+          INK_LIB="$(find /usr/local/lib -name 'libink_android_arm64_v8a.a' | head -1)"
 
           if [[ -z "$WMA_LIB" || -z "$INK_LIB" ]]; then
-            echo "❌  libwma.a/libink.a not found under /usr/local/android" >&2
+            echo "❌  libwma/libink for android_arm64_v8a not found under /usr/local/lib" >&2
             exit 1
           fi
 
@@ -221,9 +223,10 @@ jobs:
           mv "$FAT_LIB.merged" "$FAT_LIB"
 
           # Same reasoning as the linux-release job: wma/ink now live inside
-          # libAura3D.a, so the staged config must not go looking for them.
-          CONFIG="stage/aura3d-android-arm64-v8a/lib/cmake/Aura3D/Aura3DConfig.cmake"
-          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
+          # libaura3d.a, so the staged Aura3D-deps-<tag>.cmake must not go
+          # looking for them.
+          DEPS="stage/aura3d-android-arm64-v8a/lib/cmake/Aura3D/Aura3D-deps-android_arm64_v8a.cmake"
+          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$DEPS"
 
       - name: Package
         run: |
@@ -268,10 +271,16 @@ jobs:
           source /opt/emsdk/emsdk_env.sh
           cmake --build build-wasm --parallel
 
-      - name: Stage
+      - name: Install
+        # The linkable half of this archive. Unlike the linux/android/windows
+        # jobs, wma/ink are not merged into it: Emscripten consumers configure
+        # through emcmake against their own wasm prefix, where both already
+        # live, so find_dependency() resolves them.
+        run: cmake --install build-wasm --prefix stage/aura3d-wasm
+
+      - name: Stage the browser demo
         run: |
           STAGE="stage/aura3d-wasm"
-          mkdir -p "$STAGE"
           cp -r build-wasm/pkg "$STAGE/pkg"
           cp index.html "$STAGE/"
 
@@ -376,7 +385,7 @@ jobs:
         # than ar: it merges member objects from every input archive directly
         # into -o and, unlike ar, renames colliding member names itself, so
         # this needs no extract-into-separate-directories dance. The output is
-        # written to a sibling file and moved over libAura3D.a afterwards,
+        # written to a sibling file and moved over libaura3d.a afterwards,
         # since an archive cannot be both an input and the -o target.
         #
         # Nothing Metal-specific is merged: Metal/QuartzCore/Foundation are
@@ -384,20 +393,20 @@ jobs:
         # the -framework flags through the exported target), and metal-cpp is
         # header-only.
         run: |
-          FAT_LIB="stage/aura3d-macos-arm64/lib/libAura3D.a"
+          FAT_LIB="stage/aura3d-macos-arm64/lib/libaura3d_macos_arm64.a"
 
           libtool -static -o "${FAT_LIB}.merged" \
-            "${FAT_LIB}" deps/lib/libwma.a deps/lib/libink.a
+            "${FAT_LIB}" deps/lib/libwma_macos_arm64.a deps/lib/libink_macos_arm64.a
           mv "${FAT_LIB}.merged" "${FAT_LIB}"
 
-          # This staged Aura3DConfig.cmake no longer needs to find wma/ink
-          # separately -- their code is now inside libAura3D.a. Leave the
+          # This staged Aura3D-deps-<tag>.cmake no longer needs to find wma/ink
+          # separately -- their code is now inside libaura3d.a. Leave the
           # Threads find_dependency alone; that stays external. Does not touch
-          # cmake/Aura3DConfig.cmake.in, so a normal (non-release)
+          # cmake/Aura3D-deps.cmake.in, so a normal (non-release)
           # `cmake --install` elsewhere is unaffected. BSD sed needs an explicit
           # (empty) -i suffix, unlike the GNU sed the Linux/Windows jobs use.
-          CONFIG="stage/aura3d-macos-arm64/lib/cmake/Aura3D/Aura3DConfig.cmake"
-          sed -i '' '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
+          DEPS="stage/aura3d-macos-arm64/lib/cmake/Aura3D/Aura3D-deps-macos_arm64.cmake"
+          sed -i '' '/find_dependency(wma)/d;/find_dependency(ink)/d' "$DEPS"
 
       - name: Package
         run: |
@@ -525,30 +534,30 @@ jobs:
       - name: Merge wma/ink into a self-contained static library
         # deps/lib/{wma,ink}.lib were built from source above (no
         # vulkan-dev container on windows-latest to pull prebuilt copies
-        # from), so fold them into Aura3D.lib the same way linux-release
-        # folds libwma.a/libink.a into libAura3D.a. Unlike ar, MSVC's lib.exe merges
+        # from), so fold them into aura3d.lib the same way linux-release
+        # folds libwma.a/libink.a into libaura3d.a. Unlike ar, MSVC's lib.exe merges
         # member objects from every input .lib it's given directly into
         # /OUT, so this needs no separate extract-then-re-archive step --
         # but /OUT still can't also be read as an input in the same
         # invocation (lib.exe truncates it before the merge finishes
         # reading), so this merges into a sibling file first and moves it
-        # over Aura3D.lib after, the same way the ar-based jobs merge into
+        # over aura3d.lib after, the same way the ar-based jobs merge into
         # "$FAT_LIB.merged" and mv it into place rather than overwriting
         # $FAT_LIB directly mid-read.
         run: |
-          FAT_LIB="stage/aura3d-windows-x86_64/lib/Aura3D.lib"
+          FAT_LIB="stage/aura3d-windows-x86_64/lib/aura3d_windows_amd64.lib"
 
           lib.exe /NOLOGO "/OUT:${FAT_LIB}.merged" \
-            "${FAT_LIB}" deps/lib/wma.lib deps/lib/ink.lib
+            "${FAT_LIB}" deps/lib/wma_windows_amd64.lib deps/lib/ink_windows_amd64.lib
           mv "${FAT_LIB}.merged" "${FAT_LIB}"
 
-          # This staged Aura3DConfig.cmake no longer needs to find wma/ink
-          # separately -- their code is now inside Aura3D.lib. Leave
+          # This staged Aura3D-deps-<tag>.cmake no longer needs to find wma/ink
+          # separately -- their code is now inside aura3d.lib. Leave
           # Vulkan/OpenGL/Threads find_dependency calls alone; those stay
-          # external. Does not touch cmake/Aura3DConfig.cmake.in, so a
+          # external. Does not touch cmake/Aura3D-deps.cmake.in, so a
           # normal (non-release) `cmake --install` elsewhere is unaffected.
-          CONFIG="stage/aura3d-windows-x86_64/lib/cmake/Aura3D/Aura3DConfig.cmake"
-          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$CONFIG"
+          DEPS="stage/aura3d-windows-x86_64/lib/cmake/Aura3D/Aura3D-deps-windows_amd64.cmake"
+          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$DEPS"
 
       - name: Package
         run: |

@@ -32,13 +32,12 @@ cmake --build --preset linux-release
 ```
 
 This produces, under `build/linux/release/`:
-- `libAura3D.a` — the engine
+- `libaura3d_<platform>.a` — the engine
 - `apps/Sandbox/Sandbox` — an interactive 3D demo (WASD + mouse-look camera, a
-  lit scene with three objects, live FPS counter, spatial audio) with a
-  Tab-toggled `aura3d::ui` overlay: panels spawn/remove textured 3D objects,
-  tweak a procedurally animated 2D sprite, and exercise the rest of the widget
-  set (text fields, dropdowns, tabs, a scrolling list) in real time. See
-  [12-immediate-mode-ui.md](12-immediate-mode-ui.md)
+  lit scene with three objects, live FPS counter, spatial audio) with an
+  F1-toggled AuraUI sidebar: spawn/remove textured 3D objects, tweak a
+  procedurally animated 2D sprite, and edit the theme live. See
+  [14-auraui-toolkit.md](14-auraui-toolkit.md)
 - `apps/OrgLogo/OrgLogo` — a minimal 2D demo (one textured quad, no camera
   movement) — the simplest possible complete Aura3D program
 

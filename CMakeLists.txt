@@ -17,6 +17,7 @@ include(GNUInstallDirs)
 option(AURA_BUILD_SANDBOX   "Build the Sandbox demo application"   ON)
 option(AURA_INSTALL_SANDBOX "Install the Sandbox demo application" OFF)
 option(AURA_BUILD_ORGLOGO   "Build the OrgLogo demo application"   ON)
+option(AURA_BUILD_UIDEMO    "Build the AuraUI widget-toolkit demo"  ON)
 option(AURA_BUILD_TESTS     "Build the automated test suite"       OFF)
 
 option(AURA_ENABLE_VULKAN "Compile the Vulkan backend"            ON)
@@ -66,6 +67,10 @@ option(AURA_ENABLE_DEBUG_MODE "Enable CPU/GPU allocation tracking and benchmark 
 # EMSCRIPTEN; see apps/Sandbox/CMakeLists.txt for how these are consumed.
 option(AURA_WASM_ASYNCIFY "Enable Emscripten Asyncify (needed if the app ever blocks synchronously; costs size/speed)" OFF)
 set(AURA_WASM_OUTPUT_NAME "Aura3D" CACHE STRING "Base filename (no extension) for the WASM Sandbox build's pkg/ output")
+
+include(cmake/PlatformSuffix.cmake)
+aura3d_platform_suffix(AURA_PLATFORM_SUFFIX)
+message(STATUS "Aura3D: installing as Aura3D_${AURA_PLATFORM_SUFFIX}")
 
 include(cmake/Platform.cmake)
 include(cmake/Dependencies.cmake)
@@ -138,6 +143,13 @@ endif()
 add_library(Aura3D STATIC)
 
 add_library(Aura3D::Aura3D ALIAS Aura3D)
+
+# One flat lib directory holds every platform's build, so the ABI tag is in the
+# filename: libaura3d_linux_x86_64.a, libaura3d_wasm32.a, ... Lowercase to match
+# ink/wma's own libink_*/libwma_* -- the target name (Aura3D::Aura3D) and the
+# CMake package (find_package(Aura3D)) are unaffected; only the archive on disk
+# changes case.
+set_target_properties(Aura3D PROPERTIES OUTPUT_NAME "aura3d_${AURA_PLATFORM_SUFFIX}")
 
 target_sources(Aura3D
     PRIVATE
@@ -354,6 +366,12 @@ endif()
 
 if(AURA_BUILD_ORGLOGO)
     add_subdirectory(apps/OrgLogo)
+endif()
+
+# The AuraUI demo is the widget toolkit's worked example, so it is only
+# meaningful with the UI compiled in.
+if(AURA_BUILD_UIDEMO AND AURA_ENABLE_UI)
+    add_subdirectory(apps/AuraUIDemo)
 endif()
 
 

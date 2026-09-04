@@ -10,7 +10,10 @@
 #   • ANDROID_NDK_HOME env var set (NDK 27+)
 #   • ANDROID_HOME env var set (SDK with build-tools & platform 29+)
 #   • wma and ink built with the Android NDK and their CMake config available.
-#     Place them under $ANDROID_DEPS_PREFIX (default: /usr/local).
+#     Both install into $ANDROID_DEPS_PREFIX (default: /usr/local), telling
+#     platforms apart by ABI tag rather than by directory. Third-party deps
+#     that are still per-platform (SDL3) stay under $ANDROID_DEPS_PREFIX/android,
+#     which is appended to CMAKE_PREFIX_PATH below.
 #
 # Usage
 #   ./scripts/build_android.sh [--abi arm64-v8a|x86_64] [--apk] [--debug]
@@ -26,7 +29,7 @@ ROOT="$(dirname "$SCRIPT_DIR")"
 ABI="arm64-v8a"
 BUILD_APK=0
 BUILD_TYPE="Release"
-ANDROID_DEPS_PREFIX="${ANDROID_DEPS_PREFIX:-/usr/local/android}"
+ANDROID_DEPS_PREFIX="${ANDROID_DEPS_PREFIX:-/usr/local}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -66,7 +69,7 @@ cmake -S "$ROOT" -B "$BUILD_DIR" \
   -DANDROID_PLATFORM="android-29" \
   -DANDROID_STL="c++_shared" \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DCMAKE_PREFIX_PATH="$ANDROID_DEPS_PREFIX" \
+  -DCMAKE_PREFIX_PATH="$ANDROID_DEPS_PREFIX;$ANDROID_DEPS_PREFIX/android" \
   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 

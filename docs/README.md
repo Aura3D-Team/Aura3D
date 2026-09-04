@@ -30,24 +30,21 @@ straight to whatever you need — each chapter links to the ones it builds on.
 11. **[Using a Release](11-using-releases.md)** — consuming the prebuilt
     release archives as a dependency, per platform, plus how to build the
     `vulkan-dev` dev container from `qt_dev`.
-12. **[Immediate-Mode UI](12-immediate-mode-ui.md)** — `aura3d::ui`: panels,
-    buttons, checkboxes and sliders for debug overlays, editors and standalone
-    tools, per-component theming, and a complete worked tool application.
-    Builds on chapter 7's 2D pipeline, and reads well straight after it.
-13. **[How AuraUI Works](13-auraui-internals.md)** — the inside of chapter 12:
-    widget identity, the hot/active state machine, how a Part's style reaches a
-    widget, how the whole UI stays one draw call, and how to add a widget.
-14. **[Audio](14-audio.md)** — `AudioEngine`: loading WAV/Ogg clips, one-shots
+12. **[Audio](12-audio.md)** — `AudioEngine`: loading WAV/Ogg clips, one-shots
     and looping music, 3D positional sound, voice management, and the
     per-platform backends (ALSA, SDL3, null).
-15. **[Debug & Benchmark Mode](15-debug-benchmark-mode.md)** — the
+13. **[Debug & Benchmark Mode](13-debug-benchmark-mode.md)** — the
     `AURA_ENABLE_DEBUG_MODE` build: CPU and GPU allocation tracking, per-phase
     frame timing across all three backends, and one JSON report with a
     pass/fail verdict for CI. Read it when a change might have regressed
     performance or leaked memory.
+14. **[AuraUI — The Widget Toolkit](14-auraui-toolkit.md)** — the widget tree:
+    measure/arrange layout with flex and grid, shaped text with carets and
+    wrapping, signals and properties, animation, accessibility, and how it
+    stays one draw call. Builds on chapter 7's 2D pipeline.
 
 See also the [top-level README](../README.md) for the repository layout and
-CMake option reference, and `apps/Sandbox/main.cpp` / `apps/OrgLogo/main.cpp`
-for two complete, runnable programs these docs draw their examples from —
-Sandbox's own `aura3d::ui` panels are this chapter's worked example running
-live, alongside its camera, lighting and audio demos.
+CMake option reference, and `apps/Sandbox/main.cpp` / `apps/OrgLogo/main.cpp` /
+`apps/AuraUIDemo/main.cpp` for three complete, runnable programs these docs
+draw their examples from — Sandbox's own AuraUI sidebar and AuraUIDemo are
+both chapter 14's worked examples running live.

@@ -407,6 +407,144 @@ const FontAtlas::UvRect* FontAtlas::cornerMask(u32 radius) noexcept
     return &*slot;
 }
 
+namespace {
+
+//! Widest polygon convexMask() will clip, and the working buffer it needs.
+//! Each half-plane can add at most one vertex, and there are four of them.
+constexpr size_t kMaxMaskVertices = 16;
+
+using MaskBuffer = std::array<glm::vec2, kMaxMaskVertices>;
+
+/**
+ * @brief Clips a convex polygon against one axis-aligned half-plane.
+ *
+ * The Sutherland-Hodgman step: walk the edges, keep every vertex on the
+ * wanted side, and emit the crossing point wherever an edge changes side.
+ * Convexity is what makes one output ring enough -- a concave polygon would
+ * need the general Weiler-Atherton split.
+ *
+ * @param axis 0 for x, 1 for y.
+ * @param keepGreater Keep the side above @p limit rather than below it.
+ * @return Vertex count written to @p out.
+ */
+[[nodiscard]] size_t clipHalfPlane(std::span<const glm::vec2> in, MaskBuffer& out, int axis,
+                                   float limit, bool keepGreater) noexcept
+{
+    const auto coordinate = [axis](const glm::vec2& v) noexcept {
+        return axis == 0 ? v.x : v.y;
+    };
+
+    const auto inside = [&](const glm::vec2& v) noexcept {
+        return keepGreater ? coordinate(v) >= limit : coordinate(v) <= limit;
+    };
+
+    size_t count = 0;
+
+    for (size_t i = 0, n = in.size(); i < n && count + 2 <= kMaxMaskVertices; ++i)
+    {
+        const glm::vec2& a = in[i];
+        const glm::vec2& b = in[(i + 1) % n];
+
+        const bool insideA = inside(a);
+
+        if (insideA)
+            out[count++] = a;
+
+        if (insideA == inside(b))
+            continue;
+
+        //! The edge straddles the plane, so it has exactly one crossing. The
+        //! denominator cannot vanish: the two ends are on opposite sides.
+        const float ca = coordinate(a);
+        const float t = (limit - ca) / (coordinate(b) - ca);
+
+        out[count++] = a + (b - a) * t;
+    }
+
+    return count;
+}
+
+/// Twice the polygon's area, by the shoelace formula. Unsigned, because a
+/// coverage value has no use for the winding direction.
+[[nodiscard]] float polygonArea(std::span<const glm::vec2> polygon) noexcept
+{
+    float twice = 0.0f;
+
+    for (size_t i = 0, n = polygon.size(); i < n; ++i)
+    {
+        const glm::vec2& a = polygon[i];
+        const glm::vec2& b = polygon[(i + 1) % n];
+        twice += a.x * b.y - b.x * a.y;
+    }
+
+    return std::abs(twice) * 0.5f;
+}
+
+} // namespace
+
+const FontAtlas::UvRect* FontAtlas::convexMask(u32 id, u32 size,
+                                               std::span<const glm::vec2> polygon) noexcept
+{
+    if (size == 0 || size > kMaxMaskSize || polygon.size() < 3 ||
+        polygon.size() > kMaxMaskVertices)
+        return nullptr;
+
+    if (const auto it = _convexMasks.find(id); it != _convexMasks.end())
+        return &it->second;
+
+    const auto origin = reserveCell(size, size);
+    if (!origin)
+        return nullptr;
+
+    std::vector<u8> cell(static_cast<size_t>(size) * size);
+
+    MaskBuffer front{};
+    MaskBuffer back{};
+
+    for (u32 j = 0; j < size; ++j)
+    {
+        const auto y0 = static_cast<float>(j);
+
+        for (u32 i = 0; i < size; ++i)
+        {
+            const auto x0 = static_cast<float>(i);
+
+            /*
+             * The polygon clipped to this one texel's square; what survives is
+             * exactly the part of the shape the texel covers, and its area is
+             * the coverage. Four half-planes, alternating buffers so neither
+             * clip reads what it is writing.
+             */
+            size_t count = polygon.size();
+            std::copy(polygon.begin(), polygon.end(), front.begin());
+
+            count = clipHalfPlane({front.data(), count}, back, 0, x0, true);
+            count = clipHalfPlane({back.data(), count}, front, 0, x0 + 1.0f, false);
+            count = clipHalfPlane({front.data(), count}, back, 1, y0, true);
+            count = clipHalfPlane({back.data(), count}, front, 1, y0 + 1.0f, false);
+
+            const float area = count >= 3 ? polygonArea({front.data(), count}) : 0.0f;
+
+            cell[static_cast<size_t>(j) * size + i] =
+                static_cast<u8>(std::lround(std::clamp(area, 0.0f, 1.0f) * 255.0f));
+        }
+    }
+
+    blitCoverage(cell.data(), size, *origin, size, size);
+    markDirty(origin->x, origin->y, size, size);
+
+    const auto atlasW = static_cast<float>(_desc.width);
+    const auto atlasH = static_cast<float>(_desc.height);
+
+    const auto [entry, inserted] = _convexMasks.emplace(
+        id, UvRect{{static_cast<float>(origin->x) / atlasW,
+                    static_cast<float>(origin->y) / atlasH},
+                   {static_cast<float>(origin->x + size) / atlasW,
+                    static_cast<float>(origin->y + size) / atlasH}});
+
+    return &entry->second;
+}
+
 std::optional<glm::uvec2> FontAtlas::reserveCell(u32 w, u32 h) noexcept
 {
     const u32 padding = _desc.padding;

@@ -11,12 +11,12 @@ Each release ships four archives — one per platform, from
 
 | Archive | Contents | What it is |
 |---|---|---|
-| `aura3d-vX.Y.Z-linux-x86_64.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | A library to link into your own app |
-| `aura3d-vX.Y.Z-windows-x86_64.zip` | `lib/Aura3D.lib`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | The Windows/MSVC equivalent of the Linux archive above |
-| `aura3d-vX.Y.Z-android-arm64-v8a.tar.gz` | `lib/libAura3D.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*`, `examples/aura3d-sandbox-debug.apk` | A library to embed in your own Android app, plus a ready-to-install debug build of the Sandbox demo |
-| `aura3d-vX.Y.Z-wasm.tar.gz` | `index.html`, `pkg/{Aura3D.js,Aura3D.wasm,settings.json,resources/}` | The compiled **Sandbox demo**, ready to run in a browser — not a linkable library (see [WebAssembly](#webassembly) below) |
+| `aura3d-vX.Y.Z-linux-x86_64.tar.gz` | `lib/libaura3d_linux_x86_64.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | A library to link into your own app |
+| `aura3d-vX.Y.Z-windows-x86_64.zip` | `lib/aura3d_windows_amd64.lib`, `include/aura/*.h`, `lib/cmake/Aura3D/*` | The Windows/MSVC equivalent of the Linux archive above |
+| `aura3d-vX.Y.Z-android-arm64-v8a.tar.gz` | `lib/libaura3d_android_arm64_v8a.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*`, `examples/aura3d-sandbox-debug.apk` | A library to embed in your own Android app, plus a ready-to-install debug build of the Sandbox demo |
+| `aura3d-vX.Y.Z-wasm.tar.gz` | `lib/libaura3d_wasm32.a`, `include/aura/*.h`, `lib/cmake/Aura3D/*`, `index.html`, `pkg/{Aura3D.js,Aura3D.wasm,settings.json,resources/}` | A library to link into your own Emscripten app, plus the compiled **Sandbox demo** ready to run in a browser |
 
-On Linux, Windows, and Android, `libAura3D.a`/`Aura3D.lib` already has
+On Linux, Windows, and Android, the platform-tagged `libaura3d_*.a`/`aura3d_*.lib` already has
 `libwma`/`libink`'s object code merged into it (see the release workflow's
 "Merge wma/ink into a self-contained static library" step) — you
 don't need to separately obtain those two. Vulkan/OpenGL stay external
@@ -49,7 +49,7 @@ Vulkan/OpenGL application has, nothing Aura3D-specific.
 **Prerequisites to build against it**: an MSVC C++23 toolchain (Visual Studio
 2022 17.10+ or the Build Tools equivalent) and CMake. Same as Linux, you do
 **not** need `libwma`/`libink` installed separately — they're already inside
-`Aura3D.lib`.
+`aura3d_windows_amd64.lib`.
 
 ```powershell
 Expand-Archive aura3d-vX.Y.Z-windows-x86_64.zip -DestinationPath .
@@ -113,10 +113,10 @@ section) if it doesn't.
 
 ## WebAssembly
 
-The WASM archive is **not** a library — it's the compiled Sandbox demo
-itself (`apps/Sandbox/CMakeLists.txt` is what Emscripten actually compiles to
-`Aura3D.js`/`.wasm`; there's no separate Aura3D-for-web artifact today). So
-"using" it means:
+The WASM archive carries two things: a linkable `libaura3d_wasm32.a` built for
+Emscripten (see [below](#building-your-own-wasm-app)), and the compiled
+Sandbox demo — `apps/Sandbox/CMakeLists.txt` is what Emscripten compiles to
+`pkg/Aura3D.js`/`.wasm`. To run the demo:
 
 ```bash
 tar xzf aura3d-vX.Y.Z-wasm.tar.gz
@@ -129,10 +129,22 @@ current Chrome/Firefox/Safari/Edge). There is no install step on the runtime
 side beyond "a browser that supports WebGL2" — this is the OpenGL/WebGL2
 equivalent of the Vulkan driver requirement above.
 
-If you want to build **your own** WASM app against Aura3D rather than run
-the bundled demo, there's currently no prebuilt library artifact for that —
-you'd build from source with Emscripten, per
-[10-platform-builds.md#webassembly](10-platform-builds.md#webassembly).
+### Building your own WASM app
+
+To build your own WASM app against Aura3D rather than run the bundled demo,
+the archive's `lib/`, `include/` and `lib/cmake/Aura3D/` are consumed the same
+way every other platform's are — configure with `emcmake` so the package
+resolves against the Emscripten toolchain:
+
+```cmake
+find_package(Aura3D REQUIRED PATHS /path/to/aura3d-wasm)
+add_executable(mygame main.cpp)
+target_link_libraries(mygame PRIVATE Aura3D::Aura3D)
+```
+
+`libink`/`libwma` must be built with Emscripten and on `CMAKE_PREFIX_PATH`
+too — they are `find_dependency()`d, not bundled. WebGL2 needs no package;
+it comes from the toolchain's link options.
 
 ## Development environment
 
