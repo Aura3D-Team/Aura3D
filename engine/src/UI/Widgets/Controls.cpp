@@ -52,6 +52,11 @@ void Control::onFocusIn(FocusReason reason)
     invalidatePaint();
 }
 
+void Control::onPointerCancel()
+{
+    setPressed(false);
+}
+
 void Control::onFocusOut()
 {
     _focusRingVisible = false;
@@ -93,7 +98,7 @@ void Control::paintFocusRing(DrawList& out, const WidgetStyle& style, const Rect
 
 bool Control::onPointerDown(const PointerEvent& event)
 {
-    if (event.button != PointerButton::Left)
+    if (event.button != PointerButton::Left || !hitTest(event.position))
         return false;
 
     setPressed(true);
@@ -104,7 +109,7 @@ bool Control::onPointerDown(const PointerEvent& event)
 
 bool Control::onPointerUp(const PointerEvent& event)
 {
-    if (!_pressed)
+    if (event.button != PointerButton::Left || !_pressed)
         return false;
 
     setPressed(false);
@@ -112,7 +117,7 @@ bool Control::onPointerUp(const PointerEvent& event)
 
     //! A press that wandered off the control before release is a cancelled
     //! click, not a click somewhere else.
-    if (bounds().contains(event.position))
+    if (hitTest(event.position))
         activate();
 
     return true;
@@ -120,10 +125,13 @@ bool Control::onPointerUp(const PointerEvent& event)
 
 bool Control::onKeyDown(const KeyEvent& event)
 {
+    if (!hasFocus())
+        return false;
     if (event.key != wma::KEY_SPACE && event.key != wma::KEY_ENTER)
         return false;
 
-    activate();
+    if (!event.repeat)
+        activate();
     return true;
 }
 
@@ -385,8 +393,10 @@ void RadioButton::accessibility(AccessibilityInfo& out) const
 
 void RadioGroup::add(RadioButton& button)
 {
+    if (std::ranges::any_of(_buttons, [&button](const WidgetRef& entry) { return entry.get() == &button; }))
+        return;
     const auto index = static_cast<int>(_buttons.size());
-    _buttons.push_back(&button);
+    _buttons.emplace_back(&button);
 
     //! Observing the property rather than the click: selecting a button in
     //! code has to clear the others too, and a click sets the property anyway.
@@ -403,15 +413,23 @@ void RadioGroup::select(int index)
 {
     if (index < -1 || index >= static_cast<int>(_buttons.size()))
         return;
+    if (index >= 0 && !_buttons[static_cast<usize>(index)].get())
+        index = -1;
 
     const bool changed = _selected != index;
     _selected = index;
 
     for (usize i = 0; i < _buttons.size(); ++i)
-        _buttons[i]->checked.set(static_cast<int>(i) == index);
+        if (auto* button = static_cast<RadioButton*>(_buttons[i].get()))
+            button->checked.set(static_cast<int>(i) == index);
 
     if (changed)
         selectionChanged.emit(index);
+}
+
+int RadioGroup::selected() const noexcept
+{
+    return _selected >= 0 && _buttons[static_cast<usize>(_selected)].get() ? _selected : -1;
 }
 
 // =============================================================================
@@ -452,19 +470,27 @@ glm::vec2 Selectable::measureContent(const Constraints& available)
 {
     const WidgetStyle style = resolvedStyle();
 
-    const glm::vec2 label = _label->measure(available);
-    const glm::vec2 detail = _detail ? _detail->measure(available) : glm::vec2{0.0f};
+    //! The same text inset a Button gives its label. Without it a tab strip
+    //! renders as touching words and list rows sit flush against their edge.
+    const Constraints inner = Constraints::loose(
+        {std::max(0.0f, available.max.x - style.padding * 2.0f), available.max.y});
+
+    const glm::vec2 label = _label->measure(inner);
+    const glm::vec2 detail = _detail ? _detail->measure(inner) : glm::vec2{0.0f};
 
     //! The gap only exists when there is something to separate.
     const f32 gap = _detail ? style.padding * 3.0f : 0.0f;
 
-    return {label.x + gap + detail.x,
+    return {label.x + gap + detail.x + style.padding * 2.0f,
             std::max({label.y, detail.y, style.height.value_or(theme().metrics.rowHeight)})};
 }
 
 void Selectable::arrangeContent(const Rect& content)
 {
-    _label->arrange(content);
+    const WidgetStyle style = resolvedStyle();
+    const Rect inner = deflate(content, Thickness::symmetric(style.padding, 0.0f));
+
+    _label->arrange(inner);
 
     if (!_detail)
         return;
@@ -472,7 +498,7 @@ void Selectable::arrangeContent(const Rect& content)
     //! Right-aligned against the row's far edge, whatever the row's width
     //! turned out to be.
     const f32 width = _detail->desiredSize().x;
-    _detail->arrange(Rect{{content.max.x - width, content.min.y}, content.max});
+    _detail->arrange(Rect{{inner.max.x - width, inner.min.y}, inner.max});
 }
 
 void Selectable::paint(DrawList& out)
@@ -1044,7 +1070,7 @@ bool TextField::onPointerDown(const PointerEvent& event)
 
 bool TextField::onPointerMove(const PointerEvent& event)
 {
-    if (!_dragging)
+    if (!_dragging || !hasPointerCapture())
         return false;
 
     const Rect content = contentRect();
@@ -1054,6 +1080,8 @@ bool TextField::onPointerMove(const PointerEvent& event)
 
 bool TextField::onPointerUp(const PointerEvent& event)
 {
+    if (event.button != PointerButton::Left)
+        return false;
     _dragging = false;
     return Control::onPointerUp(event);
 }

@@ -257,8 +257,7 @@ void testFocusIsTrappedInTheTopmostOverlay()
 
     harness.frame();
 
-    harness.root.keyDown(wma::KEY_TAB);
-    AURA_CHECK(harness.root.focused() == &first, "Tab enters the overlay");
+    AURA_CHECK(harness.root.focused() == &first, "opening a modal moves focus inside it");
 
     harness.root.keyDown(wma::KEY_TAB);
     AURA_CHECK(harness.root.focused() == &second, "and moves within it");

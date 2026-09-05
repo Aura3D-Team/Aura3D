@@ -20,8 +20,19 @@ namespace {
 
 Widget::Widget() = default;
 
+WidgetRef::WidgetRef(Widget* widget) : _widget(widget)
+{
+    if (widget)
+    {
+        if (!widget->_alive)
+            widget->_alive = std::make_shared<u8>(0);
+        _alive = widget->_alive;
+    }
+}
+
 Widget::~Widget()
 {
+    _alive.reset();
     /*
      * Children are destroyed by _children's own destructor, but the root has
      * to be told first: it may be holding this subtree as the focused, hovered
@@ -129,7 +140,11 @@ void Widget::_setRoot(UIRoot* root)
         child->_setRoot(root);
 
     if (_root)
+    {
+        if (_animating)
+            _root->_setAnimating(*this, true);
         onAttach();
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -274,6 +289,9 @@ void Widget::setVisibility(Visibility visibility)
 
     _visibility = visibility;
 
+    if (visibility != Visibility::Visible && _root)
+        _root->_forget(*this);
+
     if (reflows)
         invalidateLayout();
     else
@@ -306,22 +324,31 @@ bool Widget::effectivelyEnabled() const noexcept
     return true;
 }
 
+bool Widget::effectivelyVisible() const noexcept
+{
+    for (const Widget* node = this; node; node = node->_parent)
+        if (node->_visibility != Visibility::Visible)
+            return false;
+    return true;
+}
+
 // -----------------------------------------------------------------------------
 // Painting
 // -----------------------------------------------------------------------------
 
 void Widget::paintTree(DrawList& out)
 {
-    if (_visibility != Visibility::Visible || _bounds.empty())
+    if (_visibility != Visibility::Visible)
         return;
 
     //! Nothing in this subtree can reach a pixel, so neither the widget nor
     //! any descendant is worth visiting. This is what keeps a long scrolled
     //! list cheap.
-    if (intersect(_bounds, out.clip()).empty())
+    const bool visible = !intersect(_bounds, out.clip()).empty();
+    if (visible)
+        paint(out);
+    else if (clipsChildren())
         return;
-
-    paint(out);
 
     if (_children.empty())
         return;
@@ -371,6 +398,7 @@ bool Widget::onTextInput(const TextEvent&) { return false; }
 
 void Widget::onPointerEnter() {}
 void Widget::onPointerLeave() {}
+void Widget::onPointerCancel() {}
 void Widget::onFocusIn(FocusReason) {}
 void Widget::onFocusOut() {}
 
@@ -398,7 +426,7 @@ void Widget::setAnimating(bool animating)
 
 bool Widget::focusable() const noexcept
 {
-    return _focusable && _visibility == Visibility::Visible && effectivelyEnabled();
+    return _focusable && effectivelyVisible() && effectivelyEnabled();
 }
 
 bool Widget::hasFocus() const noexcept
@@ -414,7 +442,7 @@ void Widget::requestFocus(FocusReason reason)
 
 bool Widget::isHovered() const noexcept
 {
-    return _root != nullptr && _root->hovered() == this;
+    return _root != nullptr && _root->isHovered(this);
 }
 
 void Widget::capturePointer()
@@ -440,7 +468,7 @@ bool Widget::hasPointerCapture() const noexcept
 
 const Theme& Widget::theme() const noexcept
 {
-    return _root ? _root->theme() : detachedTheme();
+    return _root ? std::as_const(*_root).theme() : detachedTheme();
 }
 
 WidgetStyle Widget::resolvedStyle() const

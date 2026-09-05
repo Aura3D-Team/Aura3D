@@ -402,6 +402,9 @@ void DrawListRenderer::build(const DrawList& list, f32 scale)
     //! image, and by a list that ended on a clipped-away command.
     if (!_batches.empty() && _batches.back().quadCount == 0)
         _batches.pop_back();
+    //! Rounded corners allocate their mask while this frame's quads are being
+    //! emitted, so the upload has to happen after the walk, not before it.
+    _syncPages();
 }
 
 void DrawListRenderer::submit()

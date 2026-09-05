@@ -1,6 +1,7 @@
 #include "aura/UI/Overlay.h"
 
 #include <algorithm>
+#include "aura/UI/UIRoot.h"
 
 namespace aura3d::ui {
 
@@ -10,6 +11,37 @@ namespace {
 /// describes is not under the thing describing it.
 constexpr f32 kCursorClearance = 14.0f;
 
+bool within(const Widget* ancestor, const Widget* node)
+{
+    for (; node; node = node->parent())
+        if (node == ancestor)
+            return true;
+    return false;
+}
+
+Widget* pickOverlay(Widget& node, glm::vec2 point)
+{
+    if (!node.effectivelyVisible())
+        return nullptr;
+    if (!node.clipsChildren() || node.contentRect().contains(point))
+        for (usize i = node.childCount(); i-- > 0;)
+            if (Widget* hit = pickOverlay(node.childAt(i), point))
+                return hit;
+    return node.hitTest(point) ? &node : nullptr;
+}
+
+Widget* firstFocusable(Widget& node)
+{
+    if (!node.effectivelyVisible() || !node.effectivelyEnabled())
+        return nullptr;
+    if (node.focusable())
+        return &node;
+    for (const auto& child : node.children())
+        if (Widget* found = firstFocusable(*child))
+            return found;
+    return nullptr;
+}
+
 } // namespace
 
 OverlayLayer::OverlayLayer()
@@ -17,6 +49,93 @@ OverlayLayer::OverlayLayer()
     //! The layer spans the surface but owns none of it: a click in the gap
     //! between two overlays belongs to the scene underneath, not here.
     setHitTestVisible(false);
+}
+
+void OverlayLayer::_register(const OverlayDesc& desc)
+{
+    _entries.push_back(Entry{_nextId++, desc, false, WidgetRef(desc.owner),
+                             WidgetRef(root() ? root()->focused() : nullptr), true});
+    if (desc.modal && root())
+        root()->capturePointer(nullptr);
+}
+
+Widget* OverlayLayer::focusScope() const noexcept
+{
+    for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
+        if (!_entries[i].closing && childAt(i).effectivelyVisible() && childAt(i).hitTestVisible())
+            return &childAt(i);
+    return nullptr;
+}
+
+bool OverlayLayer::allowsFocus(const Widget* widget) const noexcept
+{
+    for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
+    {
+        if (_entries[i].closing)
+            continue;
+        if (within(&childAt(i), widget))
+            return true;
+        if (_entries[i].desc.modal)
+            return false;
+    }
+    return true;
+}
+
+Widget* OverlayLayer::widgetAt(glm::vec2 point) const
+{
+    for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
+    {
+        if (_entries[i].closing)
+            continue;
+        Widget& child = childAt(i);
+        if (child.hitTestVisible())
+            if (Widget* hit = pickOverlay(child, point))
+                return hit;
+        if (_entries[i].desc.modal)
+            return const_cast<OverlayLayer*>(this);
+    }
+    return nullptr;
+}
+
+void OverlayLayer::syncFocus()
+{
+    if (!root())
+        return;
+    Widget* scope = focusScope();
+    if (!scope)
+        return;
+    for (usize i = 0; i < _entries.size(); ++i)
+    {
+        if (&childAt(i) != scope)
+            continue;
+        const bool take = _entries[i].focusPending && _entries[i].desc.takeFocus;
+        _entries[i].focusPending = false;
+        if (take || !allowsFocus(root()->focused()))
+            root()->setFocus(firstFocusable(*scope));
+        return;
+    }
+}
+
+void OverlayLayer::forgetOwner(Widget& owner)
+{
+    for (usize i = _entries.size(); i-- > 0;)
+        if (!_entries[i].closing && within(&owner, _entries[i].owner.get()))
+            close(_entries[i].id);
+}
+
+bool OverlayLayer::dismissOutside(glm::vec2 point)
+{
+    bool closed = false;
+    for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
+    {
+        if (_entries[i].closing || !childAt(i).hitTestVisible())
+            continue;
+        if (pickOverlay(childAt(i), point) || !_entries[i].desc.dismissOnOutsideClick)
+            break;
+        close(_entries[i].id);
+        closed = true;
+    }
+    return closed;
 }
 
 OverlayLayer::Id OverlayLayer::lastId() const noexcept
@@ -83,6 +202,7 @@ void OverlayLayer::close(Id id)
 
         _entries[i].closing = true;
         _pendingClose = true;
+        const WidgetRef restore = _entries[i].restoreFocus;
 
         /*
          * Collapsed now, destroyed later. The widget stops drawing and stops
@@ -92,6 +212,8 @@ void OverlayLayer::close(Id id)
          */
         childAt(i).setVisibility(Visibility::Collapsed);
         childAt(i).setHitTestVisible(false);
+        if (root() && !root()->focused())
+            root()->setFocus(restore.get());
         return;
     }
 }

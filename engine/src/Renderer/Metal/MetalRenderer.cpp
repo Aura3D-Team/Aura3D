@@ -55,7 +55,6 @@ void MetalRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
         throw AuraException("MetalRenderer: settings are null");
 
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
-    setupInput();
 
     _frameSlots = std::make_shared<FrameSlots>(MTL_MAX_FRAMES_IN_FLIGHT);
     _deviceManager = std::make_unique<MtlDeviceManager>();
@@ -106,11 +105,6 @@ void MetalRenderer::createWindow(const char* title, const wma::WindowBackend& wB
     _windowManagerApi->createWindow(title);
 }
 
-void MetalRenderer::setupInput()
-{
-    _windowManagerApi->getKeyboardListener().addKeyAction(
-        wma::Key::KEY_ESCAPE, wma::KeyAction{[this]() { cleanup(); }, nullptr});
-}
 
 void MetalRenderer::createPipelines()
 {

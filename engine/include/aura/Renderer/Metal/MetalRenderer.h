@@ -128,7 +128,6 @@ protected:
 
 private:
     //! Binds ESC-to-quit and the rest of the shared input wiring.
-    void setupInput();
 
     //! Builds the scene and overlay pipelines against the layer's formats.
     void createPipelines();

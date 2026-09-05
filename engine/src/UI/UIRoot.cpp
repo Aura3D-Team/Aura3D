@@ -161,11 +161,17 @@ void UIRoot::update(f32 deltaSeconds)
     {
         //! Ticking off a snapshot: a widget may stop animating (or start
         //! another one) from inside its own onTick.
-        _tickScratch.assign(_animating.begin(), _animating.end());
+        _tickScratch.clear();
+        for (Widget* widget : _animating)
+            _tickScratch.emplace_back(widget);
 
-        for (Widget* widget : _tickScratch)
+        for (const WidgetRef& reference : _tickScratch)
         {
-            if (!widget->onTick(deltaSeconds))
+            Widget* widget = reference.get();
+            if (!widget || widget->root() != this || !widget->animating())
+                continue;
+            const bool running = widget->onTick(deltaSeconds);
+            if (reference.get() && widget->root() == this && !running)
                 widget->setAnimating(false);
         }
 
@@ -174,6 +180,7 @@ void UIRoot::update(f32 deltaSeconds)
 
     if (_layoutDirty)
         _layout();
+    _overlay->syncFocus();
 }
 
 void UIRoot::_layout()
@@ -235,17 +242,24 @@ bool UIRoot::_bubble(Widget* target, Event& event, Handler&& handler)
      * than bubbling to an enabled ancestor, so a click on a greyed-out button
      * does not fall through to the panel behind it.
      */
+    if (target->root() != this || !target->effectivelyVisible())
+        return false;
     if (!target->effectivelyEnabled())
         return true;
 
-    for (Widget* node = target; node != nullptr; node = node->parent())
+    for (Widget* node = target; node != nullptr;)
     {
+        const WidgetRef current(node);
+        const WidgetRef parent(node->parent());
         //! Keyboard events have no position to re-base; only pointer ones do.
         if constexpr (requires { event.local = event.position; })
             event.local = event.position - node->bounds().min;
 
         if (handler(*node, event))
             return true;
+        if (!current.get() || node->root() != this || !node->effectivelyVisible())
+            return true;
+        node = parent.get();
     }
 
     return false;
@@ -254,7 +268,7 @@ bool UIRoot::_bubble(Widget* target, Event& event, Handler&& handler)
 Widget* UIRoot::widgetAt(glm::vec2 position) const
 {
     //! Overlays are drawn last, so they are hit first.
-    if (Widget* hit = pick(*_overlay, position))
+    if (Widget* hit = _overlay->widgetAt(position))
         return hit;
 
     /*
@@ -292,26 +306,34 @@ void UIRoot::_updateHover(glm::vec2 position)
            _hoverChain[shared] == _hoverScratch[shared])
         ++shared;
 
+    std::vector<WidgetRef> leaving;
+    std::vector<WidgetRef> entering;
     for (usize i = _hoverChain.size(); i-- > shared;)
-        _hoverChain[i]->onPointerLeave();
-
+        leaving.emplace_back(_hoverChain[i]);
+    for (usize i = shared; i < _hoverScratch.size(); ++i)
+        entering.emplace_back(_hoverScratch[i]);
     _hoverChain = _hoverScratch;
-
-    for (usize i = shared; i < _hoverChain.size(); ++i)
-        _hoverChain[i]->onPointerEnter();
+    for (const auto& reference : leaving)
+        if (Widget* node = reference.get(); node && node->root() == this)
+            node->onPointerLeave();
+    for (const auto& reference : entering)
+        if (Widget* node = reference.get(); node && node->root() == this && isHovered(node))
+            node->onPointerEnter();
 
     _paintDirty = true;
 }
 
 void UIRoot::_dropHover()
 {
-    for (usize i = _hoverChain.size(); i-- > 0;)
-        _hoverChain[i]->onPointerLeave();
-
+    std::vector<WidgetRef> previous;
+    for (Widget* node : _hoverChain)
+        previous.emplace_back(node);
     if (!_hoverChain.empty())
         _paintDirty = true;
-
     _hoverChain.clear();
+    for (usize i = previous.size(); i-- > 0;)
+        if (Widget* node = previous[i].get(); node && node->root() == this)
+            node->onPointerLeave();
 }
 
 Widget* UIRoot::hovered() const noexcept
@@ -349,6 +371,8 @@ bool UIRoot::pointerMoved(glm::vec2 position)
 
 bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mods)
 {
+    if (_layoutDirty)
+        _layout();
     _pointer = position;
     _pointerInside = true;
 
@@ -363,8 +387,8 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
 
     //! Before dispatch, so the press that dismisses a menu is not also
     //! delivered to whatever the menu was covering.
-    if (!_overlay->empty() && !_overlay->contains(position))
-        _overlay->closeLightDismissible();
+    if (_overlay->dismissOutside(position))
+        return true;
 
     Widget* target = _capture ? _capture : hovered();
 
@@ -388,6 +412,8 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
 bool UIRoot::pointerUp(glm::vec2 position, PointerButton button, Modifiers mods)
 {
     _pointer = position;
+    if (!_capture)
+        _updateHover(position);
 
     Widget* target = _capture ? _capture : hovered();
 
@@ -424,15 +450,33 @@ void UIRoot::pointerLeft()
 
 void UIRoot::capturePointer(Widget* widget)
 {
+    if (widget && (widget->root() != this || !widget->effectivelyEnabled() ||
+                   !widget->effectivelyVisible()))
+        return;
     if (_capture == widget)
         return;
 
-    _capture = widget;
+    Widget* previous = std::exchange(_capture, widget);
+    if (previous)
+        previous->onPointerCancel();
 
     //! Releasing re-evaluates hover from where the pointer actually is, which
     //! is rarely still on the widget that was being dragged.
     if (!_capture && _pointerInside)
         _updateHover(_pointer);
+    else if (!_capture)
+        _dropHover();
+}
+
+void UIRoot::cancelInput()
+{
+    _pointerInside = false;
+    capturePointer(nullptr);
+    clearFocus();
+    _dropHover();
+    _closeTooltip();
+    _overlay->closeLightDismissible();
+    _lastPressTime = -1.0f;
 }
 
 bool UIRoot::capturesPointer() const noexcept
@@ -457,8 +501,9 @@ bool UIRoot::_runShortcuts(const KeyEvent& event, bool beforeWidget)
         if (!entry.shortcut.matches(event))
             continue;
 
-        if (entry.action)
-            entry.action();
+        const auto action = entry.action;
+        if (action)
+            action();
 
         return true;
     }
@@ -468,6 +513,7 @@ bool UIRoot::_runShortcuts(const KeyEvent& event, bool beforeWidget)
 
 bool UIRoot::keyDown(wma::Key key, Modifiers mods, bool repeat)
 {
+    _overlay->syncFocus();
     const KeyEvent event{.key = key, .mods = mods, .repeat = repeat};
 
     /*
@@ -498,12 +544,14 @@ bool UIRoot::keyDown(wma::Key key, Modifiers mods, bool repeat)
 
 bool UIRoot::keyUp(wma::Key key, Modifiers mods)
 {
+    _overlay->syncFocus();
     KeyEvent event{.key = key, .mods = mods};
     return _bubble(_focused, event, [](Widget& node, KeyEvent& e) { return node.onKeyUp(e); });
 }
 
 bool UIRoot::textInput(std::string_view utf8)
 {
+    _overlay->syncFocus();
     if (utf8.empty())
         return false;
 
@@ -518,7 +566,8 @@ bool UIRoot::textInput(std::string_view utf8)
 
 void UIRoot::setFocus(Widget* widget, FocusReason reason)
 {
-    if (widget != nullptr && !widget->focusable())
+    if (widget != nullptr && (widget->root() != this || !widget->focusable() ||
+                             !_overlay->allowsFocus(widget)))
         return;
 
     if (_focused == widget)
@@ -530,7 +579,7 @@ void UIRoot::setFocus(Widget* widget, FocusReason reason)
     if (previous)
         previous->onFocusOut();
 
-    if (_focused)
+    if (_focused == widget && _focused)
         _focused->onFocusIn(reason);
 
     _paintDirty = true;
@@ -563,7 +612,7 @@ bool UIRoot::_moveFocus(int direction)
      * this, tabbing out of a dialog lands on the controls it is covering,
      * which is both wrong and unreachable with the pointer.
      */
-    if (Widget* floating = _overlay->topmost())
+    if (Widget* floating = _overlay->focusScope())
     {
         _collectFocusable(*floating, _focusScratch);
     }
@@ -639,6 +688,8 @@ bool UIRoot::_isAncestorOf(const Widget& ancestor, const Widget* node) noexcept
 
 void UIRoot::_forget(Widget& widget)
 {
+    if (_overlay)
+        _overlay->forgetOwner(widget);
     /*
      * Ancestry, not identity: disabling or detaching a container has to clear
      * focus held by something inside it too, or the tree would keep dispatching
@@ -653,12 +704,20 @@ void UIRoot::_forget(Widget& widget)
     }
 
     if (_isAncestorOf(widget, _capture))
-        _capture = nullptr;
+    {
+        Widget* previous = std::exchange(_capture, nullptr);
+        previous->onPointerCancel();
+    }
 
     std::erase_if(_hoverChain,
                   [&widget](Widget* node) { return _isAncestorOf(widget, node); });
 
-    std::erase_if(_animating, [&widget](Widget* node) { return _isAncestorOf(widget, node); });
+    std::erase_if(_animating, [&widget](Widget* node) {
+        if (!_isAncestorOf(widget, node))
+            return false;
+        node->_animating = false;
+        return true;
+    });
 
     if (_tooltipTarget != nullptr && _isAncestorOf(widget, _tooltipTarget))
     {

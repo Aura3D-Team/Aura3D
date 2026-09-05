@@ -91,8 +91,13 @@ public:
      */
     [[nodiscard]] ScopedConnection bind(Property& source)
     {
+        if (!_alive)
+            _alive = std::make_shared<u8>(0);
         set(source.get());
-        return source.changed().connect([this](const T& value) { set(value); });
+        return source.changed().connect([this, alive = std::weak_ptr<void>(_alive)](const T& value) {
+            if (!alive.expired())
+                set(value);
+        });
     }
 
     /// As @ref bind, through a conversion -- binding a label's text to a
@@ -100,10 +105,15 @@ public:
     template <class U, class Fn>
     [[nodiscard]] ScopedConnection bindFrom(Property<U>& source, Fn transform)
     {
+        if (!_alive)
+            _alive = std::make_shared<u8>(0);
         set(transform(source.get()));
 
         return source.changed().connect(
-            [this, transform = std::move(transform)](const U& value) { set(transform(value)); });
+            [this, alive = std::weak_ptr<void>(_alive), transform = std::move(transform)](const U& value) {
+                if (!alive.expired())
+                    set(transform(value));
+            });
     }
 
     /// The change signal, created on first call.
@@ -121,6 +131,7 @@ private:
     //! Null until someone asks for changed(). A widget exposing a dozen
     //! properties therefore allocates nothing for the ones nobody watches.
     std::unique_ptr<Observer> _changed;
+    std::shared_ptr<void> _alive;
 };
 
 } // namespace aura3d::ui

@@ -427,7 +427,8 @@ Thickness ScrollView::contentInsets() const noexcept
 
 glm::vec2 ScrollView::maxOffset() const noexcept
 {
-    return glm::max(glm::vec2{0.0f}, _contentSize - _viewportSize);
+    const auto limit = glm::max(glm::vec2{0.0f}, _contentSize - _viewportSize);
+    return {_horizontal ? limit.x : 0.0f, _vertical ? limit.y : 0.0f};
 }
 
 glm::vec2 ScrollView::measureContent(const Constraints& available)
@@ -460,13 +461,19 @@ void ScrollView::arrangeContent(const Rect& content)
 
     Widget* child = _content();
     if (!child)
+    {
+        _offset.reset({0.0f, 0.0f});
         return;
+    }
 
     const glm::vec2 limit = maxOffset();
     const glm::vec2 clamped = glm::clamp(_offset.value(), glm::vec2{0.0f}, limit);
 
     if (clamped != _offset.value())
         _offset.reset(clamped);
+    else if (const auto target = glm::clamp(_offset.target(), glm::vec2{0.0f}, limit);
+             target != _offset.target())
+        _offset.to(target, 0.12f);
 
     const glm::vec2 size{_horizontal ? _contentSize.x : content.width(),
                          _vertical ? _contentSize.y : content.height()};
@@ -478,7 +485,7 @@ void ScrollView::_setOffset(glm::vec2 offset, bool animate)
 {
     offset = glm::clamp(offset, glm::vec2{0.0f}, maxOffset());
 
-    if (offset == _offset.target())
+    if (offset == _offset.target() && (animate || offset == _offset.value()))
         return;
 
     if (animate && _smooth)
@@ -533,8 +540,8 @@ bool ScrollView::onWheel(const WheelEvent& event)
     //! scroll sideways on a mouse that has one wheel.
     const bool sideways = event.mods.shift || (!_vertical && _horizontal);
 
-    const glm::vec2 delta = sideways ? glm::vec2{-event.delta.y * step, 0.0f}
-                                     : glm::vec2{0.0f, -event.delta.y * step};
+    const glm::vec2 delta = sideways ? glm::vec2{-(event.delta.x + event.delta.y) * step, 0.0f}
+                                     : glm::vec2{-event.delta.x * step, -event.delta.y * step};
 
     const glm::vec2 limit = maxOffset();
     const glm::vec2 target = _offset.target();
@@ -577,7 +584,7 @@ ScrollView::Bar ScrollView::_bar(Axis axis) const
                            {inner.max.x - (_vertical ? gutter : 0.0f), inner.max.y}};
 
     const f32 trackExtent = along(axis, bar.track.size());
-    const f32 thumbExtent = std::max(gutter * 2.0f, trackExtent * (viewport / content));
+    const f32 thumbExtent = std::min(trackExtent, std::max(gutter * 2.0f, trackExtent * (viewport / content)));
 
     const f32 travel = std::max(0.0f, trackExtent - thumbExtent);
     const f32 progress = along(axis, _offset.value()) / std::max(1.0f, content - viewport);
@@ -624,6 +631,8 @@ void ScrollView::paintChildren(DrawList& out)
 
 bool ScrollView::onPointerDown(const PointerEvent& event)
 {
+    if (event.button != PointerButton::Left)
+        return false;
     for (const Axis axis : {Axis::Vertical, Axis::Horizontal})
     {
         const Bar bar = _bar(axis);
@@ -632,6 +641,7 @@ bool ScrollView::onPointerDown(const PointerEvent& event)
 
         _dragging = axis;
         _dragActive = true;
+        capturePointer();
 
         if (bar.thumb.contains(event.position))
         {
@@ -655,7 +665,7 @@ bool ScrollView::onPointerDown(const PointerEvent& event)
 
 bool ScrollView::onPointerMove(const PointerEvent& event)
 {
-    if (!_dragActive)
+    if (!_dragActive || !hasPointerCapture())
         return false;
 
     const Bar bar = _bar(_dragging);
@@ -684,9 +694,9 @@ bool ScrollView::onPointerMove(const PointerEvent& event)
     return true;
 }
 
-bool ScrollView::onPointerUp(const PointerEvent&)
+bool ScrollView::onPointerUp(const PointerEvent& event)
 {
-    if (!_dragActive)
+    if (!_dragActive || event.button != PointerButton::Left)
         return false;
 
     _dragActive = false;
@@ -699,6 +709,12 @@ void ScrollView::accessibility(AccessibilityInfo& out) const
 {
     Widget::accessibility(out);
     out.role = Role::ScrollView;
+}
+
+void ScrollView::onPointerCancel()
+{
+    _dragActive = false;
+    invalidatePaint();
 }
 
 } // namespace aura3d::ui

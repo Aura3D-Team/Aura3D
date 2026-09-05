@@ -237,9 +237,10 @@ void AtlasTextShaper::setScale(f32 scale)
 
     _scale = scale;
 
-    //! Every page's rasterization size was derived from the old scale, so they
-    //! are all the wrong resolution now. Dropping them rebuilds lazily.
-    _pages.clear();
+    //! Pages are kept rather than dropped: a retained glyph run holds a page
+    //! index and its UVs, and clearing here left every label already shaped
+    //! pointing into an atlas that no longer exists. Text shaped from now on
+    //! rasterizes at the new scale; what is already on screen stays readable.
 }
 
 u32 AtlasTextShaper::pageCount() const noexcept

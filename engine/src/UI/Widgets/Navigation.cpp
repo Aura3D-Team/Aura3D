@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "aura/UI/Core/Icon.h"
+#include "aura/UI/UIRoot.h"
 
 namespace aura3d::ui {
 
@@ -200,8 +201,10 @@ void TreeNode::activate()
 
     //! Both, in that order: clicking a branch selects it *and* folds it, which
     //! is what every file tree does.
+    const WidgetRef alive(this);
     activated.emit();
-    Disclosure::activate();
+    if (alive.get())
+        Disclosure::activate();
 }
 
 void TreeNode::accessibility(AccessibilityInfo& out) const
@@ -341,6 +344,11 @@ bool TabView::onTick(f32 deltaSeconds)
 
 bool TabView::onKeyDown(const KeyEvent& event)
 {
+    Widget* focus = root() ? root()->focused() : nullptr;
+    while (focus && focus != _bar)
+        focus = focus->parent();
+    if (!focus)
+        return false;
     const int count = static_cast<int>(tabCount());
     if (count == 0)
         return false;

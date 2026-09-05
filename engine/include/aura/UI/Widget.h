@@ -44,6 +44,18 @@ namespace aura3d::ui {
 class UIRoot;
 class ITextShaper;
 class OverlayLayer;
+class Widget;
+
+/// Observes a widget without extending its ownership in the tree.
+class WidgetRef {
+public:
+    WidgetRef() = default;
+    WidgetRef(Widget* widget);
+    [[nodiscard]] Widget* get() const noexcept { return _alive.expired() ? nullptr : _widget; }
+private:
+    Widget* _widget = nullptr;
+    std::weak_ptr<void> _alive;
+};
 
 /// Whether a widget draws, and whether it still takes up room when it does
 /// not. Collapsed is the one that reflows the layout.
@@ -185,6 +197,7 @@ public:
     /// False when this widget or any ancestor is disabled -- what a control
     /// must test before reacting, and what greys it out.
     [[nodiscard]] bool effectivelyEnabled() const noexcept;
+    [[nodiscard]] bool effectivelyVisible() const noexcept;
 
     /// @}
 
@@ -234,6 +247,8 @@ public:
     /// Notifications, not events: they cannot be refused and do not bubble.
     virtual void onPointerEnter();
     virtual void onPointerLeave();
+    /// Capture ended without a matching release; discard press/drag state.
+    virtual void onPointerCancel();
     virtual void onFocusIn(FocusReason reason);
     virtual void onFocusOut();
     /// @}
@@ -286,7 +301,7 @@ public:
     /// @ref Part. Marks the widget for repaint.
     [[nodiscard]] Style& style() noexcept
     {
-        invalidatePaint();
+        invalidateLayout();
         return _style;
     }
 
@@ -304,7 +319,7 @@ public:
     void setPart(Part part) noexcept
     {
         _part = part;
-        invalidatePaint();
+        invalidateLayout();
     }
 
     /// The theme's entry for @ref part with this widget's @ref style over it.
@@ -379,6 +394,9 @@ protected:
 
 private:
     friend class UIRoot;
+    friend class WidgetRef;
+
+    std::shared_ptr<void> _alive;
 
     void _insert(usize index, std::unique_ptr<Widget> child);
     void _setRoot(UIRoot* root);

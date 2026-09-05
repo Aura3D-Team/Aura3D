@@ -81,6 +81,7 @@ public:
      * @param window Must outlive this object.
      */
     void attachInput(wma::IWindowManager& window);
+    void detachInput();
 
     /**
      * @brief Runs the frame: animations, layout, recording and submission.
@@ -136,6 +137,9 @@ private:
     //! Set while a finger is down: touch drives the pointer instead of the
     //! mouse, whose position on a touch device is stale or invented.
     bool _touchActive = false;
+    wma::TouchFingerId _finger = 0;
+    bool _windowFocused = true;
+    std::shared_ptr<void> _inputLifetime;
 };
 
 } // namespace aura3d::ui

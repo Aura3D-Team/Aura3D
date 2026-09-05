@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -37,6 +38,7 @@ namespace detail {
 struct SignalHub {
     void* owner = nullptr;
     void (*drop)(void* owner, u64 id) noexcept = nullptr;
+    bool (*contains)(void* owner, u64 id) noexcept = nullptr;
 };
 
 } // namespace detail
@@ -62,7 +64,7 @@ public:
     [[nodiscard]] bool connected() const noexcept
     {
         const auto hub = _hub.lock();
-        return hub && hub->owner != nullptr && _id != 0;
+        return hub && hub->owner && hub->contains(hub->owner, _id);
     }
 
 private:
@@ -136,137 +138,117 @@ class Signal {
 public:
     using Slot = std::function<void(Args...)>;
 
-    Signal() : _hub(std::make_shared<detail::SignalHub>(this, &Signal::_drop)) {}
-
-    ~Signal()
-    {
-        if (_hub)
-            _hub->owner = nullptr;
-    }
+    Signal() = default;
+    ~Signal() { _invalidate(); }
 
     Signal(const Signal&) = delete;
     Signal& operator=(const Signal&) = delete;
-
-    Signal(Signal&& other) noexcept
-        : _slots(std::move(other._slots)), _nextId(other._nextId), _hub(std::move(other._hub))
-    {
-        if (_hub)
-            _hub->owner = this;
-        other._slots.clear();
-    }
-
+    Signal(Signal&& other) noexcept : _state(std::move(other._state)) {}
     Signal& operator=(Signal&& other) noexcept
     {
         if (this != &other)
         {
-            if (_hub)
-                _hub->owner = nullptr;
-
-            _slots = std::move(other._slots);
-            _nextId = other._nextId;
-            _hub = std::move(other._hub);
-
-            if (_hub)
-                _hub->owner = this;
-
-            other._slots.clear();
+            _invalidate();
+            _state = std::move(other._state);
         }
         return *this;
     }
 
-    /// Connects @p slot and returns a handle to it. Not [[nodiscard]]: the
-    /// usual case is a widget connecting to something it owns, where the
-    /// connection dies with both ends and nobody needs the handle. Keep it
-    /// (in a @ref ScopedConnection) only when the observer can outlive the
-    /// signal.
     Connection connect(Slot slot)
     {
         if (!slot)
             return {};
-
-        const u64 id = _nextId++;
-        _slots.push_back(Entry{id, std::move(slot)});
-        return Connection{_hub, id};
+        if (!_state)
+            _state = std::make_shared<State>();
+        const u64 id = _state->nextId++;
+        _state->slots.push_back(std::make_shared<Entry>(id, std::move(slot), true));
+        return Connection{_state->hub, id};
     }
 
     void disconnect(const Connection& connection) noexcept { connection.disconnect(); }
 
     void clear() noexcept
     {
-        if (_emitting > 0)
-        {
-            for (Entry& entry : _slots)
-                entry.slot = nullptr;
-            _stale = true;
+        if (!_state)
             return;
-        }
-        _slots.clear();
+        for (const auto& entry : _state->slots)
+            entry->connected = false;
+        if (_state->emitting == 0)
+            _state->slots.clear();
     }
 
-    /**
-     * @brief Calls every slot connected at the moment of the call.
-     *
-     * A slot connected by another slot runs on the *next* emit, not this one;
-     * a slot disconnected by another slot is skipped even if it had not run
-     * yet. Both are the behaviour that keeps re-entrancy predictable.
-     */
+    /// New slots wait for the next emit; disconnected slots are skipped.
     void emit(Args... args)
     {
-        ++_emitting;
+        // Both the signal and the active callback may be removed by a slot.
+        const auto state = _state;
+        if (!state)
+            return;
+        struct Emission {
+            State& state;
+            explicit Emission(State& value) : state(value) { ++state.emitting; }
+            ~Emission()
+            {
+                if (--state.emitting == 0)
+                    std::erase_if(state.slots, [](const auto& entry) { return !entry->connected; });
+            }
+        } emission(*state);
 
-        //! Snapshot: connect() may push while this loop runs, and the new slot
-        //! must not observe an event that predates it.
-        const usize count = _slots.size();
-        for (usize i = 0; i < count; ++i)
+        const usize count = state->slots.size();
+        for (usize i = 0; i < count && state->hub->owner; ++i)
         {
-            if (_slots[i].slot)
-                _slots[i].slot(args...);
-        }
-
-        if (--_emitting == 0 && _stale)
-        {
-            std::erase_if(_slots, [](const Entry& entry) { return !entry.slot; });
-            _stale = false;
+            const auto entry = state->slots[i];
+            if (entry->connected)
+                entry->slot(args...);
         }
     }
 
     void operator()(Args... args) { emit(args...); }
-
-    [[nodiscard]] bool empty() const noexcept { return _slots.empty(); }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return !_state || std::ranges::none_of(_state->slots,
+            [](const auto& entry) { return entry->connected; });
+    }
 
 private:
     struct Entry {
-        u64 id = 0;
+        u64 id;
         Slot slot;
+        bool connected;
     };
 
-    //! Erasure is deferred while an emit is on the stack: the loop indexes
-    //! into _slots, so compacting under it would skip or repeat a slot.
-    static void _drop(void* owner, u64 id) noexcept
+    struct State {
+        std::vector<std::shared_ptr<Entry>> slots;
+        u64 nextId = 1;
+        u32 emitting = 0;
+        std::shared_ptr<detail::SignalHub> hub =
+            std::make_shared<detail::SignalHub>(this, &Signal::_drop, &Signal::_contains);
+    };
+
+    static bool _contains(void* owner, u64 id) noexcept
     {
-        auto* self = static_cast<Signal*>(owner);
-
-        for (Entry& entry : self->_slots)
-        {
-            if (entry.id != id)
-                continue;
-
-            entry.slot = nullptr;
-
-            if (self->_emitting > 0)
-                self->_stale = true;
-            else
-                std::erase_if(self->_slots, [](const Entry& e) { return !e.slot; });
-            return;
-        }
+        const auto& state = *static_cast<State*>(owner);
+        return std::ranges::any_of(state.slots,
+            [id](const auto& entry) { return entry->id == id && entry->connected; });
     }
 
-    std::vector<Entry> _slots;
-    u64 _nextId = 1;
-    u32 _emitting = 0;
-    bool _stale = false;
+    static void _drop(void* owner, u64 id) noexcept
+    {
+        auto& state = *static_cast<State*>(owner);
+        for (const auto& entry : state.slots)
+            if (entry->id == id)
+                entry->connected = false;
+        if (state.emitting == 0)
+            std::erase_if(state.slots, [](const auto& entry) { return !entry->connected; });
+    }
 
-    std::shared_ptr<detail::SignalHub> _hub;
+    void _invalidate() noexcept
+    {
+        if (_state)
+            _state->hub->owner = nullptr;
+    }
+
+    std::shared_ptr<State> _state;
 };
 
 } // namespace aura3d::ui

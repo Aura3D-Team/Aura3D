@@ -15,11 +15,18 @@
 #include "aura/Core/Engine.h"
 #include "aura/Renderer/IRenderer.h"
 #include "aura/UI/UI.hpp"
+#include "SmokeTest.h"
 
 using namespace aura3d;
 using namespace aura3d::ui;
 
 namespace {
+
+struct GalleryState {
+    RadioGroup quality;
+    std::vector<ScopedConnection> bindings;
+    std::vector<TreeNode*> nodes;
+};
 
 /// A quieter label, for the small-caps headings that group a card's rows.
 [[nodiscard]] Style heading(const Theme& theme)
@@ -60,16 +67,12 @@ Column& page(TabView& tabs, std::string title)
 
 /// A label whose text follows a slider, through a binding rather than a
 /// hand-written callback.
-Label& readout(Widget& parent, Slider& source, const char* format)
+Label& readout(Widget& parent, Slider& source, const char* format, GalleryState& state)
 {
     auto& label = parent.add<Label>("");
     label.setAlign(Align::Right);
 
-    //! Leaked deliberately: the binding must outlive this function and both
-    //! ends live as long as the tree does. A widget that owned the connection
-    //! would keep it in a ScopedConnection member.
-    static std::vector<ScopedConnection> keep;
-    keep.push_back(label.text.bindFrom(source.value, [format](f32 value) {
+    state.bindings.push_back(label.text.bindFrom(source.value, [format](f32 value) {
         std::array<char, 32> buffer{};
         std::snprintf(buffer.data(), buffer.size(), format, static_cast<double>(value));
         return std::string{buffer.data()};
@@ -82,7 +85,7 @@ Label& readout(Widget& parent, Slider& source, const char* format)
 // Pages
 // ---------------------------------------------------------------------------
 
-void buildButtons(Column& into, const Theme& theme)
+void buildButtons(Column& into, const Theme& theme, GalleryState& gallery)
 {
     {
         auto& panel = card(into, "BUTTONS", theme);
@@ -121,7 +124,7 @@ void buildButtons(Column& into, const Theme& theme)
         auto& quality = panel.add<Row>();
         quality.setSpacing(16.0f);
 
-        static RadioGroup group;
+        auto& group = gallery.quality;
         for (const char* name : {"Low", "Medium", "High"})
             group.add(quality.add<RadioButton>(name));
         group.select(1);
@@ -146,12 +149,12 @@ void buildButtons(Column& into, const Theme& theme)
 
         auto& exposure = panel.add<Slider>(0.0f, 4.0f);
         exposure.value = 1.0f;
-        readout(panel, exposure, "exposure  %.2f");
+        readout(panel, exposure, "exposure  %.2f", gallery);
 
         auto& stepped = panel.add<Slider>(0.0f, 10.0f);
         stepped.setStep(1.0f);
         stepped.value = 3.0f;
-        readout(panel, stepped, "steps of 1  %.0f");
+        readout(panel, stepped, "steps of 1  %.0f", gallery);
 
         panel.add<Separator>();
 
@@ -160,8 +163,8 @@ void buildButtons(Column& into, const Theme& theme)
 
         //! Bound rather than pushed: the bar follows the slider with no
         //! callback of its own.
-        static ScopedConnection link =
-            progress.value.bindFrom(exposure.value, [](f32 v) { return v / 4.0f; });
+        gallery.bindings.push_back(
+            progress.value.bindFrom(exposure.value, [](f32 v) { return v / 4.0f; }));
     }
 }
 
@@ -208,14 +211,12 @@ void buildSelection(Column& into, const Theme& theme)
 
         auto& list = scroll.setContent<Column>();
 
-        static int selected = -1;
         for (int i = 0; i < 24; ++i)
         {
             auto& row = list.add<Selectable>("Entry " + std::to_string(i));
             row.setDetail(std::to_string(i * 17) + " kb");
 
             row.activated.connect([&list, i] {
-                selected = i;
                 for (usize k = 0; k < list.childCount(); ++k)
                     static_cast<Selectable&>(list.childAt(k)).selected = static_cast<int>(k) == i;
             });
@@ -223,7 +224,7 @@ void buildSelection(Column& into, const Theme& theme)
     }
 }
 
-void buildText(Column& into, const Theme& theme)
+void buildText(Column& into, const Theme& theme, GalleryState& gallery)
 {
     {
         auto& panel = card(into, "FIELDS", theme);
@@ -244,8 +245,8 @@ void buildText(Column& into, const Theme& theme)
         echo.style().textColor(theme.palette().accent);
 
         //! The whole point of Property::bind: no callback, no glue.
-        static ScopedConnection link = echo.text.bindFrom(
-            name.text, [](const std::string& value) { return "you typed: " + value; });
+        gallery.bindings.push_back(echo.text.bindFrom(
+            name.text, [](const std::string& value) { return "you typed: " + value; }));
 
         name.submitted.connect([&echo] { echo.text = "submitted with Enter."; });
     }
@@ -427,7 +428,7 @@ void buildOverlays(Column& into, UIRoot& root, const Theme& theme)
     }
 }
 
-void buildTree(Column& into, const Theme& theme)
+void buildTree(Column& into, const Theme& theme, GalleryState& gallery)
 {
     auto& panel = card(into, "TREE", theme);
 
@@ -439,7 +440,7 @@ void buildTree(Column& into, const Theme& theme)
 
     auto& tree = scroll.setContent<Column>();
 
-    static std::vector<TreeNode*> nodes;
+    auto& nodes = gallery.nodes;
     nodes.clear();
 
     auto& assets = tree.add<TreeNode>("Assets", true);
@@ -463,7 +464,7 @@ void buildTree(Column& into, const Theme& theme)
 
     for (TreeNode* node : nodes)
     {
-        node->activated.connect([node, &chosen] {
+        node->activated.connect([node, &chosen, &nodes] {
             for (TreeNode* other : nodes)
                 other->selected = other == node;
 
@@ -474,8 +475,9 @@ void buildTree(Column& into, const Theme& theme)
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    GalleryState gallery;
     Engine engine("settings.json");
 
     IRenderer* renderer = engine.getRenderer();
@@ -520,12 +522,12 @@ int main()
     auto& tabs = shell.add<TabView>();
     tabs.layout().height = Length::fill();
 
-    buildButtons(page(tabs, "Buttons"), theme);
+    buildButtons(page(tabs, "Buttons"), theme, gallery);
     buildSelection(page(tabs, "Selection"), theme);
-    buildText(page(tabs, "Text"), theme);
+    buildText(page(tabs, "Text"), theme, gallery);
     buildContainers(page(tabs, "Containers"), theme);
     buildOverlays(page(tabs, "Overlays"), ui.root(), theme);
-    buildTree(page(tabs, "Tree"), theme);
+    buildTree(page(tabs, "Tree"), theme, gallery);
 
     ui.root().addShortcut(Shortcut::withCtrl(wma::KEY_S),
                           [] { INK_INFO << "Ctrl+S reached the shortcut table"; });
@@ -533,7 +535,10 @@ int main()
     const glm::vec4 background = theme.palette().window * 0.35f;
     renderer->setClearColor(background.r, background.g, background.b, 1.0f);
 
-    renderer->run([&] {
+    if (argc > 1 && std::string_view(argv[1]) == "--smoke-test")
+        return smokeTest(ui, *renderer, tabs);
+
+    renderer->run([renderer, window, &ui] {
         const f32 deltaSeconds =
             static_cast<f32>(window->getWindowFlags()->deltaTime) / 1000.0f;
 

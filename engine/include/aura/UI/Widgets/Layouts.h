@@ -250,6 +250,7 @@ protected:
     bool onPointerDown(const PointerEvent& event) override;
     bool onPointerMove(const PointerEvent& event) override;
     bool onPointerUp(const PointerEvent& event) override;
+    void onPointerCancel() override;
 
     bool onTick(f32 deltaSeconds) override;
 

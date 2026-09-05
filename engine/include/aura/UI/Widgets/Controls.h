@@ -41,6 +41,7 @@ protected:
 
     void onPointerEnter() override;
     void onPointerLeave() override;
+    void onPointerCancel() override;
     void onFocusIn(FocusReason reason) override;
     void onFocusOut() override;
 
@@ -200,16 +201,15 @@ public:
     /// Fires with the index of the newly selected button, or -1.
     Signal<int> selectionChanged;
 
-    /// Adds @p button to the group. It must outlive the group, which is the
-    /// normal case: both are owned by the same tree.
+    /// Removed buttons leave a vacant index; existing indices stay stable.
     void add(RadioButton& button);
 
     void select(int index);
-    [[nodiscard]] int selected() const noexcept { return _selected; }
+    [[nodiscard]] int selected() const noexcept;
     [[nodiscard]] usize size() const noexcept { return _buttons.size(); }
 
 private:
-    std::vector<RadioButton*> _buttons;
+    std::vector<WidgetRef> _buttons;
     std::vector<ScopedConnection> _connections;
     int _selected = -1;
 };

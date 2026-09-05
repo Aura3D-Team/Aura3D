@@ -145,6 +145,8 @@ public:
     /// The cursor left the surface: drops the hover chain. A drag in progress
     /// keeps its capture, so dragging out of the window and back still works.
     void pointerLeft();
+    /// Cancels transient interaction when the native window loses focus.
+    void cancelInput();
 
     /// @}
 
@@ -207,7 +209,7 @@ public:
     /// here shows up on the next frame with nothing to invalidate by hand.
     [[nodiscard]] Theme& theme() noexcept
     {
-        _requestPaint();
+        _requestLayout();
         return _theme;
     }
 
@@ -301,7 +303,7 @@ private:
     std::vector<Widget*> _hoverScratch;
 
     std::vector<Widget*> _animating;
-    std::vector<Widget*> _tickScratch;
+    std::vector<WidgetRef> _tickScratch;
     std::vector<Widget*> _focusScratch;
 
     std::vector<ShortcutEntry> _shortcuts;

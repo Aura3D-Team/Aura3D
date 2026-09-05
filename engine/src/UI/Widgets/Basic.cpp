@@ -99,7 +99,7 @@ glm::vec2 Label::measureContent(const Constraints& available)
 
 glm::vec2 Label::textOrigin(const Rect& content) const noexcept
 {
-    const Align align = resolvedStyle().align;
+    const Align align = style().align.value_or(_textStyle.align);
 
     const Alignment horizontal = align == Align::Center  ? Alignment::Center
                                  : align == Align::Right ? Alignment::End

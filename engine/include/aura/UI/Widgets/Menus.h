@@ -97,7 +97,7 @@ public:
     /// The selected item's text, or the placeholder.
     [[nodiscard]] const std::string& text() const noexcept;
 
-    [[nodiscard]] bool isOpen() const noexcept { return _popup != OverlayLayer::kNone; }
+    [[nodiscard]] bool isOpen() const noexcept;
 
     void open();
     void close();

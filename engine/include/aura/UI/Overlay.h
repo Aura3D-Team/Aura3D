@@ -65,6 +65,8 @@ struct OverlayDesc {
     /// dismissed by the two things everyone tries is a trap.
     bool dismissOnOutsideClick = true;
     bool dismissOnEscape = true;
+    bool takeFocus = true;
+    Widget* owner = nullptr;
     /// @}
 
     /// Called once the overlay is gone, so an opener can forget its id. Runs
@@ -101,7 +103,7 @@ public:
     W& open(const OverlayDesc& desc, Args&&... args)
     {
         W& widget = add<W>(std::forward<Args>(args)...);
-        _entries.push_back(Entry{_nextId++, desc, false});
+        _register(desc);
         return widget;
     }
 
@@ -138,6 +140,12 @@ public:
     [[nodiscard]] bool hasModal() const noexcept;
 
     [[nodiscard]] Widget* topmost() const noexcept;
+    [[nodiscard]] Widget* focusScope() const noexcept;
+    [[nodiscard]] Widget* widgetAt(glm::vec2 point) const;
+    [[nodiscard]] bool allowsFocus(const Widget* widget) const noexcept;
+    bool dismissOutside(glm::vec2 point);
+    void syncFocus();
+    void forgetOwner(Widget& owner);
 
     /// True when @p point falls inside any open overlay.
     [[nodiscard]] bool contains(glm::vec2 point) const;
@@ -158,6 +166,9 @@ private:
         Id id = kNone;
         OverlayDesc desc{};
         bool closing = false;
+        WidgetRef owner;
+        WidgetRef restoreFocus;
+        bool focusPending = true;
     };
 
     /// Top-left @p size should sit at, given @p desc, flipped and then clamped
@@ -168,6 +179,7 @@ private:
     //! Parallel to children(): entry i describes child i. Kept in step by
     //! open() appending to both and onChildRemoved() erasing from this one.
     std::vector<Entry> _entries;
+    void _register(const OverlayDesc& desc);
 
     Id _nextId = 1;
     bool _pendingClose = false;

@@ -34,6 +34,8 @@ if(AURA_ENABLE_UI)
     list(APPEND AURA_TEST_SUITES
         test_aui_layout
         test_aui_input
+        test_aui_lifecycle
+        test_aui_signal
         test_aui_text
         test_aui_paint
         test_aui_overlay)

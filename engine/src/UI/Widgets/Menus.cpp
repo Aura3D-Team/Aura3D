@@ -105,7 +105,12 @@ Dropdown::Dropdown(std::vector<std::string> items)
     });
 }
 
-Dropdown::~Dropdown() = default;
+Dropdown::~Dropdown() { close(); }
+
+bool Dropdown::isOpen() const noexcept
+{
+    return overlay() && overlay()->isOpen(_popup);
+}
 
 void Dropdown::setItems(std::vector<std::string> items)
 {
@@ -223,12 +228,8 @@ void Dropdown::open()
     auto& list = layer->open<Column>(OverlayDesc{
         .anchor = bounds(),
         .placement = Placement::Below,
-        .onClosed = [this] {
-            _popup = OverlayLayer::kNone;
-            _list = nullptr;
-            _highlighted = -1;
-            invalidatePaint();
-        },
+        .takeFocus = false,
+        .owner = this,
     });
 
     _popup = layer->lastId();
@@ -246,7 +247,10 @@ void Dropdown::open()
         row.setPart(Part::DropdownItem);
         row.selected = static_cast<int>(i) == selected.get();
 
-        row.activated.connect([this, i] { _commit(static_cast<int>(i)); });
+        row.activated.connect([owner = WidgetRef(this), i] {
+            if (auto* widget = owner.get())
+                static_cast<Dropdown*>(widget)->_commit(static_cast<int>(i));
+        });
     }
 
     _highlight(selected.get());
@@ -257,6 +261,10 @@ void Dropdown::close()
 {
     if (OverlayLayer* layer = overlay(); layer && isOpen())
         layer->close(_popup);
+    _popup = OverlayLayer::kNone;
+    _list = nullptr;
+    _highlighted = -1;
+    invalidatePaint();
 }
 
 void Dropdown::onDetach()
@@ -276,7 +284,7 @@ void Dropdown::activate()
 
 void Dropdown::_highlight(int index)
 {
-    if (!_list)
+    if (!isOpen() || !_list)
         return;
 
     _highlighted = index;
@@ -290,8 +298,8 @@ void Dropdown::_highlight(int index)
 
 void Dropdown::_commit(int index)
 {
-    selected.set(std::clamp(index, -1, static_cast<int>(_items.size()) - 1));
     close();
+    selected.set(std::clamp(index, -1, static_cast<int>(_items.size()) - 1));
 }
 
 void Dropdown::_step(int delta)

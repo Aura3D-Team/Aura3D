@@ -159,7 +159,6 @@ void VulkanRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
     _memoryManager = std::make_unique<VulkanMemoryManager>();
 
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
-    setupInput();
     createCoreObjects(enableValidation);
 
     // Only actually request it from VMA if the device genuinely supports it
@@ -195,11 +194,6 @@ void VulkanRenderer::createWindow(const char* title, const wma::WindowBackend& w
     _windowManagerApi->createWindow(title);
 }
 
-void VulkanRenderer::setupInput()
-{
-    _windowManagerApi->getKeyboardListener().addKeyAction(wma::Key::KEY_ESCAPE, wma::KeyAction{
-        [this](){ cleanup(); }, nullptr });
-}
 
 void VulkanRenderer::createCoreObjects(bool enableValidation)
 {

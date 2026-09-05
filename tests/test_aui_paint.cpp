@@ -24,6 +24,7 @@
 
 #include "aura/Renderer/IRenderer.h"
 #include "aura/UI/UI.hpp"
+#include "aura/Core/AuraFont/FontAtlas.h"
 
 #include "TestUtils.h"
 
@@ -367,6 +368,31 @@ void testAnimationDirtiesFrames()
     AURA_CHECK(settled, "and stops once it has run out");
 }
 
+void testAtlasSurvivesScaleAndFirstFrameMasks()
+{
+    Harness harness;
+    auto& label = harness.root.setContent<Column>().add<Label>("Retained text");
+    label.style().fill(glm::vec4{1.0f}).rounded(8.0f);
+    harness.frame();
+    const u32 pageIndex = label.shaped().page;
+    FontAtlas* atlas = harness.shaper.page(pageIndex);
+    AURA_CHECK(atlas && !atlas->takeDirtyUpload(), "first-frame corner masks have already been uploaded");
+    harness.root.setScale(2.0f);
+    harness.frame();
+    AURA_CHECK(harness.shaper.page(pageIndex) == atlas,
+               "DPI changes preserve pages referenced by retained glyph runs");
+}
+
+void testStyleMetricsInvalidateLayout()
+{
+    Harness harness;
+    auto& button = harness.root.setContent<Column>().add<Button>("Resize");
+    harness.frame();
+    button.style().height = 80;
+    harness.frame();
+    AURA_CHECK(button.bounds().height() >= 80, "style height changes remeasure controls");
+}
+
 } // namespace
 
 int main()
@@ -381,6 +407,8 @@ int main()
     testDisabledIsDrawnFaded();
     testScaleMultipliesVerticesNotLayout();
     testAnimationDirtiesFrames();
+    testAtlasSurvivesScaleAndFirstFrameMasks();
+    testStyleMetricsInvalidateLayout();
 
     AURA_TEST_MAIN_RETURN();
 }
