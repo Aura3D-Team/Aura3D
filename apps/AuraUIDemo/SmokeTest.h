@@ -66,6 +66,12 @@ inline int smokeTest(UIView& ui, IRenderer& renderer, TabView& tabs)
         const bool initial = check->checked.get();
         click(*check);
         require(check->checked.get() != initial, "checkbox toggles");
+        auto* radio = galleryWidget<RadioButton>(*root.content(), [](const RadioButton& candidate) {
+            return !candidate.checked.get();
+        });
+        require(radio != nullptr, "radio present");
+        click(*radio);
+        require(radio->checked.get(), "radio group selection");
         auto* slider = galleryWidget<Slider>(*root.content(), [](const auto&) { return true; });
         require(slider != nullptr, "slider present");
         root.pointerDown(slider->bounds().center());
@@ -94,6 +100,24 @@ inline int smokeTest(UIView& ui, IRenderer& renderer, TabView& tabs)
         frame();
         require(dropdown->selected.get() == 2, "dropdown keyboard selection");
 
+        auto* entry = galleryWidget<Selectable>(*root.content(), [](const Selectable& candidate) {
+            return candidate.text() == "Entry 0";
+        });
+        require(entry != nullptr, "list entry present");
+        click(*entry);
+        require(entry->selected.get(), "list selection");
+        auto* scroll = dynamic_cast<ScrollView*>(entry->parent()->parent());
+        require(scroll != nullptr, "nested list scroll view present");
+        root.wheel({0, -100}, scroll->bounds().center());
+        frame(); frame();
+        require(scroll->offset().y > 0, "list wheel scrolling");
+        auto* last = galleryWidget<Selectable>(*root.content(), [](const Selectable& candidate) {
+            return candidate.text() == "Entry 23";
+        });
+        require(last != nullptr, "last list entry present");
+        click(*last);
+        require(last->selected.get() && !entry->selected.get(), "scrolled list hit testing");
+
         tabs.current = 2;
         frame();
         auto* field = galleryWidget<TextField>(*root.content(), [](const TextField& candidate) {
@@ -108,6 +132,16 @@ inline int smokeTest(UIView& ui, IRenderer& renderer, TabView& tabs)
         root.keyDown(wma::KEY_BACKSPACE);
         frame();
         require(field->text.get() == "héll", "text deletion");
+
+        auto* readonly = galleryWidget<TextField>(*root.content(), [](const TextField& candidate) {
+            return candidate.text.get() == "cannot be edited";
+        });
+        require(readonly != nullptr, "read-only field present");
+        click(*readonly);
+        root.keyDown(wma::KEY_A, {.ctrl = true});
+        root.textInput("replacement");
+        root.keyDown(wma::KEY_BACKSPACE);
+        require(readonly->text.get() == "cannot be edited", "read-only input remains unchanged");
 
         tabs.current = 3;
         frame();

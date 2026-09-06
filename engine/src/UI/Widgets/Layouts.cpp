@@ -641,7 +641,10 @@ bool ScrollView::onPointerDown(const PointerEvent& event)
 
         _dragging = axis;
         _dragActive = true;
+        const WidgetRef alive(this);
         capturePointer();
+        if (!alive.get() || !hasPointerCapture())
+            return true;
 
         if (bar.thumb.contains(event.position))
         {
@@ -655,7 +658,6 @@ bool ScrollView::onPointerDown(const PointerEvent& event)
             onPointerMove(event);
         }
 
-        capturePointer();
         invalidatePaint();
         return true;
     }
@@ -700,8 +702,8 @@ bool ScrollView::onPointerUp(const PointerEvent& event)
         return false;
 
     _dragActive = false;
-    releasePointer();
     invalidatePaint();
+    releasePointer();
     return true;
 }
 

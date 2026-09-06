@@ -75,6 +75,7 @@ private:
     TextStyle _shapedStyle{};
     f32 _shapedWidth = -1.0f;
     bool _textDirty = true;
+    void onAttach() override { _textDirty = true; }
 };
 
 /**

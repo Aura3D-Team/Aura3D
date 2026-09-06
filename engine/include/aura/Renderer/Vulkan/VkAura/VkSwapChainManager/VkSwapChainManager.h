@@ -74,7 +74,7 @@ public:
      * @param vkDeviceManager A pointer to the VkDeviceManager responsible for managing the logical device and queue families.
      * @param layerCount Optional parameter specifying the number of image layers in the swap chain; defaults to 2.
      */
-    void createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount = 2);
+    void createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount = 2, bool transparent = false);
 
     /**
      * @brief Retrieves swap chain support details.

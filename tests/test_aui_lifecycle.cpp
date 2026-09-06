@@ -218,6 +218,86 @@ void scrollAxesAndCancellation()
     AURA_CHECK(scroll.offset() == glm::vec2(0), "removing scroll content resets the offset");
 }
 
+void persistentTicksAndHover()
+{
+    struct Tick : Widget {
+        int ticks = 0;
+        Tick() { setAnimating(true); }
+        bool onTick(f32) override { ++ticks; return true; }
+    };
+    Harness h;
+    auto& page = h.root.setContent<Column>();
+    auto& ticker = page.add<Tick>();
+    h.frame();
+    page.setVisibility(Visibility::Hidden);
+    h.frame();
+    AURA_CHECK(ticker.ticks == 1, "hidden timers pause");
+    page.setVisibility(Visibility::Visible);
+    h.frame();
+    AURA_CHECK(ticker.ticks == 2, "showing a timer resumes its ticks");
+    auto detached = page.detach(ticker);
+    page.adopt(std::move(detached));
+    h.frame();
+    AURA_CHECK(ticker.ticks == 3, "reparenting preserves tick registration");
+
+    auto& button = page.add<Button>("Hover");
+    h.frame();
+    h.root.pointerMoved(button.bounds().center());
+    h.frame();
+    button.setEnabled(false);
+    button.setEnabled(true);
+    h.root.pointerMoved({390, 290});
+    h.frame();
+    AURA_CHECK(!button.isHovered(), "disabled controls clear hover");
+}
+
+void focusCallbackRemovesControl()
+{
+    Harness h;
+    auto& page = h.root.setContent<Column>();
+    auto& slider = page.add<Slider>(0, 100);
+    h.frame();
+    const auto point = slider.bounds().center();
+    const ScopedConnection connection = h.root.focusChanged.connect([&](Widget* widget) {
+        if (widget == &slider)
+            page.remove(slider);
+    });
+    h.root.pointerDown(point);
+    AURA_CHECK(page.childCount() == 0 && !h.root.pointerCapture(),
+               "a focus callback can remove the slider receiving a press");
+}
+
+void disableCallbackRemovesControl()
+{
+    Harness h;
+    auto& page = h.root.setContent<Column>();
+    auto& button = page.add<Button>("Remove on blur");
+    h.frame(); button.requestFocus();
+    const ScopedConnection connection = h.root.focusChanged.connect([&](Widget* focused) {
+        if (!focused && page.childCount()) page.remove(button);
+    });
+    button.setEnabled(false);
+    AURA_CHECK(page.childCount() == 0, "a blur callback may destroy the control being disabled");
+}
+
+void releaseCallbackRemovesControl()
+{
+    struct RemoveOnLeave : Control {
+        std::function<void()> leave;
+        void onPointerLeave() override { if (leave) leave(); }
+    };
+    Harness h;
+    auto& page = h.root.setContent<Column>();
+    auto& button = page.add<RemoveOnLeave>();
+    button.layout().width = Length::px(80);
+    button.layout().height = Length::px(30);
+    button.leave = [&] { page.remove(button); };
+    h.frame();
+    h.root.pointerDown(button.bounds().center());
+    h.root.pointerUp({390, 290});
+    AURA_CHECK(page.childCount() == 0, "capture release may remove a control through hover callbacks");
+}
+
 void nativeFocusLoss()
 {
     Harness h;
@@ -229,6 +309,83 @@ void nativeFocusLoss()
     h.root.pointerMoved({200, 30});
     AURA_CHECK(!h.root.pointerCapture() && !h.root.focused() && slider.value.get() == value,
                "window focus loss cancels drag and keyboard focus");
+}
+
+void focusCallbackReplacesContent()
+{
+    Harness h;
+    auto& button = h.root.setContent<Button>("Replace on blur");
+    h.frame(); button.requestFocus();
+    const WidgetRef outgoing(&button);
+    WidgetRef intermediate;
+    bool replaced = false;
+    const ScopedConnection connection = h.root.focusChanged.connect([&](Widget* focused) {
+        if (!focused && !replaced) {
+            replaced = true;
+            auto& content = h.root.setContent<Column>();
+            intermediate = WidgetRef(&content);
+            content.add<Button>("Callback content").requestFocus();
+        }
+    });
+    auto& replacement = h.root.setContent<Column>();
+    h.frame();
+    AURA_CHECK(replaced && h.root.content() == &replacement && !h.root.focused() &&
+                   !outgoing.get() && !intermediate.get(),
+               "replacing content remains safe when a blur callback also replaces it");
+}
+
+void detachCallbackRemovesParent()
+{
+    Harness h;
+    auto& page = h.root.setContent<Column>();
+    auto& button = page.add<Button>("Remove parent on blur");
+    h.frame(); button.requestFocus();
+    const WidgetRef parent(&page);
+    const ScopedConnection connection = h.root.focusChanged.connect([&](Widget* focused) {
+        if (!focused) h.root.setContent<Column>();
+    });
+    page.clearChildren();
+    h.frame();
+    AURA_CHECK(!parent.get() && h.root.content() && !h.root.focused(),
+               "clearing children survives a blur callback destroying the parent");
+}
+
+void detachCallbackRemovesSibling()
+{
+    struct DetachAction : Widget {
+        std::function<void()> action;
+        void onDetach() override { if (action) action(); }
+    };
+    Harness h;
+    auto& page = h.root.setContent<Column>();
+    auto& first = page.add<DetachAction>();
+    auto& second = page.add<Widget>();
+    const WidgetRef removed(&second);
+    first.action = [&] { page.remove(second); };
+    h.frame();
+    h.root.setContent<Column>();
+    AURA_CHECK(!removed.get(), "detaching a tree allows a child's callback to remove its sibling");
+}
+
+void scrollbarReleaseRemovesView()
+{
+    struct RemoveOnLeave : Widget {
+        std::function<void()> leave;
+        void onPointerLeave() override { if (leave) leave(); }
+    };
+    Harness h;
+    auto& page = h.root.setContent<RemoveOnLeave>();
+    auto& scroll = page.add<ScrollView>();
+    scroll.layout().height = Length::fill();
+    scroll.setContent<Widget>().layout().height = Length::px(1000);
+    page.leave = [&] { h.root.setContent<Column>(); };
+    const WidgetRef original(&scroll);
+    h.frame();
+    h.root.pointerDown({399, 5});
+    AURA_CHECK(h.root.pointerCapture() == &scroll, "scrollbar thumb captures the pointer");
+    h.root.pointerUp({450, 350});
+    AURA_CHECK(!original.get() && !h.root.pointerCapture(),
+               "scrollbar release survives a hover callback removing the view");
 }
 }
 
@@ -246,6 +403,14 @@ int main()
     callbacksRemoveWidgets();
     bindingAndRadioLifetime();
     scrollAxesAndCancellation();
+    persistentTicksAndHover();
+    focusCallbackRemovesControl();
+    disableCallbackRemovesControl();
+    releaseCallbackRemovesControl();
     nativeFocusLoss();
+    focusCallbackReplacesContent();
+    detachCallbackRemovesParent();
+    detachCallbackRemovesSibling();
+    scrollbarReleaseRemovesView();
     AURA_TEST_MAIN_RETURN();
 }

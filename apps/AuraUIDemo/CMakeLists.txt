@@ -8,7 +8,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     add_executable(AuraUIDemo MACOSX_BUNDLE main.cpp)
 
     set_target_properties(AuraUIDemo PROPERTIES
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.aura3d.axiom"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.aura3d.aurauidemo"
         MACOSX_BUNDLE_BUNDLE_NAME "AuraUI Demo"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
@@ -26,7 +26,7 @@ target_link_libraries(AuraUIDemo
 
 if(EMSCRIPTEN)
     set_target_properties(AuraUIDemo PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pkg-axiom"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pkg-aurauidemo"
         OUTPUT_NAME "AuraUIDemo"
     )
 

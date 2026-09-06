@@ -101,7 +101,7 @@ void MetalRenderer::createWindow(const char* title, const wma::WindowBackend& wB
      * one -- so an unsupported window backend fails here, with wma's own
      * diagnostic, rather than surviving to confuse the renderer later.
      */
-    _windowManagerApi = wma::createWindowManager(wBackend, _windowDetails, wma::GraphicsAPI::Metal);
+    _windowManagerApi = makeWindow(wBackend, _windowDetails, wma::GraphicsAPI::Metal);
     _windowManagerApi->createWindow(title);
 }
 

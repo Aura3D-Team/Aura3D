@@ -101,8 +101,11 @@ bool Control::onPointerDown(const PointerEvent& event)
     if (event.button != PointerButton::Left || !hitTest(event.position))
         return false;
 
+    const WidgetRef alive(this);
     setPressed(true);
     capturePointer();
+    if (!alive.get() || !hasPointerCapture())
+        return true;
     requestFocus(FocusReason::Pointer);
     return true;
 }
@@ -112,8 +115,11 @@ bool Control::onPointerUp(const PointerEvent& event)
     if (event.button != PointerButton::Left || !_pressed)
         return false;
 
+    const WidgetRef alive(this);
     setPressed(false);
     releasePointer();
+    if (!alive.get() || !root() || !effectivelyEnabled() || !effectivelyVisible())
+        return true;
 
     //! A press that wandered off the control before release is a cancelled
     //! click, not a click somewhere else.
@@ -641,8 +647,11 @@ void Slider::paint(DrawList& out)
 
 bool Slider::onPointerDown(const PointerEvent& event)
 {
+    const WidgetRef alive(this);
     if (!Control::onPointerDown(event))
         return false;
+    if (!alive.get() || !hasPointerCapture())
+        return true;
 
     _commit(_valueAt(event.position.x));
     return true;
@@ -1041,9 +1050,14 @@ bool TextField::onPointerDown(const PointerEvent& event)
     if (event.button != PointerButton::Left)
         return false;
 
+    const WidgetRef alive(this);
     setPressed(true);
     capturePointer();
+    if (!alive.get() || !hasPointerCapture())
+        return true;
     requestFocus(FocusReason::Pointer);
+    if (!alive.get() || !hasPointerCapture())
+        return true;
 
     const Rect content = contentRect();
     const usize byte = _shaped.byteAt({event.position.x - content.min.x + _scrollX, 0.0f});

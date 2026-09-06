@@ -94,8 +94,14 @@ UIRoot::~UIRoot()
 
 void UIRoot::_adopt(std::unique_ptr<Widget> content)
 {
-    if (_content)
-        _content->_setRoot(nullptr);
+    // Keep the outgoing tree alive while blur/cancel/detach callbacks run.
+    // A callback can install another tree; detach that one as well before
+    // committing this caller's replacement, so setContent returns its own tree.
+    while (_content)
+    {
+        auto previous = std::move(_content);
+        previous->_setRoot(nullptr);
+    }
 
     _content = std::move(content);
 
@@ -168,19 +174,21 @@ void UIRoot::update(f32 deltaSeconds)
         for (const WidgetRef& reference : _tickScratch)
         {
             Widget* widget = reference.get();
-            if (!widget || widget->root() != this || !widget->animating())
+            if (!widget || widget->root() != this || !widget->animating() ||
+                !widget->effectivelyVisible())
                 continue;
             const bool running = widget->onTick(deltaSeconds);
             if (reference.get() && widget->root() == this && !running)
                 widget->setAnimating(false);
         }
-
-        _paintDirty = true;
     }
 
-    if (_layoutDirty)
+    const bool layoutChanged = _layoutDirty;
+    if (layoutChanged)
         _layout();
     _overlay->syncFocus();
+    if (layoutChanged && _pointerInside && !_capture)
+        _updateHover(_pointer);
 }
 
 void UIRoot::_layout()
@@ -267,6 +275,8 @@ bool UIRoot::_bubble(Widget* target, Event& event, Handler&& handler)
 
 Widget* UIRoot::widgetAt(glm::vec2 position) const
 {
+    if (!surface().contains(position))
+        return nullptr;
     //! Overlays are drawn last, so they are hit first.
     if (Widget* hit = _overlay->widgetAt(position))
         return hit;
@@ -348,6 +358,8 @@ bool UIRoot::isHovered(const Widget* widget) const noexcept
 
 bool UIRoot::pointerMoved(glm::vec2 position)
 {
+    if (_layoutDirty)
+        _layout();
     const glm::vec2 delta = position - _pointer;
     _pointer = position;
     _pointerInside = true;
@@ -411,6 +423,8 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
 
 bool UIRoot::pointerUp(glm::vec2 position, PointerButton button, Modifiers mods)
 {
+    if (_layoutDirty)
+        _layout();
     _pointer = position;
     if (!_capture)
         _updateHover(position);
@@ -430,6 +444,8 @@ bool UIRoot::pointerUp(glm::vec2 position, PointerButton button, Modifiers mods)
 
 bool UIRoot::wheel(glm::vec2 delta, glm::vec2 position, Modifiers mods)
 {
+    if (_layoutDirty)
+        _layout();
     _updateHover(position);
 
     WheelEvent event{.position = position, .delta = delta, .mods = mods};
@@ -688,42 +704,31 @@ bool UIRoot::_isAncestorOf(const Widget& ancestor, const Widget* node) noexcept
 
 void UIRoot::_forget(Widget& widget)
 {
-    if (_overlay)
-        _overlay->forgetOwner(widget);
-    /*
-     * Ancestry, not identity: disabling or detaching a container has to clear
-     * focus held by something inside it too, or the tree would keep dispatching
-     * keys into a subtree that is gone.
-     */
-    if (_isAncestorOf(widget, _focused))
-    {
-        Widget* previous = _focused;
-        _focused = nullptr;
-        previous->onFocusOut();
-        focusChanged.emit(nullptr);
-    }
-
-    if (_isAncestorOf(widget, _capture))
-    {
-        Widget* previous = std::exchange(_capture, nullptr);
-        previous->onPointerCancel();
-    }
-
+    // Finish bookkeeping before callbacks can remove another part of the tree.
+    const bool losesFocus = _isAncestorOf(widget, _focused);
+    const WidgetRef focus(losesFocus ? std::exchange(_focused, nullptr) : nullptr);
+    const bool losesCapture = _isAncestorOf(widget, _capture);
+    const WidgetRef capture(losesCapture ? std::exchange(_capture, nullptr) : nullptr);
+    std::vector<WidgetRef> leaving;
+    for (Widget* node : _hoverChain)
+        if (_isAncestorOf(widget, node))
+            leaving.emplace_back(node);
     std::erase_if(_hoverChain,
                   [&widget](Widget* node) { return _isAncestorOf(widget, node); });
 
-    std::erase_if(_animating, [&widget](Widget* node) {
-        if (!_isAncestorOf(widget, node))
-            return false;
-        node->_animating = false;
-        return true;
-    });
-
-    if (_tooltipTarget != nullptr && _isAncestorOf(widget, _tooltipTarget))
+    if (_tooltipTarget && _isAncestorOf(widget, _tooltipTarget))
     {
         _tooltipTarget = nullptr;
         _closeTooltip();
     }
+    if (_overlay)
+        _overlay->forgetOwner(widget);
+
+    if (Widget* node = focus.get()) node->onFocusOut();
+    if (losesFocus) focusChanged.emit(_focused);
+    if (Widget* node = capture.get()) node->onPointerCancel();
+    for (usize i = leaving.size(); i-- > 0;)
+        if (Widget* node = leaving[i].get()) node->onPointerLeave();
 
     _paintDirty = true;
     _layoutDirty = true;

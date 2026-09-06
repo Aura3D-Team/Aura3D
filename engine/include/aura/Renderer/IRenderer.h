@@ -499,7 +499,21 @@ public:
      */
     [[nodiscard]] virtual const IGpuDebugSource* gpuDebugSource() const noexcept { return nullptr; }
 
+public:
+    using WindowFactory = std::function<std::unique_ptr<wma::IWindowManager>(
+        wma::WindowBackend, const wma::WindowDetails&, wma::GraphicsAPI)>;
+    /// Set before initialize(); retained for backend recreation.
+    void setWindowFactory(WindowFactory factory) { _windowFactory = std::move(factory); }
+
 protected:
+    [[nodiscard]] std::unique_ptr<wma::IWindowManager> makeWindow(
+        wma::WindowBackend backend, const wma::WindowDetails& details, wma::GraphicsAPI api)
+    {
+        return _windowFactory ? _windowFactory(backend, details, api)
+                              : wma::createWindowManager(backend, details, api);
+    }
+    WindowFactory _windowFactory;
+
     /**
      * @brief Low-level window factory function implemented by specialized API backends.
      * * @param[in] title Text label mapped to the active surface window frame header.

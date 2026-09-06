@@ -85,25 +85,28 @@ std::unique_ptr<Widget> Widget::detach(Widget& child)
     std::unique_ptr<Widget> owned = std::move(*it);
     _children.erase(it);
 
-    owned->_setRoot(nullptr);
+    const WidgetRef alive(this);
     owned->_parent = nullptr;
+    owned->_setRoot(nullptr);
 
-    onChildRemoved(index);
-    invalidateLayout();
+    if (alive.get())
+        onChildRemoved(index);
+    if (alive.get())
+        invalidateLayout();
 
     return owned;
 }
 
 void Widget::remove(Widget& child)
 {
-    //! Destroyed here, at the end of the statement, rather than inside the
-    //! erase: ~Widget needs a live parent to unregister itself from the root.
+    //! Keep the child alive until detachment and its callbacks have finished.
     const std::unique_ptr<Widget> owned = detach(child);
 }
 
 void Widget::clearChildren()
 {
-    while (!_children.empty())
+    const WidgetRef alive(this);
+    while (alive.get() && !_children.empty())
     {
         const std::unique_ptr<Widget> owned = detach(*_children.back());
     }
@@ -128,17 +131,38 @@ void Widget::_setRoot(UIRoot* root)
     if (_root == root)
         return;
 
+    const WidgetRef alive(this);
+    _changingRoot = true;
     if (_root)
     {
+        _root->_setAnimating(*this, false);
         _root->_forget(*this);
+        if (!alive.get())
+            return;
         onDetach();
+        if (!alive.get())
+            return;
+        if (_root)
+            _root->_setAnimating(*this, false);
     }
 
     _root = root;
 
-    for (const std::unique_ptr<Widget>& child : _children)
-        child->_setRoot(root);
+    // Attach/detach callbacks may erase or reparent siblings. Never retain
+    // vector iterators across those callbacks, or visit a removed child.
+    std::vector<WidgetRef> children;
+    children.reserve(_children.size());
+    for (const auto& child : _children)
+        children.emplace_back(child.get());
+    for (const auto& reference : children)
+    {
+        if (Widget* child = reference.get(); child && child->_parent == this)
+            child->_setRoot(root);
+        if (!alive.get())
+            return;
+    }
 
+    _changingRoot = false;
     if (_root)
     {
         if (_animating)
@@ -289,8 +313,11 @@ void Widget::setVisibility(Visibility visibility)
 
     _visibility = visibility;
 
+    const WidgetRef alive(this);
     if (visibility != Visibility::Visible && _root)
         _root->_forget(*this);
+    if (!alive.get())
+        return;
 
     if (reflows)
         invalidateLayout();
@@ -307,8 +334,11 @@ void Widget::setEnabled(bool enabled)
 
     //! A control disabled while focused or hovered must not keep either, or it
     //! would still look live and still eat the next keystroke.
+    const WidgetRef alive(this);
     if (!_enabled && _root)
         _root->_forget(*this);
+    if (!alive.get())
+        return;
 
     invalidatePaint();
 }
@@ -317,7 +347,7 @@ bool Widget::effectivelyEnabled() const noexcept
 {
     for (const Widget* node = this; node != nullptr; node = node->_parent)
     {
-        if (!node->_enabled)
+        if (!node->_enabled || node->_changingRoot)
             return false;
     }
 

@@ -362,7 +362,8 @@ protected:
 
     virtual void paintChildren(DrawList& out);
 
-    /// Called once per frame while animating() is true.
+    /// Called once per frame while visible and animating(). Invalidate paint
+    /// or layout when the tick changes the widget.
     /// @return False to stop being ticked.
     virtual bool onTick(f32 deltaSeconds);
 
@@ -421,6 +422,7 @@ private:
 
     Visibility _visibility = Visibility::Visible;
     bool _enabled = true;
+    bool _changingRoot = false;
     bool _focusable = false;
     bool _hitTestVisible = true;
     bool _animating = false;

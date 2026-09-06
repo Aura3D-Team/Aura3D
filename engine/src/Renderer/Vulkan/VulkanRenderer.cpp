@@ -190,7 +190,7 @@ void VulkanRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
 
 void VulkanRenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
 {
-    _windowManagerApi = wma::createWindowManager(wBackend, _windowDetails, wma::GraphicsAPI::Vulkan);
+    _windowManagerApi = makeWindow(wBackend, _windowDetails, wma::GraphicsAPI::Vulkan);
     _windowManagerApi->createWindow(title);
 }
 
@@ -228,6 +228,8 @@ void VulkanRenderer::createCoreObjects(bool enableValidation)
         *_vkDeviceManager->getPhysicalDevice(),
         _vkDeviceData.exclusiveQueueFlags,
         *_vkSurfaceManager->getSurface());
+    if (_graphicsIndexFamily == VK_QUEUE_FAMILY_IGNORED)
+        throw std::runtime_error("Vulkan device cannot present to this window surface");
 
 #ifdef AURA_ENABLE_DEBUG_MODE
     /*
@@ -351,7 +353,12 @@ void VulkanRenderer::setupPipeline(const std::string& vertShaderPath, const std:
 
 void VulkanRenderer::buildSwapchainResources()
 {
-    _vkSwapChainManager->createSwapChain(&_windowDetails, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get());
+    const auto framebuffer = _windowManagerApi->getFramebufferSize();
+    auto drawableDetails = *_windowManagerApi->getWindowDetails();
+    drawableDetails.width = framebuffer.width;
+    drawableDetails.height = framebuffer.height;
+    _vkSwapChainManager->createSwapChain(&drawableDetails, *_vkSurfaceManager->getSurface(),
+        _vkDeviceManager.get(), 2, _windowManagerApi->transparentFramebuffer());
     _vkImageViewsManager->createImageViews(
         _vkSwapChainManager->getSwapChainImages(),
         _vkSwapChainManager->getChoosedSurfaceFormat()->format,

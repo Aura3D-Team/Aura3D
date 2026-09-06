@@ -38,7 +38,7 @@ void CPURenderer::initialize(aura3d::AuraSettings* settings, const JobSystem* jo
 
 void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
 {
-    _windowManagerApi = wma::createWindowManager(
+    _windowManagerApi = makeWindow(
         wBackend, _windowDetails, wma::GraphicsAPI::CPU);
     _windowManagerApi->createWindow(title);
 
