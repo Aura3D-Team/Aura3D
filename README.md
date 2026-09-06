@@ -84,10 +84,9 @@ game:
 | 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
 | 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Windows, Android, WebAssembly |
 | 11 | [Using a Release](docs/11-using-releases.md) | Consuming prebuilt release archives; building the dev container |
-| 12 | [Immediate-Mode UI](docs/12-immediate-mode-ui.md) | `aura3d::ui`: panels, widgets, per-component theming; a complete tool app |
-| 13 | [How AuraUI Works](docs/13-auraui-internals.md) | UI internals: widget identity, interaction state, single-batch geometry |
-| 14 | [Audio](docs/14-audio.md) | `AudioEngine`: clips, one-shots, looping music, 3D positional sound |
-| 15 | [Debug & Benchmark Mode](docs/15-debug-benchmark-mode.md) | CPU/GPU allocation tracking, per-phase frame timing, the JSON metrics report |
+| 12 | [Audio](docs/12-audio.md) | `AudioEngine`: clips, one-shots, looping music, 3D positional sound |
+| 13 | [Debug & Benchmark Mode](docs/13-debug-benchmark-mode.md) | CPU/GPU allocation tracking, per-phase frame timing, the JSON metrics report |
+| 14 | [AuraUI — The Widget Toolkit](docs/14-auraui-toolkit.md) | Widget tree, flex/grid layout, shaped text, signals, animation, accessibility |
 
 ---
 
@@ -113,9 +112,10 @@ cmake --build . -j$(nproc)
 | `AURA_ENABLE_VULKAN` | `ON` | Compile the Vulkan backend |
 | `AURA_ENABLE_OPENGL` | `ON` | Compile the OpenGL backend |
 | `AURA_ENABLE_CPU` | `ON` | Compile the software (CPU) backend |
-| `AURA_ENABLE_UI` | `ON` | Compile the built-in immediate-mode UI (`aura3d::ui`) |
+| `AURA_ENABLE_UI` | `ON` | Compile AuraUI (`aura3d::ui`), the widget toolkit |
 | `AURA_BUILD_SANDBOX` | `ON` | Build the Sandbox demo app |
 | `AURA_BUILD_ORGLOGO` | `ON` | Build the OrgLogo demo app |
+| `AURA_BUILD_UIDEMO` | `ON` | Build the AuraUI widget-toolkit demo app |
 | `AURA_BUILD_TESTS` | `OFF` | Build the automated test suite |
 | `AURA_ENABLE_LTO` | `ON` | Interprocedural optimization |
 | `AURA_NATIVE_OPTIMIZE` | `ON` | `-march=native` on desktop builds |
@@ -159,8 +159,9 @@ Windows, Android, and WASM specifics.
 ```
 Aura3D/
 ├── apps/
-│   ├── Sandbox/       # Interactive 3D demo: WASD+mouse camera, lit scene, FPS overlay, Tab-toggled UI panels — spawn/remove textured 3D objects, tweak a live-animated sprite, and an aura3d::ui widget showcase
-│   └── OrgLogo/        # Minimal 2D demo: one textured quad, no camera movement
+│   ├── Sandbox/       # Interactive 3D demo: WASD+mouse camera, lit scene, FPS overlay, F1-toggled AuraUI sidebar — spawn/remove textured 3D objects, tweak a live-animated sprite, edit the theme live
+│   ├── OrgLogo/        # Minimal 2D demo: one textured quad, no camera movement
+│   └── AuraUIDemo/     # AuraUI widget-toolkit showcase: a settings page of cards, a form Grid, live signals
 ├── docs/                # Tutorial series (see table above)
 ├── engine/
 │   ├── include/aura/    # Public API — this is what your game includes

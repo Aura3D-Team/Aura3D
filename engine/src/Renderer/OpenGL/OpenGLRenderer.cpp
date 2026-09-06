@@ -200,7 +200,7 @@ void OpenGLRenderer::createOverlay2DBuffers()
 
 void OpenGLRenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
 {
-    _windowManagerApi = wma::createWindowManager(
+    _windowManagerApi = makeWindow(
         wBackend, _windowDetails, wma::GraphicsAPI::OpenGL
     );
     _windowManagerApi->createWindow(title);

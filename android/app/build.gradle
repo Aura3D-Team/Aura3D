@@ -20,7 +20,7 @@ def ndkVersionPinned = "28.0.13004108"
 // scripts/build_android.sh) and installed under a single prefix; forward it
 // to CMake so find_package() can locate them. gradle.properties sets a
 // default; -PANDROID_DEPS_PREFIX=... on the command line overrides it.
-def androidDepsPrefix = project.findProperty('ANDROID_DEPS_PREFIX') ?: '/usr/local/android-deps'
+def androidDepsPrefix = project.findProperty('ANDROID_DEPS_PREFIX') ?: '/usr/local'
 
 android {
     namespace 'com.aura3d.sandbox'
@@ -43,7 +43,9 @@ android {
                 arguments(
                     "-DAURA3D_ROOT=${rootProject.projectDir}/..",
                     "-DANDROID_STL=c++_shared",
-                    "-DCMAKE_PREFIX_PATH=${androidDepsPrefix}",
+                    // ink/wma/Aura3D share the prefix and differ by ABI tag;
+                    // SDL3 is still per-platform, hence the /android entry too.
+                    "-DCMAKE_PREFIX_PATH=${androidDepsPrefix};${androidDepsPrefix}/android",
                     "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH"
                 )
 

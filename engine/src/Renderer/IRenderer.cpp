@@ -10,15 +10,13 @@ void IRenderer::run(move_only_function<void()> onFrame)
     auto* windowMgr = getWindowManager();
     if (!windowMgr) return;
 
-    auto runCleanup = [this]() { cleanup(); };
-    windowMgr->getKeyboardListener().addKeyAction(wma::Key::KEY_ESCAPE, wma::KeyAction{ runCleanup, nullptr });
-
     _running = true;
-    windowMgr->process([&]() {
+    windowMgr->process([this, onFrame = std::make_shared<move_only_function<void()>>(std::move(onFrame))]() {
         beginFrame();
-        onFrame();
+        (*onFrame)();
         endFrame();
     });
+    _running = false;
 }
 
 /*

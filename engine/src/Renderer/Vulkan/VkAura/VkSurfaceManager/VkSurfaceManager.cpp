@@ -1,7 +1,6 @@
 #include "aura/Renderer/Vulkan/VkAura/VkSurfaceManager/VkSurfaceManager.h"
 
 #include <ink/ink.hpp>
-#include <wma/core/BuildConfig.hpp>
 
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"

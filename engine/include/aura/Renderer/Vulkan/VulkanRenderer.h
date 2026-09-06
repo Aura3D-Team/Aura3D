@@ -126,7 +126,6 @@ protected:
     void createWindow(const char* title, const wma::WindowBackend& wBackend) override;
 
 private:
-    void setupInput();
     void createCoreObjects(bool enableValidation);
     void recreateSurfaceAndSwapchain();
     void createResourceManagers();

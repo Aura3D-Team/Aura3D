@@ -130,7 +130,7 @@ nothing, so this doc is deliberately exact about which is which.
 
 Independent of `window.backend`: GLFW, X11 and Wayland are display protocols
 with no audio API, so the two settings never constrain each other. See
-[14-audio.md](14-audio.md).
+[12-audio.md](12-audio.md).
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
@@ -170,7 +170,7 @@ Read by `aura3d::DebugModeConfig::fromSettings`, and ignored entirely in a
 normal build — `Engine::debugMode()` returns `nullptr` there, so nothing looks
 at these keys. Every one of them can be overridden by an environment variable,
 which is what lets one built binary serve several CI jobs; see
-[15-debug-benchmark-mode.md](15-debug-benchmark-mode.md) for the full
+[13-debug-benchmark-mode.md](13-debug-benchmark-mode.md) for the full
 explanation of each and for how to read the report they produce.
 
 | Key | Type | Default | Env override | Notes |

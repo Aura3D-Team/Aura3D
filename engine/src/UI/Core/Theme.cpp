@@ -1,4 +1,4 @@
-#include "aura/UI/Style.h"
+#include "aura/UI/Core/Theme.h"
 
 namespace aura3d::ui {
 
@@ -94,6 +94,14 @@ Theme& Theme::applyPalette(const Palette& palette)
 
     const auto part = [this](Part which) -> WidgetStyle& { return (*this)[which]; };
 
+    //! A layout node has no appearance of its own. Filled from `control` like
+    //! everything else above, it would put a grey rectangle behind every row
+    //! in the tree, so it is reset rather than adjusted.
+    part(Part::Container) = WidgetStyle{};
+    part(Part::Container).text = palette.text;
+    part(Part::Container).accent = palette.accent;
+    part(Part::Container).padding = 0.0f;
+
     //! Surfaces with no interaction of their own: they never change colour, so
     //! a flat ColorSet says so once instead of three identical lines.
     //! A panel and its bar are square by default, now a taste rather than a
@@ -171,6 +179,12 @@ Theme& Theme::applyPalette(const Palette& palette)
 
     part(Part::Separator).surface = ColorSet::flat(palette.border);
     part(Part::Separator).rounding = 0.0f;
+
+    //! The track is the surface; the accent draws the filled part over it,
+    //! exactly as a slider does.
+    part(Part::ProgressBar).surface = ColorSet::flat(palette.surface);
+    part(Part::ProgressBar).rounding = kPill;
+    part(Part::ProgressBar).padding = 0.0f;
 
     return *this;
 }

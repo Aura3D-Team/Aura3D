@@ -58,7 +58,7 @@ VkExtent2D* VkSwapChainManager::getExtent2D()
     return &_choosedExtent;
 }
 
-void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount)
+void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount, bool transparent)
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
     _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, AuraSettings::get()->getVSyncMode());
@@ -133,7 +133,16 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
         (_swapChainSupportDetails.capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
             ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
             : _swapChainSupportDetails.capabilities.currentTransform;
-    _swapChainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    const auto supportedAlpha = _swapChainSupportDetails.capabilities.supportedCompositeAlpha;
+    if (transparent && !(supportedAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR))
+        throw std::runtime_error("Vulkan surface does not support premultiplied transparency");
+    _swapChainCreateInfo.compositeAlpha = transparent ? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR
+                                                     : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    if (!(supportedAlpha & _swapChainCreateInfo.compositeAlpha))
+        for (auto mode : {VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+                          VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+                          VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR})
+            if (supportedAlpha & mode) { _swapChainCreateInfo.compositeAlpha = mode; break; }
     _swapChainCreateInfo.presentMode = _choosedPresentMode;
     _swapChainCreateInfo.clipped = VK_TRUE;
     _swapChainCreateInfo.oldSwapchain = VK_NULL_HANDLE;

@@ -18,7 +18,9 @@ Engine::Engine(const aura3d::AuraConfig& config)
 {
 }
 
-Engine::Engine(const aura3d::AuraConfig& defaults, const std::string& configPath)
+Engine::Engine(const aura3d::AuraConfig& defaults, const std::string& configPath,
+               aura3d::IRenderer::WindowFactory windowFactory)
+    : _windowFactory(std::move(windowFactory))
 {
     INK_CORE_LOGGER;
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
@@ -149,6 +151,7 @@ void Engine::_adoptRenderer(aura3d::RendererChoice choice)
 
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
 
+    _renderer->setWindowFactory(_windowFactory);
     _renderer->initialize(aura3d::AuraSettings::get(), _jobs.get());
 
     if (_resources)

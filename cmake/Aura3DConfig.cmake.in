@@ -2,31 +2,29 @@
 
 include(CMakeFindDependencyMacro)
 
-find_dependency(Threads)
-find_dependency(wma)
-find_dependency(ink)
+# Every platform installed here shares one set of headers; the library, its
+# dependency list and its AURA_HAS_* definitions differ. Resolve the caller's
+# ABI tag with the code that produced the name, then load that build's own
+# deps and targets.
+include("${CMAKE_CURRENT_LIST_DIR}/PlatformSuffix.cmake")
+aura3d_resolve_installed_suffix("${CMAKE_CURRENT_LIST_DIR}" "Aura3DTargets" _aura_suffix)
 
-# glm::glm is in this target's link interface either way; how it is obtained
-# depends on how it was found when Aura3D was built. Where glm ships no CMake
-# package (the vulkan-dev image, for one) the imported target is rebuilt here
-# from the headers, exactly as cmake/Dependencies.cmake does.
-if(@AURA_GLM_HAS_PACKAGE@)
-    find_dependency(glm)
-elseif(NOT TARGET glm::glm)
-    find_path(AURA_GLM_INCLUDE_DIR glm/glm.hpp NO_CMAKE_FIND_ROOT_PATH REQUIRED)
-    add_library(glm::glm INTERFACE IMPORTED)
-    set_target_properties(glm::glm PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${AURA_GLM_INCLUDE_DIR}")
+set(_aura_deps    "${CMAKE_CURRENT_LIST_DIR}/Aura3D-deps-${_aura_suffix}.cmake")
+set(_aura_targets "${CMAKE_CURRENT_LIST_DIR}/Aura3DTargets-${_aura_suffix}.cmake")
+
+if(NOT EXISTS "${_aura_targets}")
+    file(GLOB _aura_have "${CMAKE_CURRENT_LIST_DIR}/Aura3DTargets-*.cmake")
+    list(TRANSFORM _aura_have REPLACE "^.*/Aura3DTargets-(.+)\\.cmake$" "\\1")
+    list(FILTER _aura_have EXCLUDE REGEX "-(debug|release|relwithdebinfo|minsizerel)$")
+    message(FATAL_ERROR "Aura3D is not installed for '${_aura_suffix}'; have: ${_aura_have}")
 endif()
 
-if(@AURA_ENABLE_VULKAN@)
-    find_dependency(Vulkan)
-endif()
+include("${_aura_deps}")
+include("${_aura_targets}")
 
-if(@AURA_ENABLE_OPENGL@)
-    find_dependency(OpenGL)
-endif()
-
-include("${CMAKE_CURRENT_LIST_DIR}/Aura3DTargets.cmake")
+unset(_aura_suffix)
+unset(_aura_deps)
+unset(_aura_targets)
+unset(_aura_have)
 
 check_required_components(Aura3D)

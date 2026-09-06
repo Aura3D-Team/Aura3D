@@ -29,9 +29,16 @@ set(AURA_TEST_SUITES
 )
 
 # Guarded because AURA_ENABLE_UI=OFF leaves aura3d::ui out of the library
-# entirely, and this suite is the one thing in the tree that links against it.
+# entirely, and these are the only suites in the tree that link against it.
 if(AURA_ENABLE_UI)
-    list(APPEND AURA_TEST_SUITES test_ui test_ui_input)
+    list(APPEND AURA_TEST_SUITES
+        test_aui_layout
+        test_aui_input
+        test_aui_lifecycle
+        test_aui_signal
+        test_aui_text
+        test_aui_paint
+        test_aui_overlay)
 endif()
 
 foreach(_aura_test_name IN LISTS AURA_TEST_SUITES)

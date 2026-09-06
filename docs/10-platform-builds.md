@@ -64,10 +64,10 @@ container for Windows — build and `cmake --install` each into the same
 prefix first (see [Cross-repo build order](#cross-repo-build-order) below),
 then point `CMAKE_PREFIX_PATH` at it: `windows-release`'s
 `CMAKE_PREFIX_PATH` cache variable already resolves to
-`$env:LOCAL_PREFIX/windows/release`, matching `cmake/Dependencies.cmake`'s
-platform-prefix lookup. `.github/workflows/ci.yml`'s `windows-build` job is
-a complete worked example of the whole ink → wma → Aura3D chain built from
-source with vcpkg, if you'd rather read a script than prose.
+`$env:LOCAL_PREFIX`, the single prefix every platform installs into.
+`.github/workflows/ci.yml`'s `windows-build` job is a complete worked example
+of the whole ink → wma → Aura3D chain built from source with vcpkg, if you'd
+rather read a script than prose.
 
 `x64-windows-static` puts the vcpkg ports on the static CRT (`/MT`), so
 `CMAKE_MSVC_RUNTIME_LIBRARY` has to say the same for this project — CMake's
@@ -86,7 +86,7 @@ build-tools and platform 29+), `libink`/`libwma` built for Android and
 installed where the Android preset's `CMAKE_PREFIX_PATH` expects them.
 
 ```bash
-./scripts/build_android.sh                      # arm64-v8a, libAura3D.a only
+./scripts/build_android.sh                      # arm64-v8a, libaura3d_android_arm64_v8a.a only
 ./scripts/build_android.sh --apk                # + full Sandbox APK via Gradle
 ./scripts/build_android.sh --abi x86_64 --debug  # other ABI / build type
 ```
@@ -99,7 +99,7 @@ cmake -S . -B build/android \
     -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared \
     -DCMAKE_BUILD_TYPE=Release
 cmake --build build/android -j"$(nproc)"
-cmake --install build/android --prefix "$LOCAL_PREFIX/android"   # optional
+cmake --install build/android --prefix "$LOCAL_PREFIX"   # optional
 ```
 
 `AURA_BUILD_SANDBOX` is force-disabled on Android (`cmake/Platform.cmake`) —
@@ -107,7 +107,7 @@ the Sandbox demo's desktop `main()` isn't the Android entry point. The APK
 build instead compiles `android/app/src/main/cpp/android_main.cpp` as a
 `SHARED` library loaded by the Java/Kotlin activity shell in `android/`. If
 you're embedding Aura3D into your own app rather than using the bundled
-Sandbox APK, link against the `libAura3D.a` the CMake-only invocation above
+Sandbox APK, link against the `libaura3d_android_arm64_v8a.a` the CMake-only invocation above
 produces.
 
 ```bash
@@ -235,6 +235,7 @@ emcmake cmake -S . -B build/wasm-release \
     -DCMAKE_PREFIX_PATH=/path/to/wasm/deps \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 cmake --build build/wasm-release -j"$(nproc)"
+cmake --install build/wasm-release --prefix "$LOCAL_PREFIX"   # optional
 ```
 
 Output is `build/wasm-<type>/pkg/Aura3D.js` + `Aura3D.wasm`, with the
@@ -315,11 +316,19 @@ whole stack for any one platform is always:
 libink  →  libwma  →  Aura3D
 ```
 
-each installed to the same prefix before the next is configured, per
-platform. If `find_package(wma CONFIG REQUIRED)` or
-`find_package(ink CONFIG REQUIRED)` fails during Aura3D's configure step,
-it means one of these wasn't built for the platform you're targeting, or
-wasn't installed where `CMAKE_PREFIX_PATH` is looking.
+each installed before the next is configured. All three share **one prefix**
+across every platform: headers land in `$LOCAL_PREFIX/include` once, and the
+libraries carry an ABI tag that keeps them apart in `$LOCAL_PREFIX/lib`:
+
+```
+lib/libink_linux_x86_64.a   lib/libwma_wasm32.a   lib/libaura3d_android_arm64_v8a.a
+```
+
+`find_package` picks the matching one from the caller's toolchain, so a
+failure means that platform was never installed — the error lists what is.
+Third-party dependencies that are still per-platform (SDL3) keep their own
+`$LOCAL_PREFIX/<platform>` prefix, which is why the android/wasm presets put
+both on `CMAKE_PREFIX_PATH`.
 
 On Windows specifically, `libink` doesn't ship its own `windows-debug`/
 `windows-release` presets (only `libwma` and Aura3D do), so build it with a
@@ -331,7 +340,7 @@ cmake -S libink -B libink/build -G Ninja `
     -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
     -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build libink/build --parallel
-cmake --install libink/build --prefix "$env:LOCAL_PREFIX/windows/release"
+cmake --install libink/build --prefix "$env:LOCAL_PREFIX"
 ```
 
 then `libwma`'s and Aura3D's own `windows-release` presets (pointed at the

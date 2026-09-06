@@ -24,7 +24,7 @@
 #if !defined(WMA_HAS_METAL) || !WMA_HAS_METAL
 #  error "AURA_ENABLE_METAL requires a libwma built with Metal support: an Apple \
 target with the SDL3 or GLFW backend enabled. See WMA_HAS_METAL in \
-wma/core/BuildConfig.hpp."
+wma::wma's compile definitions."
 #endif
 
 namespace aura3d {
@@ -55,7 +55,6 @@ void MetalRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
         throw AuraException("MetalRenderer: settings are null");
 
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
-    setupInput();
 
     _frameSlots = std::make_shared<FrameSlots>(MTL_MAX_FRAMES_IN_FLIGHT);
     _deviceManager = std::make_unique<MtlDeviceManager>();
@@ -102,15 +101,10 @@ void MetalRenderer::createWindow(const char* title, const wma::WindowBackend& wB
      * one -- so an unsupported window backend fails here, with wma's own
      * diagnostic, rather than surviving to confuse the renderer later.
      */
-    _windowManagerApi = wma::createWindowManager(wBackend, _windowDetails, wma::GraphicsAPI::Metal);
+    _windowManagerApi = makeWindow(wBackend, _windowDetails, wma::GraphicsAPI::Metal);
     _windowManagerApi->createWindow(title);
 }
 
-void MetalRenderer::setupInput()
-{
-    _windowManagerApi->getKeyboardListener().addKeyAction(
-        wma::Key::KEY_ESCAPE, wma::KeyAction{[this]() { cleanup(); }, nullptr});
-}
 
 void MetalRenderer::createPipelines()
 {

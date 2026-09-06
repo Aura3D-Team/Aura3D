@@ -136,11 +136,10 @@ void VkGraphicsPipelineManager::resetInterface()
 
 void VkGraphicsPipelineManager::createDescriptorSetLayouts()
 {
-    // Clean up any existing layouts
-    for (auto& pair : _descriptorSetLayouts) {
-        vkDestroyDescriptorSetLayout(*_device, pair.second, nullptr);
-    }
-    _descriptorSetLayouts.clear();
+    // Bindless sets outlive swapchains. Keep their layouts until the shader
+    // interface is explicitly cleared, including while new textures arrive.
+    if (!_descriptorSetLayouts.empty())
+        return;
 
     // Create a layout for each descriptor set
     for (const auto& pair : _descriptorSetLayoutInfos)

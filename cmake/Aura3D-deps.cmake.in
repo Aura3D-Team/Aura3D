@@ -1,0 +1,28 @@
+#! Per-platform dependency lookups for one installed build of Aura3D, included
+#! by Aura3DConfig.cmake once it has resolved the caller's ABI tag. These cannot
+#! live in the shared config: one prefix holds every platform, so a single file
+#! would carry whichever build installed last -- a Linux consumer silently
+#! skipping find_dependency(OpenGL) because a wasm install came after it.
+
+find_dependency(Threads)
+find_dependency(wma)
+find_dependency(ink)
+
+# glm::glm is in the link interface either way; where glm ships no CMake package
+# the imported target is rebuilt from headers, as cmake/Dependencies.cmake does.
+if(@AURA_GLM_HAS_PACKAGE@)
+    find_dependency(glm)
+elseif(NOT TARGET glm::glm)
+    find_path(AURA_GLM_INCLUDE_DIR glm/glm.hpp NO_CMAKE_FIND_ROOT_PATH REQUIRED)
+    add_library(glm::glm INTERFACE IMPORTED)
+    set_target_properties(glm::glm PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${AURA_GLM_INCLUDE_DIR}")
+endif()
+
+if(@AURA_FIND_VULKAN@)
+    find_dependency(Vulkan)
+endif()
+
+if(@AURA_FIND_OPENGL@)
+    find_dependency(OpenGL)
+endif()

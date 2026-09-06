@@ -2,326 +2,46 @@
 
 All notable changes to Aura3D are documented in this file.
 
-## [0.2.1]
+## [0.2.0]
+
+### Added
+
+- `AudioEngine` (`Engine::audio()`, never null): WAV + Ogg Vorbis loading, fixed voice pool, per-voice/master gain, looping, pause/resume, 3D positional audio (distance attenuation + equal-power panning). Device I/O is `wma::IAudioDevice` (ALSA/SDL3/null). `ResourceManager::loadSound()`, new `audio` settings section. See docs/14
+- Metal backend (`aura3d::mtl::MetalRenderer`), fourth `IRenderer` impl, Apple-only. Per-responsibility managers mirroring the Vulkan backend; MSL shaders embedded as source + optional precompiled `.metallib`; `vendor/metal-cpp` vendored private
+- **AuraUI**, a retained widget toolkit (`aura3d::ui`), one include (`<aura/UI/UI.hpp>`), gated by `AURA_ENABLE_UI`. Layered: Core (values/signals/theme) → Text (shaping/wrap/carets, IME-correct, caret/selection, word wrap) → Layout (flex/grid constraints) → Widgets → UIRoot (dispatch/focus/Tab navigation/touch/shortcuts) → Backend (DrawList → draw calls, one draw call regardless of widget count via `FontAtlas::solidTexelUv()`, nine-slice rounded corners against an analytic coverage mask, no steady-state allocation) → UIView (wired to renderer+window). `Label`/`Image`/`Separator`/`Button`/`CheckBox`/`RadioButton`+`RadioGroup`/`Slider`/`ProgressBar`/`TextField`, built by composition. Accessibility tree, DPI-independent layout. See docs/14, `apps/AuraUIDemo`, and `apps/Sandbox`
+- **AuraUI overlay layer** (`UIRoot::overlay()`): one mechanism for everything that escapes its parent's rectangle. `OverlayDesc` gives anchor + `Placement` (Below/Above/Right/Left/Over/Cursor/Center, each flipping then clamping to stay on screen), modality, light dismissal on outside-click and Escape, and an `onClosed` hook. Closing is deferred to the frame boundary, so a menu item can close the menu it lives in. Tab is trapped in the topmost overlay; Escape closes it before the focused widget sees the key
+- AuraUI widgets on that layer: `Dropdown` (Space opens, arrows move, Enter takes, Escape closes; arrows step the selection while shut), `Menu` with items, shortcut labels, separators and nested submenus, and tooltips (`Widget::setTooltip()`, dwell-opened by the root, click-through so they never shield what is under them)
+- AuraUI navigation widgets: `TabView` (animated selection underline, Left/Right to move), `CollapsingHeader` and `TreeNode` over a shared `Disclosure` base, and `Selectable` — one row widget that serves lists, drop-downs, menus and tabs by retargeting its `Part` (`Widget::setPart()`)
+- `FontAtlas::convexMask()`: exact per-texel coverage of any convex polygon, by clipping it against each texel's square and taking the shoelace area — the general form of `cornerMask()`. Icons (`ui::icon::triangle`, `ui::icon::convex`) are one atlas cell and one textured quad each, antialiased, in the same batch as the text beside them, so a chevron or a disclosure arrow costs no draw call, no new command type and no backend case
+- `Property::bind()` / `bindFrom()`: one-way reactive links between properties, undone by dropping the returned `ScopedConnection`
+- `DrawList::drawMask()` (`DrawCommandType::Mask`): a tinted quad sampling a glyph-atlas cell — the one primitive every icon needs
+- Type-safe resource handles: `Handle<Tag>` per resource kind (`VertexBufferHandle`, `TextureHandle`, `MeshHandle`, ...) instead of raw `u32` — cross-type misuse is now a compile error. Same runtime shape/cost
+- Engine config in code (`AuraConfig`) — `Engine(config)` needs no settings file; `Engine(config, path)` layers a file over it. See docs/02
+- WebAssembly is now installable (`find_package(Aura3D)` on the `wasm` preset)
+- Tests: `test_audio_clip_loader`, `test_audio_engine`, `test_settings`, `test_texture_sampling`, plus five AuraUI suites — `test_aui_layout`, `test_aui_input`, `test_aui_text`, `test_aui_paint`, `test_aui_overlay` (228 checks: layout arithmetic, hit testing/capture, caret/byte round trips, single-batch and bounded-geometry properties, overlay placement/modality/deferred-close/focus-trapping)
+
+### Changed
+
+- `TextOverlay::drawFPS` now smooths (EMA, ~0.5s constant) instead of printing the raw per-frame reciprocal; `TextOverlay::fps()` reads it back
+- Bilinear filtering on the software rasteriser's `Texture::sample()` (was point-sampled, undoing `FontAtlas`'s antialiasing)
+- `Part` gained `Container` (transparent, for layout nodes) and `ProgressBar`; `Metrics` gained `fontSize`
+- `Signal::connect` is not `[[nodiscard]]`
+- Every platform installs into one prefix; library is ABI-tagged (`libaura3d_linux_x86_64.a`, etc.) instead of a per-platform directory
+- `INVALID_HANDLE` removed — a default-constructed handle (`{}`) is now the invalid value
 
 ### Fixed
 
-- `cmake/Dependencies.cmake` never actually looked for glm — it resolved by accident wherever ink/wma's own `/usr/local/include` interface path happened to carry it, which is why a from-scratch Windows configure failed on `glm/glm.hpp: No such file or directory`. Now `find_package(glm CONFIG)` first, falling back to `find_path` + an imported target where glm ships no CMake package (the `vulkan-dev` image); linked `PUBLIC`, and `cmake/Aura3DConfig.cmake.in` reproduces whichever path was taken so `find_package(Aura3D)` resolves it for consumers too
-- `cmake/Install.cmake` skipped `install()` entirely on Android, so the release archive's `.a` had no CMake package and no `find_package(Aura3D)` route — docs told consumers to link it by hand, which also meant retyping the `AURA_HAS_*` defines a Linux/Windows consumer gets for free. Android now installs the same way Linux and Windows do
-- iOS builds failed to compile ink's `std::format_to` call — libc++'s `<format>` calls `std::to_chars`, which Apple marks unavailable below iOS 16.3. Deployment target raised 16.0 → 16.3 in `CMakePresets.json` and every iOS job in `.github/workflows/ci.yml`
-- Windows CI/release jobs configured against vcpkg's `x64-windows-static` triplet (`/MT`) without setting `CMAKE_MSVC_RUNTIME_LIBRARY`, which defaults this project to `/MD` and fails the link with `LNK2038`. Every Windows `Configure` step now passes it explicitly
+- Wayland: keyboard events (including AuraUI text input) could arrive with no xkb keymap loaded — subscribed a roundtrip too late (fixed in libwma)
+- `cmake/Aura3DConfig.cmake.in` gated `find_dependency(OpenGL)` wrong for Emscripten
+- `cmake/Dependencies.cmake` never actually looked for glm (worked by accident via ink/wma's include path)
+- Android install skipped `install()` entirely — no CMake package, no `find_package(Aura3D)`
+- iOS: `std::format_to` needs 16.3+ (deployment target raised 16.0 → 16.3)
+- Windows CI: vcpkg static triplet needs `CMAKE_MSVC_RUNTIME_LIBRARY` set explicitly
 
 ### Docs
 
-- `IRenderer::beginFrame()`/`endFrame()`/`beginRenderPass()`/`endRenderPass()`/`run()`: replaced comments that restated the function names with ones that say what most often trips consumers up — `run()` already calls `beginFrame()`/`endFrame()` per iteration, so a hand-written loop only needs them when it isn't going through `run()`, while `beginRenderPass()`/`endRenderPass()` are always the caller's own to place
-
-## [0.2.0]
-
-- **Audio** (issue #19). `aura3d::AudioEngine`, reached from `Engine::audio()`,
-  which is never null — a machine with no sound hardware gets a silent device
-  rather than an error to handle. See [docs/14-audio.md](docs/14-audio.md).
-  - **Layering.** Device I/O lives in libwma as `wma::IAudioDevice` (ALSA on
-    desktop Linux, SDL3 everywhere else, plus an always-available null device),
-    alongside `IWindowManager`; everything platform-independent — decoding,
-    mixing, spatialization — lives here. Audio and windowing backends are
-    independent axes: GLFW/X11/Wayland have no audio API, so `window.backend`
-    never constrains `audio.backend`.
-  - `AudioClipLoader` (`aura/Core/AudioClipLoader/AudioClipLoader.h`): WAV
-    (8/16/24/32-bit PCM and 32/64-bit IEEE float, parsed in-tree) and Ogg
-    Vorbis (via the newly vendored `stb_vorbis`, `vendor/stb`), chosen by
-    sniffing magic bytes rather than the extension. A missing or undecodable
-    file yields a short *silent* clip and a warning — the audio counterpart of
-    the missing-texture checkerboard, deliberately not an attention-grabbing
-    noise. Also synthesizes clips (`makeSilence`, `makeSineTone`).
-  - `AudioEngine`: a fixed voice pool (so the mixer never allocates), per-voice
-    and master gain, looping, pause/resume, and 3D positional audio — linear
-    distance attenuation between `minDistance`/`maxDistance` plus equal-power
-    stereo panning against the listener's own right axis, so a source pans as
-    the camera turns. Clips are resampled to the device rate once at load, so a
-    44.1 kHz file on a 48 kHz device plays at the right pitch with no per-sample
-    cost. Voice handles carry a generation counter: when a slot is recycled the
-    old handle reads as "not playing" instead of addressing whatever replaced
-    it. An exhausted pool drops the newest request rather than cutting off
-    something already audible.
-  - `ResourceManager::loadSound()` caches clips by path like textures and
-    meshes, but is released separately (`unloadSounds()`) — clips belong to the
-    audio engine, which survives a renderer backend switch, so `unloadAll()`
-    deliberately leaves them alone and music keeps playing across
-    `switchBackend()`.
-  - New `audio` settings section (`backend`, `master_volume`, `sample_rate`,
-    `channels`, `buffer_frames`, `max_voices`) and `paths.audio`; `backend`
-    defaults to `"auto"`, the only value correct on every target.
-  - Sandbox demo: looping music, a 3D-positional hum on the centre orb, a
-    one-shot on **E** and a mute toggle on **M**. Its WAVs are generated by
-    `scripts/gen_sandbox_audio.py` rather than checked in.
-  - Tests: `test_audio_clip_loader` and `test_audio_engine`, the latter driving
-    the mixer through `NullAudioDevice` so panning, attenuation, voice
-    recycling and clamping are asserted deterministically with no hardware —
-    which is also what lets them run in CI.
-- **Metal backend.** `aura3d::mtl::MetalRenderer`, a fourth `IRenderer`
-  implementation alongside Vulkan, OpenGL and the CPU rasterizer, and the only
-  one available on Apple platforms — Apple's own OpenGL is deprecated and
-  capped at 4.1, and this backend deliberately talks to Metal directly rather
-  than through the MoltenVK translation layer.
-  - Split into per-responsibility managers mirroring the Vulkan backend's own
-    structure — `MtlDeviceManager` (device + command queue), `MtlBufferManager`
-    (the one place a `MTLBuffer` is allocated, and the storage-mode policy for
-    it), `MtlTextureManager`, `MtlVertexBufferManager`/`MtlIndexBufferManager`,
-    `MtlPipelineManager`, `MtlShaderLibraryManager`, `MtlLayerManager` and
-    `MtlDrawableManager` — so the two GPU backends stay structurally
-    comparable despite Metal needing noticeably less machinery: no descriptor
-    sets, pool or bindless texture table (a texture binds straight to a
-    fragment argument slot), no uniform buffers (per-draw transforms and the
-    light block travel through `setVertexBytes()`/`setFragmentBytes()`,
-    Metal's push-constant equivalent), and no swapchain to recreate (a
-    `CAMetalLayer` resizes with one property write).
-  - Built-in shaders are MSL, embedded into the binary as source
-    (`EmbeddedMetalLib.h`, generated from `resources/shaders/metal/*.metal` by
-    `scripts/gen_embedded_metallib.sh`) with a precompiled `.metallib`
-    embedded alongside it whenever the generator runs on a macOS host with
-    Xcode; `MtlShaderLibraryManager` prefers the compiled form and falls back
-    to compiling the source at device-creation time, so a header regenerated
-    on Linux (or committed from CI) still works.
-  - `vendor/metal-cpp` (Apple's official header-only Objective-C bindings)
-    vendored as a `PRIVATE` include directory — nothing in the installed
-    public headers references it, so a consumer never needs it on their own
-    include path.
-  - `wma::GraphicsAPI::Metal` window creation hands the backend an
-    already-hosted `CAMetalLayer` (`AppleMetalLayer`), so `MetalRenderer`
-    itself never touches AppKit/UIKit.
-  - `cmake/Platform.cmake` forces `AURA_ENABLE_METAL` on for `APPLE` (and back
-    off everywhere else if set explicitly), since an `ON` default would break
-    every non-Apple configure on headers that cannot be found.
-  - Single-threaded like OpenGL and the CPU backend: `drawMeshes()` records the
-    batch serially rather than fanning it out the way `VulkanRenderer` does,
-    since Metal's parallel-recording equivalent
-    (`MTLParallelRenderCommandEncoder`) is not wired up.
-- **Built-in immediate-mode UI** (issue #11), `aura3d::ui`. Panels, labels,
-  buttons, checkboxes and sliders for debug overlays, editors and standalone
-  tools — chosen over vendoring an existing library (Dear ImGui, Nuklear, ...)
-  because the engine already owned both pieces one is built from: a glyph
-  cache and a backend-agnostic 2D batch primitive. See
-  [docs/12-immediate-mode-ui.md](docs/12-immediate-mode-ui.md) for usage and
-  [docs/13-auraui-internals.md](docs/13-auraui-internals.md) for how it works.
-  - Built entirely on the existing public `IRenderer` surface —
-    `drawBatch2D()` and `FontAtlas` — so it adds no per-backend code and
-    renders identically on Vulkan, OpenGL, Metal and the CPU rasterizer.
-  - **One draw call regardless of panel or widget count.** `FontAtlas` gains
-    `solidTexelUv()`, reserving one always-opaque cell so solid rectangles
-    sample the same texture glyphs do; no interleaving of rectangles and text
-    can force a batch break. Panel content is clipped by trimming quads on the
-    CPU rather than with a scissor rectangle, which is per-draw state and
-    would cost a call per clip change.
-  - Retained-immediate hybrid: widgets are plain function calls returning what
-    the user did (`if (gui.button("..."))`), with only a handful of
-    interaction integers (`hot`/`active` ids, panel positions) surviving
-    between frames — no widget tree, no callbacks to register or unregister.
-  - Draggable, auto-height panels that remember their position across frames
-    keyed by title; `isCapturingMouse()` for handing a click to the UI instead of
-    the game underneath it, covering both hover and an in-flight drag that has
-    left the widget it started on.
-  - `AURA_ENABLE_UI` (default `ON`) gates the module out of the library
-    entirely, defining `AURA_HAS_UI` for consumers when it's compiled in.
-  - `apps/Sandbox`: alongside its own camera/lighting/audio demo, spawns and
-    removes textured 3D objects and drives a procedurally re-rendered 2D
-    sprite live through UI panels — the runnable version of docs/12's worked
-    example, plus an "Inspector" panel exercising the rest of the widget set
-    (text fields, dropdown, tabs, tree nodes, a scrolling list). This absorbed
-    the standalone `apps/UIPlayground` demo, which existed only earlier in
-    this same unreleased cycle: keeping the UI showcase inside the one demo
-    app that already has a camera, lighting and audio to interact *with* was a
-    better fit than a second app whose entire reason to exist was the UI.
-  - `tests/test_ui.cpp`: drives the whole module headlessly against a stub
-    `IRenderer` that records `drawBatch2D()` calls, covering the single-batch
-    guarantee, press/release click semantics, drag, clipping and auto-height
-    layout with no window, GPU or driver involved.
-- **Keyboard, scroll and touch input for `aura3d::ui`**, and the widgets that
-  needed them. The module previously saw only a cursor position and a left
-  button; it now consumes the whole input surface, and `attachInput()` wires
-  every part of it up.
-  - **Text fields** (`inputText`, `inputFloat`) read the platform's *committed
-    text* rather than translating keycodes, so they are correct on every
-    keyboard layout and through dead keys and IME. Caret and selection with
-    arrows (Ctrl for word-wise, Shift to extend), Home/End,
-    Backspace/Delete, Ctrl+A, and type-over-selection; the caret moves by whole
-    characters, so multi-byte text is never split mid-sequence. Enter commits,
-    Escape reverts to the value the field held when it took focus. `inputFloat`
-    keeps the text as typed rather than reformatting from the bound float each
-    frame — otherwise a decimal point could never be entered, since `"1."` does
-    not survive a round trip.
-  - **Keyboard focus and navigation.** Tab and Shift+Tab walk the focus ring in
-    submission order and wrap at both ends; Enter/Space activates a focused
-    button or checkbox, and the arrow keys nudge a focused slider (Shift for a
-    coarse step). Focus is drawn as an accent-coloured ring. `isCapturingKeyboard()`
-    joins `isCapturingMouse()` for gating the application's own input, and
-    `isCapturingTextInput()` drives the on-screen keyboard on Android/iOS through
-    libwma's new `setTextInputEnabled()` — so it appears exactly while a field
-    is focused.
-  - **Scrolling regions** (`beginScroll`/`endScroll`): fixed-height, clipped,
-    wheel- and scrollbar-driven. The one construct auto-height panels cannot
-    express, and regions nest — the wheel scrolls whichever one the cursor is
-    over rather than moving all of them at once.
-  - **Touch** drives the same cursor the mouse does, so panels work on Android
-    and in a touch browser with no separate code path. The UI's callbacks are
-    additive, so multi-finger gestures stay available to the application on the
-    same `TouchListener`.
-  - **New widgets**: `dropdown`, `radioButton`, `selectable`,
-    `collapsingHeader`, `treeNode`/`treePop`, `beginTabBar`/`tabItem`/
-    `endTabBar`, and `tooltip`. Plus `sameLine()` and `setNextItemWidth()` for
-    horizontal layout — sizing the *first* widget of a row rather than dividing
-    the row once the count is known, because immediate mode retains no geometry
-    to revise after the fact.
-  - **Still one draw call.** Dropdown lists and tooltips must draw over widgets
-    submitted after them, and the batch has no depth test, so they are recorded
-    with their clip rectangle and replayed at the end of `render()` — on top,
-    and in the same batch. `tests/test_ui.cpp` asserts the single-batch
-    guarantee across every widget kind together, alongside new coverage for
-    UTF-8-correct editing, Escape-reverts, Tab/Shift+Tab traversal, keyboard
-    activation, and scroll clipping.
-- **AuraUI styling, simplified.** Three mechanisms became three *consistent*
-  ones, and the per-widget case stopped being the awkward one.
-  - `ui::Style` — a **sparse patch** where only the fields it sets apply and
-    everything else falls through to the Part's entry in the theme. A bare
-    `WidgetStyle` is transparent by default, so the old "copy the Part, edit
-    two fields, pass it back" dance silently drew an *invisible* widget the
-    moment you forgot the copy. A patch cannot: `ui::Style{}.fill(red)` is a
-    red button that still has the theme's rounding, padding and height.
-    Chainable setters (`fill`, `outline`, `textColor`, `accentColor`,
-    `rounded`, `pad`, `alignText`, `rowHeight`, `mark`) over public
-    `std::optional` fields.
-  - **Every widget takes an optional trailing `const Style&`**, so styling one
-    instance is one call: `gui.button("Delete", ui::Style{}.fill(red))`. A
-    default argument rather than an overload per widget, so the API surface is
-    unchanged for callers that don't style.
-  - `Context::setNextStyle()` is **gone**, redundant now that the style rides
-    with the call it belongs to — and it was Part-agnostic, so it landed on
-    whatever widget came next even when that was the wrong kind.
-  - `StyleGuard` takes a `Style` patch too, applied over the Part's current
-    look, so a scope that wants one different colour says only that.
-  - `Context::theme()`, `setTheme()` and `metrics()` (five methods) collapse
-    into one public `Theme theme;` member: `gui.theme[Part::Button]`,
-    `gui.theme.metrics`, `gui.theme = Theme::light()`. There was nothing to
-    encapsulate — the theme is a value each widget reads as it is submitted.
-  - Internally `Item::style` is now a `WidgetStyle` by value rather than a
-    pointer into a resolved-style member, which removes a latent aliasing
-    hazard: a container holding a resolved style across the widgets nested
-    inside it would have had that reference rewritten under it.
-
-- **`TextOverlay::drawFPS` now smooths.** It printed `1000/deltaTime` for the
-  single frame that just ended, which on an unlocked loop swings by tens of
-  frames between one frame and the next and reads as noise rather than a
-  number. It now keeps an exponential moving average with a ~0.5s time
-  constant, blended proportionally to `dt` so the constant holds at any frame
-  rate, and prints the raw frame time beside it (`"FPS: 144  (6.94 ms)"`) --
-  milliseconds being what stays linear when you are chasing a regression. New
-  `TextOverlay::fps()` reads the smoothed figure back without advancing it, for
-  showing the same number in a UI panel or HUD. `apps/Sandbox` does exactly
-  that, in the corner and in its Scene panel.
-
-- **Type-safe resource handles.** `VertexBufferHandle`, `IndexBufferHandle`,
-  `TextureHandle`, `MeshHandle`, `MaterialHandle`, `AudioClipHandle` and
-  `AudioSourceHandle` were previously all `using X = u32` — nothing stopped a
-  mesh handle from being passed where a texture handle was expected. Each is
-  now its own instantiation of a new `aura3d::Handle<Tag>` template
-  (`aura/Core/Handle.h`): an opaque `u32` wrapper distinguished per resource
-  kind at compile time, so passing one handle type where another is expected
-  is now a compiler error instead of a latent runtime bug.
-  - Same runtime shape and cost as before — still a plain `u32` under the
-    hood, still 1-based with a default-constructed handle as the invalid
-    sentinel (`isValidHandle()` unchanged in spirit) — so every existing
-    backend (Vulkan, OpenGL, Metal, CPU), `AudioEngine`'s generation-checked
-    voice handles, `ResourceManager`, `TextOverlay` and `aura3d::ui` carried
-    over with no behavioral change.
-  - Deliberately arithmetic-free beyond a narrow `++` for pool counters: a
-    handle converts to/from its raw value only explicitly (`.value()` /
-    `Handle{u32}`), so the few call sites that legitimately need to index a
-    pool or pack extra bits (see `AudioEngine::makeSourceHandle()`) do so
-    visibly, instead of a handle being usable as a general-purpose integer
-    everywhere it is held.
-  - `INVALID_HANDLE` is gone; a default-constructed handle (`{}`) is the
-    invalid value, matching modern C++ idiom and removing a global constant
-    that was really five-going-on-seven different sentinels wearing one name.
-- **Bilinear texture filtering on the software rasteriser.** `cpu::Texture::sample()`
-  point-sampled every texture, which silently undid `FontAtlas`'s antialiasing:
-  glyphs are rasterized with grayscale coverage (`stbtt_MakeGlyphBitmap`), but a
-  pen position is essentially never on an integer pixel boundary, so reading the
-  nearest texel turned that soft coverage back into a hard, jagged edge on every
-  glyph the CPU backend drew. Vulkan, OpenGL and Metal already sample their
-  dynamic textures linearly; this brings the software rasteriser's text (and
-  every other texture it draws) to the same quality, with no API change —
-  `sample()`'s signature and clamp-to-edge behaviour are unchanged; only what it
-  computes at each UV is different.
-  - New `tests/test_texture_sampling.cpp`: pins down that a texel's own centre
-    still samples exactly (no blur where none is wanted), that a midpoint
-    between two texels blends evenly, that a uniform texture is unaffected by
-    UV including past `[0,1]`, and — the change's actual point — that two
-    off-grid samples straddling an antialiased edge are no longer identical.
-- **AuraUI rounded corners: nine-slice against an analytic coverage mask,
-  replacing per-scanline quads.** `_roundedQuad()` used to emit one quad per
-  pixel row of each cap — `1 + 2*ceil(radius)` quads for a single rounded
-  rectangle, so a pill-shaped radio button cost 17 — and at Sandbox's default
-  theme this was 59% of the UI's geometry every frame, drawn as hard-edged,
-  unantialiased stair-steps (why `Part::Panel` and `Part::TitleBar` defaulted
-  to square corners). `FontAtlas` gains `cornerMask(radius)`, reserving a
-  quarter-disc cell whose coverage is the *exact* analytic area of the disc
-  inside each texel — the antiderivative of `sqrt(R^2-x^2)`, split at the two
-  x where the arc crosses a texel's column, not a point sample — so a rounded
-  rectangle is now four corner quads plus three solid spans, seven quads at
-  any radius, and the curve is antialiased for the first time. No shader or
-  backend change: the atlas already stored coverage-only glyphs and the 2D
-  fragment stage already does `texel * vertexColor`. Verified by rasterizing a
-  captured UI frame through a headless stub `IRenderer` before and after the
-  change and comparing pixel output, not just the existing widget tests, since
-  none of them render.
-- **AuraUI's per-frame vertex/index buffers stopped reshaping themselves every
-  frame.** The index stream for a quad batch is a pure function of a quad's
-  position in the buffer (`index[6q+k] = 4q + {0,1,2,2,3,0}[k]`), never of
-  what is in it, so it is now built once to the high-water mark and reused —
-  taking six `push_back`s per quad off the emission path, and with them the
-  renumbering pass `_insertPanelBackground()` used to run every time a panel's
-  background quad was rotated in front of its content. The vertex buffer is
-  now a `resize()`-once cursor (`_quadSlot()`) rather than `push_back`, which
-  was re-checking capacity per vertex for a bound the caller already knew.
-  Measured on Sandbox at 1920x1080 with its tool panels open (the
-  `AURA_ENABLE_DEBUG_MODE` benchmark, median of several thousand-frame runs):
-  UI build time from ~45us to ~19us per frame, CPU frame time from ~88us to
-  ~54us net of swapchain wait, with the heap allocation count unchanged. Below
-  the presentation ceiling of the test GPU/compositor this converts directly
-  to FPS (+30-50% depending on resolution in that environment); above it, it
-  is headroom banked against heavier scenes. All 13 existing tests pass
-  unchanged, including `test_ui.cpp`'s UTF-8-correct editing and single-batch
-  coverage.
-- **Text fields never received a keystroke on the Wayland backend.** The
-  compositor sends `wl_keyboard`'s keymap once, immediately in reply to
-  `get_keyboard`, and libwayland drops an event that reaches a proxy with no
-  listener; wma subscribed a roundtrip later, in `setupInputDevices()`, so xkb
-  was never initialised. Key *bindings* still worked — those come from a static
-  evdev table — which is what made this look like a UI bug: a field focused,
-  drew its caret, and ignored everything typed into it. Fixed in libwma by
-  subscribing where the keyboard is created; `WaylandKeyboardListener::
-  initialize()` is now idempotent, since `setupInputDevices()` still calls it.
-- **A text field focused by clicking lost its Escape snapshot.** `inputText()`
-  detected the frame it gained focus by comparing `_focus.lastFrame`, which
-  cannot see a focus granted from inside the widget body — as a click's is, one
-  frame after `_focusItem()` has already resolved `focused`. Escape therefore
-  reverted a click-focused field to an empty string instead of its previous
-  value. Now tracked on the field's own retained state, and the caret is left
-  where the click put it rather than jumped to the end.
-- **Engine configuration can be set in code** (`aura3d::AuraConfig`), so an
-  application that has nothing for a user to edit — a viewer, a tool — ships
-  one binary instead of a binary plus a `settings.json` it must not lose.
-  `Engine(config)` runs with no file at all; `Engine(config, path)` lets a file
-  override it key by key, and a file that is missing or unreadable now warns
-  and falls back rather than silently reporting a load. The defaults are held
-  beside the JSON document rather than merged into it, so `reload()` cannot
-  drop them. Four fields are `std::optional`, where "unset" is a real state:
-  `window.vsyncMode`, `renderer.validationLayers`, `audio.backend` and
-  `logging.level`. See
-  [docs/02-project-configuration.md](docs/02-project-configuration.md).
-- **Tests:** `test_settings` covers the three-layer resolution, and
-  `test_ui_input` drives `Context::attachInput()` and `ui::InputRouter` from a
-  fake window manager — the wiring every application uses and that
-  `test_ui`'s synthetic `newFrame(const Input&)` path never touched.
+- `IRenderer` frame-lifecycle comments rewritten to explain `run()` vs. hand-rolled loops instead of restating function names
+- `docs/14-auraui-toolkit.md`: AuraUI, renumbered in ahead of Audio (12) and Debug & Benchmark Mode (13)
 
 ## [0.1.0]
 

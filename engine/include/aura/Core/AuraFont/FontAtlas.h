@@ -178,6 +178,37 @@ public:
     /// Largest radius @ref cornerMask will place.
     static constexpr u32 kMaxCornerRadius = 64;
 
+    /**
+     * @brief Reserves (once per @p id) an exact-coverage mask of a convex
+     *        polygon.
+     *
+     * The general form of @ref cornerMask, and what keeps every icon a UI
+     * needs -- a chevron, a disclosure arrow, a tick, a close cross -- from
+     * becoming its own drawing primitive. The shape is rasterized once into
+     * the atlas and drawn thereafter as a single textured quad, in whatever
+     * colour the vertex carries.
+     *
+     * Coverage is the *exact* area of the polygon inside each texel, obtained
+     * by clipping it against the texel's square and taking the signed area of
+     * what survives -- not a point sample and not supersampling, so a diagonal
+     * edge is as smooth as the arithmetic allows at any size.
+     *
+     * @param id Caller's identity for this shape. The same id returns the
+     *        cached cell without re-rasterizing, so an icon costs its
+     *        rasterization once for the life of the atlas.
+     * @param size Cell edge in texels; the shape is drawn this many pixels wide.
+     * @param polygon Vertices in cell space, @c [0,size] on both axes. Must be
+     *        convex; winding does not matter.
+     *
+     * @return The cell's UV bounds, or nullptr when @p polygon is not a
+     *         polygon, @p size is out of range, or the atlas is too full.
+     */
+    [[nodiscard]] const UvRect* convexMask(u32 id, u32 size,
+                                           std::span<const glm::vec2> polygon) noexcept;
+
+    /// Largest cell edge @ref convexMask will place.
+    static constexpr u32 kMaxMaskSize = 64;
+
     [[nodiscard]] float lineHeight() const noexcept { return _lineHeight; }
     [[nodiscard]] float ascent() const noexcept { return _ascent; }
     [[nodiscard]] float descent() const noexcept { return _descent; }
@@ -261,6 +292,11 @@ private:
      * dense integer, so there is nothing for a hash to buy.
      */
     std::array<std::optional<UvRect>, kMaxCornerRadius + 1> _cornerMasks{};
+
+    //! convexMask() results, keyed by the caller's shape id. A map rather than
+    //! the flat array above: these ids are sparse and chosen by the caller,
+    //! where a radius is a small dense integer.
+    std::unordered_map<u32, UvRect> _convexMasks;
 
     //! Shelf allocator cursor.
     u32 _shelfX = 0;

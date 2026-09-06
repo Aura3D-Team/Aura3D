@@ -38,7 +38,8 @@ public:
      * application wants sensible built-in settings that a user may still
      * override without the application shipping a file of its own.
      */
-    Engine(const aura3d::AuraConfig& defaults, const std::string& configPath);
+    Engine(const aura3d::AuraConfig& defaults, const std::string& configPath,
+           aura3d::IRenderer::WindowFactory windowFactory = {});
 
     ~Engine();
 
@@ -116,6 +117,7 @@ private:
     void _adoptRenderer(aura3d::RendererChoice choice);
 
 private:
+    aura3d::IRenderer::WindowFactory _windowFactory;
     std::unique_ptr<aura3d::JobSystem> _jobs;
     std::unique_ptr<aura3d::IRenderer> _renderer;
     std::unique_ptr<aura3d::ResourceManager> _resources;

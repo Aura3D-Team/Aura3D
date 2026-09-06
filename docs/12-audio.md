@@ -1,4 +1,4 @@
-# 14. Audio
+# 12. Audio
 
 Aura3D plays sound through `aura3d::AudioEngine`, reached from
 `Engine::audio()`. It loads WAV and Ogg Vorbis files, mixes any number of
