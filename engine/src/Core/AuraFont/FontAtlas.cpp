@@ -407,6 +407,42 @@ const FontAtlas::UvRect* FontAtlas::cornerMask(u32 radius) noexcept
     return &*slot;
 }
 
+const FontAtlas::UvRect* FontAtlas::cornerRingMask(u32 radius, f32 width) noexcept
+{
+    if (!radius || radius > kMaxCornerRadius || !std::isfinite(width) || width <= 0) return nullptr;
+    const u32 quantized = std::clamp(static_cast<u32>(std::lround(std::min(width, f32(radius)) * 256)), 1u, radius * 256);
+    const u32 key = (radius << 16) | quantized;
+    if (auto it = _cornerRingMasks.find(key); it != _cornerRingMasks.end()) return &it->second;
+    const auto origin = reserveCell(radius, radius);
+    if (!origin) return nullptr;
+
+    // Difference of exact disc areas. Drawing the outer disc and covering its
+    // centre with the fill is incorrect for a translucent fill or an outline.
+    const auto area = [](double radius, double x0, double y0) {
+        if (radius <= 0 || x0 >= radius || y0 >= radius) return 0.0;
+        const double x1 = x0 + 1, y1 = y0 + 1;
+        const auto integral = [radius](double x) {
+            x = std::clamp(x, 0.0, radius);
+            return .5 * (x * std::sqrt(std::max(0.0, radius * radius - x * x)) + radius * radius * std::asin(x / radius));
+        };
+        const double a = std::clamp(std::sqrt(std::max(0.0, radius * radius - y1 * y1)), x0, x1);
+        const double b = std::clamp(std::sqrt(std::max(0.0, radius * radius - y0 * y0)), x0, x1);
+        return std::clamp((a - x0) + integral(b) - integral(a) - (b - a) * y0, 0.0, 1.0);
+    };
+    const double inner = double(radius) - double(quantized) / 256;
+    std::vector<u8> cell(usize(radius) * radius);
+    for (u32 y = 0; y < radius; ++y) for (u32 x = 0; x < radius; ++x) {
+        const double x0 = double(radius - x - 1), y0 = double(radius - y - 1);
+        const double coverage = area(radius, x0, y0) - area(inner, x0, y0);
+        cell[usize(y) * radius + x] = u8(std::lround(std::clamp(coverage, 0.0, 1.0) * 255));
+    }
+    blitCoverage(cell.data(), radius, *origin, radius, radius);
+    markDirty(origin->x, origin->y, radius, radius);
+    const UvRect uv{{f32(origin->x) / _desc.width, f32(origin->y) / _desc.height},
+                    {f32(origin->x + radius) / _desc.width, f32(origin->y + radius) / _desc.height}};
+    return &_cornerRingMasks.emplace(key, uv).first->second;
+}
+
 namespace {
 
 //! Widest polygon convexMask() will clip, and the working buffer it needs.

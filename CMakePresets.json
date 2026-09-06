@@ -97,7 +97,8 @@
         "ANDROID_ABI": "arm64-v8a",
         "ANDROID_PLATFORM": "android-29",
         "ANDROID_STL": "c++_shared",
-        "CMAKE_PREFIX_PATH": "$env{LOCAL_PREFIX};$env{LOCAL_PREFIX}/android"
+        "CMAKE_PREFIX_PATH": "$env{LOCAL_PREFIX}",
+        "SDL3_ROOT": "$env{LOCAL_PREFIX}/android"
       }
     },
     {
@@ -108,7 +109,8 @@
       "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_PREFIX_PATH": "$env{LOCAL_PREFIX};$env{LOCAL_PREFIX}/wasm"
+        "CMAKE_PREFIX_PATH": "$env{LOCAL_PREFIX}",
+        "SDL3_ROOT": "$env{LOCAL_PREFIX}/wasm"
       }
     }
   ],

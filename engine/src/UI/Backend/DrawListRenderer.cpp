@@ -294,6 +294,45 @@ void DrawListRenderer::_roundedRect(const Rect& bounds, const Rect& clip, Corner
     _solid({{right - br, bottom - bottomBand}, {right, bottom - br}}, clip, color);
 }
 
+void DrawListRenderer::_roundedBorder(const Rect& bounds, const Rect& clip, Corners radius,
+                                      f32 width, const glm::vec4& color)
+{
+    const f32 limit = std::min({bounds.width() * .5f, bounds.height() * .5f, kMaxRadius});
+    const auto cap = [limit](f32 r) { return std::floor(std::clamp(r, 0.f, limit)); };
+    const f32 tl = cap(radius.topLeft), tr = cap(radius.topRight);
+    const f32 bl = cap(radius.bottomLeft), br = cap(radius.bottomRight);
+    const f32 l = bounds.min.x, r = bounds.max.x, t = bounds.min.y, b = bounds.max.y;
+    const f32 ctl = std::max(tl, width), ctr = std::max(tr, width);
+    const f32 cbl = std::max(bl, width), cbr = std::max(br, width);
+    _solid({{l + ctl, t}, {r - ctr, t + width}}, clip, color);
+    _solid({{l + cbl, b - width}, {r - cbr, b}}, clip, color);
+    _solid({{l, t + ctl}, {l + width, b - cbl}}, clip, color);
+    _solid({{r - width, t + ctr}, {r, b - cbr}}, clip, color);
+
+    FontAtlas* atlas = _shaper->page(_currentPage);
+    const auto corner = [&](f32 x, f32 y, f32 radius, f32 side, bool flipX, bool flipY) {
+        const auto rectangle = [&](f32 x0, f32 y0, f32 x1, f32 y1) {
+            return Rect{{x + (flipX ? side - x1 : x0), y + (flipY ? side - y1 : y0)},
+                        {x + (flipX ? side - x0 : x1), y + (flipY ? side - y0 : y1)}};
+        };
+        if (radius < 1.f || !atlas) { _solid(Rect::fromSize({x, y}, {side, side}), clip, color); return; }
+        const u32 pixels = std::clamp(u32(std::ceil(radius * _scale)), 1u, FontAtlas::kMaxCornerRadius);
+        const auto* mask = atlas->cornerRingMask(pixels, width * pixels / radius);
+        if (mask) {
+            const glm::vec2 uv0{flipX ? mask->max.x : mask->min.x, flipY ? mask->max.y : mask->min.y};
+            const glm::vec2 uv1{flipX ? mask->min.x : mask->max.x, flipY ? mask->min.y : mask->max.y};
+            _quad(rectangle(0, 0, radius, radius), clip, uv0, uv1, color);
+        }
+        // A border wider than this corner fills the rest of its corner block.
+        _solid(rectangle(radius, 0, side, side), clip, color);
+        _solid(rectangle(0, radius, radius, side), clip, color);
+    };
+    corner(l, t, tl, ctl, false, false);
+    corner(r - ctr, t, tr, ctr, true, false);
+    corner(l, b - cbl, bl, cbl, false, true);
+    corner(r - cbr, b - cbr, br, cbr, true, true);
+}
+
 void DrawListRenderer::_text(const DrawCommand& command)
 {
     const ShapedText& text = *command.text;
@@ -341,12 +380,12 @@ void DrawListRenderer::build(const DrawList& list, f32 scale)
         {
             const bool outlined = command.borderWidth > 0.0f && command.borderColor.a > 0.0f;
 
-            //! The fill is laid *over* the border rather than punched out of
-            //! it: a rounded ring would have to be built span by span for a
-            //! difference nothing can see, since the fill is opaque where the
-            //! two overlap.
-            if (outlined)
+            if (outlined && command.color.a >= .999f)
                 _roundedRect(command.bounds, command.clip, command.radius, command.borderColor);
+            else if (outlined)
+                _roundedBorder(command.bounds, command.clip, command.radius,
+                    std::min(command.borderWidth, std::min(command.bounds.width(), command.bounds.height()) * .5f),
+                    command.borderColor);
 
             if (command.color.a <= 0.0f)
                 break;

@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <span>
 #include <vector>
+#include <unordered_map>
 
 #include "aura/Renderer/IRenderer.h"
 #include "aura/UI/UI.hpp"
@@ -58,22 +59,82 @@ public:
 
         batches.push_back({vertices.size(), indices.size(), texture});
         vertexTotal += vertices.size();
+
+        //! Kept so a test can ask what the backend actually covered, not just
+        //! how much it submitted.
+        quads.insert(quads.end(), vertices.begin(), vertices.end());
     }
 
-    TextureHandle createDynamicTexture(u32, u32) override { return ++_next; }
+    struct Texture { u32 width, height; std::vector<u8> rgba; };
+    std::unordered_map<TextureHandle, Texture> textures;
+    TextureHandle createDynamicTexture(u32 width, u32 height) override {
+        const auto handle = ++_next;
+        textures.emplace(handle, Texture{width, height, std::vector<u8>(usize(width) * height * 4)});
+        return handle;
+    }
 
-    void updateTextureRegion(TextureHandle, u32, u32, u32, u32, const u8*) override
+    void updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8* rgba) override
     {
         ++uploads;
+        auto& texture = textures.at(handle);
+        for (u32 row = 0; row < height; ++row)
+            std::copy_n(rgba + usize(row) * width * 4, usize(width) * 4,
+                        texture.rgba.data() + (usize(y + row) * texture.width + x) * 4);
+    }
+
+    // Sample submitted geometry AND the uploaded coverage texture. Geometry
+    // alone cannot distinguish a rounded ring from its rectangular mask quad.
+    float alphaAt(glm::vec2 point) const {
+        usize start = 0; float alpha = 0;
+        for (const auto& batch : batches) {
+            const auto& texture = textures.at(batch.texture);
+            for (usize base = start; base < start + batch.vertexCount; base += 4) {
+                const auto& a = quads[base]; const auto& b = quads[base + 2];
+                if (point.x < a.pos.x || point.y < a.pos.y || point.x >= b.pos.x || point.y >= b.pos.y) continue;
+                const auto uv = a.texCoord + (b.texCoord - a.texCoord) * ((point - a.pos) / (b.pos - a.pos));
+                const u32 x = std::min(u32(std::max(0.f, uv.x * texture.width)), texture.width - 1);
+                const u32 y = std::min(u32(std::max(0.f, uv.y * texture.height)), texture.height - 1);
+                const float coverage = texture.rgba[(usize(y) * texture.width + x) * 4 + 3] / 255.f * a.color.a;
+                alpha = coverage + alpha * (1 - coverage);
+            }
+            start += batch.vertexCount;
+        }
+        return alpha;
     }
 
     void clear()
     {
         batches.clear();
+        quads.clear();
         vertexTotal = 0;
     }
 
+    /// True when any emitted quad covers @p point with a visible colour.
+    [[nodiscard]] bool covers(glm::vec2 point) const
+    {
+        for (usize base = 0; base + 4 <= quads.size(); base += 4)
+        {
+            glm::vec2 low = quads[base].pos;
+            glm::vec2 high = low;
+            f32 alpha = 0.0f;
+
+            for (usize corner = 0; corner < 4; ++corner)
+            {
+                low = glm::min(low, quads[base + corner].pos);
+                high = glm::max(high, quads[base + corner].pos);
+                alpha = std::max(alpha, quads[base + corner].color.a);
+            }
+
+            if (alpha > 0.0f && point.x > low.x && point.x < high.x && point.y > low.y &&
+                point.y < high.y)
+                return true;
+        }
+
+        return false;
+    }
+
     std::vector<Batch> batches;
+    std::vector<gfx::Vertex2D> quads;
     usize vertexTotal = 0;
     usize uploads = 0;
     bool indicesInRange = true;
@@ -383,6 +444,70 @@ void testAtlasSurvivesScaleAndFirstFrameMasks()
                "DPI changes preserve pages referenced by retained glyph runs");
 }
 
+void testOutlineWithoutFillDrawsAnOutline()
+{
+    Harness harness;
+    auto& page = harness.root.setContent<Column>();
+
+    auto& box = page.add<Widget>();
+    box.layout().width = Length::px(120.0f);
+    box.layout().height = Length::px(40.0f);
+    box.style().outline(glm::vec4{1.0f, 0.0f, 0.0f, 1.0f}, 2.0f).rounded(10.0f);
+
+    harness.frame();
+
+    //! A border with no fill used to reach the backend as one rounded rect in
+    //! the border colour: the two-pass form relies on the fill covering its
+    //! middle, and there was no fill. Every focus ring drew as a solid block.
+    AURA_CHECK(!harness.renderer.covers(box.bounds().center()),
+               "an outline with no fill leaves its middle uncovered");
+
+    AURA_CHECK(harness.renderer.covers({box.bounds().center().x, box.bounds().min.y + 1.0f}),
+               "and still covers its own edge");
+}
+
+void testTranslucentFillDoesNotShowItsBorder()
+{
+    Harness harness;
+    auto& page = harness.root.setContent<Column>();
+
+    auto& box = page.add<Widget>();
+    box.layout().width = Length::px(120.0f);
+    box.layout().height = Length::px(40.0f);
+    box.style()
+        .fill(glm::vec4{1.0f, 1.0f, 1.0f, 0.07f})
+        .outline(glm::vec4{0.0f, 1.0f, 1.0f, 1.0f}, 1.0f)
+        .rounded(10.0f);
+
+    harness.frame();
+
+    //! The border used to be laid down across the whole rectangle and then
+    //! "covered" by the fill. A 7%-alpha fill covers nothing, so a bordered
+    //! field read as a solid block of its border colour.
+    bool solidBorderInside = false;
+
+    for (usize base = 0; base + 4 <= harness.renderer.quads.size(); base += 4)
+    {
+        glm::vec2 low = harness.renderer.quads[base].pos;
+        glm::vec2 high = low;
+
+        for (usize corner = 0; corner < 4; ++corner)
+        {
+            low = glm::min(low, harness.renderer.quads[base + corner].pos);
+            high = glm::max(high, harness.renderer.quads[base + corner].pos);
+        }
+
+        const glm::vec4 color = harness.renderer.quads[base].color;
+        const bool isBorder = color.a > 0.5f && color.g > 0.5f && color.r < 0.5f;
+
+        if (isBorder && high.x - low.x > 100.0f && high.y - low.y > 30.0f)
+            solidBorderInside = true;
+    }
+
+    AURA_CHECK(!solidBorderInside,
+               "a translucent fill does not leave its border painted underneath it");
+}
+
 void testStyleMetricsInvalidateLayout()
 {
     Harness harness;
@@ -391,6 +516,26 @@ void testStyleMetricsInvalidateLayout()
     button.style().height = 80;
     harness.frame();
     AURA_CHECK(button.bounds().height() >= 80, "style height changes remeasure controls");
+}
+
+void testRoundedOutlineCoverage()
+{
+    for (float scale : {1.f, 1.5f, 2.f}) {
+        Harness harness;
+        harness.list.begin(Rect::fromSize({0, 0}, {120, 40}));
+        harness.list.drawRect(Rect::fromSize({0, 0}, {120, 40}), glm::vec4{0},
+                              glm::vec4{1}, 1.f, Corners::all(10.f));
+        harness.backend.build(harness.list, scale);
+        harness.backend.submit();
+        AURA_CHECK(harness.renderer.alphaAt(glm::vec2{.5f, .5f} * scale) < .01f,
+                   "a rounded outline leaves the square's outside corner transparent at every scale");
+        AURA_CHECK(harness.renderer.alphaAt(glm::vec2{5.5f, 1.5f} * scale) > .2f,
+                   "the border follows its curved corner instead of leaving a notch");
+        AURA_CHECK(harness.renderer.alphaAt(glm::vec2{8.5f, 8.5f} * scale) < .01f,
+                   "the corner mask does not paint inside the rounded ring");
+        AURA_CHECK(harness.renderer.alphaAt(glm::vec2{60.5f, .5f} * scale) > .99f,
+                   "the straight edge joins the curved outline");
+    }
 }
 
 } // namespace
@@ -409,6 +554,9 @@ int main()
     testAnimationDirtiesFrames();
     testAtlasSurvivesScaleAndFirstFrameMasks();
     testStyleMetricsInvalidateLayout();
+    testOutlineWithoutFillDrawsAnOutline();
+    testTranslucentFillDoesNotShowItsBorder();
+    testRoundedOutlineCoverage();
 
     AURA_TEST_MAIN_RETURN();
 }

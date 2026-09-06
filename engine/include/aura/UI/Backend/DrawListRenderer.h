@@ -113,6 +113,8 @@ private:
 
     void _roundedRect(const Rect& bounds, const Rect& clip, Corners radius,
                       const glm::vec4& color);
+    void _roundedBorder(const Rect& bounds, const Rect& clip, Corners radius,
+                        f32 width, const glm::vec4& color);
 
     void _text(const DrawCommand& command);
     /// @}
