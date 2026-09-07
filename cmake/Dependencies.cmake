@@ -30,7 +30,16 @@ endif()
 
 # glm reaches the public headers, so it must be a real link dependency, not
 # something each TU happens to find through ink/wma's include path.
-find_package(glm CONFIG QUIET)
+#
+# Skipped for iOS: CMAKE_PREFIX_PATH is pinned to LOCAL_PREFIX above, but
+# CMake's builtin system prefix list still searches Homebrew regardless, and
+# Homebrew's glm ships a compiled libglm.dylib built for macOS -- linking it
+# into an iOS binary fails at link time ("building for iOS, but linking in
+# dylib built for macOS"). glm is header-only upstream, so the find_path
+# fallback below is correct for iOS too.
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    find_package(glm CONFIG QUIET)
+endif()
 
 if(TARGET glm::glm)
     set(AURA_GLM_HAS_PACKAGE ON)
