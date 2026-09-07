@@ -175,6 +175,10 @@ public:
      */
     [[nodiscard]] const UvRect* cornerMask(u32 radius) noexcept;
 
+    /// Quarter-annulus coverage for a rounded border. Width is in mask texels,
+    /// quantized to 1/256 pixel for caching. Shares the regular glyph texture.
+    [[nodiscard]] const UvRect* cornerRingMask(u32 radius, f32 width) noexcept;
+
     /// Largest radius @ref cornerMask will place.
     static constexpr u32 kMaxCornerRadius = 64;
 
@@ -292,6 +296,7 @@ private:
      * dense integer, so there is nothing for a hash to buy.
      */
     std::array<std::optional<UvRect>, kMaxCornerRadius + 1> _cornerMasks{};
+    std::unordered_map<u32, UvRect> _cornerRingMasks;
 
     //! convexMask() results, keyed by the caller's shape id. A map rather than
     //! the flat array above: these ids are sparse and chosen by the caller,

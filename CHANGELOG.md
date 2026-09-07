@@ -2,6 +2,42 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.2.2]
+
+### Added
+
+- `FontAtlas::cornerRingMask()` and a rounded-ring path in `DrawListRenderer`: an outline is now built as a ring rather than laid down as a filled rounded rect for the fill to cover. A `strokeRect()`, a focus ring and any bordered widget whose fill is transparent or translucent used to arrive as a solid block of the border colour — every focused control, and every text field over a panel
+- `Widget::effectivelyVisible()`, `Widget::onPointerCancel()` and `UIRoot::cancelInput()`: the three pieces a host needs to drop pointer capture, hover and focus when a window loses focus or a subtree is hidden
+- Test suites `test_aui_lifecycle` and `test_aui_signal`; `test_aui_paint` gained backend-coverage checks that assert what the renderer actually filled, not what the draw list recorded
+
+### Changed
+
+- AuraUI source reorganized: `InputRouter` folded into `UIRoot` and `OverlayLayer`, widgets split into `Widgets/{Basic,Controls,Layouts,Menus,Navigation}`, `Style.cpp` became `Core/Theme.cpp`. `test_ui`/`test_ui_input` replaced by the per-area `test_aui_*` suites
+- `IRenderer::run()` and the Vulkan and Metal backends no longer bind Escape to `cleanup()`. The binding destroyed the window from inside a live input callback, and Escape belongs to the application — a shell needs it to dismiss a popup
+- `Selectable` insets its text by the style's padding, as `Button` already did; a tab strip drew as touching words without it
+
+### Fixed
+
+- `Signal` iterated a vector its own callbacks could reallocate, so connecting or disconnecting from inside an emission was a use-after-free
+- Hiding a widget left the root holding it as focused, hovered or pointer-captured, so a hidden subtree kept taking input
+- Pointer dispatch, the hover chain and the animation list walked raw pointers across handlers free to destroy them
+- `AtlasTextShaper::setScale()` dropped every glyph page while retained runs still held page indices and UVs, so a DPI change blanked or corrupted text already on screen
+- Corner masks allocated while a frame's quads were being emitted were uploaded a frame late
+- Tab could leave a modal overlay, and focus could be set outside one
+
+## [0.2.1]
+
+### Fixed
+
+- `cmake/Dependencies.cmake` never actually looked for glm — it resolved by accident wherever ink/wma's interface include path happened to carry it, so a from-scratch Windows configure failed on `glm/glm.hpp`. `find_package(glm CONFIG)` first, falling back to `find_path` plus an imported target where glm ships no CMake package; `cmake/Aura3DConfig.cmake.in` reproduces whichever path was taken
+- Android install skipped `install()` entirely — no CMake package, no `find_package(Aura3D)`
+- iOS: `std::format_to` needs 16.3+ (deployment target raised 16.0 → 16.3)
+- Windows CI: vcpkg static triplet needs `CMAKE_MSVC_RUNTIME_LIBRARY` set explicitly
+
+### Docs
+
+- `IRenderer` frame-lifecycle comments rewritten to explain `run()` vs. hand-rolled loops instead of restating function names
+
 ## [0.2.0]
 
 ### Added
@@ -33,14 +69,9 @@ All notable changes to Aura3D are documented in this file.
 
 - Wayland: keyboard events (including AuraUI text input) could arrive with no xkb keymap loaded — subscribed a roundtrip too late (fixed in libwma)
 - `cmake/Aura3DConfig.cmake.in` gated `find_dependency(OpenGL)` wrong for Emscripten
-- `cmake/Dependencies.cmake` never actually looked for glm (worked by accident via ink/wma's include path)
-- Android install skipped `install()` entirely — no CMake package, no `find_package(Aura3D)`
-- iOS: `std::format_to` needs 16.3+ (deployment target raised 16.0 → 16.3)
-- Windows CI: vcpkg static triplet needs `CMAKE_MSVC_RUNTIME_LIBRARY` set explicitly
 
 ### Docs
 
-- `IRenderer` frame-lifecycle comments rewritten to explain `run()` vs. hand-rolled loops instead of restating function names
 - `docs/14-auraui-toolkit.md`: AuraUI, renumbered in ahead of Audio (12) and Debug & Benchmark Mode (13)
 
 ## [0.1.0]
