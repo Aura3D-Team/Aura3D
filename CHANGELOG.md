@@ -2,6 +2,12 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## Unreleased
+
+- Keep Vulkan surface backend SDK includes in the implementation and guard them
+  by the enabled window backend. Android Vulkan builds no longer require unused
+  host GLAD or GLFW headers.
+
 ## [0.2.2]
 
 ### Added
