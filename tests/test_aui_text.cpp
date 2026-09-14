@@ -258,10 +258,38 @@ void testScaleKeepsLogicalMetrics()
                "raising the device-pixel ratio leaves logical metrics unchanged");
 }
 
+void testSoftWrapAffinity()
+{
+    AtlasTextShaper shaper;
+    for (TextWrap wrap : {TextWrap::Word, TextWrap::Character})
+    {
+        ShapedText text;
+        shaper.shape("alpha beta gamma delta", TextStyle{.wrap = wrap}, 60, text);
+        AURA_CHECK(text.lines.size() > 1, "fixture wraps");
+        const usize boundary = text.lines[1].byteBegin;
+        AURA_CHECK(text.lineOf(boundary) == 1, "downstream affinity chooses next line at soft wrap");
+        AURA_CHECK(text.lineOf(boundary, CaretAffinity::Upstream) == 0,
+                   "upstream affinity keeps caret at preceding line end");
+        std::vector<Rect> rects;
+        text.selectionRects(boundary, text.lines[1].byteEnd, rects);
+        AURA_CHECK(!rects.empty() && near(rects.back().min.x, text.lineStartX(1)),
+                   "selection begins at wrapped line start rather than previous line end");
+        CaretAffinity affinity{};
+        const usize hit = text.byteAt({1000, text.lines[0].top + 1}, &affinity);
+        AURA_CHECK(hit == boundary && near(text.caretPosition(hit, affinity).y, text.lines[0].top),
+                   "line-end hit retains its visual affinity");
+    }
+    ShapedText utf;
+    shaper.shape("éééééé", TextStyle{.wrap = TextWrap::Character}, 22, utf);
+    for (const auto& line : utf.lines)
+        AURA_CHECK(line.byteBegin % 2 == 0, "UTF-8 wraps remain on codepoint boundaries");
+}
+
 } // namespace
 
 int main()
 {
+    testSoftWrapAffinity();
     testMeasurement();
     testFontSizeScales();
     testExplicitLineBreaks();

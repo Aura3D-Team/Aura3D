@@ -529,9 +529,39 @@ void test_resampling_preserves_duration()
 
 } // namespace
 
+void test_unload_reclaims_without_callbacks()
+{
+    //! A device that never mixes -- the engine's own fallback for a null
+    //! pointer -- cannot acknowledge a retirement, so it must not be waited on.
+    AudioEngine fallback(nullptr, 4);
+    for (int i = 0; i < 8; ++i)
+        fallback.unloadClip(fallback.createClip(constantClip(0.5f, 0.01f)));
+    AURA_CHECK(fallback.clipCount() == 0, "unloadClip: frees at once when no callback can run");
+
+    //! A live device holds the samples until two blocks have been mixed past
+    //! the stop, since a block may already be reading them.
+    TestRig rig;
+    const AudioClipHandle clip = rig.engine->createClip(constantClip(0.5f, 0.01f));
+    (void)rig.engine->play(clip);
+    rig.engine->unloadClip(clip);
+    rig.engine->update(0.0f);
+    AURA_CHECK(rig.engine->clipCount() == 1, "unloadClip: a mixing device defers reclamation");
+    (void)rig.render();
+    (void)rig.render();
+    rig.engine->update(0.0f);
+    AURA_CHECK(rig.engine->clipCount() == 0, "update: reclaims once the audio thread has moved past the stop");
+
+    //! Stopping the device also proves no callback is running.
+    const AudioClipHandle later = rig.engine->createClip(constantClip(0.5f, 0.01f));
+    rig.device->stop();
+    rig.engine->unloadClip(later);
+    AURA_CHECK(rig.engine->clipCount() == 0, "unloadClip: a stopped device frees at once");
+}
+
 int main()
 {
     test_device_format_reported();
+    test_unload_reclaims_without_callbacks();
     test_play_stop_lifecycle();
     test_invalid_inputs_are_rejected();
     test_missing_file_falls_back_to_silence();

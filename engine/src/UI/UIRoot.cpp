@@ -1,5 +1,7 @@
 #include "aura/UI/UIRoot.h"
 
+#include "aura/Utils/InlineScratch.h"
+
 #include <algorithm>
 #include <iterator>
 
@@ -316,8 +318,10 @@ void UIRoot::_updateHover(glm::vec2 position)
            _hoverChain[shared] == _hoverScratch[shared])
         ++shared;
 
-    std::vector<WidgetRef> leaving;
-    std::vector<WidgetRef> entering;
+    InlineScratch<WidgetRef> leavingStorage;
+    auto& leaving = leavingStorage.values;
+    InlineScratch<WidgetRef> enteringStorage;
+    auto& entering = enteringStorage.values;
     for (usize i = _hoverChain.size(); i-- > shared;)
         leaving.emplace_back(_hoverChain[i]);
     for (usize i = shared; i < _hoverScratch.size(); ++i)
@@ -335,7 +339,8 @@ void UIRoot::_updateHover(glm::vec2 position)
 
 void UIRoot::_dropHover()
 {
-    std::vector<WidgetRef> previous;
+    InlineScratch<WidgetRef> previousStorage;
+    auto& previous = previousStorage.values;
     for (Widget* node : _hoverChain)
         previous.emplace_back(node);
     if (!_hoverChain.empty())
@@ -709,7 +714,8 @@ void UIRoot::_forget(Widget& widget)
     const WidgetRef focus(losesFocus ? std::exchange(_focused, nullptr) : nullptr);
     const bool losesCapture = _isAncestorOf(widget, _capture);
     const WidgetRef capture(losesCapture ? std::exchange(_capture, nullptr) : nullptr);
-    std::vector<WidgetRef> leaving;
+    InlineScratch<WidgetRef> leavingStorage;
+    auto& leaving = leavingStorage.values;
     for (Widget* node : _hoverChain)
         if (_isAncestorOf(widget, node))
             leaving.emplace_back(node);

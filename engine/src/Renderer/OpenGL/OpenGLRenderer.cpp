@@ -283,7 +283,6 @@ void OpenGLRenderer::beginFrame()
 
     if (flags->resized) {
         flags->resized = false;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         handleWindowChanges();
     }
 }

@@ -98,7 +98,7 @@ VkCommandPool VkCommandManager::getThreadCommandPool()
 {
     ThreadPools& pools = _threadPools();
     if (pools.upload == VK_NULL_HANDLE)
-        pools.upload = _createPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
+        pools.upload = _createPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
     return pools.upload;
 }

@@ -246,6 +246,11 @@ the *next* one, one disconnected is skipped. A `Connection` that outlives its
 
 ## Text
 
+At shared soft-wrap boundaries, `CaretAffinity::Downstream` (the default) places
+the caret on the next line; `Upstream` keeps it on the preceding line.
+`byteAt()` can return affinity alongside the byte offset. Selection endpoints
+are resolved on each selected line, including at UTF-8 wrap boundaries.
+
 Layout never touches a font. It asks the shaper for a `ShapedText` — positioned
 glyph quads plus the line structure — and every other question is answered from
 that one object.

@@ -65,6 +65,7 @@ void VkIndexBufferManager::createIndexBufferImpl(const std::string& name,
 
     const VkDeviceSize bufferSize = sizeof(IndexT) * indices.size();
     IndexBufferInfo bufferInfo{};
+    bufferInfo.capacityBytes = bufferSize;
     bufferInfo.indexCount = static_cast<u32>(indices.size());
     bufferInfo.indexType = indexType;
 
@@ -86,6 +87,8 @@ void VkIndexBufferManager::createIndexBufferImpl(const std::string& name,
         if (bufferInfo.mappedPointer)
             std::ranges::copy(indices, static_cast<IndexT*>(bufferInfo.mappedPointer));
 
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0, bufferSize));
+
         INK_DEBUG << "Created persistently mapped index buffer: " << name
                   << ", indices: " << bufferInfo.indexCount;
     } else {
@@ -100,6 +103,8 @@ void VkIndexBufferManager::createIndexBufferImpl(const std::string& name,
             std::ranges::copy(indices, data);
             _memoryManager->unmap(staging);
         }
+
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), staging.allocation, 0, bufferSize));
 
         AllocatedBuffer gpu = _memoryManager->createDeviceLocalBuffer(
             bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, sharingMode);
@@ -168,7 +173,10 @@ void VkIndexBufferManager::updateIndexBufferImpl(const std::string& name, std::v
 
     if (bufferInfo.persistent && bufferInfo.mappedPointer)
     {
+        if (indices.size() > bufferInfo.capacityBytes / sizeof(IndexT))
+            throw AuraException("Index buffer update exceeds its capacity");
         std::ranges::copy(indices, static_cast<IndexT*>(bufferInfo.mappedPointer));
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0, indices.size() * sizeof(IndexT)));
         bufferInfo.indexCount = static_cast<u32>(indices.size());
         return;
     }

@@ -1,5 +1,7 @@
 #include "aura/UI/Widget.h"
 
+#include "aura/Utils/InlineScratch.h"
+
 #include <algorithm>
 
 #include "aura/UI/UIRoot.h"
@@ -150,7 +152,8 @@ void Widget::_setRoot(UIRoot* root)
 
     // Attach/detach callbacks may erase or reparent siblings. Never retain
     // vector iterators across those callbacks, or visit a removed child.
-    std::vector<WidgetRef> children;
+    InlineScratch<WidgetRef> childrenStorage;
+    auto& children = childrenStorage.values;
     children.reserve(_children.size());
     for (const auto& child : _children)
         children.emplace_back(child.get());

@@ -256,6 +256,30 @@ void OverlayLayer::closeLightDismissible()
     }
 }
 
+void OverlayLayer::closeFrom(const Widget& member)
+{
+    const usize live = std::min(childCount(), _entries.size());
+    usize from = live;
+    for (usize i = 0; i < live; ++i)
+        if (within(&childAt(i), &member))
+        {
+            from = i;
+            break;
+        }
+    for (usize i = from; i < live; ++i)
+        if (!_entries[i].closing)
+            close(_entries[i].id);
+}
+
+Widget* OverlayLayer::ownerOf(const Widget& member) const noexcept
+{
+    const usize live = std::min(childCount(), _entries.size());
+    for (usize i = 0; i < live; ++i)
+        if (within(&childAt(i), &member))
+            return _entries[i].owner.get();
+    return nullptr;
+}
+
 void OverlayLayer::closeAll()
 {
     for (const Entry& entry : _entries)

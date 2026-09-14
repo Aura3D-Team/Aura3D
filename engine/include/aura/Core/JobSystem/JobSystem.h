@@ -10,9 +10,9 @@
 #include "aura/aura.h"
 
 //! Forward-declared, not included: only the private member's type needs the
-//! name, and pulling ink/ThreadPool.h (<thread>, <mutex>, <queue>, <future>)
+//! name, and pulling ink/ParallelProcessor.h and its threading implementation
 //! into a header this widely included would cost every translation unit.
-namespace ink { class ThreadPool; }
+namespace ink { class ParallelProcessor; }
 
 namespace aura3d {
 
@@ -29,9 +29,8 @@ namespace aura3d {
  * dispatch() directly and would otherwise pay for idle threads.
  *
  * @par Threading
- * dispatch() is synchronous and blocks until every band finishes. Do not call
- * it from inside another dispatch() -- nesting deadlocks against a pool with
- * no spare workers. Lazy pool construction is thread-safe.
+ * dispatch() joins all bands before returning or rethrowing an exception.
+ * Parallel calls serialize; nested dispatch runs inline on its caller.
  */
 class JobSystem {
 public:
@@ -56,7 +55,7 @@ public:
      * needs no synchronisation of its own.
      *
      * @param itemCount Size of the range; zero or negative does nothing.
-     * @param body Must not throw. An exception escaping a band is discarded.
+     * @param body Exceptions propagate after all bands finish.
      */
     void dispatch(i32 itemCount, const BandBody& body) const;
 
@@ -74,7 +73,7 @@ private:
     //! calling thread. Mutable because dispatch() is logically const but
     //! builds the pool lazily on its first call.
     mutable std::once_flag _poolOnce;
-    mutable std::unique_ptr<ink::ThreadPool> _pool;
+    mutable std::unique_ptr<ink::ParallelProcessor> _pool;
 };
 
 } // namespace aura3d

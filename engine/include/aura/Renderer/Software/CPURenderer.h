@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "aura/Renderer/IRenderer.h"
+#include "CpuAura/ClipGeometry.h"
 #include "CpuAura/CpuFrameBufferManager.h"
 
 namespace aura3d {
@@ -70,12 +71,19 @@ private:
     std::vector<std::vector<u32>> _indexBufferPool;
     std::vector<std::vector<cpu::Texture>> _texturePool;
 
-    /*
-     * Staging area the vertex stage projects into before handing a whole draw
-     * call to the framebuffer manager. A member, cleared but never shrunk, so
-     * the per-draw path allocates nothing once a scene reaches steady state
-     */
-    std::vector<cpu::ScreenTriangle> _projectedTriangles;
+    /// One transformed and lit vertex of the bound buffer, tagged with the
+    /// draw that produced it.
+    struct CachedVertex {
+        ClipVertex vertex{};
+        /// Equal to _drawStamp when `vertex` is current for this draw call.
+        u64 stamp = 0;
+    };
+    /// Indexed by vertex index. An indexed mesh references each vertex
+    /// several times; stamping lets drawIndexed() transform it once per draw
+    /// without clearing the whole array between draws.
+    std::vector<CachedVertex> _transformed;
+    /// Incremented per drawIndexed(); a wrap resets every stamp first.
+    u64 _drawStamp = 0;
 
     VertexBufferHandle _boundVertexBuffer;
     IndexBufferHandle _boundIndexBuffer;
