@@ -809,13 +809,29 @@ void TextField::_reshape()
 
     const TextStyle style = _style();
 
-    if (_shapedSource == text.get() && _shapedFontSize == style.pixelSize)
+    if (_shapedSource == text.get() && _shapedFontSize == style.pixelSize && _shapedObscured == _obscured)
         return;
 
-    shaper->shape(text.get(), style, kUnbounded, _shaped);
+    //! One asterisk per byte, not per character: every caret and selection
+    //! offset is a byte offset into the real text, and this keeps them valid
+    //! in the shaped stand-in without a second mapping.
+    if (_obscured)
+        shaper->shape(std::string(text.get().size(), '*'), style, kUnbounded, _shaped);
+    else
+        shaper->shape(text.get(), style, kUnbounded, _shaped);
 
     _shapedSource = text.get();
     _shapedFontSize = style.pixelSize;
+    _shapedObscured = _obscured;
+}
+
+void TextField::setObscured(bool obscured)
+{
+    if (_obscured == obscured)
+        return;
+    _obscured = obscured;
+    invalidateLayout();
+    invalidatePaint();
 }
 
 glm::vec2 TextField::measureContent(const Constraints&)
@@ -1141,7 +1157,8 @@ void TextField::accessibility(AccessibilityInfo& out) const
     out.role = Role::TextField;
     out.readOnly = _readOnly;
 
-    if (out.name.empty())
+    //! A passphrase is not read back to anyone.
+    if (out.name.empty() && !_obscured)
         out.name = text.get();
 
     if (out.description.empty())

@@ -361,6 +361,11 @@ public:
     void setReadOnly(bool readOnly);
     [[nodiscard]] bool readOnly() const noexcept { return _readOnly; }
 
+    /// Draws one asterisk per byte in place of the text, for a passphrase.
+    /// The text itself, the caret and the selection are untouched.
+    void setObscured(bool obscured);
+    [[nodiscard]] bool obscured() const noexcept { return _obscured; }
+
     void selectAll();
     void setCaret(usize byte, bool extendSelection = false);
     [[nodiscard]] usize caret() const noexcept { return _caret; }
@@ -409,6 +414,7 @@ private:
     //! What _shaped was produced from, so typing re-shapes once per keystroke
     //! and a repaint re-shapes not at all.
     std::string _shapedSource;
+    bool _shapedObscured = false;
     f32 _shapedFontSize = 0.0f;
 
     usize _caret = 0;
@@ -419,6 +425,7 @@ private:
     f32 _blink = 0.0f;
 
     bool _readOnly = false;
+    bool _obscured = false;
     bool _dragging = false;
     std::vector<Rect> _selectionRects;
 };

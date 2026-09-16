@@ -387,6 +387,31 @@ void testMenuAndSubmenu()
                "and choosing it tears down the whole menu stack");
 }
 
+void testMenuCommandLeavesThePanelUnderIt()
+{
+    Harness harness;
+    harness.root.setContent<Column>();
+
+    //! A light-dismissible panel, as a launcher or a popover is, with a
+    //! context menu opened from inside it.
+    auto& panel = harness.root.overlay().open<Column>(OverlayDesc{.placement = Placement::Center});
+    const OverlayLayer::Id panelId = harness.root.overlay().lastId();
+    harness.frame();
+
+    auto& menu = harness.root.overlay().open<Menu>(
+        OverlayDesc{.anchor = Rect{{50.0f, 50.0f}, {50.0f, 50.0f}}, .placement = Placement::Cursor});
+    int chosen = 0;
+    menu.addItem("Pin").activated.connect([&chosen] { ++chosen; });
+    harness.frame();
+
+    harness.click(menu.childAt(0).bounds().center());
+    harness.frame();
+
+    AURA_CHECK(chosen == 1, "the command runs");
+    AURA_CHECK(harness.root.overlay().isOpen(panelId) && harness.root.overlay().topmost() == &panel,
+               "choosing a menu command closes the menu and leaves the panel it came from");
+}
+
 void testTooltipOpensOnDwellAndFollowsHover()
 {
     Harness harness;
@@ -615,6 +640,7 @@ int main()
     testDropdown();
     testDropdownKeyboard();
     testMenuAndSubmenu();
+    testMenuCommandLeavesThePanelUnderIt();
     testTooltipOpensOnDwellAndFollowsHover();
     testTooltipDoesNotShieldTheMenuUnderIt();
     testClickThroughOverlayDoesNotBlockDismissal();
