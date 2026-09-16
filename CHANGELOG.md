@@ -4,6 +4,9 @@ All notable changes to Aura3D are documented in this file.
 
 ## Unreleased
 
+- `TextField::setObscured()` draws a passphrase as asterisks, one per byte so
+  caret and selection offsets stay exact; accessibility does not read it back.
+
 - A chosen menu command closes its menu chain only. `OverlayLayer::closeFrom()`
   and `ownerOf()` replace the light-dismiss sweep that also took down the
   panel the menu was opened from; submenus now record their parent row as owner.

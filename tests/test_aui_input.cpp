@@ -391,6 +391,35 @@ void testTextFieldKeepsUtf8Valid()
     AURA_CHECK(field.caret() == 1, "arrow keys move by character, not by byte");
 }
 
+void testTextFieldObscured()
+{
+    Harness harness;
+    auto& field = harness.root.setContent<Column>().add<TextField>();
+    field.setObscured(true);
+
+    harness.layout();
+    field.requestFocus();
+    harness.root.textInput("séc");
+    harness.layout();
+
+    AURA_CHECK(field.text.get() == "séc", "an obscured field still holds the real text");
+    field.setCaret(0);
+    harness.root.keyDown(wma::KEY_RIGHT);
+    harness.root.keyDown(wma::KEY_RIGHT);
+    AURA_CHECK(field.caret() == 3, "the caret still moves by character over the real bytes");
+    harness.root.keyDown(wma::KEY_BACKSPACE);
+    AURA_CHECK(field.text.get() == "sc", "editing works through the mask");
+
+    AccessibilityInfo info;
+    field.accessibility(info);
+    AURA_CHECK(info.name.empty(), "the secret is not read back through accessibility");
+
+    field.setObscured(false);
+    harness.layout();
+    field.accessibility(info);
+    AURA_CHECK(info.name == "sc", "clearing the mask reveals the text again");
+}
+
 void testTextFieldReadOnly()
 {
     Harness harness;
@@ -523,6 +552,7 @@ int main()
     testShortcuts();
     testTextFieldEditing();
     testTextFieldKeepsUtf8Valid();
+    testTextFieldObscured();
     testTextFieldReadOnly();
     testWheelReachesTheScrollView();
     testAccessibilityTree();
