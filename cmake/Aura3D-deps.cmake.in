@@ -6,7 +6,7 @@
 
 find_dependency(Threads)
 find_dependency(wma)
-find_dependency(ink)
+find_dependency(ink 0.5.0 CONFIG)
 
 # glm::glm is in the link interface either way; where glm ships no CMake package
 # the imported target is rebuilt from headers, as cmake/Dependencies.cmake does.

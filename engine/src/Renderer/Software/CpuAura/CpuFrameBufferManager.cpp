@@ -738,6 +738,22 @@ void CpuFrameBufferManager::submitTriangles2D(std::span<const ScreenTriangle> tr
     _queuedBatches.push_back(batch);
 }
 
+void CpuFrameBufferManager::queueTriangle(const ScreenTriangle& triangle, const Texture* texture, bool overlay)
+{
+    if (_queuedBatches.empty() || _queuedBatches.back().texture != texture ||
+        _queuedBatches.back().overlay != overlay)
+    {
+        QueuedBatch batch;
+        batch.texture = texture;
+        batch.overlay = overlay;
+        batch.first = static_cast<u32>(_queuedTriangles.size());
+        batch.count = 0;
+        _queuedBatches.push_back(batch);
+    }
+    _queuedTriangles.push_back(triangle);
+    ++_queuedBatches.back().count;
+}
+
 void CpuFrameBufferManager::flush()
 {
     if (_queuedTriangles.empty())

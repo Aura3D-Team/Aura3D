@@ -179,7 +179,7 @@ struct ScreenVertex {
 };
 
 //! One triangle's worth of already-projected vertices, as consumed by the
-//! batched/parallel submitTriangles()/submitTriangles2D() entry points.
+//! queued entry points queueTriangle(), submitTriangles() and submitTriangles2D().
 struct ScreenTriangle {
     ScreenVertex v0, v1, v2;
 };
@@ -345,6 +345,19 @@ public:
      * when this returns. Safe to call with an empty queue.
      */
     void flush();
+
+    /**
+     * @brief Queues one triangle, the per-triangle form of submitTriangles().
+     *
+     * Appends straight into the frame's queue, so a vertex stage that emits
+     * triangles one at a time (the clipper does) needs no intermediate list
+     * and no second copy. Consecutive calls with the same @p texture and
+     * @p overlay extend one batch, which keeps flush() replaying draw calls
+     * in submission order exactly as the span forms do.
+     *
+     * @param overlay  `true` for the unlit, alpha-blended 2D path of submitTriangles2D().
+     */
+    void queueTriangle(const ScreenTriangle& triangle, const Texture* texture, bool overlay = false);
 
     // Text rendering
     void drawText(const std::string& text, Point p, u32 color, u32 fontSize = 2);

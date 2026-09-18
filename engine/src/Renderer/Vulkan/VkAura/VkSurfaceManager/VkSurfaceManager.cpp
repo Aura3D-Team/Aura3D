@@ -5,6 +5,16 @@
 #include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
 
+#if WMA_HAS_GLFW
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#endif
+
+#if WMA_HAS_SDL
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+#endif
+
 // X11/Xlib.h and wayland-client.h are kept out of VkSurfaceManager.h (and thus out
 // of every consumer TU) because Xlib.h in particular #defines short, common tokens
 // (None, Bool, True, False, Status, Success, ...) that collide with unrelated code

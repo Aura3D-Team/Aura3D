@@ -1,11 +1,9 @@
 #include "aura/Core/JobSystem/JobSystem.h"
 
 #include <algorithm>
-#include <future>
 #include <thread>
-#include <vector>
 
-#include <ink/ThreadPool.h>
+#include <ink/ParallelProcessor.h>
 
 namespace aura3d {
 namespace {
@@ -24,26 +22,6 @@ namespace {
     return static_cast<i32>((band * itemCount) / bandCount);
 }
 
-class FenceJoiner {
-public:
-    explicit FenceJoiner(std::vector<std::future<void>>& fences) noexcept : _fences(fences) {}
-
-    ~FenceJoiner()
-    {
-        for (std::future<void>& fence : _fences)
-        {
-            try { fence.get(); }
-            catch (...) { }
-        }
-    }
-
-    FenceJoiner(const FenceJoiner&) = delete;
-    FenceJoiner& operator=(const FenceJoiner&) = delete;
-
-private:
-    std::vector<std::future<void>>& _fences;
-};
-
 } // namespace
 
 JobSystem::JobSystem(i32 workerCount)
@@ -60,7 +38,7 @@ void JobSystem::_ensurePool() const
         return;
 
     std::call_once(_poolOnce, [this] {
-        _pool = std::make_unique<ink::ThreadPool>(static_cast<std::size_t>(_workerCount - 1));
+        _pool = std::make_unique<ink::ParallelProcessor>(static_cast<std::size_t>(_workerCount));
     });
 }
 
@@ -78,22 +56,11 @@ void JobSystem::dispatch(i32 itemCount, const BandBody& body) const
         return;
     }
 
-    std::vector<std::future<void>> fences;
-    fences.reserve(static_cast<std::size_t>(bands) - 1u);
-
-    {
-        const FenceJoiner joiner(fences);
-
-        for (i32 band = 1; band < bands; ++band)
-        {
-            const i32 begin = bandEdge(band, itemCount, bands);
-            const i32 end = bandEdge(band + 1, itemCount, bands);
-
-            fences.push_back(_pool->submit([&body, begin, end] { body(begin, end); }));
-        }
-
-        body(0, bandEdge(1, itemCount, bands));
-    }
+    struct Dispatch { const BandBody& body; i32 items; i32 bands; } work{body, itemCount, bands};
+    _pool->run(static_cast<std::size_t>(bands), [&work](std::size_t band) {
+        work.body(bandEdge(static_cast<i64>(band), work.items, work.bands),
+                  bandEdge(static_cast<i64>(band + 1), work.items, work.bands));
+    });
 }
 
 } // namespace aura3d

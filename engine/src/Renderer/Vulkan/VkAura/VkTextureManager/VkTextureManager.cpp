@@ -1,6 +1,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkTextureManager/VkTextureManager.h"
 
 #include <cstring>
+#include <algorithm>
 
 #include "aura/Core/AuraException/AuraException.h"
 
@@ -86,22 +87,15 @@ VkTextureManager::TextureId VkTextureManager::createTextureFromPixels(
     textureData.image = gpuImage.image;
     textureData.allocation = gpuImage.allocation;
 
-    /*
-     * Acquire -> copy -> release, as one command buffer and one submit. Split
-     * across three submissions (which is what a transition/copy/transition
-     * built from self-submitting helpers produces) the same work costs three
-     * full pipeline drains, and the two barriers in between are exactly the
-     * synchronisation that makes a single buffer correct anyway.
-     */
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    // The transition/copy/transition joins the current upload batch.
+    VkCommandBuffer commandBuffer = beginUploadCommands();
     recordLayoutTransition(commandBuffer, textureData.image,
                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    recordCopyBufferToImageRegion(commandBuffer, _staging.buffer, textureData.image,
+    recordCopyBufferToImageRegion(commandBuffer, upload().staging.buffer, textureData.image,
                                   0, 0, width, height);
     recordLayoutTransition(commandBuffer, textureData.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    endSingleTimeCommands(commandBuffer);
 
     textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
     textureData.sampler = createSampler();
@@ -144,7 +138,7 @@ VkTextureManager::TextureId VkTextureManager::createDynamicTexture(u32 width, u3
      * atlas would otherwise mean pushing 16 MB across the bus just to write
      * zeroes. vkCmdClearColorImage does it without any host memory at all.
      */
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    VkCommandBuffer commandBuffer = beginUploadCommands();
 
     recordLayoutTransition(commandBuffer, textureData.image,
                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -165,7 +159,6 @@ VkTextureManager::TextureId VkTextureManager::createDynamicTexture(u32 width, u3
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    endSingleTimeCommands(commandBuffer);
 
     textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
     textureData.sampler = createSampler();
@@ -188,7 +181,8 @@ void VkTextureManager::updateRegion(TextureId id,
     }
 
     TextureData& textureData = _textures[id - 1];
-    if (x + width > textureData.width || y + height > textureData.height)
+    if (x > textureData.width || y > textureData.height ||
+        width > textureData.width - x || height > textureData.height - y)
     {
         INK_ERROR << "VkTextureManager: updateRegion rectangle exceeds the bounds of texture " << id;
         return;
@@ -201,21 +195,16 @@ void VkTextureManager::updateRegion(TextureId id,
         return;
     std::memcpy(data, rgba, static_cast<size_t>(regionBytes));
 
-    /*
-     * The whole patch as one submission. This is the path the text overlay
-     * takes for every character it meets for the first time, so the three
-     * queue drains this used to cost landed mid-frame, once per new glyph.
-     */
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    // Each patch owns a distinct staging range until this batch's fence completes.
+    VkCommandBuffer commandBuffer = beginUploadCommands();
     recordLayoutTransition(commandBuffer, textureData.image,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    recordCopyBufferToImageRegion(commandBuffer, _staging.buffer, textureData.image,
+    recordCopyBufferToImageRegion(commandBuffer, upload().staging.buffer, textureData.image,
                                   x, y, width, height);
     recordLayoutTransition(commandBuffer, textureData.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    endSingleTimeCommands(commandBuffer);
 }
 
 const VkTextureManager::TextureData* VkTextureManager::getTexture(TextureId id) const noexcept
@@ -225,105 +214,76 @@ const VkTextureManager::TextureData* VkTextureManager::getTexture(TextureId id) 
     return &_textures[id - 1];
 }
 
+void VkTextureManager::retireUpload(UploadSlot& slot)
+{
+    if (slot.pending)
+    {
+        VK_RESULT_CHECK(vkWaitForFences(*_device, 1, &slot.fence, VK_TRUE, UINT64_MAX));
+        slot.pending = false;
+        slot.used = 0;
+    }
+}
+
 void VkTextureManager::releaseStagingBuffer()
 {
-    if (_staging.buffer == VK_NULL_HANDLE)
-    {
-        _staging = {};
-        _stagingCapacity = 0;
-        _stagingMapped = nullptr;
-        _stagingManuallyMapped = false;
-        return;
-    }
-
-    //! Only balance a mapping this class established; a VMA-persistent one is
-    //! released by destroyBuffer along with the allocation.
-    if (_stagingManuallyMapped)
-        _memoryManager->unmap(_staging);
-
-    _memoryManager->destroyBuffer(_staging);
-
-    _staging = {};
-    _stagingCapacity = 0;
-    _stagingMapped = nullptr;
-    _stagingManuallyMapped = false;
+    auto& slot = upload();
+    if (slot.manuallyMapped) _memoryManager->unmap(slot.staging);
+    _memoryManager->destroyBuffer(slot.staging);
+    slot.capacity = 0;
+    slot.manuallyMapped = false;
 }
 
 void* VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
 {
-    if (bytes == 0)
-        return nullptr;
-
-    //! Before the pointer is handed out, not before the submit: the caller is
-    //! about to memcpy over the very memory the previous upload may still be
-    //! reading. Every writer of the staging buffer comes through here, which is
-    //! what makes this the one place the wait has to be.
-    waitForPendingUpload();
-
-    //! Already big enough: hand back the pointer mapped when it was created.
-    if (bytes <= _stagingCapacity && _stagingMapped != nullptr)
-        return _stagingMapped;
-
-    releaseStagingBuffer();
-
-    _staging = _memoryManager->createUploadBuffer(bytes, VK_SHARING_MODE_EXCLUSIVE);
-    if (_staging.buffer == VK_NULL_HANDLE)
+    if (!bytes) return nullptr;
+    // Each region is RGBA8, so its offset satisfies buffer-image copy alignment.
+    if (upload().recording && bytes > upload().capacity - upload().used)
+        flushUploads();
+    retireUpload(upload());
+    auto& slot = upload();
+    if (bytes > slot.capacity)
     {
-        INK_ERROR << "VkTextureManager: could not allocate a " << bytes
-                  << "-byte staging buffer";
-        return nullptr;
-    }
-
-    /*
-     * Mapped once here, at creation, and never again -- which is the other
-     * half of why the buffer is held across uploads. createUploadBuffer() asks
-     * VMA for a persistently mapped allocation, so mappedData is the normal
-     * case; the explicit map() is the fallback for a driver that refused, and
-     * is flagged so releaseStagingBuffer() knows to balance it. Calling map()
-     * per upload instead would raise VMA's map refcount every time with no
-     * matching unmap, leaving the allocation mapped at destruction.
-     */
-    if (_staging.mappedData != nullptr)
-    {
-        _stagingMapped = _staging.mappedData;
-        _stagingManuallyMapped = false;
-    }
-    else
-    {
-        _stagingMapped = _memoryManager->map(_staging);
-        _stagingManuallyMapped = _stagingMapped != nullptr;
-    }
-
-    if (_stagingMapped == nullptr)
-    {
-        INK_ERROR << "VkTextureManager: staging buffer could not be mapped";
         releaseStagingBuffer();
-        return nullptr;
+        const VkDeviceSize capacity = std::max<VkDeviceSize>(bytes, 4 * 1024 * 1024);
+        slot.staging = _memoryManager->createUploadBuffer(capacity, VK_SHARING_MODE_EXCLUSIVE);
+        if (slot.staging.buffer == VK_NULL_HANDLE)
+        {
+            INK_ERROR << "VkTextureManager: could not allocate a " << capacity << "-byte staging buffer";
+            return nullptr;
+        }
+        //! Persistent mapping is the normal case; map() is the fallback for a
+        //! driver that refused, flagged so releaseStagingBuffer() balances it.
+        if (!slot.staging.mappedData)
+            slot.manuallyMapped = _memoryManager->map(slot.staging) != nullptr;
+        if (!slot.staging.mappedData)
+        {
+            INK_ERROR << "VkTextureManager: staging buffer could not be mapped";
+            releaseStagingBuffer();
+            return nullptr;
+        }
+        slot.capacity = capacity;
     }
-
-    _stagingCapacity = bytes;
-    return _stagingMapped;
+    _stagingOffset = slot.used;
+    slot.used += bytes;
+    return static_cast<u8*>(slot.staging.mappedData) + _stagingOffset;
 }
 
 void VkTextureManager::cleanup()
 {
-    //! Nothing below may run while an upload is still reading its staging
-    //! buffer or writing one of these images -- and the fence destroyed at the
-    //! end is the very one that would have been waited on.
-    waitForPendingUpload();
-
-    for (TextureData& texture : _textures) {
-        destroyTextureData(texture);
-    }
-    _textures.clear();
-
-    releaseStagingBuffer();
-
-    if (_uploadFence != VK_NULL_HANDLE)
+    flushUploads();
+    for (usize i = 0; i < _uploads.size(); ++i)
     {
-        vkDestroyFence(*_device, _uploadFence, nullptr);
-        _uploadFence = VK_NULL_HANDLE;
+        _uploadIndex = i;
+        auto& slot = upload();
+        retireUpload(slot);
+        releaseStagingBuffer();
+        if (slot.command) vkFreeCommandBuffers(*_device, _commandPool, 1, &slot.command);
+        if (slot.fence) vkDestroyFence(*_device, slot.fence, nullptr);
+        slot = {};
     }
+    _uploadIndex = 0;
+    for (auto& texture : _textures) destroyTextureData(texture);
+    _textures.clear();
 }
 
 VkImageView VkTextureManager::createImageView(VkImage image, VkFormat format)
@@ -369,72 +329,49 @@ VkSampler VkTextureManager::createSampler()
     return sampler;
 }
 
-VkCommandBuffer VkTextureManager::beginSingleTimeCommands()
+VkCommandBuffer VkTextureManager::beginUploadCommands()
 {
-    //! The fence is reset and reused by endSingleTimeCommands(), so the
-    //! previous submission has to be accounted for before another starts. A
-    //! no-op when acquireStagingBuffer() already did it.
-    waitForPendingUpload();
-
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = _commandPool;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(*_device, &allocInfo, &commandBuffer);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    return commandBuffer;
-}
-
-void VkTextureManager::endSingleTimeCommands(VkCommandBuffer commandBuffer)
-{
-    VK_RESULT_CHECK(vkEndCommandBuffer(commandBuffer));
-
-    if (_uploadFence == VK_NULL_HANDLE)
+    auto& slot = upload();
+    if (slot.recording) return slot.command;
+    retireUpload(slot);
+    if (!slot.command)
     {
-        VkFenceCreateInfo fenceInfo{};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        VK_RESULT_CHECK(vkCreateFence(*_device, &fenceInfo, nullptr, &_uploadFence));
+        VkCommandBufferAllocateInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        info.commandPool = _commandPool;
+        info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        info.commandBufferCount = 1;
+        VK_RESULT_CHECK(vkAllocateCommandBuffers(*_device, &info, &slot.command));
     }
     else
-    {
-        //! Left signalled by the previous upload; a fence must be unsignalled
-        //! when it is passed to vkQueueSubmit.
-        VK_RESULT_CHECK(vkResetFences(*_device, 1, &_uploadFence));
-    }
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    VK_RESULT_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submitInfo, _uploadFence));
-
-    /*
-     * Deliberately not waited for here -- see the header. The buffer is kept so
-     * waitForPendingUpload() can free it once the GPU has retired it; the upload
-     * pool is never reset (unlike the render pools), so holding one across a
-     * frame boundary is sound.
-     */
-    _pendingUploadCmd = commandBuffer;
+        VK_RESULT_CHECK(vkResetCommandBuffer(slot.command, 0));
+    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VK_RESULT_CHECK(vkBeginCommandBuffer(slot.command, &begin));
+    slot.recording = true;
+    return slot.command;
 }
 
-void VkTextureManager::waitForPendingUpload()
+void VkTextureManager::flushUploads()
 {
-    if (_pendingUploadCmd == VK_NULL_HANDLE)
-        return;
-
-    VK_RESULT_CHECK(vkWaitForFences(*_device, 1, &_uploadFence, VK_TRUE, UINT64_MAX));
-
-    vkFreeCommandBuffers(*_device, _commandPool, 1, &_pendingUploadCmd);
-    _pendingUploadCmd = VK_NULL_HANDLE;
+    auto& slot = upload();
+    if (!slot.recording) return;
+    if (slot.used)
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), slot.staging.allocation, 0, slot.used));
+    VK_RESULT_CHECK(vkEndCommandBuffer(slot.command));
+    if (!slot.fence)
+    {
+        VkFenceCreateInfo info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VK_RESULT_CHECK(vkCreateFence(*_device, &info, nullptr, &slot.fence));
+    }
+    else
+        VK_RESULT_CHECK(vkResetFences(*_device, 1, &slot.fence));
+    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &slot.command;
+    VK_RESULT_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, slot.fence));
+    slot.pending = true;
+    slot.recording = false;
+    _uploadIndex = (_uploadIndex + 1) % _uploads.size();
 }
 
 void VkTextureManager::recordLayoutTransition(VkCommandBuffer cmd, VkImage image,
@@ -494,7 +431,7 @@ void VkTextureManager::recordCopyBufferToImageRegion(VkCommandBuffer cmd, VkBuff
                                                      u32 x, u32 y, u32 width, u32 height) const
 {
     VkBufferImageCopy region{};
-    region.bufferOffset = 0;
+    region.bufferOffset = _stagingOffset;
     /*
      * Zero means "rows are tightly packed at imageExtent.width". That holds
      * here because the caller stages exactly the sub-rectangle it wants to

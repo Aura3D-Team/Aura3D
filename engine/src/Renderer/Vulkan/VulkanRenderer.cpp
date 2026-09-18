@@ -11,6 +11,7 @@
 #include <ink/ThreadPool.h>
 
 #include "aura/aura.h"
+#include "aura/Utils/FutureJoiner.h"
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Renderer/Vulkan/VkAura/EmbeddedSpirv.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
@@ -970,7 +971,6 @@ void VulkanRenderer::beginFrame()
     if (windowFlags->surfaceLost)
     {
         windowFlags->surfaceLost = false;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         if (!_windowManagerApi->isSurfaceAvailable()) {
             return;
@@ -1002,8 +1002,6 @@ void VulkanRenderer::beginFrame()
     if (windowFlags->resized)
     {
         windowFlags->resized = false;
-        // Debounce delay
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         try
         {
@@ -1170,19 +1168,13 @@ void VulkanRenderer::endRenderPass()
     std::vector<VkCommandBuffer>& secondaries = _replayList;
     secondaries.clear();
 
+    for (VkCommandBuffer segment : _chunkCmds)
+        if (segment != VK_NULL_HANDLE) secondaries.push_back(segment);
+
     if (_sceneCmd != VK_NULL_HANDLE)
     {
         VkCommandManager::endCommandBuffer(_sceneCmd);
         secondaries.push_back(_sceneCmd);
-    }
-
-    //! drawMeshes()' worker chunks, already ended by their contexts, in the
-    //! order the batch was split -- which is what makes the threaded result
-    //! identical to recording the same list serially.
-    for (VkCommandBuffer chunkCmd : _chunkCmds)
-    {
-        if (chunkCmd != VK_NULL_HANDLE)
-            secondaries.push_back(chunkCmd);
     }
 
     if (_overlayCmd != VK_NULL_HANDLE)
@@ -1207,6 +1199,8 @@ void VulkanRenderer::endRenderPass()
 void VulkanRenderer::endFrame()
 {
     if (!_frameBegun) return;
+
+    _vkTextureManager->flushUploads();
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
 
@@ -1323,7 +1317,8 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
 
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady || items.empty())
+    if (!_frameBegun || !_renderPassActive || !_pipelineReady || items.empty() ||
+        _sceneCmd == VK_NULL_HANDLE)
         return;
 
     /*
@@ -1418,6 +1413,11 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     const size_t perChunk = _resolvedDraws.size() / chunkCount;
     const size_t remainder = _resolvedDraws.size() % chunkCount;
 
+    // Seal the preceding serial segment before appending worker chunks.
+    VkCommandManager::endCommandBuffer(_sceneCmd);
+    _chunkCmds.push_back(_sceneCmd);
+    _sceneCmd = VK_NULL_HANDLE;
+
     const size_t firstChunkCmd = _chunkCmds.size();
     _chunkCmds.resize(firstChunkCmd + chunkCount);
 
@@ -1430,41 +1430,59 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     _recordFutures.clear();
     _recordFutures.reserve(chunkCount);
 
-    size_t offset = 0;
-    for (size_t chunk = 0; chunk < chunkCount; ++chunk)
+    try
     {
-        const size_t count = perChunk + (chunk < remainder ? 1 : 0);
-        const std::span<const ResolvedDraw> slice(_resolvedDraws.data() + offset, count);
-        offset += count;
+        //! Joins every submitted task on any exit, so `bindings` (captured by
+        //! reference) and the slices outlive the workers even when a later
+        //! submit throws.
+        FutureJoiner joiner(_recordFutures);
+        size_t offset = 0;
+        for (size_t chunk = 0; chunk < chunkCount; ++chunk)
+        {
+            const size_t count = perChunk + (chunk < remainder ? 1 : 0);
+            const std::span<const ResolvedDraw> slice(_resolvedDraws.data() + offset, count);
+            offset += count;
 
-        VkCommandRecordingContext* context = _recordingContexts[chunk].get();
-        VkCommandBuffer* slot = &_chunkCmds[firstChunkCmd + chunk];
+            VkCommandRecordingContext* context = _recordingContexts[chunk].get();
+            VkCommandBuffer* slot = &_chunkCmds[firstChunkCmd + chunk];
 
-        _recordFutures.push_back(_recordPool->submit(
-            [this, context, slot, slice, &bindings, renderPass, framebuffer] {
-                /*
-                 * Allocated on the worker thread on purpose: the buffer must
-                 * come from a pool owned by the thread that records into it,
-                 * and VkCommandManager keys its pools by thread id to
-                 * guarantee exactly that.
-                 */
-                VkCommandBuffer cmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
-                *slot = cmd;
-                context->recordChunk(cmd, renderPass, framebuffer, bindings, slice);
-            }));
+            _recordFutures.push_back(_recordPool->submit(
+                [this, context, slot, slice, &bindings, renderPass, framebuffer] {
+                    /*
+                     * Allocated on the worker thread on purpose: the buffer must
+                     * come from a pool owned by the thread that records into it,
+                     * and VkCommandManager keys its pools by thread id to
+                     * guarantee exactly that.
+                     */
+                    VkCommandBuffer cmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
+                    *slot = cmd;
+                    context->recordChunk(cmd, renderPass, framebuffer, bindings, slice);
+                }));
+        }
+
+        //! Blocks until the whole batch is recorded: the buffers have to be
+        //! closed before endRenderPass() can replay them.
+        joiner.get();
+    }
+    catch (...)
+    {
+        /*
+         * A chunk that threw mid-recording was never ended, and replaying it
+         * would be invalid, so the whole batch is dropped; its buffers go back
+         * with the pool reset. The scene segment is reopened regardless: the
+         * rest of the frame must still have somewhere to record.
+         */
+        std::fill(_chunkCmds.begin() + static_cast<std::ptrdiff_t>(firstChunkCmd), _chunkCmds.end(),
+                  VK_NULL_HANDLE);
+        _sceneCmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
+        VkCommandManager::beginSecondaryCommandBuffer(_sceneCmd, renderPass, framebuffer);
+        _recorded.reset();
+        throw;
     }
 
-    //! Blocks until the whole batch is recorded: the buffers have to be closed
-    //! before endRenderPass() can replay them, and `bindings` is captured by
-    //! reference so it must outlive every worker.
-    for (std::future<void>& future : _recordFutures)
-        future.get();
-
-    /*
-     * The scene buffer's cache describes only what *it* recorded. Nothing was
-     * added to it here -- the chunks are separate buffers -- so it stays valid
-     * and a later immediate-mode draw can still skip redundant binds.
-     */
+    _sceneCmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
+    VkCommandManager::beginSecondaryCommandBuffer(_sceneCmd, renderPass, framebuffer);
+    _recorded.reset();
 }
 
 void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes, VkDeviceSize indexBytes)
@@ -1497,6 +1515,7 @@ void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes
         if (_overlay2DVertexBuffers[frame].buffer != VK_NULL_HANDLE)
             _overlay2DRetiredBuffers[frame].push_back(_overlay2DVertexBuffers[frame]);
 
+        vertexBytes = std::max(vertexBytes, std::max<VkDeviceSize>(65536, _overlay2DVertexCapacity[frame] * 2));
         _overlay2DVertexBuffers[frame] = _memoryManager->createBuffer(
             vertexBytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sharingMode,
             VMA_MEMORY_USAGE_AUTO, kDynamicFlags);
@@ -1508,6 +1527,7 @@ void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes
         if (_overlay2DIndexBuffers[frame].buffer != VK_NULL_HANDLE)
             _overlay2DRetiredBuffers[frame].push_back(_overlay2DIndexBuffers[frame]);
 
+        indexBytes = std::max(indexBytes, std::max<VkDeviceSize>(16384, _overlay2DIndexCapacity[frame] * 2));
         _overlay2DIndexBuffers[frame] = _memoryManager->createBuffer(
             indexBytes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, sharingMode,
             VMA_MEMORY_USAGE_AUTO, kDynamicFlags);
@@ -1596,6 +1616,9 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     std::memcpy(static_cast<u8*>(indexBuffer.mappedData) + indexOffset,
                 indices.data(), static_cast<size_t>(indexBytes));
 
+    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), vertexBuffer.allocation, vertexOffset, vertexBytes));
+    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), indexBuffer.allocation, indexOffset, indexBytes));
+
     _overlay2DVertexUsed[_currentFrame] = vertexOffset + vertexBytes;
     _overlay2DIndexUsed[_currentFrame] = indexOffset + indexBytes;
 
@@ -1628,7 +1651,14 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     {
         _vkOverlay2DPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
         _vkOverlay2DPipelineManager->cmdBindDescriptorSets(
-            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &_bindlessTextureSet2D, 0, nullptr);
+            cmd,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            0,
+            1,
+            &_bindlessTextureSet2D,
+            0,
+            nullptr
+        );
         _overlayStateBound = true;
     }
 

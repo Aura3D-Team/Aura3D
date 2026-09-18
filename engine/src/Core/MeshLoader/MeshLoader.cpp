@@ -4,6 +4,7 @@
 #include <cmath>
 #include <functional>
 #include <unordered_map>
+#include <ink/ArenaResource.h>
 
 #include "aura/aura.h"
 
@@ -95,7 +96,14 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
     }
 
     gfx::Mesh3D mesh;
-    std::unordered_map<VertexKey, u32, VertexKeyHash> uniqueVertices;
+    thread_local ink::ArenaResource scratch;
+    const ink::ArenaResource::Scope scope(scratch);
+    std::pmr::unordered_map<VertexKey, u32, VertexKeyHash> uniqueVertices{&scratch};
+    usize indexCount = 0;
+    for (const auto& shape : shapes) indexCount += shape.mesh.indices.size();
+    uniqueVertices.reserve(indexCount);
+    mesh.indices.reserve(indexCount);
+    mesh.vertices.reserve(std::min(indexCount, attrib.vertices.size() / 3));
 
     const bool fileHasNormals = !attrib.normals.empty();
 

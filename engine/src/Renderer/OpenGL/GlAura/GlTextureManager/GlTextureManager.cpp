@@ -104,7 +104,8 @@ void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 widt
     }
 
     const GlTextureData& data = it->second;
-    if (x + width > data.width || y + height > data.height)
+    if (x > data.width || y > data.height ||
+        width > data.width - x || height > data.height - y)
     {
         INK_ERROR << "GlTextureManager: updateRegion rectangle exceeds the texture bounds";
         return;

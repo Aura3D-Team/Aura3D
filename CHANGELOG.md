@@ -2,6 +2,36 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.3.0]
+
+### Fixed
+
+- Flush Vulkan mapped writes at allocation-relative offsets, reject overflowing
+  texture regions across CPU/OpenGL/Vulkan, and bound mapped buffer updates.
+- Join all Vulkan recording tasks on failure and preserve serial/threaded scene
+  call order while compositing overlays last.
+- Clip CPU triangles against the homogeneous frustum before perspective division.
+- Resolve soft-wrap caret ambiguity with `CaretAffinity`; keep selection endpoints
+  on their own lines.
+
+### Changed
+
+- Audio callbacks consume bounded, preallocated voice/listener mailboxes without
+  locks or heap operations. Control updates coalesce; `update()` reclaims unloaded
+  clips after callback acknowledgement.
+- Batch Vulkan texture uploads into three fenced staging slots; grow overlay
+  buffers geometrically and retire old buffers after frame completion.
+- Remove deliberate 100 ms Vulkan/OpenGL resize sleeps.
+- Cache transformed/lit indexed CPU vertices and append directly to raster queues.
+- Use Ink 0.5.0 `ArenaResource` for OBJ deduplication and `ParallelProcessor` for
+  synchronous jobs; use inline storage for small, reentrant UI snapshots.
+
+### Portability
+
+- Keep Vulkan surface backend SDK includes in the implementation and guard them
+  by the enabled window backend. Android Vulkan builds no longer require unused
+  host GLAD or GLFW headers.
+
 ## [0.2.2]
 
 ### Added

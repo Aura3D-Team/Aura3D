@@ -75,7 +75,7 @@ void ShapedText::clear() noexcept
     size = {0.0f, 0.0f};
 }
 
-u32 ShapedText::lineOf(usize byte) const noexcept
+u32 ShapedText::lineOf(usize byte, CaretAffinity affinity) const noexcept
 {
     if (lines.empty())
         return 0;
@@ -83,14 +83,20 @@ u32 ShapedText::lineOf(usize byte) const noexcept
     for (u32 i = 0; i < lines.size(); ++i)
     {
         if (byte <= lines[i].byteEnd)
+        {
+            if (byte == lines[i].byteEnd && i + 1 < lines.size() &&
+                lines[i + 1].byteBegin == byte && affinity == CaretAffinity::Downstream)
+                continue;
             return i;
+        }
     }
 
     return static_cast<u32>(lines.size() - 1);
 }
 
-usize ShapedText::byteAt(glm::vec2 point) const noexcept
+usize ShapedText::byteAt(glm::vec2 point, CaretAffinity* affinity) const noexcept
 {
+    if (affinity) *affinity = CaretAffinity::Downstream;
     if (lines.empty())
         return 0;
 
@@ -119,15 +125,20 @@ usize ShapedText::byteAt(glm::vec2 point) const noexcept
             return glyph.cluster;
     }
 
+    if (affinity) *affinity = CaretAffinity::Upstream;
     return line.byteEnd;
 }
 
-glm::vec2 ShapedText::caretPosition(usize byte) const noexcept
+glm::vec2 ShapedText::caretPosition(usize byte, CaretAffinity affinity) const noexcept
 {
     if (lines.empty())
         return {0.0f, 0.0f};
 
-    const u32 lineIndex = lineOf(byte);
+    return caretOnLine(byte, lineOf(byte, affinity));
+}
+
+glm::vec2 ShapedText::caretOnLine(usize byte, u32 lineIndex) const noexcept
+{
     const ShapedLine& line = lines[lineIndex];
 
     for (u32 i = 0; i < line.glyphCount; ++i)
@@ -147,9 +158,9 @@ glm::vec2 ShapedText::caretPosition(usize byte) const noexcept
     return {x, line.top};
 }
 
-Rect ShapedText::caretRect(usize byte, f32 width) const noexcept
+Rect ShapedText::caretRect(usize byte, f32 width, CaretAffinity affinity) const noexcept
 {
-    const glm::vec2 position = caretPosition(byte);
+    const glm::vec2 position = caretPosition(byte, affinity);
     return Rect::fromSize(position, {width, lineHeight});
 }
 
@@ -167,8 +178,8 @@ void ShapedText::selectionRects(usize begin, usize end, std::vector<Rect>& out) 
         const usize from = std::max<usize>(begin, line.byteBegin);
         const usize to = std::min<usize>(end, line.byteEnd);
 
-        const f32 x0 = caretPosition(from).x;
-        f32 x1 = caretPosition(to).x;
+        const f32 x0 = caretOnLine(from, i).x;
+        f32 x1 = caretOnLine(to, i).x;
 
         //! A line whose break was consumed (a wrap, or a '\n') shows the
         //! selection running past its last glyph, so a multi-line selection

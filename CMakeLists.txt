@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.3.3)
 
 project(Aura3D
-    VERSION 0.2.2
+    VERSION 0.3.0
     DESCRIPTION "Aura3D Multi Backend Engine"
     LANGUAGES C CXX
 )
@@ -355,6 +355,14 @@ if(AURA_NATIVE_OPTIMIZE AND NOT EMSCRIPTEN AND NOT ANDROID)
         target_compile_options(Aura3D PRIVATE -march=native)
     endif()
 endif()
+
+################################################################################
+# Docs
+################################################################################
+
+# Not a build input: lists docs/ in the IDE project tree.
+file(GLOB AURA3D_DOC_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/*.md")
+add_custom_target(aura3d_docs SOURCES ${AURA3D_DOC_FILES} README.md CHANGELOG.md)
 
 ################################################################################
 # Sandbox

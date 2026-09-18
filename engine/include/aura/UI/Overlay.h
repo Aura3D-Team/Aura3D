@@ -133,6 +133,14 @@ public:
     /// closes the menu and leaves the dialog.
     void closeLightDismissible();
 
+    /// Closes the overlay holding @p member and every overlay above it, and
+    /// nothing below: a chosen menu command takes its menu stack down and
+    /// leaves the panel the menu was opened from standing.
+    void closeFrom(const Widget& member);
+
+    /// The owner the overlay holding @p member was opened with, if any.
+    [[nodiscard]] Widget* ownerOf(const Widget& member) const noexcept;
+
     [[nodiscard]] bool isOpen(Id id) const noexcept;
     [[nodiscard]] bool empty() const noexcept { return childCount() == 0; }
 

@@ -164,7 +164,8 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
         return;
 
     Texture& tex = mips[0];
-    if (x + width > static_cast<u32>(tex.width) || y + height > static_cast<u32>(tex.height))
+    if (x > static_cast<u32>(tex.width) || y > static_cast<u32>(tex.height) ||
+        width > static_cast<u32>(tex.width) - x || height > static_cast<u32>(tex.height) - y)
     {
         INK_ERROR << "CPURenderer: updateTextureRegion rectangle exceeds the texture bounds";
         return;
@@ -267,76 +268,20 @@ void CPURenderer::bindTexture(TextureHandle handle)
 
 namespace {
 
-/*
- * Evaluate the directional light for one vertex.
- *
- * The rasteriser interpolates ScreenVertex::color, so folding lighting into the
- * vertex colour here gives Gouraud shading without having to carry normals
- * through drawTriangle(). LightUBO::direction is the direction the light
- * travels, so the vector towards the light is its negation - matching the
- * built-in GLSL.
- */
-[[nodiscard]]
-glm::vec4 shadeVertex(const gfx::Vertex3D& v,
-                      const glm::mat3& normalMatrix,
-                      const gfx::LightUBO& light) noexcept
+[[nodiscard]] glm::vec3 safeNormal(glm::vec3 value) noexcept
 {
-    const glm::vec3 n = glm::normalize(normalMatrix * v.normal);
-    const glm::vec3 toLight = glm::normalize(-light.direction);
-
-    const float diffuse  = glm::max(glm::dot(n, toLight), 0.0f) * light.intensity;
-    const float lighting = light.ambient + diffuse;
-
-    const glm::vec3 lit = glm::vec3(v.color) * glm::vec3(light.color) * lighting;
-    return glm::vec4(lit, v.color.a);
+    const f32 length2 = glm::dot(value, value);
+    return length2 > 0 ? value / std::sqrt(length2) : glm::vec3{0};
 }
 
-/*
- * Transform a single Vertex3D through the MVP matrix into a ScreenVertex.
- * Returns false (by setting invW < 0) when the vertex is behind the camera.
- */
-[[nodiscard]]
-ScreenVertex projectVertex(const gfx::Vertex3D&  v,
-                                                  const glm::mat4& MVP,
-                                                  const glm::mat3& normalMatrix,
-                                                  const gfx::LightUBO& light,
-                                                  float W,
-                                                  float H) noexcept
+[[nodiscard]] ClipVertex transformVertex(const gfx::Vertex3D& v, const glm::mat4& mvp,
+                                         const glm::mat3& normal, const gfx::LightUBO& light,
+                                         glm::vec3 toLight) noexcept
 {
-    ScreenVertex sv;
-
-    const glm::vec4 clip = MVP * glm::vec4(v.pos, 1.0f);
-
-    if (clip.w <= 0.0f)
-    {
-        // behind camera
-        sv.invW = -1.0f;
-        return sv;
-    }
-
-    const float invW = 1.0f / clip.w;
-    const float nx = clip.x * invW;   // NDC X ∈ [−1, 1]
-    const float ny = clip.y * invW;   // NDC Y ∈ [−1, 1]
-    const float nz = clip.z * invW;   // NDC Z ∈ [−1, 1]
-
-    sv.x = (nx  + 1.0f) * 0.5f * W;
-    sv.y = (1.0f - (ny + 1.0f) * 0.5f) * H;  // flip Y (screen Y grows down)
-    sv.z = (nz  + 1.0f) * 0.5f;               // remap [−1,1] → [0,1]
-    sv.invW = invW;
-    sv.uv = v.texCoord;
-    sv.color= shadeVertex(v, normalMatrix, light);
-
-    return sv;
-}
-
-/*
- * Normals must not be skewed by non-uniform scale, so they use the inverse
- * transpose of the model matrix rather than the model matrix itself.
- */
-[[nodiscard]]
-glm::mat3 makeNormalMatrix(const glm::mat4& model) noexcept
-{
-    return glm::transpose(glm::inverse(glm::mat3(model)));
+    const f32 diffuse = std::max(glm::dot(safeNormal(normal * v.normal), toLight), 0.0f);
+    const glm::vec3 color = glm::vec3(v.color) * glm::vec3(light.color) *
+                           (light.ambient + diffuse * light.intensity);
+    return {mvp * glm::vec4(v.pos, 1), v.texCoord, glm::vec4(color, v.color.a)};
 }
 
 } // anonymous namespace
@@ -370,45 +315,34 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     const float W = static_cast<float>(_frameBufferManager->getWidth());
     const float H = static_cast<float>(_frameBufferManager->getHeight());
     const glm::mat4 MVP = _currentTransform.proj * _currentTransform.view * _currentTransform.model;
-    const glm::mat3 normalMatrix = makeNormalMatrix(_currentTransform.model);
+    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(_currentTransform.model)));
 
     const u32 safeCount = std::min(indexCount, static_cast<u32>(indices.size()));
     const u32 triCount  = safeCount / 3;
 
-    /*
-     * Project the whole draw call, then hand the list over as one batch. The
-     * manager queues it and rasterises every batch of the frame in a single
-     * parallel dispatch (see CpuFrameBufferManager::flush), so the thread-pool
-     * fan-out is paid once per frame rather than once per draw call.
-     */
-    _projectedTriangles.clear();
-    _projectedTriangles.reserve(triCount);
-
+    if (++_drawStamp == 0)
+    {
+        for (auto& vertex : _transformed) vertex.stamp = 0;
+        ++_drawStamp;
+    }
+    _transformed.resize(verts.size());
+    const glm::vec3 toLight = safeNormal(-_light.direction);
+    const auto vertex = [&](u32 index) -> const ClipVertex& {
+        auto& cached = _transformed[index];
+        if (cached.stamp != _drawStamp)
+        {
+            cached.vertex = transformVertex(verts[index], MVP, normalMatrix, _light, toLight);
+            cached.stamp = _drawStamp;
+        }
+        return cached.vertex;
+    };
     for (u32 t = 0; t < triCount; ++t)
     {
-        const u32 i0 = indices[t * 3    ];
-        const u32 i1 = indices[t * 3 + 1];
-        const u32 i2 = indices[t * 3 + 2];
-
-        if (i0 >= verts.size() || i1 >= verts.size() || i2 >= verts.size())
-            continue;
-
-        const auto sv0 = projectVertex(verts[i0], MVP, normalMatrix, _light, W, H);
-        const auto sv1 = projectVertex(verts[i1], MVP, normalMatrix, _light, W, H);
-        const auto sv2 = projectVertex(verts[i2], MVP, normalMatrix, _light, W, H);
-
-        // Skip triangles with any vertex behind the near plane.
-        if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
-            continue;
-
-        //! Matches the GPU backends' back-face culling; see isFrontFacing().
-        if (!isFrontFacing(sv0, sv1, sv2))
-            continue;
-
-        _projectedTriangles.push_back({sv0, sv1, sv2});
+        const u32 i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
+        if (i0 >= verts.size() || i1 >= verts.size() || i2 >= verts.size()) continue;
+        clipTriangle(vertex(i0), vertex(i1), vertex(i2), W, H,
+            [&](const ScreenTriangle& triangle) { _frameBufferManager->queueTriangle(triangle, texture); });
     }
-
-    _frameBufferManager->submitTriangles(_projectedTriangles, texture);
 
     (void)instanceCount;
 }
@@ -428,31 +362,20 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     const float W   = static_cast<float>(_frameBufferManager->getWidth());
     const float H   = static_cast<float>(_frameBufferManager->getHeight());
     const glm::mat4 MVP = _currentTransform.proj * _currentTransform.view * _currentTransform.model;
-    const glm::mat3 normalMatrix = makeNormalMatrix(_currentTransform.model);
+    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(_currentTransform.model)));
 
     const u32 safeCount = std::min(vertexCount, static_cast<u32>(verts.size()));
     const u32 triCount  = safeCount / 3;
 
-    _projectedTriangles.clear();
-    _projectedTriangles.reserve(triCount);
-
+    const glm::vec3 toLight = safeNormal(-_light.direction);
     for (u32 t = 0; t < triCount; ++t)
     {
-        const auto sv0 = projectVertex(verts[t * 3    ], MVP, normalMatrix, _light, W, H);
-        const auto sv1 = projectVertex(verts[t * 3 + 1], MVP, normalMatrix, _light, W, H);
-        const auto sv2 = projectVertex(verts[t * 3 + 2], MVP, normalMatrix, _light, W, H);
-
-        if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
-            continue;
-
-        //! Matches the GPU backends' back-face culling; see isFrontFacing().
-        if (!isFrontFacing(sv0, sv1, sv2))
-            continue;
-
-        _projectedTriangles.push_back({sv0, sv1, sv2});
+        const auto a = transformVertex(verts[t * 3], MVP, normalMatrix, _light, toLight);
+        const auto b = transformVertex(verts[t * 3 + 1], MVP, normalMatrix, _light, toLight);
+        const auto c = transformVertex(verts[t * 3 + 2], MVP, normalMatrix, _light, toLight);
+        clipTriangle(a, b, c, W, H,
+            [&](const ScreenTriangle& triangle) { _frameBufferManager->queueTriangle(triangle, texture); });
     }
-
-    _frameBufferManager->submitTriangles(_projectedTriangles, texture);
 
     (void)instanceCount;
 }
@@ -486,8 +409,6 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     };
 
     const size_t triCount = indices.size() / 3;
-    _projectedTriangles.clear();
-    _projectedTriangles.reserve(triCount);
 
     for (size_t t = 0; t < triCount; ++t)
     {
@@ -504,12 +425,11 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
          * quads carry no meaningful winding and a glyph must draw whichever
          * way its two triangles happen to be wound.
          */
-        _projectedTriangles.push_back({toScreenVertex(vertices[i0]),
+        _frameBufferManager->queueTriangle({toScreenVertex(vertices[i0]),
                                        toScreenVertex(vertices[i1]),
-                                       toScreenVertex(vertices[i2])});
+                                       toScreenVertex(vertices[i2])}, sampled, true);
     }
 
-    _frameBufferManager->submitTriangles2D(_projectedTriangles, sampled);
 }
 
 } // namespace cpu

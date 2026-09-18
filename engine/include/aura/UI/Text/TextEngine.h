@@ -36,6 +36,9 @@ class FontAtlas;
 
 namespace aura3d::ui {
 
+/// Which visual side of a shared soft-wrap byte boundary owns a caret.
+enum class CaretAffinity : u8 { Upstream, Downstream };
+
 enum class TextWrap : u8 {
     None,      //! One line per '\n'; overflow is the caller's problem.
     Word,      //! Break between words, and inside a word too long to fit.
@@ -115,16 +118,16 @@ public:
 
     /// Byte offset of the caret position nearest @p point (block-local).
     /// Clamped into the string, so a click anywhere lands somewhere valid.
-    [[nodiscard]] usize byteAt(glm::vec2 point) const noexcept;
+    [[nodiscard]] usize byteAt(glm::vec2 point, CaretAffinity* affinity = nullptr) const noexcept;
 
     /// Top-left of the caret that sits *before* @p byte.
-    [[nodiscard]] glm::vec2 caretPosition(usize byte) const noexcept;
+    [[nodiscard]] glm::vec2 caretPosition(usize byte, CaretAffinity affinity = CaretAffinity::Downstream) const noexcept;
 
     /// The caret as a paintable rectangle, @p width pixels wide.
-    [[nodiscard]] Rect caretRect(usize byte, f32 width = 1.0f) const noexcept;
+    [[nodiscard]] Rect caretRect(usize byte, f32 width = 1.0f, CaretAffinity affinity = CaretAffinity::Downstream) const noexcept;
 
     /// Index of the line containing @p byte.
-    [[nodiscard]] u32 lineOf(usize byte) const noexcept;
+    [[nodiscard]] u32 lineOf(usize byte, CaretAffinity affinity = CaretAffinity::Downstream) const noexcept;
 
     /// The highlight rectangles covering @c [begin,end) -- one per line the
     /// range touches. Appends; does not clear @p out.
@@ -133,6 +136,9 @@ public:
     /// Pen x the line's first glyph starts at. Non-zero on a centred or
     /// right-aligned line, which is what an empty line's caret needs.
     [[nodiscard]] f32 lineStartX(u32 lineIndex) const noexcept;
+
+private:
+    [[nodiscard]] glm::vec2 caretOnLine(usize byte, u32 lineIndex) const noexcept;
 };
 
 /**

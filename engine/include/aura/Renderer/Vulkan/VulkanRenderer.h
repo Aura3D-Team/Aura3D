@@ -266,8 +266,8 @@ private:
      * so no draw may be recorded into the primary buffer -- Vulkan has no
      * mixed mode within a subpass instance. Draws go into these secondary
      * buffers instead, and endRenderPass() replays them into the primary with
-     * a single vkCmdExecuteCommands, in this declaration order (scene first,
-     * overlay composited on top).
+     * a single vkCmdExecuteCommands, preserving scene call order with the
+     * overlay composited on top.
      *
      * Scene and overlay are kept apart rather than sharing one buffer because
      * only the scene half is parallelizable: splitting it across worker
@@ -277,8 +277,8 @@ private:
     VkCommandBuffer _sceneCmd = VK_NULL_HANDLE;
 
     /*
-     * Secondary buffers produced by drawMeshes()' worker threads this frame,
-     * replayed by endRenderPass() between _sceneCmd and _overlayCmd. Kept as a
+     * Completed serial segments and worker chunks, in scene call order,
+     * replayed before the final _sceneCmd and _overlayCmd. Kept as a
      * member and only ever cleared (never shrunk) so a steady-state frame
      * reuses the same allocation.
      */

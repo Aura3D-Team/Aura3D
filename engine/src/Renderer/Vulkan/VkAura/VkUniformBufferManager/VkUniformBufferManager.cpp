@@ -1,6 +1,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
 
 #include <cstring>
+#include "aura/Core/AuraException/AuraException.h"
 
 #include "aura/aura.h"
 
@@ -25,9 +26,8 @@ void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32
     const VkDeviceSize bufferSize = _elementSize;
     _buffers.resize(count);
 
-    VmaAllocationCreateFlags flags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-        VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationCreateFlags flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                     VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
     for (u32 i = 0; i < count; ++i) {
         _buffers[i] = _memoryManager->createBuffer(
@@ -53,6 +53,8 @@ void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void
     if (currentImage >= _buffers.size() || _buffers[currentImage].mappedData == nullptr || !data)
         return;
 
+    AllocatedBuffer& allocatedBuffer = _buffers[currentImage];
+
     if (size > _elementSize)
     {
         INK_ERROR << "updateUniformBuffer: write of " << size
@@ -60,7 +62,8 @@ void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void
         return;
     }
 
-    std::memcpy(_buffers[currentImage].mappedData, data, static_cast<size_t>(size));
+    std::memcpy(allocatedBuffer.mappedData, data, static_cast<size_t>(size));
+    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), allocatedBuffer.allocation, 0, size));
 }
 
 VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const

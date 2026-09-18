@@ -74,8 +74,11 @@ Selectable& Menu::addSubmenu(std::string text, std::function<void(Menu&)> build)
         if (!layer || !build)
             return;
 
+        //! Owned by the row: that is how a command in the submenu finds the
+        //! parent menu to close, and how the submenu goes with a torn-down parent.
         build(layer->open<Menu>(OverlayDesc{.anchor = item.bounds(),
-                                            .placement = Placement::Right}));
+                                            .placement = Placement::Right,
+                                            .owner = &item}));
     });
 
     return item;
@@ -85,9 +88,22 @@ void Menu::dismiss()
 {
     //! Closes this menu and anything opened over it, which for a chain of
     //! submenus is the whole stack -- picking a command should not leave its
-    //! parent menus standing.
-    if (OverlayLayer* layer = overlay())
-        layer->closeLightDismissible();
+    //! parent menus standing. Nothing below it: a context menu inside a
+    //! light-dismissible panel must not take the panel with it.
+    OverlayLayer* layer = overlay();
+    if (!layer)
+        return;
+    const Menu* base = this;
+    for (Widget* owner = layer->ownerOf(*base); owner; owner = layer->ownerOf(*base))
+    {
+        Menu* parent = nullptr;
+        for (Widget* node = owner; node && !parent; node = node->parent())
+            parent = dynamic_cast<Menu*>(node);
+        if (!parent)
+            break;
+        base = parent;
+    }
+    layer->closeFrom(*base);
 }
 
 // =============================================================================

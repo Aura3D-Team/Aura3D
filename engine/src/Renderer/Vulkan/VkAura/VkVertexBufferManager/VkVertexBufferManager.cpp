@@ -56,6 +56,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
 
     const VkDeviceSize bufferSize = sizeof(gfx::Vertex3D) * vertices3d.size();
     VertexBufferInfo bufferInfo{};
+    bufferInfo.capacityBytes = bufferSize;
     bufferInfo.vertexCount = vertices3d.size();
 
     if (persistentMapping)
@@ -78,6 +79,8 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
             std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D*>(bufferInfo.mappedPointer));
         }
 
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0, bufferSize));
+
         INK_DEBUG << "Created persistently mapped vertex buffer: " << name
                   << ", vertices: " << bufferInfo.vertexCount;
     }
@@ -95,6 +98,8 @@ void VkVertexBufferManager::createVertexBuffer(const std::string& name,
             std::ranges::copy(vertices3d, data);
             _memoryManager->unmap(staging);
         }
+
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), staging.allocation, 0, bufferSize));
 
         AllocatedBuffer gpu = _memoryManager->createDeviceLocalBuffer(
             bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sharingMode);
@@ -131,7 +136,10 @@ void VkVertexBufferManager::updateVertexBuffer(const std::string& name, std::vec
 
     if (bufferInfo.persistent && bufferInfo.mappedPointer)
     {
+        if (vertices3d.size() > bufferInfo.capacityBytes / sizeof(gfx::Vertex3D))
+            throw AuraException("Vertex buffer update exceeds its capacity");
         std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D*>(bufferInfo.mappedPointer));
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0, vertices3d.size() * sizeof(gfx::Vertex3D)));
         bufferInfo.vertexCount = vertices3d.size();
         return;
     }

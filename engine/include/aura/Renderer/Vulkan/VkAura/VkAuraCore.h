@@ -278,6 +278,9 @@ struct AuraBufferInfo {
     VkBuffer      buffer        = VK_NULL_HANDLE;
     VmaAllocation allocation    = VK_NULL_HANDLE;
     VkDeviceSize  memoryOffset  = 0;
+    //! Size the VkBuffer was created with, excluding allocation padding: the
+    //! bound an in-place update may write up to.
+    VkDeviceSize  capacityBytes = 0;
     bool          persistent    = false;
     void*         mappedPointer = nullptr;
 };
