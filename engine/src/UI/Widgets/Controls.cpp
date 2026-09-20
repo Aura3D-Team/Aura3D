@@ -455,6 +455,12 @@ void Selectable::setText(std::string text) { _label->text = std::move(text); }
 
 const std::string& Selectable::text() const noexcept { return _label->text.get(); }
 
+const std::string& Selectable::detail() const noexcept
+{
+    static const std::string none;
+    return _detail ? _detail->text.get() : none;
+}
+
 void Selectable::setDetail(std::string text)
 {
     if (!_detail)

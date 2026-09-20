@@ -247,6 +247,9 @@ public:
     /// Trailing text, right-aligned: a menu's shortcut, a list row's value.
     void setDetail(std::string text);
 
+    /// Empty when setDetail() was never called.
+    [[nodiscard]] const std::string& detail() const noexcept;
+
     [[nodiscard]] Label& label() noexcept { return *_label; }
 
     void accessibility(AccessibilityInfo& out) const override;

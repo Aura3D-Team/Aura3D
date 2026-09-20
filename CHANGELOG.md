@@ -13,6 +13,8 @@ All notable changes to Aura3D are documented in this file.
 - Clip CPU triangles against the homogeneous frustum before perspective division.
 - Resolve soft-wrap caret ambiguity with `CaretAffinity`; keep selection endpoints
   on their own lines.
+- `Selectable::detail()`, the missing counterpart to `setDetail()`, so a list
+  row's trailing text can be read back as its main text already could.
 
 ### Changed
 
