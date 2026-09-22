@@ -92,6 +92,7 @@ public:
                              u32 width, u32 height, const u8* rgbaPixels) override;
 
     void beginFrame() override;
+    [[nodiscard]] bool frameBegun() const noexcept override { return _frameBegun; }
     void beginRenderPass() override;
     void endRenderPass() override;
     void endFrame() override;

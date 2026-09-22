@@ -351,6 +351,17 @@ public:
     virtual void beginFrame() = 0;
 
     /**
+     * @brief Whether the last beginFrame() acquired a target to draw into.
+     *
+     * False when it could not: the swapchain was rebuilt for a resize, the
+     * window is minimized, the surface is gone. The frame's draws then go
+     * nowhere and endFrame() presents nothing. A loop that only draws on
+     * change has to ask, or a change drawn into a skipped frame stays off
+     * screen until the next one.
+     */
+    [[nodiscard]] virtual bool frameBegun() const noexcept { return true; }
+
+    /**
      * @brief Opens a render pass: clears the target and readies it for draw
      *        calls.
      *

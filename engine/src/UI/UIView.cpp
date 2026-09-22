@@ -195,6 +195,28 @@ void UIView::_syncSurface()
 
 void UIView::render(f32 deltaSeconds)
 {
+    update(deltaSeconds);
+    draw();
+}
+
+bool UIView::needsDraw() const noexcept
+{
+    return _drawn ? _root.needsPaint() : true;
+}
+
+void UIView::draw()
+{
+    //! Rebuilt only when the tree re-recorded. An idle UI goes straight to
+    //! submit() with the vertex buffers it already has.
+    if (_root.paint(_list))
+        _backend.build(_list, _root.scale());
+
+    _backend.submit();
+    _drawn = true;
+}
+
+void UIView::update(f32 deltaSeconds)
+{
     _syncSurface();
     if (_window)
     {
@@ -219,13 +241,6 @@ void UIView::render(f32 deltaSeconds)
     }
 
     _root.update(deltaSeconds);
-
-    //! Rebuilt only when the tree re-recorded. An idle UI goes straight to
-    //! submit() with the vertex buffers it already has.
-    if (_root.paint(_list))
-        _backend.build(_list, _root.scale());
-
-    _backend.submit();
 
     if (_window && _window->isTextInputEnabled() != _root.capturesTextInput())
         _window->setTextInputEnabled(_root.capturesTextInput());

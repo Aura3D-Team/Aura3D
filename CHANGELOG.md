@@ -2,6 +2,18 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `UIView::update()` / `needsDraw()` / `draw()`: the two halves of `render()`,
+  for a loop that skips presenting an unchanged frame. `render()` is unchanged
+  and is exactly `update()` then `draw()`.
+- `IRenderer::frameBegun()`: whether the last `beginFrame()` acquired a target.
+  Vulkan and Metal skip the frame when they rebuild the swapchain or have no
+  surface; a loop that draws only on change must know, or what it drew into
+  that frame is lost until the next change.
+
 ## [0.3.0]
 
 ### Fixed

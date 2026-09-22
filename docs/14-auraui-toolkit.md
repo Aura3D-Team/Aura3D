@@ -32,6 +32,24 @@ renderer->run([&] {
 `render()` is the whole frame. Nothing above is re-run: the tree persists, and
 only what changed is re-measured, re-recorded and re-submitted.
 
+A loop that would rather not present an unchanged frame at all splits it:
+
+```cpp
+ui.update(deltaSeconds);          // input, focus, animation -- always
+if (ui.needsDraw()) {             // false for an idle tree after its first draw
+    renderer->beginFrame();
+    if (renderer->frameBegun()) { // false while a resize rebuilds the swapchain
+        renderer->beginRenderPass();
+        ui.draw();                // not reached: the tree stays dirty for next pass
+        renderer->endRenderPass();
+    }
+    renderer->endFrame();
+}
+```
+
+A skipped frame has nothing to block on, so wait for events
+(`IWindowManager::waitEvents`) before the next pass or the loop spins.
+
 ## Building a tree
 
 `add<W>(args...)` constructs a child in place and hands it back, so

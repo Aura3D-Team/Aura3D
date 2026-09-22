@@ -95,6 +95,24 @@ public:
      */
     void render(f32 deltaSeconds);
 
+    /**
+     * @brief The input and animation half of render(), without drawing.
+     *
+     * For a caller that decides whether a frame is worth submitting at all: run
+     * this, ask needsDraw(), and only then open a render pass. Input, hover,
+     * focus and animation all keep advancing either way, so nothing is lost by
+     * not drawing -- a shell that skips an idle frame still dispatches the
+     * click that ends the idle.
+     */
+    void update(f32 deltaSeconds);
+
+    /// True when update() left something that has not been drawn yet. Also true
+    /// before the first draw, which is what gets the first frame on screen.
+    [[nodiscard]] bool needsDraw() const noexcept;
+
+    /// The drawing half of render(). Call inside a render pass, after update().
+    void draw();
+
     [[nodiscard]] UIRoot& root() noexcept { return _root; }
     [[nodiscard]] const UIRoot& root() const noexcept { return _root; }
 
@@ -118,6 +136,8 @@ private:
     /// the move callback (a camera, usually).
     void _syncPointer();
 
+    //! False until the first draw(), so the first frame is never skipped.
+    bool _drawn = false;
     IRenderer* _renderer = nullptr;
 
     //! Declared before _root and _backend, both of which hold a reference to
