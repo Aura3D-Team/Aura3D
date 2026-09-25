@@ -13,6 +13,7 @@ All notable changes to Aura3D are documented in this file.
   Vulkan and Metal skip the frame when they rebuild the swapchain or have no
   surface; a loop that draws only on change must know, or what it drew into
   that frame is lost until the next change.
+- Check changed C++ lines with clang-format and clang-tidy 21 in Linux Debug CI; export its compilation database and document local checks.
 
 ## [0.3.0]
 

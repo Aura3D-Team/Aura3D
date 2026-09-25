@@ -14,7 +14,8 @@
 #include "aura/Renderer/IRenderer.h"
 #include "aura/Utils/AlignedVector.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @brief Construction parameters for a @ref TextOverlay.
@@ -22,7 +23,8 @@ namespace aura3d {
  * At namespace scope rather than nested in TextOverlay so it can be used as a
  * defaulted constructor parameter; see @ref FontAtlasDesc for the same reason.
  */
-struct TextOverlayDesc {
+struct TextOverlayDesc
+{
     /**
      * Path to a .ttf/.otf file. Leave empty -- or name a file that cannot be
      * loaded -- and the overlay falls back to the engine's embedded bitmap font,
@@ -30,8 +32,8 @@ struct TextOverlayDesc {
      */
     std::string fontPath;
 
-    float pixelHeight = 32.0f;   //! Rasterization size of the glyph cache.
-    u32 atlasSize = 2048;        //! Edge length of the (square) glyph atlas.
+    float pixelHeight = 32.0f;                  //! Rasterization size of the glyph cache.
+    u32 atlasSize = 2048;                       //! Edge length of the (square) glyph atlas.
     glm::vec4 color = {1.0f, 1.0f, 1.0f, 1.0f}; //! Default text colour.
 };
 
@@ -51,8 +53,9 @@ struct TextOverlayDesc {
  *       after the scene's own draws.
  * @note Not thread-safe: the glyph cache and the batch buffers are mutable state.
  */
-class TextOverlay {
-public:
+class TextOverlay
+{
+  public:
     /**
      * @brief Builds the overlay and its glyph atlas.
      *
@@ -62,7 +65,7 @@ public:
      * @param renderer Renderer to draw through; must outlive this object.
      * @param desc Font, size and default colour; see @ref TextOverlayDesc.
      */
-    explicit TextOverlay(IRenderer* renderer, const TextOverlayDesc& desc = TextOverlayDesc{});
+    explicit TextOverlay(IRenderer *renderer, const TextOverlayDesc &desc = TextOverlayDesc{});
 
     /**
      * @brief Draws @p text with its top-left corner at window pixel (x, y).
@@ -77,7 +80,7 @@ public:
     void drawText(std::string_view text, float x, float y, float scale = 1.0f);
 
     /// As above, overriding the default colour for this call only.
-    void drawText(std::string_view text, float x, float y, const glm::vec4& color, float scale = 1.0f);
+    void drawText(std::string_view text, float x, float y, const glm::vec4 &color, float scale = 1.0f);
 
     /**
      * @brief Convenience: formats and draws "FPS: <n>" from the renderer's live
@@ -103,7 +106,10 @@ public:
 
     /// The smoothed frame rate @ref drawFPS last computed; zero before the
     /// first call. For showing the same number in a UI panel or a HUD.
-    [[nodiscard]] float fps() const noexcept { return _fps; }
+    [[nodiscard]] float fps() const noexcept
+    {
+        return _fps;
+    }
 
     /**
      * @brief Pixel dimensions @p text would occupy if drawn at @p scale.
@@ -117,23 +123,32 @@ public:
     [[nodiscard]] float lineHeight(float scale = 1.0f) const noexcept;
 
     /// The colour used when a draw call does not name one.
-    [[nodiscard]] const glm::vec4& color() const noexcept { return _color; }
-    void setColor(const glm::vec4& color) noexcept { _color = color; }
+    [[nodiscard]] const glm::vec4 &color() const noexcept
+    {
+        return _color;
+    }
+    void setColor(const glm::vec4 &color) noexcept
+    {
+        _color = color;
+    }
 
     /// False when the requested font could not be loaded and the embedded
     /// bitmap font is standing in for it.
-    [[nodiscard]] bool usingTrueType() const noexcept { return _usingTrueType; }
+    [[nodiscard]] bool usingTrueType() const noexcept
+    {
+        return _usingTrueType;
+    }
 
-private:
+  private:
     //! Fills the reusable vertex/index buffers with @p text's quads.
     //! Rasterizes any glyph not yet in the atlas, so the atlas upload must
     //! follow this rather than precede it.
-    void buildBatch(std::string_view text, float x, float y, const glm::vec4& color, float scale);
+    void buildBatch(std::string_view text, float x, float y, const glm::vec4 &color, float scale);
 
     /// Pushes the atlas' pending dirty rectangle to the GPU, if any.
     void uploadAtlasChanges();
 
-    IRenderer* _renderer;
+    IRenderer *_renderer;
     std::unique_ptr<FontAtlas> _atlas;
     TextureHandle _atlasTexture;
     glm::vec4 _color{1.0f};
@@ -148,9 +163,8 @@ private:
     //! rather than plain std::vector: the batch is memcpy'd/glBufferSubData'd
     //! every frame, and a 32-byte-aligned base keeps every 32-byte Vertex2D
     //! individually aligned for that copy, not just the array's first element.
-    static_assert(sizeof(gfx::Vertex2D) == 32,
-                  "Vertex2D must stay 32 bytes for the aligned batch storage "
-                  "below to align every vertex, not merely the array's base.");
+    static_assert(sizeof(gfx::Vertex2D) == 32, "Vertex2D must stay 32 bytes for the aligned batch storage "
+                                               "below to align every vertex, not merely the array's base.");
 
     AlignedVector<gfx::Vertex2D> _vertices;
     AlignedVector<u32> _indices;

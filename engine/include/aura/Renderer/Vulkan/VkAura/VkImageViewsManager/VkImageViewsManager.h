@@ -3,13 +3,15 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @brief Manages Vulkan image views for swapchain color images and the depth attachment.
@@ -23,13 +25,14 @@ namespace vk {
  * independently with cleanupDepthImageView(), which is useful during swapchain
  * recreation without touching the color views.
  */
-class VkImageViewsManager {
-public:
+class VkImageViewsManager
+{
+  public:
     /**
      * @brief Constructs the manager.
      * @param device        Logical device used to create and destroy image views.
      */
-    VkImageViewsManager(VkDevice* device);
+    VkImageViewsManager(VkDevice *device);
 
     /**
      * @brief Destroys all owned image views and releases internal state.
@@ -46,9 +49,7 @@ public:
      * @param format    Surface format of the swapchain images.
      * @param viewData  Subresource range and aspect mask configuration.
      */
-    void createImageViews(const std::vector<VkImage>& images,
-                          VkFormat format,
-                          ImageViewData viewData);
+    void createImageViews(const std::vector<VkImage> &images, VkFormat format, ImageViewData viewData);
 
     /**
      * @brief Creates a depth VkImageView for the given @p image.
@@ -67,13 +68,19 @@ public:
      * @return Const reference to the internal view vector; valid until the next
      *         createImageViews() or cleanup() call.
      */
-    const std::vector<VkImageView>& getImageViews() const { return _colorImageViews; }
+    const std::vector<VkImageView> &getImageViews() const
+    {
+        return _colorImageViews;
+    }
 
     /**
      * @brief Returns the depth image view, or VK_NULL_HANDLE if not created.
      * @return The depth VkImageView.
      */
-    VkImageView getDepthImageView() const { return _depthImageView; }
+    VkImageView getDepthImageView() const
+    {
+        return _depthImageView;
+    }
 
     /**
      * @brief Destroys the depth image view and resets it to VK_NULL_HANDLE.
@@ -98,7 +105,10 @@ public:
     /**
      * @brief Returns the MSAA color image view, or VK_NULL_HANDLE if not created.
      */
-    VkImageView getColorMsaaImageView() const { return _colorMsaaImageView; }
+    VkImageView getColorMsaaImageView() const
+    {
+        return _colorMsaaImageView;
+    }
 
     /**
      * @brief Destroys the MSAA color image view and resets it to VK_NULL_HANDLE.
@@ -114,7 +124,7 @@ public:
      */
     void cleanup();
 
-private:
+  private:
     /**
      * @brief Shared helper that allocates a single VkImageView with explicit parameters.
      *
@@ -127,20 +137,18 @@ private:
      * @param layerCount Number of array layers.
      * @return Newly created VkImageView.
      */
-    VkImageView createView(VkImage image, VkFormat format,
-                           VkImageAspectFlags aspect,
-                           u32 baseMip, u32 mipLevels,
+    VkImageView createView(VkImage image, VkFormat format, VkImageAspectFlags aspect, u32 baseMip, u32 mipLevels,
                            u32 baseLayer, u32 layerCount);
 
-private:
-    VkDevice*        _device;
+  private:
+    VkDevice *_device;
 
     std::vector<VkImageView> _colorImageViews;
-    VkImageView              _depthImageView = VK_NULL_HANDLE;
-    VkImageView              _colorMsaaImageView = VK_NULL_HANDLE;
+    VkImageView _depthImageView = VK_NULL_HANDLE;
+    VkImageView _colorMsaaImageView = VK_NULL_HANDLE;
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKIMAGEVIEWSMANAGER_H

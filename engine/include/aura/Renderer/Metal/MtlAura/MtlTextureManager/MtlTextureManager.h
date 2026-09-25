@@ -8,8 +8,10 @@
 #include "aura/Renderer/Metal/MtlAura/MtlAuraCore.h"
 #include "aura/Renderer/RenderHandles.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @class MtlTextureManager
@@ -27,19 +29,20 @@ namespace mtl {
  *
  * Handles are 1-based and dense, matching the vertex/index managers.
  */
-class MtlTextureManager {
-public:
+class MtlTextureManager
+{
+  public:
     /**
      * @brief Creates the shared sampler state on @p device.
      *
      * @throws AuraException if @p device is null or the sampler cannot be created.
      */
-    explicit MtlTextureManager(MTL::Device* device);
+    explicit MtlTextureManager(MTL::Device *device);
 
     ~MtlTextureManager();
 
-    MtlTextureManager(const MtlTextureManager&) = delete;
-    MtlTextureManager& operator=(const MtlTextureManager&) = delete;
+    MtlTextureManager(const MtlTextureManager &) = delete;
+    MtlTextureManager &operator=(const MtlTextureManager &) = delete;
 
     /**
      * @brief Uploads tightly packed RGBA8 pixels as a sampleable texture.
@@ -49,7 +52,7 @@ public:
      * @param[in] height Texture height in pixels.
      * @return A 1-based handle, or an invalid handle on failure.
      */
-    [[nodiscard]] TextureHandle createFromPixels(const u8* rgbaPixels, u32 width, u32 height);
+    [[nodiscard]] TextureHandle createFromPixels(const u8 *rgbaPixels, u32 width, u32 height);
 
     /**
      * @brief Allocates an RGBA8 texture whose contents are meant to change,
@@ -81,14 +84,13 @@ public:
      *         outside the texture (rejected rather than clamped, as IRenderer
      *         specifies), or when @p rgbaPixels is null. Each case is logged.
      */
-    bool updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
-                      const u8* rgbaPixels);
+    bool updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels);
 
     /**
      * @brief Resolves @p handle to its texture.
      * @return The texture, or nullptr for a handle that was never created.
      */
-    [[nodiscard]] MTL::Texture* resolve(TextureHandle handle) const noexcept;
+    [[nodiscard]] MTL::Texture *resolve(TextureHandle handle) const noexcept;
 
     /**
      * @brief The sampler every texture is read through.
@@ -98,24 +100,29 @@ public:
      * differ from this one in no respect. Linear/linear with clamp-to-edge
      * addressing, matching what the GLSL backends configure.
      */
-    [[nodiscard]] MTL::SamplerState* getSampler() const noexcept { return _sampler.get(); }
+    [[nodiscard]] MTL::SamplerState *getSampler() const noexcept
+    {
+        return _sampler.get();
+    }
 
     //! Releases every texture (the sampler outlives them). Every handle issued
     //! before this becomes stale.
     void clear() noexcept;
 
     //! Number of textures currently held, for logging.
-    [[nodiscard]] size_t count() const noexcept { return _textures.size(); }
+    [[nodiscard]] size_t count() const noexcept
+    {
+        return _textures.size();
+    }
 
-private:
+  private:
     /**
      * @brief Allocates a shared-storage RGBA8 texture.
      * @return The texture, or an empty handle on failure (logged).
      */
-    [[nodiscard]] NS::SharedPtr<MTL::Texture> allocate(u32 width, u32 height,
-                                                      const char* label) const;
+    [[nodiscard]] NS::SharedPtr<MTL::Texture> allocate(u32 width, u32 height, const char *label) const;
 
-    MTL::Device* _device = nullptr; //! Borrowed; owned by MtlDeviceManager.
+    MTL::Device *_device = nullptr; //! Borrowed; owned by MtlDeviceManager.
 
     NS::SharedPtr<MTL::SamplerState> _sampler;
 

@@ -22,7 +22,8 @@
  * present as "no allocations".
  */
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @struct AllocationStats
@@ -39,12 +40,12 @@ struct AllocationStats
     //! [2^i, 2^(i+1)) bytes, with the last bucket catching everything larger.
     static constexpr usize kSizeClassCount = 32;
 
-    u64 liveBytes            = 0;  ///< Allocated and not yet freed.
-    u64 peakBytes            = 0;  ///< High-water mark of liveBytes.
-    u64 totalAllocatedBytes  = 0;  ///< Cumulative, never decreases.
-    u64 totalFreedBytes      = 0;  ///< Cumulative, never decreases.
-    u64 allocationCount      = 0;
-    u64 freeCount            = 0;
+    u64 liveBytes = 0;           ///< Allocated and not yet freed.
+    u64 peakBytes = 0;           ///< High-water mark of liveBytes.
+    u64 totalAllocatedBytes = 0; ///< Cumulative, never decreases.
+    u64 totalFreedBytes = 0;     ///< Cumulative, never decreases.
+    u64 allocationCount = 0;
+    u64 freeCount = 0;
 
     //! Histogram of allocation sizes by power-of-two class. Distinguishes runs
     //! the byte totals can't: the same total in a thousand large blocks vs. ten
@@ -54,9 +55,7 @@ struct AllocationStats
     //! Bytes allocated and never freed. Zero for a balanced run.
     [[nodiscard]] constexpr u64 outstandingBytes() const noexcept
     {
-        return totalAllocatedBytes >= totalFreedBytes
-                   ? totalAllocatedBytes - totalFreedBytes
-                   : 0;
+        return totalAllocatedBytes >= totalFreedBytes ? totalAllocatedBytes - totalFreedBytes : 0;
     }
 
     //! Allocations that were never matched by a free.
@@ -77,14 +76,14 @@ struct AllocationStats
  */
 class AllocationTracker
 {
-public:
+  public:
     //! Constant-initialised at load time; see the class note.
     constexpr AllocationTracker() noexcept = default;
 
-    AllocationTracker(const AllocationTracker&)            = delete;
-    AllocationTracker& operator=(const AllocationTracker&) = delete;
+    AllocationTracker(const AllocationTracker &) = delete;
+    AllocationTracker &operator=(const AllocationTracker &) = delete;
 
-    [[nodiscard]] static AllocationTracker& get() noexcept;
+    [[nodiscard]] static AllocationTracker &get() noexcept;
 
     /// True when the global operator new/delete hooks were compiled in.
     /// Constant-folds to the build's answer.
@@ -169,7 +168,7 @@ public:
      */
     class ScopedMute
     {
-    public:
+      public:
         ScopedMute() noexcept : _previous(muted())
         {
             muted() = true;
@@ -182,23 +181,23 @@ public:
             muted() = _previous;
         }
 
-        ScopedMute(const ScopedMute&)            = delete;
-        ScopedMute& operator=(const ScopedMute&) = delete;
+        ScopedMute(const ScopedMute &) = delete;
+        ScopedMute &operator=(const ScopedMute &) = delete;
 
-    private:
+      private:
         bool _previous;
     };
 
     /// The calling thread's mute flag, as an lvalue. Constant-initialised
     /// (no guard variable, no dynamic init) since the allocation hooks read
     /// it and any allocation to answer would recurse.
-    [[nodiscard]] static bool& muted() noexcept
+    [[nodiscard]] static bool &muted() noexcept
     {
         static thread_local bool flag = false;
         return flag;
     }
 
-private:
+  private:
     //! Relaxed atomics throughout: written on every thread's malloc path, so
     //! ordering is kept as close to a plain increment as the ISA allows.
     std::atomic<u64> _liveBytes{0};

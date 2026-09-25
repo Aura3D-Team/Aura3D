@@ -7,7 +7,8 @@
 
 #include "aura/Renderer/RenderHandles.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @struct Material
@@ -19,12 +20,13 @@ namespace aura3d {
  *       by the default GLSL. They are here so the shading model can grow
  *       without another API break.
  */
-struct Material {
+struct Material
+{
     /// Albedo texture. An invalid handle leaves whatever texture is already bound.
-    TextureHandle albedo; //! The base color image/texture.
+    TextureHandle albedo;                      //! The base color image/texture.
     glm::vec4 tint = {1.0f, 1.0f, 1.0f, 1.0f}; //! Color multiplier applied over the texture.
-    float roughness = 0.5f; //! How shiny it is (0.0 = mirror, 1.0 = matte).
-    float metallic = 0.0f; //! What it's made of (0.0 = plastic/wood, 1.0 = pure metal).
+    float roughness = 0.5f;                    //! How shiny it is (0.0 = mirror, 1.0 = matte).
+    float metallic = 0.0f;                     //! What it's made of (0.0 = plastic/wood, 1.0 = pure metal).
 };
 
 } // namespace aura3d

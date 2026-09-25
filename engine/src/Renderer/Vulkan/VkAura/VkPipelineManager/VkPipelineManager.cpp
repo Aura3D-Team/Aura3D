@@ -1,13 +1,14 @@
 #include "aura/Renderer/Vulkan/VkAura/VkPipelineManager/VkPipelineManager.h"
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkPipelineManager::VkPipelineManager(VkDevice* device)
-    : _device(device)
+VkPipelineManager::VkPipelineManager(VkDevice *device) : _device(device)
 {
     // Empty
 }
@@ -26,7 +27,7 @@ void VkPipelineManager::createPipelineLayout()
     pipelineLayoutInfo.pushConstantRangeCount = 0;
     pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-   VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout));
+    VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout));
 }
 
 void VkPipelineManager::cleanup()
@@ -41,5 +42,5 @@ void VkPipelineManager::cleanup()
     }
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

@@ -22,20 +22,28 @@
 using namespace aura3d;
 using namespace aura3d::ui;
 
-namespace {
+namespace
+{
 
 [[nodiscard]] bool near(f32 a, f32 b, f32 tolerance = 0.51f)
 {
     return std::fabs(a - b) <= tolerance;
 }
 
-struct Harness {
+struct Harness
+{
     AtlasTextShaper shaper{TextShaperDesc{}};
     UIRoot root{shaper};
 
-    explicit Harness(glm::vec2 size = {400.0f, 300.0f}) { root.resize(size); }
+    explicit Harness(glm::vec2 size = {400.0f, 300.0f})
+    {
+        root.resize(size);
+    }
 
-    void frame(f32 deltaSeconds = 0.0f) { root.update(deltaSeconds); }
+    void frame(f32 deltaSeconds = 0.0f)
+    {
+        root.update(deltaSeconds);
+    }
 
     void click(glm::vec2 at)
     {
@@ -53,13 +61,13 @@ void testOverlayDrawsOverAndHitsFirst()
 {
     Harness harness;
 
-    auto& page = harness.root.setContent<Column>();
-    auto& under = page.add<Button>("Under");
+    auto &page = harness.root.setContent<Column>();
+    auto &under = page.add<Button>("Under");
 
     harness.frame();
 
-    auto& floating = harness.root.overlay().open<Column>(
-        OverlayDesc{.anchor = under.bounds(), .placement = Placement::Over});
+    auto &floating =
+        harness.root.overlay().open<Column>(OverlayDesc{.anchor = under.bounds(), .placement = Placement::Over});
     floating.layout().minWidth = 80.0f;
     floating.layout().minHeight = 40.0f;
     floating.style().fill(glm::vec4{1.0f});
@@ -71,8 +79,7 @@ void testOverlayDrawsOverAndHitsFirst()
     const glm::vec2 shared = floating.bounds().center();
 
     AURA_CHECK(under.bounds().contains(shared), "the overlay sits over the button");
-    AURA_CHECK(harness.root.widgetAt(shared) == &floating,
-               "an overlay is hit before the content it covers");
+    AURA_CHECK(harness.root.widgetAt(shared) == &floating, "an overlay is hit before the content it covers");
 
     DrawList list;
     harness.root.paint(list);
@@ -92,21 +99,18 @@ void testPlacementFlipsAndClamps()
     //! must flip above rather than open off-screen.
     const Rect anchor{{20.0f, 280.0f}, {120.0f, 296.0f}};
 
-    auto& popup = harness.root.overlay().open<Column>(
-        OverlayDesc{.anchor = anchor, .placement = Placement::Below});
+    auto &popup = harness.root.overlay().open<Column>(OverlayDesc{.anchor = anchor, .placement = Placement::Below});
     popup.layout().minWidth = 100.0f;
     popup.layout().minHeight = 80.0f;
 
     harness.frame();
 
     AURA_CHECK(popup.bounds().max.y <= 300.0f + 0.51f, "a flipped popup stays on screen");
-    AURA_CHECK(popup.bounds().max.y <= anchor.min.y + 0.51f,
-               "and opens above the anchor rather than over it");
+    AURA_CHECK(popup.bounds().max.y <= anchor.min.y + 0.51f, "and opens above the anchor rather than over it");
 
     //! Wider than the surface allows at that x: clamped, not pushed off.
-    auto& wide = harness.root.overlay().open<Column>(
-        OverlayDesc{.anchor = Rect{{380.0f, 10.0f}, {390.0f, 26.0f}},
-                    .placement = Placement::Below});
+    auto &wide = harness.root.overlay().open<Column>(
+        OverlayDesc{.anchor = Rect{{380.0f, 10.0f}, {390.0f, 26.0f}}, .placement = Placement::Below});
     wide.layout().minWidth = 150.0f;
     wide.layout().minHeight = 20.0f;
 
@@ -121,8 +125,7 @@ void testOutsideClickAndEscapeDismiss()
     Harness harness;
     harness.root.setContent<Column>();
 
-    auto& popup = harness.root.overlay().open<Column>(
-        OverlayDesc{.anchor = Rect{{10.0f, 10.0f}, {60.0f, 30.0f}}});
+    auto &popup = harness.root.overlay().open<Column>(OverlayDesc{.anchor = Rect{{10.0f, 10.0f}, {60.0f, 30.0f}}});
     popup.layout().minWidth = 60.0f;
     popup.layout().minHeight = 40.0f;
 
@@ -168,16 +171,19 @@ void testModalBlocksTheContentBeneath()
 {
     Harness harness;
 
-    auto& page = harness.root.setContent<Column>();
-    auto& button = page.add<Button>("Behind");
+    auto &page = harness.root.setContent<Column>();
+    auto &button = page.add<Button>("Behind");
 
     int clicks = 0;
-    button.clicked.connect([&clicks] { ++clicks; });
+    button.clicked.connect(
+        [&clicks]
+        {
+            ++clicks;
+        });
 
     harness.frame();
 
-    auto& dialog = harness.root.overlay().open<Column>(
-        OverlayDesc{.placement = Placement::Center, .modal = true});
+    auto &dialog = harness.root.overlay().open<Column>(OverlayDesc{.placement = Placement::Center, .modal = true});
     dialog.layout().minWidth = 100.0f;
     dialog.layout().minHeight = 60.0f;
 
@@ -199,11 +205,15 @@ void testCloseIsDeferredSoAnItemCanCloseItsOwnMenu()
     Harness harness;
     harness.root.setContent<Column>();
 
-    auto& menu = harness.root.overlay().open<Menu>(OverlayDesc{});
+    auto &menu = harness.root.overlay().open<Menu>(OverlayDesc{});
     const OverlayLayer::Id id = harness.root.overlay().lastId();
 
     int ran = 0;
-    menu.addItem("Rename").activated.connect([&ran] { ++ran; });
+    menu.addItem("Rename").activated.connect(
+        [&ran]
+        {
+            ++ran;
+        });
 
     harness.frame();
 
@@ -215,8 +225,7 @@ void testCloseIsDeferredSoAnItemCanCloseItsOwnMenu()
     harness.click(menu.childAt(0).bounds().center());
 
     AURA_CHECK(ran == 1, "the command ran");
-    AURA_CHECK(!harness.root.overlay().empty(),
-               "and the menu still exists at the end of the dispatch that closed it");
+    AURA_CHECK(!harness.root.overlay().empty(), "and the menu still exists at the end of the dispatch that closed it");
 
     harness.frame();
     AURA_CHECK(!harness.root.overlay().isOpen(id), "the menu is gone by the next frame");
@@ -229,7 +238,10 @@ void testOnClosedFires()
     harness.root.setContent<Column>();
 
     int closed = 0;
-    harness.root.overlay().open<Column>(OverlayDesc{.onClosed = [&closed] { ++closed; }});
+    harness.root.overlay().open<Column>(OverlayDesc{.onClosed = [&closed]
+                                                    {
+                                                        ++closed;
+                                                    }});
 
     const OverlayLayer::Id id = harness.root.overlay().lastId();
     harness.frame();
@@ -245,15 +257,15 @@ void testFocusIsTrappedInTheTopmostOverlay()
 {
     Harness harness;
 
-    auto& page = harness.root.setContent<Column>();
-    auto& outside = page.add<Button>("Outside");
+    auto &page = harness.root.setContent<Column>();
+    auto &outside = page.add<Button>("Outside");
 
     harness.frame();
     outside.requestFocus();
 
-    auto& dialog = harness.root.overlay().open<Column>(OverlayDesc{.modal = true});
-    auto& first = dialog.add<Button>("First");
-    auto& second = dialog.add<Button>("Second");
+    auto &dialog = harness.root.overlay().open<Column>(OverlayDesc{.modal = true});
+    auto &first = dialog.add<Button>("First");
+    auto &second = dialog.add<Button>("Second");
 
     harness.frame();
 
@@ -263,8 +275,7 @@ void testFocusIsTrappedInTheTopmostOverlay()
     AURA_CHECK(harness.root.focused() == &second, "and moves within it");
 
     harness.root.keyDown(wma::KEY_TAB);
-    AURA_CHECK(harness.root.focused() == &first,
-               "and wraps inside it rather than escaping to the content behind");
+    AURA_CHECK(harness.root.focused() == &first, "and wraps inside it rather than escaping to the content behind");
 }
 
 // -----------------------------------------------------------------------------
@@ -275,17 +286,20 @@ void testDropdown()
 {
     Harness harness;
 
-    auto& page = harness.root.setContent<Column>();
-    auto& backend = page.add<Dropdown>(std::vector<std::string>{"Vulkan", "OpenGL", "CPU"});
+    auto &page = harness.root.setContent<Column>();
+    auto &backend = page.add<Dropdown>(std::vector<std::string>{"Vulkan", "OpenGL", "CPU"});
     backend.setPlaceholder("Choose");
 
     int changes = 0;
-    backend.selected.changed().connect([&changes](int) { ++changes; });
+    backend.selected.changed().connect(
+        [&changes](int)
+        {
+            ++changes;
+        });
 
     harness.frame();
 
-    AURA_CHECK(backend.selected.get() == -1 && backend.text() == "Choose",
-               "an unset drop-down shows its placeholder");
+    AURA_CHECK(backend.selected.get() == -1 && backend.text() == "Choose", "an unset drop-down shows its placeholder");
 
     harness.click(backend.bounds().center());
     harness.frame();
@@ -294,14 +308,13 @@ void testDropdown()
     AURA_CHECK(!harness.root.overlay().empty(), "into the floating layer");
 
     //! The list is the topmost overlay; its rows are Selectables.
-    Widget* list = harness.root.overlay().topmost();
+    Widget *list = harness.root.overlay().topmost();
     AURA_CHECK(list != nullptr && list->childCount() == 3, "one row per item");
 
     harness.click(list->childAt(1).bounds().center());
     harness.frame();
 
-    AURA_CHECK(backend.selected.get() == 1 && backend.text() == "OpenGL",
-               "choosing a row selects it");
+    AURA_CHECK(backend.selected.get() == 1 && backend.text() == "OpenGL", "choosing a row selects it");
     AURA_CHECK(!backend.isOpen(), "and closes the list");
     AURA_CHECK(changes == 1, "reporting the change once");
 }
@@ -310,8 +323,8 @@ void testDropdownKeyboard()
 {
     Harness harness;
 
-    auto& page = harness.root.setContent<Column>();
-    auto& choice = page.add<Dropdown>(std::vector<std::string>{"One", "Two", "Three"});
+    auto &page = harness.root.setContent<Column>();
+    auto &choice = page.add<Dropdown>(std::vector<std::string>{"One", "Two", "Three"});
     choice.selected = 0;
 
     harness.frame();
@@ -320,8 +333,7 @@ void testDropdownKeyboard()
     //! Shut, the arrows step the selection directly -- a form stays fillable
     //! without ever opening a list.
     harness.root.keyDown(wma::KEY_DOWN);
-    AURA_CHECK(choice.selected.get() == 1 && !choice.isOpen(),
-               "Down steps the selection while the list is shut");
+    AURA_CHECK(choice.selected.get() == 1 && !choice.isOpen(), "Down steps the selection while the list is shut");
 
     harness.root.keyDown(wma::KEY_UP);
     AURA_CHECK(choice.selected.get() == 0, "and Up steps it back");
@@ -334,8 +346,7 @@ void testDropdownKeyboard()
     harness.root.keyDown(wma::KEY_ENTER);
     harness.frame();
 
-    AURA_CHECK(choice.selected.get() == 1 && !choice.isOpen(),
-               "Down then Enter takes the highlighted row");
+    AURA_CHECK(choice.selected.get() == 1 && !choice.isOpen(), "Down then Enter takes the highlighted row");
 
     harness.root.keyDown(wma::KEY_SPACE);
     harness.frame();
@@ -355,18 +366,28 @@ void testMenuAndSubmenu()
     Harness harness;
     harness.root.setContent<Column>();
 
-    auto& menu = harness.root.overlay().open<Menu>(
-        OverlayDesc{.anchor = Rect{{50.0f, 50.0f}, {50.0f, 50.0f}},
-                    .placement = Placement::Cursor});
+    auto &menu = harness.root.overlay().open<Menu>(
+        OverlayDesc{.anchor = Rect{{50.0f, 50.0f}, {50.0f, 50.0f}}, .placement = Placement::Cursor});
 
     int renamed = 0;
-    menu.addItem("Rename", "F2").activated.connect([&renamed] { ++renamed; });
+    menu.addItem("Rename", "F2")
+        .activated.connect(
+            [&renamed]
+            {
+                ++renamed;
+            });
     menu.addSeparator();
 
     int nested = 0;
-    menu.addSubmenu("Export", [&nested](Menu& submenu) {
-        submenu.addItem("PNG").activated.connect([&nested] { ++nested; });
-    });
+    menu.addSubmenu("Export",
+                    [&nested](Menu &submenu)
+                    {
+                        submenu.addItem("PNG").activated.connect(
+                            [&nested]
+                            {
+                                ++nested;
+                            });
+                    });
 
     harness.frame();
 
@@ -376,15 +397,14 @@ void testMenuAndSubmenu()
     harness.click(menu.childAt(2).bounds().center());
     harness.frame();
 
-    Widget* submenu = harness.root.overlay().topmost();
+    Widget *submenu = harness.root.overlay().topmost();
     AURA_CHECK(submenu != nullptr && submenu != &menu, "a submenu opens as its own overlay");
 
     harness.click(submenu->childAt(0).bounds().center());
     harness.frame();
 
     AURA_CHECK(nested == 1, "its command runs");
-    AURA_CHECK(harness.root.overlay().empty(),
-               "and choosing it tears down the whole menu stack");
+    AURA_CHECK(harness.root.overlay().empty(), "and choosing it tears down the whole menu stack");
 }
 
 void testMenuCommandLeavesThePanelUnderIt()
@@ -394,14 +414,18 @@ void testMenuCommandLeavesThePanelUnderIt()
 
     //! A light-dismissible panel, as a launcher or a popover is, with a
     //! context menu opened from inside it.
-    auto& panel = harness.root.overlay().open<Column>(OverlayDesc{.placement = Placement::Center});
+    auto &panel = harness.root.overlay().open<Column>(OverlayDesc{.placement = Placement::Center});
     const OverlayLayer::Id panelId = harness.root.overlay().lastId();
     harness.frame();
 
-    auto& menu = harness.root.overlay().open<Menu>(
+    auto &menu = harness.root.overlay().open<Menu>(
         OverlayDesc{.anchor = Rect{{50.0f, 50.0f}, {50.0f, 50.0f}}, .placement = Placement::Cursor});
     int chosen = 0;
-    menu.addItem("Pin").activated.connect([&chosen] { ++chosen; });
+    menu.addItem("Pin").activated.connect(
+        [&chosen]
+        {
+            ++chosen;
+        });
     harness.frame();
 
     harness.click(menu.childAt(0).bounds().center());
@@ -417,8 +441,8 @@ void testTooltipOpensOnDwellAndFollowsHover()
     Harness harness;
     harness.root.setTooltipDelay(0.4f);
 
-    auto& page = harness.root.setContent<Column>();
-    auto& button = page.add<Button>("Compile");
+    auto &page = harness.root.setContent<Column>();
+    auto &button = page.add<Button>("Compile");
     button.setTooltip("Compile the current project");
 
     harness.frame();
@@ -444,11 +468,10 @@ void testTooltipDoesNotShieldTheMenuUnderIt()
     harness.root.setTooltipDelay(0.1f);
     harness.root.setContent<Column>();
 
-    auto& menu = harness.root.overlay().open<Menu>(
-        OverlayDesc{.anchor = Rect{{40.0f, 40.0f}, {40.0f, 40.0f}},
-                    .placement = Placement::Cursor});
+    auto &menu = harness.root.overlay().open<Menu>(
+        OverlayDesc{.anchor = Rect{{40.0f, 40.0f}, {40.0f, 40.0f}}, .placement = Placement::Cursor});
 
-    auto& item = menu.addItem("Rename");
+    auto &item = menu.addItem("Rename");
     item.setTooltip("Give it another name");
 
     const OverlayLayer::Id id = harness.root.overlay().lastId();
@@ -477,8 +500,7 @@ void testClickThroughOverlayDoesNotBlockDismissal()
     Harness harness;
     harness.root.setContent<Column>();
 
-    auto& popup = harness.root.overlay().open<Column>(
-        OverlayDesc{.anchor = Rect{{10.0f, 10.0f}, {40.0f, 30.0f}}});
+    auto &popup = harness.root.overlay().open<Column>(OverlayDesc{.anchor = Rect{{10.0f, 10.0f}, {40.0f, 30.0f}}});
     popup.layout().minWidth = 40.0f;
     popup.layout().minHeight = 30.0f;
 
@@ -490,7 +512,7 @@ void testClickThroughOverlayDoesNotBlockDismissal()
      * may keep the popup open: an overlay nobody can click is not part of the
      * dismissal stack at all.
      */
-    auto& veil = harness.root.overlay().open<Column>(
+    auto &veil = harness.root.overlay().open<Column>(
         OverlayDesc{.placement = Placement::Center, .dismissOnOutsideClick = false});
     veil.setHitTestVisible(false);
     veil.layout().minWidth = 400.0f;
@@ -513,9 +535,9 @@ void testTabView()
 {
     Harness harness;
 
-    auto& tabs = harness.root.setContent<TabView>();
-    auto& general = tabs.addTab("General");
-    auto& graphics = tabs.addTab("Graphics");
+    auto &tabs = harness.root.setContent<TabView>();
+    auto &general = tabs.addTab("General");
+    auto &graphics = tabs.addTab("Graphics");
 
     general.add<Label>("autosave");
     graphics.add<Label>("vsync");
@@ -523,15 +545,13 @@ void testTabView()
     harness.frame();
 
     AURA_CHECK(tabs.tabCount() == 2, "two tabs");
-    AURA_CHECK(general.visibility() == Visibility::Visible &&
-                   graphics.visibility() == Visibility::Collapsed,
+    AURA_CHECK(general.visibility() == Visibility::Visible && graphics.visibility() == Visibility::Collapsed,
                "only the current page is shown");
 
     tabs.current = 1;
     harness.frame();
 
-    AURA_CHECK(graphics.visibility() == Visibility::Visible &&
-                   general.visibility() == Visibility::Collapsed,
+    AURA_CHECK(graphics.visibility() == Visibility::Visible && general.visibility() == Visibility::Collapsed,
                "switching swaps which page is laid out");
 
     tabs.current = 99;
@@ -543,8 +563,8 @@ void testCollapsingHeader()
 {
     Harness harness;
 
-    auto& page = harness.root.setContent<Column>();
-    auto& section = page.add<CollapsingHeader>("Graphics");
+    auto &page = harness.root.setContent<Column>();
+    auto &section = page.add<CollapsingHeader>("Graphics");
     section.content().add<CheckBox>("VSync");
 
     harness.frame();
@@ -561,8 +581,7 @@ void testCollapsingHeader()
     section.expanded = true;
     harness.frame();
 
-    const Rect header{section.bounds().min,
-                      {section.bounds().max.x, section.bounds().min.y + 4.0f}};
+    const Rect header{section.bounds().min, {section.bounds().max.x, section.bounds().min.y + 4.0f}};
 
     harness.click(header.center());
     harness.frame();
@@ -574,10 +593,10 @@ void testTreeNode()
 {
     Harness harness;
 
-    auto& page = harness.root.setContent<Column>();
-    auto& assets = page.add<TreeNode>("Assets");
+    auto &page = harness.root.setContent<Column>();
+    auto &assets = page.add<TreeNode>("Assets");
 
-    auto& textures = assets.addChild("Textures");
+    auto &textures = assets.addChild("Textures");
     textures.addChild("brick.png");
 
     harness.frame();
@@ -589,15 +608,16 @@ void testTreeNode()
     harness.frame();
 
     //! An expanded child is indented past its parent's label.
-    AURA_CHECK(textures.bounds().min.x > assets.bounds().min.x,
-               "children are indented under their parent");
+    AURA_CHECK(textures.bounds().min.x > assets.bounds().min.x, "children are indented under their parent");
 
     int activations = 0;
-    textures.activated.connect([&activations] { ++activations; });
+    textures.activated.connect(
+        [&activations]
+        {
+            ++activations;
+        });
 
-    harness.click(Rect{textures.bounds().min,
-                       {textures.bounds().max.x, textures.bounds().min.y + 4.0f}}
-                      .center());
+    harness.click(Rect{textures.bounds().min, {textures.bounds().max.x, textures.bounds().min.y + 4.0f}}.center());
 
     AURA_CHECK(activations == 1, "clicking a node reports it");
 }
@@ -619,8 +639,11 @@ void testPropertyBinding()
     AURA_CHECK(near(mirror.get(), 5.0f), "dropping the connection ends the binding");
 
     Property<std::string> text{};
-    const ScopedConnection converted =
-        text.bindFrom(source, [](f32 value) { return std::to_string(static_cast<int>(value)); });
+    const ScopedConnection converted = text.bindFrom(source,
+                                                     [](f32 value)
+                                                     {
+                                                         return std::to_string(static_cast<int>(value));
+                                                     });
 
     AURA_CHECK(text.get() == "9", "bindFrom converts on the way through");
 }

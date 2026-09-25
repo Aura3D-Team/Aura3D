@@ -1,21 +1,18 @@
 #include "aura/Renderer/Vulkan/VkAura/VkTextureManager/VkTextureManager.h"
 
-#include <cstring>
 #include <algorithm>
+#include <cstring>
 
 #include "aura/Core/AuraException/AuraException.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkTextureManager::VkTextureManager(VulkanMemoryManager* memoryManager,
-                                   VkDevice* device,
-                                   VkCommandPool commandPool,
+VkTextureManager::VkTextureManager(VulkanMemoryManager *memoryManager, VkDevice *device, VkCommandPool commandPool,
                                    VkQueue graphicsQueue)
-    : _memoryManager(memoryManager),
-      _device(device),
-      _commandPool(commandPool),
-      _graphicsQueue(graphicsQueue)
+    : _memoryManager(memoryManager), _device(device), _commandPool(commandPool), _graphicsQueue(graphicsQueue)
 {
 }
 
@@ -24,19 +21,22 @@ VkTextureManager::~VkTextureManager()
     cleanup();
 }
 
-void VkTextureManager::destroyTextureData(TextureData& texture)
+void VkTextureManager::destroyTextureData(TextureData &texture)
 {
-    if (texture.sampler != VK_NULL_HANDLE) {
+    if (texture.sampler != VK_NULL_HANDLE)
+    {
         vkDestroySampler(*_device, texture.sampler, nullptr);
         texture.sampler = VK_NULL_HANDLE;
     }
 
-    if (texture.view != VK_NULL_HANDLE) {
+    if (texture.view != VK_NULL_HANDLE)
+    {
         vkDestroyImageView(*_device, texture.view, nullptr);
         texture.view = VK_NULL_HANDLE;
     }
 
-    if (texture.image != VK_NULL_HANDLE || texture.allocation != VK_NULL_HANDLE) {
+    if (texture.image != VK_NULL_HANDLE || texture.allocation != VK_NULL_HANDLE)
+    {
         AllocatedImage allocated{texture.image, texture.allocation};
         _memoryManager->destroyImage(allocated);
         texture.image = VK_NULL_HANDLE;
@@ -50,8 +50,7 @@ VkTextureManager::TextureId VkTextureManager::createSolidColorTexture(u8 r, u8 g
     return createTextureFromPixels(pixel, 1, 1);
 }
 
-VkTextureManager::TextureId VkTextureManager::createTextureFromPixels(
-    const u8* rgba, u32 width, u32 height)
+VkTextureManager::TextureId VkTextureManager::createTextureFromPixels(const u8 *rgba, u32 width, u32 height)
 {
     if (!rgba || width == 0 || height == 0)
     {
@@ -65,7 +64,7 @@ VkTextureManager::TextureId VkTextureManager::createTextureFromPixels(
 
     const VkDeviceSize imageBytes = static_cast<VkDeviceSize>(width) * height * 4u;
 
-    void* data = acquireStagingBuffer(imageBytes);
+    void *data = acquireStagingBuffer(imageBytes);
     if (!data)
         return kInvalidTextureId;
     std::memcpy(data, rgba, static_cast<size_t>(imageBytes));
@@ -89,12 +88,10 @@ VkTextureManager::TextureId VkTextureManager::createTextureFromPixels(
 
     // The transition/copy/transition joins the current upload batch.
     VkCommandBuffer commandBuffer = beginUploadCommands();
-    recordLayoutTransition(commandBuffer, textureData.image,
-                           VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    recordCopyBufferToImageRegion(commandBuffer, upload().staging.buffer, textureData.image,
-                                  0, 0, width, height);
-    recordLayoutTransition(commandBuffer, textureData.image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    recordLayoutTransition(commandBuffer, textureData.image, VK_IMAGE_LAYOUT_UNDEFINED,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    recordCopyBufferToImageRegion(commandBuffer, upload().staging.buffer, textureData.image, 0, 0, width, height);
+    recordLayoutTransition(commandBuffer, textureData.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
@@ -140,8 +137,8 @@ VkTextureManager::TextureId VkTextureManager::createDynamicTexture(u32 width, u3
      */
     VkCommandBuffer commandBuffer = beginUploadCommands();
 
-    recordLayoutTransition(commandBuffer, textureData.image,
-                           VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    recordLayoutTransition(commandBuffer, textureData.image, VK_IMAGE_LAYOUT_UNDEFINED,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     const VkClearColorValue transparentBlack{{0.0f, 0.0f, 0.0f, 0.0f}};
     VkImageSubresourceRange range{};
@@ -151,14 +148,11 @@ VkTextureManager::TextureId VkTextureManager::createDynamicTexture(u32 width, u3
     range.baseArrayLayer = 0;
     range.layerCount = 1;
 
-    vkCmdClearColorImage(commandBuffer, textureData.image,
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                         &transparentBlack, 1, &range);
+    vkCmdClearColorImage(commandBuffer, textureData.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &transparentBlack, 1,
+                         &range);
 
-    recordLayoutTransition(commandBuffer, textureData.image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    recordLayoutTransition(commandBuffer, textureData.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
 
     textureData.view = createImageView(textureData.image, VK_FORMAT_R8G8B8A8_UNORM);
     textureData.sampler = createSampler();
@@ -167,9 +161,7 @@ VkTextureManager::TextureId VkTextureManager::createDynamicTexture(u32 width, u3
     return static_cast<TextureId>(_textures.size());
 }
 
-void VkTextureManager::updateRegion(TextureId id,
-                                    u32 x, u32 y, u32 width, u32 height,
-                                    const u8* rgba)
+void VkTextureManager::updateRegion(TextureId id, u32 x, u32 y, u32 width, u32 height, const u8 *rgba)
 {
     if (!rgba || width == 0 || height == 0)
         return;
@@ -180,9 +172,9 @@ void VkTextureManager::updateRegion(TextureId id,
         return;
     }
 
-    TextureData& textureData = _textures[id - 1];
-    if (x > textureData.width || y > textureData.height ||
-        width > textureData.width - x || height > textureData.height - y)
+    TextureData &textureData = _textures[id - 1];
+    if (x > textureData.width || y > textureData.height || width > textureData.width - x ||
+        height > textureData.height - y)
     {
         INK_ERROR << "VkTextureManager: updateRegion rectangle exceeds the bounds of texture " << id;
         return;
@@ -190,31 +182,28 @@ void VkTextureManager::updateRegion(TextureId id,
 
     const VkDeviceSize regionBytes = static_cast<VkDeviceSize>(width) * height * 4u;
 
-    void* data = acquireStagingBuffer(regionBytes);
+    void *data = acquireStagingBuffer(regionBytes);
     if (!data)
         return;
     std::memcpy(data, rgba, static_cast<size_t>(regionBytes));
 
     // Each patch owns a distinct staging range until this batch's fence completes.
     VkCommandBuffer commandBuffer = beginUploadCommands();
-    recordLayoutTransition(commandBuffer, textureData.image,
-                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    recordLayoutTransition(commandBuffer, textureData.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    recordCopyBufferToImageRegion(commandBuffer, upload().staging.buffer, textureData.image,
-                                  x, y, width, height);
-    recordLayoutTransition(commandBuffer, textureData.image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    recordCopyBufferToImageRegion(commandBuffer, upload().staging.buffer, textureData.image, x, y, width, height);
+    recordLayoutTransition(commandBuffer, textureData.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
-const VkTextureManager::TextureData* VkTextureManager::getTexture(TextureId id) const noexcept
+const VkTextureManager::TextureData *VkTextureManager::getTexture(TextureId id) const noexcept
 {
     if (id == kInvalidTextureId || id > _textures.size())
         return nullptr;
     return &_textures[id - 1];
 }
 
-void VkTextureManager::retireUpload(UploadSlot& slot)
+void VkTextureManager::retireUpload(UploadSlot &slot)
 {
     if (slot.pending)
     {
@@ -226,21 +215,23 @@ void VkTextureManager::retireUpload(UploadSlot& slot)
 
 void VkTextureManager::releaseStagingBuffer()
 {
-    auto& slot = upload();
-    if (slot.manuallyMapped) _memoryManager->unmap(slot.staging);
+    auto &slot = upload();
+    if (slot.manuallyMapped)
+        _memoryManager->unmap(slot.staging);
     _memoryManager->destroyBuffer(slot.staging);
     slot.capacity = 0;
     slot.manuallyMapped = false;
 }
 
-void* VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
+void *VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
 {
-    if (!bytes) return nullptr;
+    if (!bytes)
+        return nullptr;
     // Each region is RGBA8, so its offset satisfies buffer-image copy alignment.
     if (upload().recording && bytes > upload().capacity - upload().used)
         flushUploads();
     retireUpload(upload());
-    auto& slot = upload();
+    auto &slot = upload();
     if (bytes > slot.capacity)
     {
         releaseStagingBuffer();
@@ -265,7 +256,7 @@ void* VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
     }
     _stagingOffset = slot.used;
     slot.used += bytes;
-    return static_cast<u8*>(slot.staging.mappedData) + _stagingOffset;
+    return static_cast<u8 *>(slot.staging.mappedData) + _stagingOffset;
 }
 
 void VkTextureManager::cleanup()
@@ -274,15 +265,18 @@ void VkTextureManager::cleanup()
     for (usize i = 0; i < _uploads.size(); ++i)
     {
         _uploadIndex = i;
-        auto& slot = upload();
+        auto &slot = upload();
         retireUpload(slot);
         releaseStagingBuffer();
-        if (slot.command) vkFreeCommandBuffers(*_device, _commandPool, 1, &slot.command);
-        if (slot.fence) vkDestroyFence(*_device, slot.fence, nullptr);
+        if (slot.command)
+            vkFreeCommandBuffers(*_device, _commandPool, 1, &slot.command);
+        if (slot.fence)
+            vkDestroyFence(*_device, slot.fence, nullptr);
         slot = {};
     }
     _uploadIndex = 0;
-    for (auto& texture : _textures) destroyTextureData(texture);
+    for (auto &texture : _textures)
+        destroyTextureData(texture);
     _textures.clear();
 }
 
@@ -331,8 +325,9 @@ VkSampler VkTextureManager::createSampler()
 
 VkCommandBuffer VkTextureManager::beginUploadCommands()
 {
-    auto& slot = upload();
-    if (slot.recording) return slot.command;
+    auto &slot = upload();
+    if (slot.recording)
+        return slot.command;
     retireUpload(slot);
     if (!slot.command)
     {
@@ -353,8 +348,9 @@ VkCommandBuffer VkTextureManager::beginUploadCommands()
 
 void VkTextureManager::flushUploads()
 {
-    auto& slot = upload();
-    if (!slot.recording) return;
+    auto &slot = upload();
+    if (!slot.recording)
+        return;
     if (slot.used)
         VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), slot.staging.allocation, 0, slot.used));
     VK_RESULT_CHECK(vkEndCommandBuffer(slot.command));
@@ -374,8 +370,8 @@ void VkTextureManager::flushUploads()
     _uploadIndex = (_uploadIndex + 1) % _uploads.size();
 }
 
-void VkTextureManager::recordLayoutTransition(VkCommandBuffer cmd, VkImage image,
-                                              VkImageLayout oldLayout, VkImageLayout newLayout) const
+void VkTextureManager::recordLayoutTransition(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout,
+                                              VkImageLayout newLayout) const
 {
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -393,24 +389,21 @@ void VkTextureManager::recordLayoutTransition(VkCommandBuffer cmd, VkImage image
     VkPipelineStageFlags sourceStage;
     VkPipelineStageFlags destinationStage;
 
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && 
-        newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } 
-    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) 
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } 
-    else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
-             newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
     {
         //! Re-entering the transfer state to patch an already sampleable
         //! texture, as the glyph atlas does whenever a new character appears.
@@ -418,7 +411,7 @@ void VkTextureManager::recordLayoutTransition(VkCommandBuffer cmd, VkImage image
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         sourceStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } 
+    }
     else
     {
         throw AuraException("Unsupported layout transition!");
@@ -427,8 +420,8 @@ void VkTextureManager::recordLayoutTransition(VkCommandBuffer cmd, VkImage image
     vkCmdPipelineBarrier(cmd, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-void VkTextureManager::recordCopyBufferToImageRegion(VkCommandBuffer cmd, VkBuffer buffer, VkImage image,
-                                                     u32 x, u32 y, u32 width, u32 height) const
+void VkTextureManager::recordCopyBufferToImageRegion(VkCommandBuffer cmd, VkBuffer buffer, VkImage image, u32 x, u32 y,
+                                                     u32 width, u32 height) const
 {
     VkBufferImageCopy region{};
     region.bufferOffset = _stagingOffset;
@@ -446,12 +439,7 @@ void VkTextureManager::recordCopyBufferToImageRegion(VkCommandBuffer cmd, VkBuff
     region.imageOffset = {static_cast<i32>(x), static_cast<i32>(y), 0};
     region.imageExtent = {width, height, 1};
 
-    vkCmdCopyBufferToImage(cmd,
-                           buffer,
-                           image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           1,
-                           &region);
+    vkCmdCopyBufferToImage(cmd, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 }
 
 } // namespace vk

@@ -28,7 +28,8 @@
 using namespace aura3d;
 using aura3d::cpu::ScreenVertex;
 
-namespace {
+namespace
+{
 
 constexpr float kWidth = 800.0f;
 constexpr float kHeight = 600.0f;
@@ -39,7 +40,7 @@ constexpr float kHeight = 600.0f;
  * rather than reused, so that a change to the renderer's viewport mapping
  * shows up here as a failing test instead of being silently tracked.
  */
-[[nodiscard]] ScreenVertex projectPosition(const glm::vec3& worldPos, const glm::mat4& viewProj)
+[[nodiscard]] ScreenVertex projectPosition(const glm::vec3 &worldPos, const glm::mat4 &viewProj)
 {
     ScreenVertex sv;
 
@@ -61,8 +62,7 @@ constexpr float kHeight = 600.0f;
 }
 
 //! Geometric ground truth: the triangle's outward normal points at the eye.
-[[nodiscard]] bool facesCamera(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c,
-                               const glm::vec3& eye)
+[[nodiscard]] bool facesCamera(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c, const glm::vec3 &eye)
 {
     const glm::vec3 normal = glm::cross(b - a, c - a);
     return glm::dot(normal, eye - a) > 0.0f;
@@ -74,7 +74,7 @@ constexpr float kHeight = 600.0f;
  *
  * @return Number of triangles the culler would keep.
  */
-int checkCubeFromEye(const glm::vec3& eye, const char* label)
+int checkCubeFromEye(const glm::vec3 &eye, const char *label)
 {
     const gfx::Mesh3D cube = MeshLoader::createCube();
 
@@ -83,10 +83,7 @@ int checkCubeFromEye(const glm::vec3& eye, const char* label)
     //! winding convention hinges on is a consequence of that choice.
     Camera::setClipSpace(Camera::ClipSpace::OpenGL);
 
-    Camera camera = Camera::perspective({.fovDeg = 60.0f,
-                                         .aspect = kWidth / kHeight,
-                                         .nearZ = 0.1f,
-                                         .farZ = 100.0f});
+    Camera camera = Camera::perspective({.fovDeg = 60.0f, .aspect = kWidth / kHeight, .nearZ = 0.1f, .farZ = 100.0f});
     camera.setPosition(eye);
     camera.lookAt(glm::vec3(0.0f));
 
@@ -98,9 +95,9 @@ int checkCubeFromEye(const glm::vec3& eye, const char* label)
 
     for (size_t i = 0; i + 2 < cube.indices.size(); i += 3)
     {
-        const glm::vec3& a = cube.vertices[cube.indices[i + 0]].pos;
-        const glm::vec3& b = cube.vertices[cube.indices[i + 1]].pos;
-        const glm::vec3& c = cube.vertices[cube.indices[i + 2]].pos;
+        const glm::vec3 &a = cube.vertices[cube.indices[i + 0]].pos;
+        const glm::vec3 &b = cube.vertices[cube.indices[i + 1]].pos;
+        const glm::vec3 &c = cube.vertices[cube.indices[i + 2]].pos;
 
         const ScreenVertex sv0 = projectPosition(a, viewProj);
         const ScreenVertex sv1 = projectPosition(b, viewProj);
@@ -128,8 +125,7 @@ int checkCubeFromEye(const glm::vec3& eye, const char* label)
     }
 
     AURA_CHECK(considered > 0, std::string("cube has visible triangles from ") + label);
-    AURA_CHECK(disagreements == 0,
-               std::string("isFrontFacing matches face normals from ") + label);
+    AURA_CHECK(disagreements == 0, std::string("isFrontFacing matches face normals from ") + label);
 
     return kept;
 }
@@ -151,12 +147,9 @@ int main()
     const int keptFront = checkCubeFromEye({0.0f, 0.0f, 4.0f}, "straight on");
     const int keptBelow = checkCubeFromEye({-2.5f, -3.0f, 2.5f}, "below-left");
 
-    AURA_CHECK(keptCorner > 0 && keptCorner < 12,
-               "corner view culls some but not all of the cube's 12 triangles");
-    AURA_CHECK(keptFront > 0 && keptFront < 12,
-               "front view culls some but not all of the cube's 12 triangles");
-    AURA_CHECK(keptBelow > 0 && keptBelow < 12,
-               "below-left view culls some but not all of the cube's 12 triangles");
+    AURA_CHECK(keptCorner > 0 && keptCorner < 12, "corner view culls some but not all of the cube's 12 triangles");
+    AURA_CHECK(keptFront > 0 && keptFront < 12, "front view culls some but not all of the cube's 12 triangles");
+    AURA_CHECK(keptBelow > 0 && keptBelow < 12, "below-left view culls some but not all of the cube's 12 triangles");
 
     AURA_TEST_MAIN_RETURN();
 }

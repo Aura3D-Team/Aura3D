@@ -1,13 +1,14 @@
 #include "aura/Renderer/Vulkan/VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h"
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkFrameBuffersManager::VkFrameBuffersManager(VkDevice* device) :
-    _device(device)
+VkFrameBuffersManager::VkFrameBuffersManager(VkDevice *device) : _device(device)
 {
     // EMpty
 }
@@ -21,10 +22,8 @@ VkFrameBuffersManager::~VkFrameBuffersManager()
     INK_DEBUG << "FrameBuffers destroyed.";
 }
 
-void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& imageViews,
-                                               VkRenderPass renderPass,
-                                               VkExtent2D frameExtent,
-                                               VkImageView depthImageView,
+void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView> &imageViews, VkRenderPass renderPass,
+                                               VkExtent2D frameExtent, VkImageView depthImageView,
                                                VkImageView colorMsaaView)
 {
     _framebuffers.resize(imageViews.size());
@@ -36,7 +35,7 @@ void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& i
     {
         // Order must mirror VkRenderPassManager::createRenderPass:
         // [color(0), depth(1, optional), resolve(optional, MSAA only)].
-        std::vector<VkImageView> attachments = { useMsaa ? colorMsaaView : imageViews[i] };
+        std::vector<VkImageView> attachments = {useMsaa ? colorMsaaView : imageViews[i]};
 
         if (hasDepth)
             attachments.push_back(depthImageView);
@@ -57,19 +56,20 @@ void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView>& i
     }
 }
 
-const std::vector<VkFramebuffer>& VkFrameBuffersManager::getFrameBuffers()
+const std::vector<VkFramebuffer> &VkFrameBuffersManager::getFrameBuffers()
 {
     return _framebuffers;
 }
 
 void VkFrameBuffersManager::cleanup()
 {
-    for (auto& framebuffer : _framebuffers) {
+    for (auto &framebuffer : _framebuffers)
+    {
         vkDestroyFramebuffer(*_device, framebuffer, nullptr);
     }
 
     _framebuffers.clear();
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

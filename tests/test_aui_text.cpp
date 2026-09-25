@@ -21,7 +21,8 @@
 using namespace aura3d;
 using namespace aura3d::ui;
 
-namespace {
+namespace
+{
 
 [[nodiscard]] bool near(f32 a, f32 b, f32 tolerance = 0.51f)
 {
@@ -36,8 +37,7 @@ void testMeasurement()
     const TextStyle style{.pixelSize = 16.0f};
 
     shaper.shape("", style, kUnbounded, shaped);
-    AURA_CHECK(shaped.empty() && shaped.size.y > 0.0f,
-               "an empty string still occupies one line box");
+    AURA_CHECK(shaped.empty() && shaped.size.y > 0.0f, "an empty string still occupies one line box");
     AURA_CHECK(shaped.lines.size() == 1, "and reports exactly one line");
 
     shaper.shape("iii", style, kUnbounded, shaped);
@@ -62,10 +62,8 @@ void testFontSizeScales()
     shaper.shape("Aura", TextStyle{.pixelSize = 12.0f}, kUnbounded, small);
     shaper.shape("Aura", TextStyle{.pixelSize = 24.0f}, kUnbounded, large);
 
-    AURA_CHECK(large.size.x > small.size.x && large.size.y > small.size.y,
-               "a bigger em size produces bigger text");
-    AURA_CHECK(large.page != small.page,
-               "and rasterizes on its own page rather than scaling the small one");
+    AURA_CHECK(large.size.x > small.size.x && large.size.y > small.size.y, "a bigger em size produces bigger text");
+    AURA_CHECK(large.page != small.page, "and rasterizes on its own page rather than scaling the small one");
 }
 
 void testExplicitLineBreaks()
@@ -76,8 +74,7 @@ void testExplicitLineBreaks()
     shaper.shape("one\ntwo\nthree", TextStyle{}, kUnbounded, shaped);
 
     AURA_CHECK(shaped.lines.size() == 3, "every '\\n' starts a line");
-    AURA_CHECK(near(shaped.size.y, shaped.lineHeight * 3.0f),
-               "and the block is that many line heights tall");
+    AURA_CHECK(near(shaped.size.y, shaped.lineHeight * 3.0f), "and the block is that many line heights tall");
     AURA_CHECK(shaped.lines[1].byteBegin == 4, "the second line starts after the first break");
 }
 
@@ -110,8 +107,7 @@ void testLongWordBreaks()
     const TextStyle style{.pixelSize = 14.0f, .wrap = TextWrap::Word};
     shaper.shape("supercalifragilistic", style, 30.0f, shaped);
 
-    AURA_CHECK(shaped.lines.size() > 1,
-               "a single word wider than the limit is broken rather than overflowing");
+    AURA_CHECK(shaped.lines.size() > 1, "a single word wider than the limit is broken rather than overflowing");
 }
 
 void testCaretRoundTrip()
@@ -133,8 +129,7 @@ void testCaretRoundTrip()
     AURA_CHECK(roundTrips, "every caret position maps back to the byte it came from");
 
     AURA_CHECK(shaped.byteAt({-100.0f, 0.0f}) == 0, "a click left of the text lands at the start");
-    AURA_CHECK(shaped.byteAt({10000.0f, 0.0f}) == text.size(),
-               "a click past the end lands at the end");
+    AURA_CHECK(shaped.byteAt({10000.0f, 0.0f}) == text.size(), "a click past the end lands at the end");
 }
 
 void testCaretNeverSplitsACharacter()
@@ -169,8 +164,7 @@ void testMultiLineCaret()
     shaper.shape("first\nsecond", TextStyle{.pixelSize = 14.0f}, kUnbounded, shaped);
 
     const glm::vec2 second = shaped.caretPosition(6);
-    AURA_CHECK(near(second.y, shaped.lineHeight),
-               "a caret on the second line sits one line down");
+    AURA_CHECK(near(second.y, shaped.lineHeight), "a caret on the second line sits one line down");
     AURA_CHECK(shaped.lineOf(8) == 1, "and lineOf agrees which line that is");
 }
 
@@ -189,8 +183,7 @@ void testSelectionRects()
     rects.clear();
     shaped.selectionRects(1, 2, rects);
 
-    AURA_CHECK(rects.size() == 1 && rects[0].width() > 0.0f,
-               "a one-character selection is one non-empty rect");
+    AURA_CHECK(rects.size() == 1 && rects[0].width() > 0.0f, "a one-character selection is one non-empty rect");
 
     rects.clear();
     shaped.selectionRects(3, 3, rects);
@@ -210,8 +203,7 @@ void testAlignmentShiftsLines()
 
     AURA_CHECK(centred.glyphs.front().penX > left.glyphs.front().penX,
                "centring indents the short line within the block");
-    AURA_CHECK(near(centred.size.x, left.size.x),
-               "without changing the block's own width");
+    AURA_CHECK(near(centred.size.x, left.size.x), "without changing the block's own width");
 }
 
 void testUtf8Navigation()
@@ -220,15 +212,13 @@ void testUtf8Navigation()
 
     AURA_CHECK(utf8::nextBoundary(text, 1) == 3, "next boundary steps over a two-byte character");
     AURA_CHECK(utf8::previousBoundary(text, 3) == 1, "and back again");
-    AURA_CHECK(utf8::nextBoundary(text, text.size()) == text.size(),
-               "stepping past the end stays at the end");
+    AURA_CHECK(utf8::nextBoundary(text, text.size()) == text.size(), "stepping past the end stays at the end");
     AURA_CHECK(utf8::previousBoundary(text, 0) == 0, "and before the start stays at the start");
 
     AURA_CHECK(utf8::nextWord(text, 0) == 5, "next word skips the run and the space after it");
     AURA_CHECK(utf8::previousWord(text, text.size()) == 5, "previous word finds its start");
 
-    AURA_CHECK(utf8::clampToBoundary(text, 2) == 1,
-               "an offset inside a character is pulled back to its start");
+    AURA_CHECK(utf8::clampToBoundary(text, 2) == 1, "an offset inside a character is pulled back to its start");
 
     std::string encoded;
     utf8::append(encoded, U'é');
@@ -281,7 +271,7 @@ void testSoftWrapAffinity()
     }
     ShapedText utf;
     shaper.shape("éééééé", TextStyle{.wrap = TextWrap::Character}, 22, utf);
-    for (const auto& line : utf.lines)
+    for (const auto &line : utf.lines)
         AURA_CHECK(line.byteBegin % 2 == 0, "UTF-8 wraps remain on codepoint boundaries");
 }
 

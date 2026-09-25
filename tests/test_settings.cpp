@@ -20,10 +20,11 @@
 
 using namespace aura3d;
 
-namespace {
+namespace
+{
 
 //! Writes @p contents to a scratch file and returns its path.
-[[nodiscard]] std::string writeConfig(const std::string& name, const std::string& contents)
+[[nodiscard]] std::string writeConfig(const std::string &name, const std::string &contents)
 {
     const std::string path = std::string{"aura_test_"} + name + ".json";
     std::ofstream file(path);
@@ -42,13 +43,12 @@ void testBuiltInDefaultsWithNoFile()
 {
     reset();
 
-    const AuraSettings* settings = AuraSettings::get();
+    const AuraSettings *settings = AuraSettings::get();
 
     AURA_CHECK(settings->getWindowWidth() == 1280, "an unconfigured engine is 1280 wide");
     AURA_CHECK(settings->getWindowHeight() == 720, "an unconfigured engine is 720 tall");
     AURA_CHECK(settings->getRendererBackend() == "vulkan", "the default backend is vulkan");
-    AURA_CHECK(settings->getWindowBackend() == wma::WindowBackend::SDL3,
-               "the default window backend is SDL3");
+    AURA_CHECK(settings->getWindowBackend() == wma::WindowBackend::SDL3, "the default window backend is SDL3");
 }
 
 void testCodeDefaultsReplaceTheBuiltIns()
@@ -71,17 +71,15 @@ void testCodeDefaultsReplaceTheBuiltIns()
 
     AuraSettings::get()->setDefaults(config);
 
-    const AuraSettings* settings = AuraSettings::get();
+    const AuraSettings *settings = AuraSettings::get();
 
     AURA_CHECK(settings->getWindowWidth() == 1024, "a code default sets the width");
     AURA_CHECK(settings->getWindowTitle() == "Viewer", "a code default sets the title");
-    AURA_CHECK(settings->getWindowBackend() == wma::WindowBackend::WAYLAND,
-               "a code default sets the window backend");
+    AURA_CHECK(settings->getWindowBackend() == wma::WindowBackend::WAYLAND, "a code default sets the window backend");
     AURA_CHECK(settings->getVSyncMode() == VSyncMode::Mailbox,
                "a code default sets the present mode without a vsync flag to derive it from");
     AURA_CHECK(settings->getRendererBackend() == "opengl", "a code default sets the renderer");
-    AURA_CHECK(!settings->getValidationLayers(),
-               "a code default turns validation layers off in a debug build");
+    AURA_CHECK(!settings->getValidationLayers(), "a code default turns validation layers off in a debug build");
     AURA_CHECK(settings->getMsaaSamples() == 4, "a code default sets MSAA");
     AURA_CHECK(settings->getAudioMaxVoices() == 8, "a code default sets the voice count");
     AURA_CHECK(settings->getTexturesPath() == "./art/", "a code default sets an asset path");
@@ -103,12 +101,11 @@ void testTheFileOverridesCodeKeyByKey()
     const std::string path = writeConfig("partial", R"({ "window": { "width": 640 } })");
     AuraSettings::get()->reload(path);
 
-    const AuraSettings* settings = AuraSettings::get();
+    const AuraSettings *settings = AuraSettings::get();
 
     AURA_CHECK(settings->getWindowWidth() == 640, "a key the file sets wins");
     AURA_CHECK(settings->getWindowHeight() == 768, "a key the file omits keeps the code default");
-    AURA_CHECK(settings->getRendererBackend() == "opengl",
-               "a whole group the file omits keeps the code defaults");
+    AURA_CHECK(settings->getRendererBackend() == "opengl", "a whole group the file omits keeps the code defaults");
 
     std::remove(path.c_str());
 }

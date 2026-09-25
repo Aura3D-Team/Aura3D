@@ -3,7 +3,8 @@
 
 #pragma once
 
-namespace aura3d {
+namespace aura3d
+{
 
 /*
  * AURA_GLES is defined by CMake when targeting WebGL2 (WASM) or OpenGL ES 3.0.
@@ -16,7 +17,7 @@ namespace aura3d {
 
 #ifdef AURA_GLES
 
-inline const char* GL_VERTEX_3D = R"(#version 300 es
+inline const char *GL_VERTEX_3D = R"(#version 300 es
 precision highp float;
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec2 inTexCoord;
@@ -41,7 +42,7 @@ void main() {
 }
 )";
 
-inline const char* GL_FRAGMENT_3D = R"(#version 300 es
+inline const char *GL_FRAGMENT_3D = R"(#version 300 es
 precision highp float;
 in vec2 fragTexCoord;
 in vec4 fragColor;
@@ -65,7 +66,7 @@ void main() {
 }
 )";
 
-inline const char* GL_VERTEX_2D = R"(#version 300 es
+inline const char *GL_VERTEX_2D = R"(#version 300 es
 precision highp float;
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec2 inTexCoord;
@@ -80,7 +81,7 @@ void main() {
 }
 )";
 
-inline const char* GL_FRAGMENT_2D = R"(#version 300 es
+inline const char *GL_FRAGMENT_2D = R"(#version 300 es
 precision highp float;
 in vec2 fragTexCoord;
 in vec4 fragColor;
@@ -93,7 +94,7 @@ void main() {
 
 #else /* Desktop OpenGL 3.3 */
 
-inline const char* GL_VERTEX_3D = R"(#version 330 core
+inline const char *GL_VERTEX_3D = R"(#version 330 core
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec2 inTexCoord;
 layout(location = 2) in vec4 inColor;
@@ -117,7 +118,7 @@ void main() {
 }
 )";
 
-inline const char* GL_FRAGMENT_3D = R"(#version 330 core
+inline const char *GL_FRAGMENT_3D = R"(#version 330 core
 in vec2 fragTexCoord;
 in vec4 fragColor;
 in vec3 fragNormal;
@@ -140,7 +141,7 @@ void main() {
 }
 )";
 
-inline const char* GL_VERTEX_2D = R"(#version 330 core
+inline const char *GL_VERTEX_2D = R"(#version 330 core
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec2 inTexCoord;
 layout(location = 2) in vec4 inColor;
@@ -154,7 +155,7 @@ void main() {
 }
 )";
 
-inline const char* GL_FRAGMENT_2D = R"(#version 330 core
+inline const char *GL_FRAGMENT_2D = R"(#version 330 core
 in vec2 fragTexCoord;
 in vec4 fragColor;
 out vec4 outColor;

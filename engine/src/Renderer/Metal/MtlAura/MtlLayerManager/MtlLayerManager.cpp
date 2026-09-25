@@ -2,19 +2,22 @@
 
 #include <algorithm>
 
-#include <ink/ink.hpp>
 #include <TargetConditionals.h>
+#include <ink/ink.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 //! For WindowBackendToString, used to name the offending backend in the
 //! "no Metal layer" diagnostic below.
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
-namespace {
+namespace
+{
 
 /*
  * Reinterpreting the CAMetalLayer* wma hands back as metal-cpp's CA::MetalLayer*
@@ -24,14 +27,14 @@ namespace {
  * wma can return it as a plain void* without either side needing the other's
  * headers.
  */
-[[nodiscard]] CA::MetalLayer* asMetalCppLayer(void* objcLayer) noexcept
+[[nodiscard]] CA::MetalLayer *asMetalCppLayer(void *objcLayer) noexcept
 {
-    return reinterpret_cast<CA::MetalLayer*>(objcLayer);
+    return reinterpret_cast<CA::MetalLayer *>(objcLayer);
 }
 
 } // namespace
 
-MtlLayerManager::MtlLayerManager(MTL::Device* device, wma::IWindowManager* windowManager, bool vsync)
+MtlLayerManager::MtlLayerManager(MTL::Device *device, wma::IWindowManager *windowManager, bool vsync)
     : _windowManager(windowManager)
 {
     if (!device)
@@ -40,12 +43,12 @@ MtlLayerManager::MtlLayerManager(MTL::Device* device, wma::IWindowManager* windo
     if (!_windowManager)
         throw AuraException("MtlLayerManager: window manager is null");
 
-    void* objcLayer = _windowManager->getMetalLayer();
-    if (!objcLayer) {
-        throw AuraException(
-            "MtlLayerManager: the window has no CAMetalLayer; it was not created with "
-            "wma::GraphicsAPI::Metal (window backend: "
-            + std::string(WindowBackendToString(_windowManager->getBackendType())) + ")");
+    void *objcLayer = _windowManager->getMetalLayer();
+    if (!objcLayer)
+    {
+        throw AuraException("MtlLayerManager: the window has no CAMetalLayer; it was not created with "
+                            "wma::GraphicsAPI::Metal (window backend: " +
+                            std::string(WindowBackendToString(_windowManager->getBackendType())) + ")");
     }
 
     _layer = retain(asMetalCppLayer(objcLayer));
@@ -75,11 +78,9 @@ MtlLayerManager::MtlLayerManager(MTL::Device* device, wma::IWindowManager* windo
     const wma::FramebufferSize size = queryPixelSize();
     _width = static_cast<u32>(size.width);
     _height = static_cast<u32>(size.height);
-    _layer->setDrawableSize(CGSizeMake(static_cast<CGFloat>(_width),
-                                       static_cast<CGFloat>(_height)));
+    _layer->setDrawableSize(CGSizeMake(static_cast<CGFloat>(_width), static_cast<CGFloat>(_height)));
 
-    INK_INFO << "CAMetalLayer configured: " << _width << "x" << _height
-             << " px | vsync: " << (vsync ? "on" : "off");
+    INK_INFO << "CAMetalLayer configured: " << _width << "x" << _height << " px | vsync: " << (vsync ? "on" : "off");
 }
 
 MtlLayerManager::~MtlLayerManager()
@@ -104,8 +105,7 @@ bool MtlLayerManager::resizeToWindow()
     _width = width;
     _height = height;
 
-    _layer->setDrawableSize(CGSizeMake(static_cast<CGFloat>(_width),
-                                       static_cast<CGFloat>(_height)));
+    _layer->setDrawableSize(CGSizeMake(static_cast<CGFloat>(_width), static_cast<CGFloat>(_height)));
 
     INK_DEBUG << "CAMetalLayer resized: " << _width << "x" << _height << " px";
     return true;

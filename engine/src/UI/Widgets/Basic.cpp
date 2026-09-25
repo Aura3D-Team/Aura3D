@@ -4,7 +4,8 @@
 
 #include "aura/UI/UIRoot.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 Label::Label(std::string value) : text(std::move(value))
 {
@@ -14,10 +15,12 @@ Label::Label(std::string value) : text(std::move(value))
     //! Text drives the widget's size, so a change is a layout change, not a
     //! repaint. Wired here rather than in a setter so an assignment through
     //! the property behaves the same way.
-    text.changed().connect([this](const std::string&) {
-        _textDirty = true;
-        invalidateLayout();
-    });
+    text.changed().connect(
+        [this](const std::string &)
+        {
+            _textDirty = true;
+            invalidateLayout();
+        });
 }
 
 void Label::setFontSize(f32 pixels)
@@ -56,7 +59,7 @@ void Label::setLineSpacing(f32 multiple)
     invalidateLayout();
 }
 
-void Label::setTextStyle(const TextStyle& style)
+void Label::setTextStyle(const TextStyle &style)
 {
     if (_textStyle == style)
         return;
@@ -67,7 +70,7 @@ void Label::setTextStyle(const TextStyle& style)
 
 void Label::shapeText(f32 maxWidth)
 {
-    ITextShaper* shaper = this->shaper();
+    ITextShaper *shaper = this->shaper();
     if (!shaper)
         return;
 
@@ -91,13 +94,13 @@ void Label::shapeText(f32 maxWidth)
     _textDirty = false;
 }
 
-glm::vec2 Label::measureContent(const Constraints& available)
+glm::vec2 Label::measureContent(const Constraints &available)
 {
     shapeText(available.max.x);
     return _shaped.size;
 }
 
-glm::vec2 Label::textOrigin(const Rect& content) const noexcept
+glm::vec2 Label::textOrigin(const Rect &content) const noexcept
 {
     const Align align = style().align.value_or(_textStyle.align);
 
@@ -109,7 +112,7 @@ glm::vec2 Label::textOrigin(const Rect& content) const noexcept
             content.min.y + alignOffset(Alignment::Center, content.height(), _shaped.size.y)};
 }
 
-void Label::paint(DrawList& out)
+void Label::paint(DrawList &out)
 {
     Widget::paint(out);
 
@@ -118,11 +121,10 @@ void Label::paint(DrawList& out)
 
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
 
-    out.drawText(_shaped, textOrigin(contentRect()),
-                 withAlpha(resolvedStyle().text, alpha));
+    out.drawText(_shaped, textOrigin(contentRect()), withAlpha(resolvedStyle().text, alpha));
 }
 
-void Label::accessibility(AccessibilityInfo& out) const
+void Label::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
@@ -153,7 +155,7 @@ void Image::setFit(Fit fit)
     invalidatePaint();
 }
 
-void Image::setTint(const glm::vec4& tint)
+void Image::setTint(const glm::vec4 &tint)
 {
     _tint = tint;
     invalidatePaint();
@@ -165,7 +167,7 @@ void Image::setRadius(Corners radius)
     invalidatePaint();
 }
 
-glm::vec2 Image::measureContent(const Constraints& available)
+glm::vec2 Image::measureContent(const Constraints &available)
 {
     if (_native.x <= 0.0f || _native.y <= 0.0f)
         return {0.0f, 0.0f};
@@ -176,15 +178,13 @@ glm::vec2 Image::measureContent(const Constraints& available)
     //! Aspect-preserving fits report the native size scaled down to whatever
     //! bound is real, so an image in a narrow column shrinks instead of
     //! overflowing it.
-    const f32 scale = std::min({1.0f, isUnbounded(available.max.x) ? 1.0f
-                                                                  : available.max.x / _native.x,
-                                isUnbounded(available.max.y) ? 1.0f
-                                                             : available.max.y / _native.y});
+    const f32 scale = std::min({1.0f, isUnbounded(available.max.x) ? 1.0f : available.max.x / _native.x,
+                                isUnbounded(available.max.y) ? 1.0f : available.max.y / _native.y});
 
     return _native * scale;
 }
 
-Rect Image::_destination(const Rect& content) const noexcept
+Rect Image::_destination(const Rect &content) const noexcept
 {
     if (_native.x <= 0.0f || _native.y <= 0.0f || _fit == Fit::Stretch)
         return content;
@@ -194,16 +194,14 @@ Rect Image::_destination(const Rect& content) const noexcept
     const f32 sx = box.x / _native.x;
     const f32 sy = box.y / _native.y;
 
-    const f32 scale = _fit == Fit::None    ? 1.0f
-                      : _fit == Fit::Cover ? std::max(sx, sy)
-                                           : std::min(sx, sy);
+    const f32 scale = _fit == Fit::None ? 1.0f : _fit == Fit::Cover ? std::max(sx, sy) : std::min(sx, sy);
 
     const glm::vec2 size = _native * scale;
 
     return Rect::fromSize(content.min + (box - size) * 0.5f, size);
 }
 
-void Image::paint(DrawList& out)
+void Image::paint(DrawList &out)
 {
     Widget::paint(out);
 
@@ -225,7 +223,7 @@ void Image::paint(DrawList& out)
     out.drawImage(destination, _texture, withAlpha(_tint, alpha), _radius);
 }
 
-void Image::accessibility(AccessibilityInfo& out) const
+void Image::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
     out.role = Role::Image;
@@ -244,12 +242,12 @@ Separator::Separator(Axis axis) : _axis(axis)
         layout().width = Length::px(1.0f);
 }
 
-glm::vec2 Separator::measureContent(const Constraints&)
+glm::vec2 Separator::measureContent(const Constraints &)
 {
     return _axis == Axis::Horizontal ? glm::vec2{0.0f, 1.0f} : glm::vec2{1.0f, 0.0f};
 }
 
-void Separator::accessibility(AccessibilityInfo& out) const
+void Separator::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
     out.role = Role::Separator;

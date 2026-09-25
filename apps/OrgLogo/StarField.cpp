@@ -4,8 +4,10 @@
 #include <cmath>
 #include <numbers>
 
-namespace orglogo {
-namespace {
+namespace orglogo
+{
+namespace
+{
 
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kTwoPi = 2.0f * kPi;
@@ -42,12 +44,10 @@ constexpr std::size_t kMaxMeteors = 2;
 
 } // namespace
 
-StarField::StarField(aura3d::IRenderer& renderer, std::uint32_t seed)
-    : _rng(seed ^ 0x9E3779B9u)
+StarField::StarField(aura3d::IRenderer &renderer, std::uint32_t seed) : _rng(seed ^ 0x9E3779B9u)
 {
     const StarAtlas atlas = bakeStarAtlas();
-    _atlas = renderer.createTextureFromPixels(atlas.image.pixels.data(),
-                                              static_cast<u32>(atlas.image.width),
+    _atlas = renderer.createTextureFromPixels(atlas.image.pixels.data(), static_cast<u32>(atlas.image.width),
                                               static_cast<u32>(atlas.image.height));
     _softUv = atlas.soft;
     _spikedUv = atlas.spiked;
@@ -81,12 +81,10 @@ void StarField::_seedStars(std::uint32_t seed)
          * orb needs the sky to be emptiest.
          */
         const float t = unit(rng);
-        star.radius = std::sqrt(lerp(kFieldInnerRadius * kFieldInnerRadius,
-                                     kFieldOuterRadius * kFieldOuterRadius, t));
+        star.radius = std::sqrt(lerp(kFieldInnerRadius * kFieldInnerRadius, kFieldOuterRadius * kFieldOuterRadius, t));
         star.theta = unit(rng) * kTwoPi;
 
-        const auto layer = static_cast<std::size_t>(
-            std::min(2, static_cast<int>(unit(rng) * 3.0f)));
+        const auto layer = static_cast<std::size_t>(std::min(2, static_cast<int>(unit(rng) * 3.0f)));
         star.spinScale = kLayerSpin[layer];
         const float depth = kLayerDepth[layer];
 
@@ -99,8 +97,7 @@ void StarField::_seedStars(std::uint32_t seed)
 
         //! Mostly white, some blue-white, a few warm.
         const float temperature = unit(rng);
-        star.tint = temperature < 0.32f ? kStarBlue
-                  : (temperature > 0.86f ? kStarWarm : kStarWhite);
+        star.tint = temperature < 0.32f ? kStarBlue : (temperature > 0.86f ? kStarWarm : kStarWhite);
 
         star.twinklePhase = unit(rng) * kTwoPi;
         star.twinkleRate = 0.50f + unit(rng) * 2.20f;
@@ -122,12 +119,14 @@ void StarField::update(float time, float deltaTime, float orbPulse)
     _time = time;
     _orbPulse = orbPulse;
 
-    for (Meteor& meteor : _meteors)
+    for (Meteor &meteor : _meteors)
         meteor.age += deltaTime;
 
-    std::erase_if(_meteors, [](const Meteor& meteor) noexcept {
-        return meteor.age >= meteor.life;
-    });
+    std::erase_if(_meteors,
+                  [](const Meteor &meteor) noexcept
+                  {
+                      return meteor.age >= meteor.life;
+                  });
 
     _meteorCountdown -= deltaTime;
     if (_meteorCountdown <= 0.0f)
@@ -163,7 +162,7 @@ void StarField::_spawnMeteor()
     _meteors.push_back(meteor);
 }
 
-void StarField::submit(aura3d::IRenderer& renderer, const SceneLayout& layout)
+void StarField::submit(aura3d::IRenderer &renderer, const SceneLayout &layout)
 {
     _buildBatch(layout);
 
@@ -173,20 +172,20 @@ void StarField::submit(aura3d::IRenderer& renderer, const SceneLayout& layout)
     renderer.drawBatch2D(_vertices, _indices, _atlas);
 }
 
-void StarField::_buildBatch(const SceneLayout& layout)
+void StarField::_buildBatch(const SceneLayout &layout)
 {
     //! clear() keeps the capacity, so a frame's batch allocates nothing.
     _vertices.clear();
     _indices.clear();
 
-    for (const Star& star : _stars)
+    for (const Star &star : _stars)
         _appendStar(star, layout);
 
-    for (const Meteor& meteor : _meteors)
+    for (const Meteor &meteor : _meteors)
         _appendMeteor(meteor, layout);
 }
 
-void StarField::_appendStar(const Star& star, const SceneLayout& layout)
+void StarField::_appendStar(const Star &star, const SceneLayout &layout)
 {
     const float angle = star.theta + _time * kFieldSpinRate * star.spinScale;
 
@@ -194,16 +193,14 @@ void StarField::_appendStar(const Star& star, const SceneLayout& layout)
     //! to couple the two, far too little to read as the sky moving.
     const float radius = star.radius * (1.0f + 0.006f * _orbPulse);
 
-    const glm::vec2 position = layout.center
-                             + glm::vec2{std::cos(angle), std::sin(angle)} * (radius * layout.unit);
+    const glm::vec2 position = layout.center + glm::vec2{std::cos(angle), std::sin(angle)} * (radius * layout.unit);
 
     /*
      * Twinkle: two sines whose rates are not in an integer ratio, so the
      * pattern does not repeat over any span an observer would notice.
      */
-    const float twinkle = 0.60f
-                        + 0.28f * std::sin(_time * star.twinkleRate + star.twinklePhase)
-                        + 0.12f * std::sin(_time * star.twinkleRate * 1.73f + star.twinklePhase * 2.1f);
+    const float twinkle = 0.60f + 0.28f * std::sin(_time * star.twinkleRate + star.twinklePhase) +
+                          0.12f * std::sin(_time * star.twinkleRate * 1.73f + star.twinklePhase * 2.1f);
 
     //! Flare: a rare, smooth swell, on its own much slower clock.
     float flare = 0.0f;
@@ -224,8 +221,8 @@ void StarField::_appendStar(const Star& star, const SceneLayout& layout)
 
     //! Rotation can push a corner out by up to sqrt(2) of the half-extent.
     const float margin = halfExtent * 1.45f;
-    if (position.x + margin < 0.0f || position.x - margin > layout.windowSize.x ||
-        position.y + margin < 0.0f || position.y - margin > layout.windowSize.y)
+    if (position.x + margin < 0.0f || position.x - margin > layout.windowSize.x || position.y + margin < 0.0f ||
+        position.y - margin > layout.windowSize.y)
         return;
 
     //! Scintillation: a flaring star whitens, and the twinkle shifts its
@@ -234,10 +231,8 @@ void StarField::_appendStar(const Star& star, const SceneLayout& layout)
     tint.b *= 0.94f + 0.10f * twinkle;
 
     const float alpha = clamp01(luminance);
-    appendQuad(_vertices, _indices, position, {halfExtent, halfExtent},
-               star.roll + _time * star.rollRate,
-               star.spiked ? _spikedUv : _softUv,
-               glm::vec4{tint.r, tint.g, tint.b, alpha});
+    appendQuad(_vertices, _indices, position, {halfExtent, halfExtent}, star.roll + _time * star.rollRate,
+               star.spiked ? _spikedUv : _softUv, glm::vec4{tint.r, tint.g, tint.b, alpha});
 
     //! White-hot centre for the brightest stars only. A second, much smaller
     //! quad is what lets a star be blue at its edges and white at its core,
@@ -245,20 +240,18 @@ void StarField::_appendStar(const Star& star, const SceneLayout& layout)
     if (luminance > kCoreThreshold)
     {
         const float coreAlpha = clamp01((luminance - kCoreThreshold) * 2.6f);
-        appendQuad(_vertices, _indices, position,
-                   {halfExtent * 0.34f, halfExtent * 0.34f}, 0.0f, _softUv,
+        appendQuad(_vertices, _indices, position, {halfExtent * 0.34f, halfExtent * 0.34f}, 0.0f, _softUv,
                    glm::vec4{1.0f, 1.0f, 1.0f, coreAlpha});
     }
 }
 
-void StarField::_appendMeteor(const Meteor& meteor, const SceneLayout& layout)
+void StarField::_appendMeteor(const Meteor &meteor, const SceneLayout &layout)
 {
     const float progress = meteor.life > 0.0f ? meteor.age / meteor.life : 1.0f;
 
     //! Snaps into view, lingers, then fades: a symmetric envelope reads as a
     //! light being dimmed rather than as something moving past.
-    const float envelope = smoothstep(0.0f, 0.10f, progress)
-                         * (1.0f - smoothstep(0.62f, 1.0f, progress));
+    const float envelope = smoothstep(0.0f, 0.10f, progress) * (1.0f - smoothstep(0.62f, 1.0f, progress));
     if (envelope <= 0.01f)
         return;
 
@@ -276,15 +269,14 @@ void StarField::_appendMeteor(const Meteor& meteor, const SceneLayout& layout)
     const glm::vec2 center = layout.center + head * layout.unit - direction * halfLength;
 
     const float margin = halfLength + halfWidth;
-    if (center.x + margin < 0.0f || center.x - margin > layout.windowSize.x ||
-        center.y + margin < 0.0f || center.y - margin > layout.windowSize.y)
+    if (center.x + margin < 0.0f || center.x - margin > layout.windowSize.x || center.y + margin < 0.0f ||
+        center.y - margin > layout.windowSize.y)
         return;
 
     const Rgb tint = mix(kStarWhite, kStarBlue, 0.55f);
     const float alpha = clamp01(meteor.brightness * envelope);
 
-    appendQuad(_vertices, _indices, center, {halfLength, halfWidth},
-               std::atan2(direction.y, direction.x), _cometUv,
+    appendQuad(_vertices, _indices, center, {halfLength, halfWidth}, std::atan2(direction.y, direction.x), _cometUv,
                glm::vec4{tint.r, tint.g, tint.b, alpha});
 }
 

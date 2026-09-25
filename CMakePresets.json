@@ -17,6 +17,7 @@
       "installDir": "$env{LOCAL_PREFIX}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_PREFIX_PATH": "$env{LOCAL_PREFIX}"
       }
     },

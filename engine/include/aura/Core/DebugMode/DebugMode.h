@@ -9,11 +9,11 @@
 
 #include <ink/EnhancedJson.h>
 
-#include "aura/aura.h"
 #include "aura/Core/DebugMode/AllocationTracker.h"
 #include "aura/Core/DebugMode/GpuDebugStats.h"
 #include "aura/Core/Profiling/BenchmarkStats.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
+#include "aura/aura.h"
 
 /**
  * @file DebugMode.h
@@ -33,7 +33,8 @@
  * null check it has to write regardless.
  */
 
-namespace aura3d {
+namespace aura3d
+{
 
 class AuraSettings;
 class IRenderer;
@@ -94,7 +95,7 @@ struct DebugModeConfig
      *
      * @param settings May be null; only the environment applies then.
      */
-    [[nodiscard]] static DebugModeConfig fromSettings(AuraSettings* settings);
+    [[nodiscard]] static DebugModeConfig fromSettings(AuraSettings *settings);
 };
 
 /**
@@ -107,16 +108,16 @@ struct DebugModeConfig
  */
 class DebugMode final : public FrameObserver
 {
-public:
+  public:
     explicit DebugMode(DebugModeConfig config);
     ~DebugMode() override;
 
-    DebugMode(const DebugMode&)            = delete;
-    DebugMode& operator=(const DebugMode&) = delete;
+    DebugMode(const DebugMode &) = delete;
+    DebugMode &operator=(const DebugMode &) = delete;
 
     /// Records one frame. Called by FrameProfiler from AURA_FRAME_END(). On
     /// the frame path: no allocation, no sorting, no I/O.
-    void onFrameSample(const FrameSample& sample) noexcept override;
+    void onFrameSample(const FrameSample &sample) noexcept override;
 
     /// Per-frame bookkeeping the application drives: interim auto-flush and,
     /// when configured, ending the run. Kept out of onFrameSample() because
@@ -125,16 +126,22 @@ public:
 
     /// Binds the renderer whose GPU counters the report should include.
     /// Non-owning; pass nullptr to detach before the renderer is destroyed.
-    void attachRenderer(const IRenderer* renderer) noexcept;
+    void attachRenderer(const IRenderer *renderer) noexcept;
 
     //! True once targetFrames have been captured. Always false when
     //! targetFrames is 0.
     [[nodiscard]] bool finished() const noexcept;
 
     //! Frames captured since warm-up ended.
-    [[nodiscard]] u64 capturedFrames() const noexcept { return _capturedFrames; }
+    [[nodiscard]] u64 capturedFrames() const noexcept
+    {
+        return _capturedFrames;
+    }
 
-    [[nodiscard]] const DebugModeConfig& config() const noexcept { return _config; }
+    [[nodiscard]] const DebugModeConfig &config() const noexcept
+    {
+        return _config;
+    }
 
     //! The whole report as JSON, without writing it. The report writer
     //! allocates; every path into it mutes AllocationTracker first, so building
@@ -142,15 +149,18 @@ public:
     [[nodiscard]] ink::EnhancedJson buildReport() const;
 
     //! Writes buildReport() to DebugModeConfig::reportPath.
-    [[nodiscard]] bool flushReport() const { return flushReport(_config.reportPath); }
+    [[nodiscard]] bool flushReport() const
+    {
+        return flushReport(_config.reportPath);
+    }
 
     /**
      * @brief Writes buildReport() to @p path.
      * @return false if the file could not be opened or written.
      */
-    [[nodiscard]] bool flushReport(const std::string& path) const;
+    [[nodiscard]] bool flushReport(const std::string &path) const;
 
-private:
+  private:
     /**
      * @struct FrameRecord
      * @brief One captured frame, as stored in the ring.
@@ -159,46 +169,46 @@ private:
     {
         i64 frameNanos = 0;
         std::array<i64, kFramePhaseCount> phaseNanos{};
-        u64 liveBytes       = 0;
+        u64 liveBytes = 0;
         u64 allocationCount = 0;
-        f64 gpuMillis       = 0.0;
+        f64 gpuMillis = 0.0;
     };
 
     //! Ring contents oldest-first, as a flat copy for the summarisers.
     [[nodiscard]] std::vector<FrameRecord> orderedSamples() const;
 
-    [[nodiscard]] ink::EnhancedJson buildFrameSection(const std::vector<FrameRecord>& ordered) const;
-    [[nodiscard]] ink::EnhancedJson buildPhaseSection(const std::vector<FrameRecord>& ordered) const;
+    [[nodiscard]] ink::EnhancedJson buildFrameSection(const std::vector<FrameRecord> &ordered) const;
+    [[nodiscard]] ink::EnhancedJson buildPhaseSection(const std::vector<FrameRecord> &ordered) const;
     [[nodiscard]] ink::EnhancedJson buildMemorySection() const;
-    [[nodiscard]] ink::EnhancedJson buildGpuSection(const std::vector<FrameRecord>& ordered) const;
-    [[nodiscard]] ink::EnhancedJson buildVerdictSection(const ink::EnhancedJson& frame,
-                                                        const ink::EnhancedJson& memory) const;
+    [[nodiscard]] ink::EnhancedJson buildGpuSection(const std::vector<FrameRecord> &ordered) const;
+    [[nodiscard]] ink::EnhancedJson buildVerdictSection(const ink::EnhancedJson &frame,
+                                                        const ink::EnhancedJson &memory) const;
 
     DebugModeConfig _config;
 
     //! Non-owning; see attachRenderer().
-    const IRenderer* _renderer = nullptr;
+    const IRenderer *_renderer = nullptr;
 
     /// @name Ring of recent samples
     /// @{
-    std::vector<FrameRecord> _samples;  ///< Fixed size, never reallocated.
+    std::vector<FrameRecord> _samples; ///< Fixed size, never reallocated.
     usize _writeIndex = 0;
-    bool  _wrapped    = false;
+    bool _wrapped = false;
     /// @}
 
     /// @name Whole-run accumulators
     /// Exact over any run length, unlike anything derived from the ring.
     /// @{
     u64 _warmupRemaining = 0;
-    u64 _capturedFrames  = 0;
+    u64 _capturedFrames = 0;
     i64 _totalFrameNanos = 0;
-    i64 _minFrameNanos   = 0;
-    i64 _maxFrameNanos   = 0;
+    i64 _minFrameNanos = 0;
+    i64 _maxFrameNanos = 0;
     std::array<i64, kFramePhaseCount> _phaseTotalNanos{};
 
-    u64 _overBudgetFrames            = 0;
-    u32 _consecutiveOverBudget       = 0;
-    u32 _maxConsecutiveOverBudget    = 0;
+    u64 _overBudgetFrames = 0;
+    u32 _consecutiveOverBudget = 0;
+    u32 _maxConsecutiveOverBudget = 0;
 
     //! Live bytes against frame index, for the leak verdict. See
     //! DebugModeConfig::leakSlopeBytesPerFrame.
@@ -206,7 +216,7 @@ private:
 
     //! Allocation counters at the first captured frame, so the report can
     //! attribute allocations to the measured window rather than to startup.
-    u64 _baselineLiveBytes  = 0;
+    u64 _baselineLiveBytes = 0;
     u64 _baselineAllocCount = 0;
     /// @}
 

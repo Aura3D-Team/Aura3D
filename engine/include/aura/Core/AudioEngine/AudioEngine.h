@@ -18,12 +18,14 @@
 #include "aura/Utils/AudioMailbox.h"
 #include "aura/aura.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @brief How a clip's samples reach the mixer.
  */
-enum class AudioClipMode : u8 {
+enum class AudioClipMode : u8
+{
     /// Decoded once, held fully in memory. Right choice for sound effects:
     /// playing costs no decoding/allocation, and one buffer backs every
     /// simultaneous voice.
@@ -40,7 +42,8 @@ enum class AudioClipMode : u8 {
  * Normally driven from the scene camera each frame; see Camera::position() and
  * Camera::forward().
  */
-struct AudioListener3D {
+struct AudioListener3D
+{
     glm::vec3 position{0.0f};
     glm::vec3 forward{0.0f, 0.0f, -1.0f};
     glm::vec3 up{0.0f, 1.0f, 0.0f};
@@ -50,7 +53,8 @@ struct AudioListener3D {
  * @struct AudioSourceDesc
  * @brief Everything needed to start one voice.
  */
-struct AudioSourceDesc {
+struct AudioSourceDesc
+{
     AudioClipHandle clip;
 
     //! Restart from the beginning on reaching the end instead of finishing.
@@ -88,8 +92,9 @@ struct AudioSourceDesc {
  * bounded latest-state mailbox: repeated controls before a block coalesce.
  * Mixing performs no allocation, reclamation, or locking.
  */
-class AudioEngine {
-public:
+class AudioEngine
+{
+  public:
     /**
      * @brief Takes ownership of @p device and starts it.
      *
@@ -103,8 +108,8 @@ public:
 
     ~AudioEngine();
 
-    AudioEngine(const AudioEngine&) = delete;
-    AudioEngine& operator=(const AudioEngine&) = delete;
+    AudioEngine(const AudioEngine &) = delete;
+    AudioEngine &operator=(const AudioEngine &) = delete;
 
     /**
      * @brief Loads @p path, converting it to the device's format.
@@ -114,14 +119,12 @@ public:
      *
      * @note Not cached here; use ResourceManager::loadSound() for that.
      */
-    [[nodiscard]] AudioClipHandle loadClip(const std::string& path,
-                                           AudioClipMode mode = AudioClipMode::Static);
+    [[nodiscard]] AudioClipHandle loadClip(const std::string &path, AudioClipMode mode = AudioClipMode::Static);
 
     /// Registers already-decoded PCM as a clip, resampled to the device's
     /// rate now rather than during playback. For generated audio; see
     /// AudioClipLoader::makeSineTone().
-    [[nodiscard]] AudioClipHandle createClip(const AudioClipData& data,
-                                             AudioClipMode mode = AudioClipMode::Static);
+    [[nodiscard]] AudioClipHandle createClip(const AudioClipData &data, AudioClipMode mode = AudioClipMode::Static);
 
     /// Stops its voices. Samples are freed once the audio thread has
     /// acknowledged the stop (here or in a later update()), or at once when
@@ -133,7 +136,7 @@ public:
 
     /// Starts a voice. @return An invalid handle if @p desc names an unknown
     /// clip or every voice slot is busy -- a dropped sound, not an error.
-    [[nodiscard]] AudioSourceHandle play(const AudioSourceDesc& desc);
+    [[nodiscard]] AudioSourceHandle play(const AudioSourceDesc &desc);
 
     //! Convenience overload: play @p clip once, unspatialized, at @p gain.
     [[nodiscard]] AudioSourceHandle play(AudioClipHandle clip, f32 gain = 1.0f);
@@ -165,11 +168,11 @@ public:
     [[nodiscard]] usize clipCount() const noexcept;
 
     void setSourceGain(AudioSourceHandle source, f32 gain) noexcept;
-    void setSourcePosition(AudioSourceHandle source, const glm::vec3& position) noexcept;
+    void setSourcePosition(AudioSourceHandle source, const glm::vec3 &position) noexcept;
     void setSourceLooping(AudioSourceHandle source, bool loop) noexcept;
 
     //! Moves the ears. Takes effect on the next mixed block.
-    void setListener(const AudioListener3D& listener) noexcept;
+    void setListener(const AudioListener3D &listener) noexcept;
     [[nodiscard]] AudioListener3D listener() const noexcept;
 
     //! Overall output gain, clamped to [0, 1]. Applied last, after every voice.
@@ -196,9 +199,10 @@ public:
     /// call this from an input handler. No-op once already running.
     void resumeDevice();
 
-private:
+  private:
     //! Decoded PCM plus the metadata the mixer needs to walk it.
-    struct Clip {
+    struct Clip
+    {
         std::vector<f32> samples;
         u16 channelCount = 0;
         AudioClipMode mode = AudioClipMode::Static;
@@ -213,11 +217,12 @@ private:
     /// One playing instance of a clip. `generation` makes recycled slots
     /// safe: a stale handle's generation no longer matches its slot's, so the
     /// operation is ignored rather than applied to the voice that replaced it.
-    struct Voice {
+    struct Voice
+    {
         AudioClipHandle clip;
         //! Resolved once on play() so the mixer never touches the clip map.
         //! Valid until the clip's retireAfter epoch; see reclaimClips().
-        const Clip* data = nullptr;
+        const Clip *data = nullptr;
         //! Playback position in frames. Plain integer since clips are
         //! resampled to the device rate at load, so there's no fractional
         //! position to track.
@@ -244,11 +249,11 @@ private:
 
     //! Per-channel gains for @p voice, from its position relative to the
     //! listener. Distance attenuation plus equal-power stereo panning.
-    void computeSpatialGains(const Voice& voice, f32& leftGain, f32& rightGain) const noexcept;
+    void computeSpatialGains(const Voice &voice, f32 &leftGain, f32 &rightGain) const noexcept;
 
     //! Splits a handle into slot index and generation, or returns false when it
     //! refers to a slot that has since been recycled.
-    [[nodiscard]] bool resolveVoice(AudioSourceHandle handle, usize& slotOut) const noexcept;
+    [[nodiscard]] bool resolveVoice(AudioSourceHandle handle, usize &slotOut) const noexcept;
 
     //! Packs a slot index and generation into one handle; see resolveVoice().
     [[nodiscard]] static AudioSourceHandle makeSourceHandle(usize slot, u16 generation) noexcept;
@@ -256,7 +261,8 @@ private:
     std::unique_ptr<wma::IAudioDevice> _device;
 
     //! The game -> audio link for one voice slot.
-    struct VoiceChannel {
+    struct VoiceChannel
+    {
         //! Latest desired Voice state; the mixer takes it at the top of each block.
         AudioMailbox<Voice> commands;
         //! Serial of the last voice the mixer saw end in this slot. The game

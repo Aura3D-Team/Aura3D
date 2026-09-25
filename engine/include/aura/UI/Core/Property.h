@@ -24,7 +24,8 @@
  * affordable to expose every piece of widget state this way.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /**
  * @class Property
@@ -34,23 +35,31 @@ namespace aura3d::ui {
  * a relayout is not woken by code that writes the same number every frame.
  * Types without @c operator== skip that gate and always notify.
  */
-template <class T>
-class Property {
-public:
-    using Observer = Signal<const T&>;
+template <class T> class Property
+{
+  public:
+    using Observer = Signal<const T &>;
 
     Property() = default;
-    explicit Property(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : _value(std::move(value))
+    explicit Property(T value) noexcept(std::is_nothrow_move_constructible_v<T>) : _value(std::move(value))
     {
     }
 
-    Property(const Property&) = delete;
-    Property& operator=(const Property& other) = delete;
+    Property(const Property &) = delete;
+    Property &operator=(const Property &other) = delete;
 
-    [[nodiscard]] const T& get() const noexcept { return _value; }
-    [[nodiscard]] operator const T&() const noexcept { return _value; }
-    [[nodiscard]] const T* operator->() const noexcept { return &_value; }
+    [[nodiscard]] const T &get() const noexcept
+    {
+        return _value;
+    }
+    [[nodiscard]] operator const T &() const noexcept
+    {
+        return _value;
+    }
+    [[nodiscard]] const T *operator->() const noexcept
+    {
+        return &_value;
+    }
 
     /// @param notify False writes the value without waking observers -- for a
     ///        widget correcting its own state mid-edit, where the one
@@ -72,7 +81,7 @@ public:
         return true;
     }
 
-    Property& operator=(T value)
+    Property &operator=(T value)
     {
         set(std::move(value));
         return *this;
@@ -89,35 +98,37 @@ public:
      * change to @p source lands here. Keep the connection alive for as long as
      * the binding should hold -- letting it die is how a binding is undone.
      */
-    [[nodiscard]] ScopedConnection bind(Property& source)
+    [[nodiscard]] ScopedConnection bind(Property &source)
     {
         if (!_alive)
             _alive = std::make_shared<u8>(0);
         set(source.get());
-        return source.changed().connect([this, alive = std::weak_ptr<void>(_alive)](const T& value) {
-            if (!alive.expired())
-                set(value);
-        });
+        return source.changed().connect(
+            [this, alive = std::weak_ptr<void>(_alive)](const T &value)
+            {
+                if (!alive.expired())
+                    set(value);
+            });
     }
 
     /// As @ref bind, through a conversion -- binding a label's text to a
     /// slider's value, say.
-    template <class U, class Fn>
-    [[nodiscard]] ScopedConnection bindFrom(Property<U>& source, Fn transform)
+    template <class U, class Fn> [[nodiscard]] ScopedConnection bindFrom(Property<U> &source, Fn transform)
     {
         if (!_alive)
             _alive = std::make_shared<u8>(0);
         set(transform(source.get()));
 
         return source.changed().connect(
-            [this, alive = std::weak_ptr<void>(_alive), transform = std::move(transform)](const U& value) {
+            [this, alive = std::weak_ptr<void>(_alive), transform = std::move(transform)](const U &value)
+            {
                 if (!alive.expired())
                     set(transform(value));
             });
     }
 
     /// The change signal, created on first call.
-    [[nodiscard]] Observer& changed()
+    [[nodiscard]] Observer &changed()
     {
         if (!_changed)
             _changed = std::make_unique<Observer>();
@@ -125,7 +136,7 @@ public:
         return *_changed;
     }
 
-private:
+  private:
     T _value{};
 
     //! Null until someone asks for changed(). A widget exposing a dozen

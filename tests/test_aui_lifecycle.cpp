@@ -1,28 +1,45 @@
-#include "aura/UI/UI.hpp"
 #include "TestUtils.h"
+#include "aura/UI/UI.hpp"
 
 using namespace aura3d::ui;
 
-namespace {
-struct Harness {
+namespace
+{
+struct Harness
+{
     AtlasTextShaper shaper{TextShaperDesc{}};
     UIRoot root{shaper};
-    Harness() { root.resize({400.0f, 300.0f}); }
-    void frame() { root.update(0.2f); }
-    void click(glm::vec2 point) { root.pointerDown(point); root.pointerUp(point); }
+    Harness()
+    {
+        root.resize({400.0f, 300.0f});
+    }
+    void frame()
+    {
+        root.update(0.2f);
+    }
+    void click(glm::vec2 point)
+    {
+        root.pointerDown(point);
+        root.pointerUp(point);
+    }
 };
 
 void hiddenSubtree()
 {
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& button = page.add<Button>("Hide");
+    auto &page = h.root.setContent<Column>();
+    auto &button = page.add<Button>("Hide");
     int clicks = 0;
-    button.clicked.connect([&] { ++clicks; });
+    button.clicked.connect(
+        [&]
+        {
+            ++clicks;
+        });
     h.frame();
     h.root.pointerDown(button.bounds().center());
     page.setVisibility(Visibility::Hidden);
-    AURA_CHECK(!h.root.focused() && !h.root.pointerCapture(), "hiding an ancestor releases focus and capture immediately");
+    AURA_CHECK(!h.root.focused() && !h.root.pointerCapture(),
+               "hiding an ancestor releases focus and capture immediately");
     AURA_CHECK(!button.focusable(), "a descendant of a hidden ancestor cannot acquire focus");
     h.root.keyDown(wma::KEY_SPACE);
     AURA_CHECK(clicks == 0, "hidden controls receive no keyboard activation");
@@ -34,9 +51,13 @@ void hiddenSubtree()
 void cancelledPress()
 {
     Harness h;
-    auto& button = h.root.setContent<Column>().add<Button>("Cancel");
+    auto &button = h.root.setContent<Column>().add<Button>("Cancel");
     int clicks = 0;
-    button.clicked.connect([&] { ++clicks; });
+    button.clicked.connect(
+        [&]
+        {
+            ++clicks;
+        });
     h.frame();
     const auto point = button.bounds().center();
     h.root.pointerDown(point);
@@ -53,9 +74,13 @@ void cancelledPress()
 void matchingRelease()
 {
     Harness h;
-    auto& button = h.root.setContent<Button>("Button");
+    auto &button = h.root.setContent<Button>("Button");
     int clicks = 0;
-    button.clicked.connect([&] { ++clicks; });
+    button.clicked.connect(
+        [&]
+        {
+            ++clicks;
+        });
     h.frame();
     const auto point = button.bounds().center();
     h.root.pointerDown(point);
@@ -68,7 +93,7 @@ void matchingRelease()
 void foreignFocus()
 {
     Harness a, b;
-    auto& foreign = b.root.setContent<Button>("Foreign");
+    auto &foreign = b.root.setContent<Button>("Foreign");
     a.root.setFocus(&foreign);
     a.root.capturePointer(&foreign);
     AURA_CHECK(!a.root.focused() && !a.root.pointerCapture(), "a root rejects widgets owned by another root");
@@ -79,15 +104,24 @@ void foreignFocus()
 void modalKeyboardAndPointer()
 {
     Harness h;
-    auto& behind = h.root.setContent<Button>("Behind");
+    auto &behind = h.root.setContent<Button>("Behind");
     int clicks = 0;
-    behind.clicked.connect([&] { ++clicks; });
+    behind.clicked.connect(
+        [&]
+        {
+            ++clicks;
+        });
     h.frame();
     behind.requestFocus();
-    auto& lower = h.root.overlay().open<Button>({.anchor = {{0, 0}, {0, 0}}}, "Lower popup");
+    auto &lower = h.root.overlay().open<Button>({.anchor = {{0, 0}, {0, 0}}}, "Lower popup");
     int lowerClicks = 0;
-    lower.clicked.connect([&] { ++lowerClicks; });
-    auto& modal = h.root.overlay().open<Column>({.placement = Placement::Center, .modal = true, .dismissOnOutsideClick = false});
+    lower.clicked.connect(
+        [&]
+        {
+            ++lowerClicks;
+        });
+    auto &modal =
+        h.root.overlay().open<Column>({.placement = Placement::Center, .modal = true, .dismissOnOutsideClick = false});
     modal.add<Button>("Inside");
     h.frame();
     h.root.keyDown(wma::KEY_SPACE);
@@ -99,10 +133,14 @@ void modalKeyboardAndPointer()
 void dismissalConsumesClick()
 {
     Harness h;
-    auto& button = h.root.setContent<Button>("Behind");
+    auto &button = h.root.setContent<Button>("Behind");
     int clicks = 0;
-    button.clicked.connect([&] { ++clicks; });
-    auto& popup = h.root.overlay().open<Column>({.placement = Placement::Center});
+    button.clicked.connect(
+        [&]
+        {
+            ++clicks;
+        });
+    auto &popup = h.root.overlay().open<Column>({.placement = Placement::Center});
     popup.layout().minWidth = 60;
     popup.layout().minHeight = 40;
     h.frame();
@@ -113,9 +151,9 @@ void dismissalConsumesClick()
 void tooltipAllowsTab()
 {
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& first = page.add<Button>("First");
-    auto& second = page.add<Button>("Second");
+    auto &page = h.root.setContent<Column>();
+    auto &first = page.add<Button>("First");
+    auto &second = page.add<Button>("Second");
     first.setTooltip("Hint");
     h.root.setTooltipDelay(0.01f);
     h.frame();
@@ -129,7 +167,7 @@ void tooltipAllowsTab()
 void disclosureRelease()
 {
     Harness h;
-    auto& section = h.root.setContent<Column>().add<CollapsingHeader>("Section");
+    auto &section = h.root.setContent<Column>().add<CollapsingHeader>("Section");
     section.content().add<Button>("Child");
     h.frame();
     h.root.pointerDown(section.bounds().min + glm::vec2{5, 5});
@@ -140,8 +178,8 @@ void disclosureRelease()
 void removedPopupOwner()
 {
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& dropdown = page.add<Dropdown>(std::vector<std::string>{"One", "Two"});
+    auto &page = h.root.setContent<Column>();
+    auto &dropdown = page.add<Dropdown>(std::vector<std::string>{"One", "Two"});
     h.frame();
     h.click(dropdown.bounds().center());
     h.frame();
@@ -153,23 +191,42 @@ void removedPopupOwner()
 void callbacksRemoveWidgets()
 {
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& node = page.add<TreeNode>("Remove me");
-    node.activated.connect([&] { page.remove(node); });
+    auto &page = h.root.setContent<Column>();
+    auto &node = page.add<TreeNode>("Remove me");
+    node.activated.connect(
+        [&]
+        {
+            page.remove(node);
+        });
     h.frame();
     h.click(node.bounds().min + glm::vec2{5, 5});
     AURA_CHECK(page.childCount() == 0, "a tree activation can remove its own widget");
 
-    struct Tick : Widget {
+    struct Tick : Widget
+    {
         std::function<void()> action;
-        void start() { setAnimating(true); }
-        bool onTick(f32) override { action(); return false; }
+        void start()
+        {
+            setAnimating(true);
+        }
+        bool onTick(f32) override
+        {
+            action();
+            return false;
+        }
     };
-    auto& first = page.add<Tick>();
-    auto& second = page.add<Tick>();
-    first.action = [&] { page.remove(second); };
-    second.action = [] { AURA_CHECK(false, "a removed animation must never tick"); };
-    first.start(); second.start();
+    auto &first = page.add<Tick>();
+    auto &second = page.add<Tick>();
+    first.action = [&]
+    {
+        page.remove(second);
+    };
+    second.action = []
+    {
+        AURA_CHECK(false, "a removed animation must never tick");
+    };
+    first.start();
+    second.start();
     h.frame();
     AURA_CHECK(page.childCount() == 1, "a tick can remove a later widget in the animation snapshot");
 }
@@ -187,10 +244,12 @@ void bindingAndRadioLifetime()
 
     Harness h;
     RadioGroup group;
-    auto& page = h.root.setContent<Column>();
-    auto& a = page.add<RadioButton>("A");
-    auto& b = page.add<RadioButton>("B");
-    group.add(a); group.add(b); group.select(0);
+    auto &page = h.root.setContent<Column>();
+    auto &a = page.add<RadioButton>("A");
+    auto &b = page.add<RadioButton>("B");
+    group.add(a);
+    group.add(b);
+    group.select(0);
     page.remove(a);
     AURA_CHECK(group.selected() == -1, "a removed selected radio leaves no dangling selection");
     group.select(1);
@@ -200,15 +259,14 @@ void bindingAndRadioLifetime()
 void scrollAxesAndCancellation()
 {
     Harness h;
-    auto& scroll = h.root.setContent<ScrollView>();
+    auto &scroll = h.root.setContent<ScrollView>();
     scroll.setScrollable(true, true);
     scroll.setSmooth(false);
-    auto& content = scroll.setContent<Widget>();
+    auto &content = scroll.setContent<Widget>();
     content.layout().width = Length::px(1000);
     content.layout().height = Length::px(1000);
     h.frame();
-    AURA_CHECK(h.root.wheel({-1, 0}, {30, 30}) && scroll.offset().x > 0,
-               "horizontal wheel deltas scroll horizontally");
+    AURA_CHECK(h.root.wheel({-1, 0}, {30, 30}) && scroll.offset().x > 0, "horizontal wheel deltas scroll horizontally");
     scroll.setScrollable(false, true);
     h.frame();
     AURA_CHECK(scroll.offset().x == 0, "disabling an axis clamps its offset to zero");
@@ -220,14 +278,22 @@ void scrollAxesAndCancellation()
 
 void persistentTicksAndHover()
 {
-    struct Tick : Widget {
+    struct Tick : Widget
+    {
         int ticks = 0;
-        Tick() { setAnimating(true); }
-        bool onTick(f32) override { ++ticks; return true; }
+        Tick()
+        {
+            setAnimating(true);
+        }
+        bool onTick(f32) override
+        {
+            ++ticks;
+            return true;
+        }
     };
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& ticker = page.add<Tick>();
+    auto &page = h.root.setContent<Column>();
+    auto &ticker = page.add<Tick>();
     h.frame();
     page.setVisibility(Visibility::Hidden);
     h.frame();
@@ -240,7 +306,7 @@ void persistentTicksAndHover()
     h.frame();
     AURA_CHECK(ticker.ticks == 3, "reparenting preserves tick registration");
 
-    auto& button = page.add<Button>("Hover");
+    auto &button = page.add<Button>("Hover");
     h.frame();
     h.root.pointerMoved(button.bounds().center());
     h.frame();
@@ -254,14 +320,16 @@ void persistentTicksAndHover()
 void focusCallbackRemovesControl()
 {
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& slider = page.add<Slider>(0, 100);
+    auto &page = h.root.setContent<Column>();
+    auto &slider = page.add<Slider>(0, 100);
     h.frame();
     const auto point = slider.bounds().center();
-    const ScopedConnection connection = h.root.focusChanged.connect([&](Widget* widget) {
-        if (widget == &slider)
-            page.remove(slider);
-    });
+    const ScopedConnection connection = h.root.focusChanged.connect(
+        [&](Widget *widget)
+        {
+            if (widget == &slider)
+                page.remove(slider);
+        });
     h.root.pointerDown(point);
     AURA_CHECK(page.childCount() == 0 && !h.root.pointerCapture(),
                "a focus callback can remove the slider receiving a press");
@@ -270,28 +338,40 @@ void focusCallbackRemovesControl()
 void disableCallbackRemovesControl()
 {
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& button = page.add<Button>("Remove on blur");
-    h.frame(); button.requestFocus();
-    const ScopedConnection connection = h.root.focusChanged.connect([&](Widget* focused) {
-        if (!focused && page.childCount()) page.remove(button);
-    });
+    auto &page = h.root.setContent<Column>();
+    auto &button = page.add<Button>("Remove on blur");
+    h.frame();
+    button.requestFocus();
+    const ScopedConnection connection = h.root.focusChanged.connect(
+        [&](Widget *focused)
+        {
+            if (!focused && page.childCount())
+                page.remove(button);
+        });
     button.setEnabled(false);
     AURA_CHECK(page.childCount() == 0, "a blur callback may destroy the control being disabled");
 }
 
 void releaseCallbackRemovesControl()
 {
-    struct RemoveOnLeave : Control {
+    struct RemoveOnLeave : Control
+    {
         std::function<void()> leave;
-        void onPointerLeave() override { if (leave) leave(); }
+        void onPointerLeave() override
+        {
+            if (leave)
+                leave();
+        }
     };
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& button = page.add<RemoveOnLeave>();
+    auto &page = h.root.setContent<Column>();
+    auto &button = page.add<RemoveOnLeave>();
     button.layout().width = Length::px(80);
     button.layout().height = Length::px(30);
-    button.leave = [&] { page.remove(button); };
+    button.leave = [&]
+    {
+        page.remove(button);
+    };
     h.frame();
     h.root.pointerDown(button.bounds().center());
     h.root.pointerUp({390, 290});
@@ -301,7 +381,7 @@ void releaseCallbackRemovesControl()
 void nativeFocusLoss()
 {
     Harness h;
-    auto& slider = h.root.setContent<Slider>(0, 100);
+    auto &slider = h.root.setContent<Slider>(0, 100);
     h.frame();
     h.root.pointerDown({100, 30});
     const float value = slider.value.get();
@@ -314,36 +394,44 @@ void nativeFocusLoss()
 void focusCallbackReplacesContent()
 {
     Harness h;
-    auto& button = h.root.setContent<Button>("Replace on blur");
-    h.frame(); button.requestFocus();
+    auto &button = h.root.setContent<Button>("Replace on blur");
+    h.frame();
+    button.requestFocus();
     const WidgetRef outgoing(&button);
     WidgetRef intermediate;
     bool replaced = false;
-    const ScopedConnection connection = h.root.focusChanged.connect([&](Widget* focused) {
-        if (!focused && !replaced) {
-            replaced = true;
-            auto& content = h.root.setContent<Column>();
-            intermediate = WidgetRef(&content);
-            content.add<Button>("Callback content").requestFocus();
-        }
-    });
-    auto& replacement = h.root.setContent<Column>();
+    const ScopedConnection connection = h.root.focusChanged.connect(
+        [&](Widget *focused)
+        {
+            if (!focused && !replaced)
+            {
+                replaced = true;
+                auto &content = h.root.setContent<Column>();
+                intermediate = WidgetRef(&content);
+                content.add<Button>("Callback content").requestFocus();
+            }
+        });
+    auto &replacement = h.root.setContent<Column>();
     h.frame();
-    AURA_CHECK(replaced && h.root.content() == &replacement && !h.root.focused() &&
-                   !outgoing.get() && !intermediate.get(),
+    AURA_CHECK(replaced && h.root.content() == &replacement && !h.root.focused() && !outgoing.get() &&
+                   !intermediate.get(),
                "replacing content remains safe when a blur callback also replaces it");
 }
 
 void detachCallbackRemovesParent()
 {
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& button = page.add<Button>("Remove parent on blur");
-    h.frame(); button.requestFocus();
+    auto &page = h.root.setContent<Column>();
+    auto &button = page.add<Button>("Remove parent on blur");
+    h.frame();
+    button.requestFocus();
     const WidgetRef parent(&page);
-    const ScopedConnection connection = h.root.focusChanged.connect([&](Widget* focused) {
-        if (!focused) h.root.setContent<Column>();
-    });
+    const ScopedConnection connection = h.root.focusChanged.connect(
+        [&](Widget *focused)
+        {
+            if (!focused)
+                h.root.setContent<Column>();
+        });
     page.clearChildren();
     h.frame();
     AURA_CHECK(!parent.get() && h.root.content() && !h.root.focused(),
@@ -352,16 +440,24 @@ void detachCallbackRemovesParent()
 
 void detachCallbackRemovesSibling()
 {
-    struct DetachAction : Widget {
+    struct DetachAction : Widget
+    {
         std::function<void()> action;
-        void onDetach() override { if (action) action(); }
+        void onDetach() override
+        {
+            if (action)
+                action();
+        }
     };
     Harness h;
-    auto& page = h.root.setContent<Column>();
-    auto& first = page.add<DetachAction>();
-    auto& second = page.add<Widget>();
+    auto &page = h.root.setContent<Column>();
+    auto &first = page.add<DetachAction>();
+    auto &second = page.add<Widget>();
     const WidgetRef removed(&second);
-    first.action = [&] { page.remove(second); };
+    first.action = [&]
+    {
+        page.remove(second);
+    };
     h.frame();
     h.root.setContent<Column>();
     AURA_CHECK(!removed.get(), "detaching a tree allows a child's callback to remove its sibling");
@@ -369,16 +465,24 @@ void detachCallbackRemovesSibling()
 
 void scrollbarReleaseRemovesView()
 {
-    struct RemoveOnLeave : Widget {
+    struct RemoveOnLeave : Widget
+    {
         std::function<void()> leave;
-        void onPointerLeave() override { if (leave) leave(); }
+        void onPointerLeave() override
+        {
+            if (leave)
+                leave();
+        }
     };
     Harness h;
-    auto& page = h.root.setContent<RemoveOnLeave>();
-    auto& scroll = page.add<ScrollView>();
+    auto &page = h.root.setContent<RemoveOnLeave>();
+    auto &scroll = page.add<ScrollView>();
     scroll.layout().height = Length::fill();
     scroll.setContent<Widget>().layout().height = Length::px(1000);
-    page.leave = [&] { h.root.setContent<Column>(); };
+    page.leave = [&]
+    {
+        h.root.setContent<Column>();
+    };
     const WidgetRef original(&scroll);
     h.frame();
     h.root.pointerDown({399, 5});
@@ -387,7 +491,7 @@ void scrollbarReleaseRemovesView()
     AURA_CHECK(!original.get() && !h.root.pointerCapture(),
                "scrollbar release survives a hover callback removing the view");
 }
-}
+} // namespace
 
 int main()
 {

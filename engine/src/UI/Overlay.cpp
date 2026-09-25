@@ -1,17 +1,19 @@
 #include "aura/UI/Overlay.h"
 
-#include <algorithm>
 #include "aura/UI/UIRoot.h"
+#include <algorithm>
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 /// How far a Cursor-placed overlay clears the pointer, so the thing it
 /// describes is not under the thing describing it.
 constexpr f32 kCursorClearance = 14.0f;
 
-bool within(const Widget* ancestor, const Widget* node)
+bool within(const Widget *ancestor, const Widget *node)
 {
     for (; node; node = node->parent())
         if (node == ancestor)
@@ -19,25 +21,25 @@ bool within(const Widget* ancestor, const Widget* node)
     return false;
 }
 
-Widget* pickOverlay(Widget& node, glm::vec2 point)
+Widget *pickOverlay(Widget &node, glm::vec2 point)
 {
     if (!node.effectivelyVisible())
         return nullptr;
     if (!node.clipsChildren() || node.contentRect().contains(point))
         for (usize i = node.childCount(); i-- > 0;)
-            if (Widget* hit = pickOverlay(node.childAt(i), point))
+            if (Widget *hit = pickOverlay(node.childAt(i), point))
                 return hit;
     return node.hitTest(point) ? &node : nullptr;
 }
 
-Widget* firstFocusable(Widget& node)
+Widget *firstFocusable(Widget &node)
 {
     if (!node.effectivelyVisible() || !node.effectivelyEnabled())
         return nullptr;
     if (node.focusable())
         return &node;
-    for (const auto& child : node.children())
-        if (Widget* found = firstFocusable(*child))
+    for (const auto &child : node.children())
+        if (Widget *found = firstFocusable(*child))
             return found;
     return nullptr;
 }
@@ -51,15 +53,15 @@ OverlayLayer::OverlayLayer()
     setHitTestVisible(false);
 }
 
-void OverlayLayer::_register(const OverlayDesc& desc)
+void OverlayLayer::_register(const OverlayDesc &desc)
 {
-    _entries.push_back(Entry{_nextId++, desc, false, WidgetRef(desc.owner),
-                             WidgetRef(root() ? root()->focused() : nullptr), true});
+    _entries.push_back(
+        Entry{_nextId++, desc, false, WidgetRef(desc.owner), WidgetRef(root() ? root()->focused() : nullptr), true});
     if (desc.modal && root())
         root()->capturePointer(nullptr);
 }
 
-Widget* OverlayLayer::focusScope() const noexcept
+Widget *OverlayLayer::focusScope() const noexcept
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
         if (!_entries[i].closing && childAt(i).effectivelyVisible() && childAt(i).hitTestVisible())
@@ -67,7 +69,7 @@ Widget* OverlayLayer::focusScope() const noexcept
     return nullptr;
 }
 
-bool OverlayLayer::allowsFocus(const Widget* widget) const noexcept
+bool OverlayLayer::allowsFocus(const Widget *widget) const noexcept
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
     {
@@ -81,18 +83,18 @@ bool OverlayLayer::allowsFocus(const Widget* widget) const noexcept
     return true;
 }
 
-Widget* OverlayLayer::widgetAt(glm::vec2 point) const
+Widget *OverlayLayer::widgetAt(glm::vec2 point) const
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
     {
         if (_entries[i].closing)
             continue;
-        Widget& child = childAt(i);
+        Widget &child = childAt(i);
         if (child.hitTestVisible())
-            if (Widget* hit = pickOverlay(child, point))
+            if (Widget *hit = pickOverlay(child, point))
                 return hit;
         if (_entries[i].desc.modal)
-            return const_cast<OverlayLayer*>(this);
+            return const_cast<OverlayLayer *>(this);
     }
     return nullptr;
 }
@@ -101,7 +103,7 @@ void OverlayLayer::syncFocus()
 {
     if (!root())
         return;
-    Widget* scope = focusScope();
+    Widget *scope = focusScope();
     if (!scope)
         return;
     for (usize i = 0; i < _entries.size(); ++i)
@@ -116,7 +118,7 @@ void OverlayLayer::syncFocus()
     }
 }
 
-void OverlayLayer::forgetOwner(Widget& owner)
+void OverlayLayer::forgetOwner(Widget &owner)
 {
     for (usize i = _entries.size(); i-- > 0;)
         if (!_entries[i].closing && within(&owner, _entries[i].owner.get()))
@@ -145,19 +147,23 @@ OverlayLayer::Id OverlayLayer::lastId() const noexcept
 
 bool OverlayLayer::isOpen(Id id) const noexcept
 {
-    return std::ranges::any_of(_entries, [id](const Entry& entry) {
-        return entry.id == id && !entry.closing;
-    });
+    return std::ranges::any_of(_entries,
+                               [id](const Entry &entry)
+                               {
+                                   return entry.id == id && !entry.closing;
+                               });
 }
 
 bool OverlayLayer::hasModal() const noexcept
 {
-    return std::ranges::any_of(_entries, [](const Entry& entry) {
-        return entry.desc.modal && !entry.closing;
-    });
+    return std::ranges::any_of(_entries,
+                               [](const Entry &entry)
+                               {
+                                   return entry.desc.modal && !entry.closing;
+                               });
 }
 
-Widget* OverlayLayer::topmost() const noexcept
+Widget *OverlayLayer::topmost() const noexcept
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
     {
@@ -256,7 +262,7 @@ void OverlayLayer::closeLightDismissible()
     }
 }
 
-void OverlayLayer::closeFrom(const Widget& member)
+void OverlayLayer::closeFrom(const Widget &member)
 {
     const usize live = std::min(childCount(), _entries.size());
     usize from = live;
@@ -271,7 +277,7 @@ void OverlayLayer::closeFrom(const Widget& member)
             close(_entries[i].id);
 }
 
-Widget* OverlayLayer::ownerOf(const Widget& member) const noexcept
+Widget *OverlayLayer::ownerOf(const Widget &member) const noexcept
 {
     const usize live = std::min(childCount(), _entries.size());
     for (usize i = 0; i < live; ++i)
@@ -282,7 +288,7 @@ Widget* OverlayLayer::ownerOf(const Widget& member) const noexcept
 
 void OverlayLayer::closeAll()
 {
-    for (const Entry& entry : _entries)
+    for (const Entry &entry : _entries)
     {
         if (!entry.closing)
             close(entry.id);
@@ -311,7 +317,7 @@ void OverlayLayer::collectClosed()
         remove(childAt(i));
     }
 
-    for (const std::function<void()>& callback : notify)
+    for (const std::function<void()> &callback : notify)
         callback();
 }
 
@@ -321,7 +327,7 @@ void OverlayLayer::onChildRemoved(usize index)
         _entries.erase(_entries.begin() + static_cast<ptrdiff_t>(index));
 }
 
-glm::vec2 OverlayLayer::measureContent(const Constraints& available)
+glm::vec2 OverlayLayer::measureContent(const Constraints &available)
 {
     //! Loose, always: an overlay is sized by what is in it, never by what it
     //! is anchored to. The layer itself reports nothing, so it never grows the
@@ -329,13 +335,12 @@ glm::vec2 OverlayLayer::measureContent(const Constraints& available)
     for (usize i = 0; i < childCount(); ++i)
         childAt(i).measure(Constraints::loose(available.max));
 
-
     return {0.0f, 0.0f};
 }
 
-glm::vec2 OverlayLayer::place(const OverlayDesc& desc, glm::vec2 size, const Rect& surface)
+glm::vec2 OverlayLayer::place(const OverlayDesc &desc, glm::vec2 size, const Rect &surface)
 {
-    const Rect& anchor = desc.anchor;
+    const Rect &anchor = desc.anchor;
 
     glm::vec2 origin{anchor.min};
 
@@ -393,11 +398,11 @@ glm::vec2 OverlayLayer::place(const OverlayDesc& desc, glm::vec2 size, const Rec
     return glm::clamp(origin, surface.min, limit);
 }
 
-void OverlayLayer::arrangeContent(const Rect& content)
+void OverlayLayer::arrangeContent(const Rect &content)
 {
     for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
     {
-        Widget& child = childAt(i);
+        Widget &child = childAt(i);
 
         if (_entries[i].closing || child.visibility() == Visibility::Collapsed)
         {

@@ -21,8 +21,10 @@
 
 #include "aura/aura.h"
 
-namespace aura3d {
-namespace gfx {
+namespace aura3d
+{
+namespace gfx
+{
 
 /// Geometry
 
@@ -31,7 +33,8 @@ namespace gfx {
  * @brief Uniform buffer object (UBO).
  * Reference to 'layout(set = 0, binding = 0) uniform' in shader.
  */
-struct TransformUBO {
+struct TransformUBO
+{
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
@@ -45,11 +48,12 @@ struct TransformUBO {
  * into a uniform buffer: vec3+float pack into the first 16-byte slot, vec4
  * occupies the second, and the trailing float is padded out to a third.
  */
-struct LightUBO {
+struct LightUBO
+{
     glm::vec3 direction = {0.5f, -1.0f, 0.3f}; //! Direction the light travels.
-    float intensity = 1.0f; //! Diffuse multiplier.
+    float intensity = 1.0f;                    //! Diffuse multiplier.
     glm::vec4 color = {1.0f, 1.0f, 1.0f, 1.0f};
-    float ambient = 0.15f; //! Flat term added everywhere.
+    float ambient = 0.15f;              //! Flat term added everywhere.
     float _pad[3] = {0.0f, 0.0f, 0.0f}; //! std140 tail padding.
 };
 
@@ -57,21 +61,23 @@ struct LightUBO {
  * @struct Vertex3d
  * @brief Base struct for 3D geometry.
  */
-struct Vertex3D {
-    glm::vec3 pos; //! (x, y, z)
+struct Vertex3D
+{
+    glm::vec3 pos;      //! (x, y, z)
     glm::vec2 texCoord; //! (u, v)
-    glm::vec4 color; //! (r, g, b, a)
-    glm::vec3 normal; //! (nx, ny, nz)
+    glm::vec4 color;    //! (r, g, b, a)
+    glm::vec3 normal;   //! (nx, ny, nz)
 };
 
 /**
  * @struct Vertex2d
  * @brief Base struct for 2D geometry (Sprites, UI).
  */
-struct Vertex2D {
-    glm::vec2 pos; //! (x, y)
+struct Vertex2D
+{
+    glm::vec2 pos;      //! (x, y)
     glm::vec2 texCoord; //! (u, v)
-    glm::vec4 color; //! (r, g, b, a)
+    glm::vec4 color;    //! (r, g, b, a)
 };
 
 /**
@@ -80,17 +86,19 @@ struct Vertex2D {
  *
  * This can be used directly by the CPU renderer or uploaded to GPU buffers.
  */
-template <typename VertexType>
-struct Mesh {
+template <typename VertexType> struct Mesh
+{
     std::vector<VertexType> vertices;
     std::vector<u32> indices;
 
     [[nodiscard]]
-    bool empty() const noexcept {
+    bool empty() const noexcept
+    {
         return vertices.empty() || indices.empty();
     }
 
-    void clear() noexcept {
+    void clear() noexcept
+    {
         vertices.clear();
         indices.clear();
     }
@@ -103,7 +111,8 @@ using Mesh3D = Mesh<Vertex3D>;
  * @struct FragmentInput2D
  * @brief Data passed to the CPU fragment shader stage for 2D rendering.
  */
-struct FragmentInput2D {
+struct FragmentInput2D
+{
     glm::vec2 screenPos{};
     glm::vec2 texCoord{};
     glm::vec4 color{1.0f};
@@ -113,15 +122,16 @@ struct FragmentInput2D {
  * @struct FragmentInput3D
  * @brief Data passed to the CPU fragment shader stage.
  */
-struct FragmentInput3D {
+struct FragmentInput3D
+{
     glm::vec3 worldPos; //! Interpolated position for lighting calculations
     glm::vec2 texCoord; //! Interpolated U,V texturing channels
-    glm::vec4 color; //! Interpolated vertex colors
-    glm::vec3 normal; //! Interpolated surface normal vector
+    glm::vec4 color;    //! Interpolated vertex colors
+    glm::vec3 normal;   //! Interpolated surface normal vector
     float perspectiveW; //! 1/W element for perspective-correct interpolation
 };
 
-}
-}
+} // namespace gfx
+} // namespace aura3d
 
 #endif

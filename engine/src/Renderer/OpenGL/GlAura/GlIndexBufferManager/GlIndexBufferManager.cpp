@@ -1,12 +1,17 @@
 #include "aura/Renderer/OpenGL/GlAura/GlIndexBufferManager/GlIndexBufferManager.h"
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
 GlIndexBufferManager::GlIndexBufferManager() = default;
-GlIndexBufferManager::~GlIndexBufferManager() { cleanup(); }
+GlIndexBufferManager::~GlIndexBufferManager()
+{
+    cleanup();
+}
 
-IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u16>&& indices)
+IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u16> &&indices)
 {
     auto handle = _nextHandle++;
     GlIndexBufferData data;
@@ -25,7 +30,7 @@ IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u16>&& ind
     return handle;
 }
 
-IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u32>&& indices)
+IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u32> &&indices)
 {
     auto handle = _nextHandle++;
     GlIndexBufferData data;
@@ -58,7 +63,7 @@ void GlIndexBufferManager::bind(IndexBufferHandle handle)
     _boundEbo = ebo;
 }
 
-GlIndexBufferData* GlIndexBufferManager::get(IndexBufferHandle handle)
+GlIndexBufferData *GlIndexBufferManager::get(IndexBufferHandle handle)
 {
     auto it = _buffers.find(handle);
     return (it != _buffers.end()) ? &it->second : nullptr;
@@ -66,7 +71,8 @@ GlIndexBufferData* GlIndexBufferManager::get(IndexBufferHandle handle)
 
 void GlIndexBufferManager::cleanup()
 {
-    for (auto& [handle, data] : _buffers) {
+    for (auto &[handle, data] : _buffers)
+    {
         glDeleteBuffers(1, &data.ebo);
     }
     _buffers.clear();

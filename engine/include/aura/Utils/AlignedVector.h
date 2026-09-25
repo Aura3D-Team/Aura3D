@@ -7,7 +7,8 @@
 
 #include <ink/AlignedAllocator.h>
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @brief A std::vector whose storage is over-aligned to @p Alignment bytes.

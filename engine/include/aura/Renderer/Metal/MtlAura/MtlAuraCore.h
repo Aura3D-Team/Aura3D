@@ -23,8 +23,10 @@
  */
 #define MTL_MAX_FRAMES_IN_FLIGHT 2
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /// Shader interface
 
@@ -48,10 +50,10 @@ inline constexpr NS::UInteger kFragmentLightSlot = 0;
 inline constexpr NS::UInteger kFragmentAlbedoSlot = 0;
 
 //! MSL entry points, as named in resources/shaders/metal/*.metal.
-inline constexpr const char* kVertexFunction3D = "aura_vertex_3d";
-inline constexpr const char* kFragmentFunction3D = "aura_fragment_3d";
-inline constexpr const char* kVertexFunction2D = "aura_vertex_2d";
-inline constexpr const char* kFragmentFunction2D = "aura_fragment_2d";
+inline constexpr const char *kVertexFunction3D = "aura_vertex_3d";
+inline constexpr const char *kFragmentFunction3D = "aura_fragment_3d";
+inline constexpr const char *kVertexFunction2D = "aura_vertex_2d";
+inline constexpr const char *kFragmentFunction2D = "aura_fragment_2d";
 
 /// Formats
 
@@ -100,7 +102,8 @@ inline constexpr MTL::PixelFormat kTextureFormat = MTL::PixelFormatRGBA8Unorm;
  *
  * Layout must match the MSL struct of the same name in mtl_shader3d.metal.
  */
-struct TransformUniforms {
+struct TransformUniforms
+{
     glm::mat4 model{1.0f};
     glm::mat4 view{1.0f};
     glm::mat4 proj{1.0f};
@@ -119,7 +122,8 @@ struct TransformUniforms {
  *
  * Layout must match the MSL struct of the same name in mtl_shader2d.metal.
  */
-struct Overlay2DUniforms {
+struct Overlay2DUniforms
+{
     glm::mat4 proj{1.0f};
 };
 
@@ -162,8 +166,7 @@ static_assert(sizeof(Overlay2DUniforms) == 64, "MSL Overlay2DUniforms expects on
  * adding another, so the object dies with the handle -- which is what keeps
  * this backend free of manual retain/release pairs.
  */
-template <typename T>
-[[nodiscard]] inline NS::SharedPtr<T> adopt(T* object) noexcept
+template <typename T> [[nodiscard]] inline NS::SharedPtr<T> adopt(T *object) noexcept
 {
     return NS::TransferPtr(object);
 }
@@ -176,8 +179,7 @@ template <typename T>
  * the caller did not new/alloc. Retaining lifts the object out of the
  * surrounding autorelease pool, so it stays valid past the pool's drain.
  */
-template <typename T>
-[[nodiscard]] inline NS::SharedPtr<T> retain(T* object) noexcept
+template <typename T> [[nodiscard]] inline NS::SharedPtr<T> retain(T *object) noexcept
 {
     return NS::RetainPtr(object);
 }
@@ -188,7 +190,7 @@ template <typename T>
  * Returns an owning handle rather than the autoreleased NS::String::string(),
  * so callers need no live autorelease pool to hold a shader name or a label.
  */
-[[nodiscard]] inline NS::SharedPtr<NS::String> makeString(const char* text)
+[[nodiscard]] inline NS::SharedPtr<NS::String> makeString(const char *text)
 {
     return adopt(NS::String::alloc()->init(text, NS::UTF8StringEncoding));
 }
@@ -208,10 +210,12 @@ template <typename T>
  * and retaining one past its scope is invalid, so shared ownership is the wrong
  * model however convenient it looks.
  */
-class ScopedAutoreleasePool {
-public:
-    ScopedAutoreleasePool() noexcept
-        : _pool(NS::AutoreleasePool::alloc()->init()) {}
+class ScopedAutoreleasePool
+{
+  public:
+    ScopedAutoreleasePool() noexcept : _pool(NS::AutoreleasePool::alloc()->init())
+    {
+    }
 
     ~ScopedAutoreleasePool()
     {
@@ -219,16 +223,15 @@ public:
             _pool->release();
     }
 
-    ScopedAutoreleasePool(const ScopedAutoreleasePool&) = delete;
-    ScopedAutoreleasePool& operator=(const ScopedAutoreleasePool&) = delete;
+    ScopedAutoreleasePool(const ScopedAutoreleasePool &) = delete;
+    ScopedAutoreleasePool &operator=(const ScopedAutoreleasePool &) = delete;
 
-    ScopedAutoreleasePool(ScopedAutoreleasePool&& other) noexcept
-        : _pool(other._pool)
+    ScopedAutoreleasePool(ScopedAutoreleasePool &&other) noexcept : _pool(other._pool)
     {
         other._pool = nullptr;
     }
 
-    ScopedAutoreleasePool& operator=(ScopedAutoreleasePool&& other) noexcept
+    ScopedAutoreleasePool &operator=(ScopedAutoreleasePool &&other) noexcept
     {
         if (this != &other)
         {
@@ -241,8 +244,8 @@ public:
         return *this;
     }
 
-private:
-    NS::AutoreleasePool* _pool = nullptr;
+  private:
+    NS::AutoreleasePool *_pool = nullptr;
 };
 
 /**
@@ -254,16 +257,16 @@ private:
  *         null or carries no description -- so a failure is never reported as
  *         an empty message.
  */
-[[nodiscard]] inline std::string describeError(NS::Error* error)
+[[nodiscard]] inline std::string describeError(NS::Error *error)
 {
     if (!error)
         return "no error detail reported";
 
-    const NS::String* description = error->localizedDescription();
+    const NS::String *description = error->localizedDescription();
     if (!description)
         return "error " + std::to_string(static_cast<long long>(error->code()));
 
-    const char* utf8 = description->utf8String();
+    const char *utf8 = description->utf8String();
     return utf8 ? std::string(utf8) : "unprintable error description";
 }
 

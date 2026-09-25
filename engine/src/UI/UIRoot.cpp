@@ -9,9 +9,11 @@
 #include "aura/UI/Widgets/Basic.h"
 #include "aura/UI/Widgets/Layouts.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 /// Longest gap between two presses that still counts as a double click.
 constexpr f32 kDoubleClickSeconds = 0.40f;
@@ -20,7 +22,7 @@ constexpr f32 kDoubleClickSeconds = 0.40f;
 /// double click even when it is fast.
 constexpr f32 kDoubleClickSlop = 5.0f;
 
-[[nodiscard]] Widget* pick(Widget& node, glm::vec2 point)
+[[nodiscard]] Widget *pick(Widget &node, glm::vec2 point)
 {
     if (node.visibility() != Visibility::Visible)
         return nullptr;
@@ -36,14 +38,14 @@ constexpr f32 kDoubleClickSlop = 5.0f;
     //! Reverse order: later children paint on top, so they are hit first.
     for (usize i = node.childCount(); i-- > 0;)
     {
-        if (Widget* hit = pick(node.childAt(i), point))
+        if (Widget *hit = pick(node.childAt(i), point))
             return hit;
     }
 
     return node.hitTest(point) ? &node : nullptr;
 }
 
-void collectAccessibility(const Widget& node, AccessibilityNode& out)
+void collectAccessibility(const Widget &node, AccessibilityNode &out)
 {
     if (node.visibility() == Visibility::Collapsed)
         return;
@@ -59,8 +61,7 @@ void collectAccessibility(const Widget& node, AccessibilityNode& out)
         //! A purely visual node contributes its children but not itself, so a
         //! screen reader walks a tree of meaning rather than one of rectangles.
         if (child.info.role == Role::None && child.info.name.empty())
-            out.children.insert(out.children.end(),
-                                std::make_move_iterator(child.children.begin()),
+            out.children.insert(out.children.end(), std::make_move_iterator(child.children.begin()),
                                 std::make_move_iterator(child.children.end()));
         else
             out.children.push_back(std::move(child));
@@ -69,7 +70,7 @@ void collectAccessibility(const Widget& node, AccessibilityNode& out)
 
 } // namespace
 
-UIRoot::UIRoot(ITextShaper& shaper, Theme theme)
+UIRoot::UIRoot(ITextShaper &shaper, Theme theme)
     : _shaper(&shaper), _theme(std::move(theme)), _overlay(std::make_unique<OverlayLayer>())
 {
     _overlay->_setRoot(this);
@@ -117,9 +118,9 @@ void UIRoot::_adopt(std::unique_ptr<Widget> content)
     _paintDirty = true;
 }
 
-Widget& UIRoot::setContent(std::unique_ptr<Widget> content)
+Widget &UIRoot::setContent(std::unique_ptr<Widget> content)
 {
-    Widget& reference = *content;
+    Widget &reference = *content;
     _adopt(std::move(content));
     return reference;
 }
@@ -170,14 +171,13 @@ void UIRoot::update(f32 deltaSeconds)
         //! Ticking off a snapshot: a widget may stop animating (or start
         //! another one) from inside its own onTick.
         _tickScratch.clear();
-        for (Widget* widget : _animating)
+        for (Widget *widget : _animating)
             _tickScratch.emplace_back(widget);
 
-        for (const WidgetRef& reference : _tickScratch)
+        for (const WidgetRef &reference : _tickScratch)
         {
-            Widget* widget = reference.get();
-            if (!widget || widget->root() != this || !widget->animating() ||
-                !widget->effectivelyVisible())
+            Widget *widget = reference.get();
+            if (!widget || widget->root() != this || !widget->animating() || !widget->effectivelyVisible())
                 continue;
             const bool running = widget->onTick(deltaSeconds);
             if (reference.get() && widget->root() == this && !running)
@@ -216,7 +216,7 @@ void UIRoot::_layout()
     _paintDirty = true;
 }
 
-bool UIRoot::paint(DrawList& out)
+bool UIRoot::paint(DrawList &out)
 {
     if (_layoutDirty)
         _layout();
@@ -241,8 +241,7 @@ bool UIRoot::paint(DrawList& out)
 // Dispatch
 // -----------------------------------------------------------------------------
 
-template <class Event, class Handler>
-bool UIRoot::_bubble(Widget* target, Event& event, Handler&& handler)
+template <class Event, class Handler> bool UIRoot::_bubble(Widget *target, Event &event, Handler &&handler)
 {
     if (!target)
         return false;
@@ -257,7 +256,7 @@ bool UIRoot::_bubble(Widget* target, Event& event, Handler&& handler)
     if (!target->effectivelyEnabled())
         return true;
 
-    for (Widget* node = target; node != nullptr;)
+    for (Widget *node = target; node != nullptr;)
     {
         const WidgetRef current(node);
         const WidgetRef parent(node->parent());
@@ -275,12 +274,12 @@ bool UIRoot::_bubble(Widget* target, Event& event, Handler&& handler)
     return false;
 }
 
-Widget* UIRoot::widgetAt(glm::vec2 position) const
+Widget *UIRoot::widgetAt(glm::vec2 position) const
 {
     if (!surface().contains(position))
         return nullptr;
     //! Overlays are drawn last, so they are hit first.
-    if (Widget* hit = _overlay->widgetAt(position))
+    if (Widget *hit = _overlay->widgetAt(position))
         return hit;
 
     /*
@@ -303,7 +302,7 @@ void UIRoot::_updateHover(glm::vec2 position)
 {
     _hoverScratch.clear();
 
-    for (Widget* node = widgetAt(position); node != nullptr; node = node->parent())
+    for (Widget *node = widgetAt(position); node != nullptr; node = node->parent())
         _hoverScratch.push_back(node);
 
     //! Built deepest-first above; stored root-first so a diff against the
@@ -314,24 +313,23 @@ void UIRoot::_updateHover(glm::vec2 position)
         return;
 
     usize shared = 0;
-    while (shared < _hoverChain.size() && shared < _hoverScratch.size() &&
-           _hoverChain[shared] == _hoverScratch[shared])
+    while (shared < _hoverChain.size() && shared < _hoverScratch.size() && _hoverChain[shared] == _hoverScratch[shared])
         ++shared;
 
     InlineScratch<WidgetRef> leavingStorage;
-    auto& leaving = leavingStorage.values;
+    auto &leaving = leavingStorage.values;
     InlineScratch<WidgetRef> enteringStorage;
-    auto& entering = enteringStorage.values;
+    auto &entering = enteringStorage.values;
     for (usize i = _hoverChain.size(); i-- > shared;)
         leaving.emplace_back(_hoverChain[i]);
     for (usize i = shared; i < _hoverScratch.size(); ++i)
         entering.emplace_back(_hoverScratch[i]);
     _hoverChain = _hoverScratch;
-    for (const auto& reference : leaving)
-        if (Widget* node = reference.get(); node && node->root() == this)
+    for (const auto &reference : leaving)
+        if (Widget *node = reference.get(); node && node->root() == this)
             node->onPointerLeave();
-    for (const auto& reference : entering)
-        if (Widget* node = reference.get(); node && node->root() == this && isHovered(node))
+    for (const auto &reference : entering)
+        if (Widget *node = reference.get(); node && node->root() == this && isHovered(node))
             node->onPointerEnter();
 
     _paintDirty = true;
@@ -340,23 +338,23 @@ void UIRoot::_updateHover(glm::vec2 position)
 void UIRoot::_dropHover()
 {
     InlineScratch<WidgetRef> previousStorage;
-    auto& previous = previousStorage.values;
-    for (Widget* node : _hoverChain)
+    auto &previous = previousStorage.values;
+    for (Widget *node : _hoverChain)
         previous.emplace_back(node);
     if (!_hoverChain.empty())
         _paintDirty = true;
     _hoverChain.clear();
     for (usize i = previous.size(); i-- > 0;)
-        if (Widget* node = previous[i].get(); node && node->root() == this)
+        if (Widget *node = previous[i].get(); node && node->root() == this)
             node->onPointerLeave();
 }
 
-Widget* UIRoot::hovered() const noexcept
+Widget *UIRoot::hovered() const noexcept
 {
     return _hoverChain.empty() ? nullptr : _hoverChain.back();
 }
 
-bool UIRoot::isHovered(const Widget* widget) const noexcept
+bool UIRoot::isHovered(const Widget *widget) const noexcept
 {
     return widget != nullptr && std::ranges::find(_hoverChain, widget) != _hoverChain.end();
 }
@@ -381,7 +379,10 @@ bool UIRoot::pointerMoved(glm::vec2 position)
 
     PointerEvent event{.position = position, .delta = delta};
     const bool handled = _bubble(hovered(), event,
-                                 [](Widget& node, PointerEvent& e) { return node.onPointerMove(e); });
+                                 [](Widget &node, PointerEvent &e)
+                                 {
+                                     return node.onPointerMove(e);
+                                 });
 
     return handled || !_hoverChain.empty();
 }
@@ -407,13 +408,15 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
     if (_overlay->dismissOutside(position))
         return true;
 
-    Widget* target = _capture ? _capture : hovered();
+    Widget *target = _capture ? _capture : hovered();
 
-    PointerEvent event{
-        .position = position, .button = button, .mods = mods, .clickCount = _clickCount};
+    PointerEvent event{.position = position, .button = button, .mods = mods, .clickCount = _clickCount};
 
-    const bool handled =
-        _bubble(target, event, [](Widget& node, PointerEvent& e) { return node.onPointerDown(e); });
+    const bool handled = _bubble(target, event,
+                                 [](Widget &node, PointerEvent &e)
+                                 {
+                                     return node.onPointerDown(e);
+                                 });
 
     /*
      * A press that landed on the UI but that no widget wanted still counts as
@@ -434,12 +437,15 @@ bool UIRoot::pointerUp(glm::vec2 position, PointerButton button, Modifiers mods)
     if (!_capture)
         _updateHover(position);
 
-    Widget* target = _capture ? _capture : hovered();
+    Widget *target = _capture ? _capture : hovered();
 
     PointerEvent event{.position = position, .button = button, .mods = mods};
 
-    const bool handled =
-        _bubble(target, event, [](Widget& node, PointerEvent& e) { return node.onPointerUp(e); });
+    const bool handled = _bubble(target, event,
+                                 [](Widget &node, PointerEvent &e)
+                                 {
+                                     return node.onPointerUp(e);
+                                 });
 
     if (!_capture)
         _updateHover(position);
@@ -456,7 +462,10 @@ bool UIRoot::wheel(glm::vec2 delta, glm::vec2 position, Modifiers mods)
     WheelEvent event{.position = position, .delta = delta, .mods = mods};
 
     return _bubble(hovered(), event,
-                   [](Widget& node, WheelEvent& e) { return node.onWheel(e); });
+                   [](Widget &node, WheelEvent &e)
+                   {
+                       return node.onWheel(e);
+                   });
 }
 
 void UIRoot::pointerLeft()
@@ -469,15 +478,14 @@ void UIRoot::pointerLeft()
         _dropHover();
 }
 
-void UIRoot::capturePointer(Widget* widget)
+void UIRoot::capturePointer(Widget *widget)
 {
-    if (widget && (widget->root() != this || !widget->effectivelyEnabled() ||
-                   !widget->effectivelyVisible()))
+    if (widget && (widget->root() != this || !widget->effectivelyEnabled() || !widget->effectivelyVisible()))
         return;
     if (_capture == widget)
         return;
 
-    Widget* previous = std::exchange(_capture, widget);
+    Widget *previous = std::exchange(_capture, widget);
     if (previous)
         previous->onPointerCancel();
 
@@ -509,7 +517,7 @@ bool UIRoot::capturesPointer() const noexcept
 // Keyboard
 // -----------------------------------------------------------------------------
 
-bool UIRoot::_runShortcuts(const KeyEvent& event, bool beforeWidget)
+bool UIRoot::_runShortcuts(const KeyEvent &event, bool beforeWidget)
 {
     //! Modified combinations win over the focused widget; bare keys lose to
     //! it, so Delete still edits text but Ctrl+S always saves.
@@ -517,7 +525,7 @@ bool UIRoot::_runShortcuts(const KeyEvent& event, bool beforeWidget)
     if (modified != beforeWidget)
         return false;
 
-    for (const ShortcutEntry& entry : _shortcuts)
+    for (const ShortcutEntry &entry : _shortcuts)
     {
         if (!entry.shortcut.matches(event))
             continue;
@@ -551,7 +559,10 @@ bool UIRoot::keyDown(wma::Key key, Modifiers mods, bool repeat)
 
     KeyEvent bubbled = event;
     if (_bubble(_focused, bubbled,
-                [](Widget& node, KeyEvent& e) { return node.onKeyDown(e); }))
+                [](Widget &node, KeyEvent &e)
+                {
+                    return node.onKeyDown(e);
+                }))
         return true;
 
     if (_runShortcuts(event, false))
@@ -567,7 +578,11 @@ bool UIRoot::keyUp(wma::Key key, Modifiers mods)
 {
     _overlay->syncFocus();
     KeyEvent event{.key = key, .mods = mods};
-    return _bubble(_focused, event, [](Widget& node, KeyEvent& e) { return node.onKeyUp(e); });
+    return _bubble(_focused, event,
+                   [](Widget &node, KeyEvent &e)
+                   {
+                       return node.onKeyUp(e);
+                   });
 }
 
 bool UIRoot::textInput(std::string_view utf8)
@@ -578,23 +593,25 @@ bool UIRoot::textInput(std::string_view utf8)
 
     TextEvent event{utf8};
     return _bubble(_focused, event,
-                   [](Widget& node, TextEvent& e) { return node.onTextInput(e); });
+                   [](Widget &node, TextEvent &e)
+                   {
+                       return node.onTextInput(e);
+                   });
 }
 
 // -----------------------------------------------------------------------------
 // Focus
 // -----------------------------------------------------------------------------
 
-void UIRoot::setFocus(Widget* widget, FocusReason reason)
+void UIRoot::setFocus(Widget *widget, FocusReason reason)
 {
-    if (widget != nullptr && (widget->root() != this || !widget->focusable() ||
-                             !_overlay->allowsFocus(widget)))
+    if (widget != nullptr && (widget->root() != this || !widget->focusable() || !_overlay->allowsFocus(widget)))
         return;
 
     if (_focused == widget)
         return;
 
-    Widget* previous = _focused;
+    Widget *previous = _focused;
     _focused = widget;
 
     if (previous)
@@ -612,7 +629,7 @@ void UIRoot::clearFocus()
     setFocus(nullptr);
 }
 
-void UIRoot::_collectFocusable(Widget& node, std::vector<Widget*>& out) const
+void UIRoot::_collectFocusable(Widget &node, std::vector<Widget *> &out) const
 {
     if (node.visibility() != Visibility::Visible || !node.effectivelyEnabled())
         return;
@@ -633,7 +650,7 @@ bool UIRoot::_moveFocus(int direction)
      * this, tabbing out of a dialog lands on the controls it is covering,
      * which is both wrong and unreachable with the pointer.
      */
-    if (Widget* floating = _overlay->focusScope())
+    if (Widget *floating = _overlay->focusScope())
     {
         _collectFocusable(*floating, _focusScratch);
     }
@@ -663,8 +680,14 @@ bool UIRoot::_moveFocus(int direction)
     return true;
 }
 
-bool UIRoot::focusNext() { return _moveFocus(1); }
-bool UIRoot::focusPrevious() { return _moveFocus(-1); }
+bool UIRoot::focusNext()
+{
+    return _moveFocus(1);
+}
+bool UIRoot::focusPrevious()
+{
+    return _moveFocus(-1);
+}
 
 bool UIRoot::capturesKeyboard() const noexcept
 {
@@ -689,14 +712,18 @@ u64 UIRoot::addShortcut(Shortcut shortcut, std::function<void()> action)
 
 void UIRoot::removeShortcut(u64 id)
 {
-    std::erase_if(_shortcuts, [id](const ShortcutEntry& entry) { return entry.id == id; });
+    std::erase_if(_shortcuts,
+                  [id](const ShortcutEntry &entry)
+                  {
+                      return entry.id == id;
+                  });
 }
 
 // -----------------------------------------------------------------------------
 // Bookkeeping
 // -----------------------------------------------------------------------------
 
-bool UIRoot::_isAncestorOf(const Widget& ancestor, const Widget* node) noexcept
+bool UIRoot::_isAncestorOf(const Widget &ancestor, const Widget *node) noexcept
 {
     for (; node != nullptr; node = node->parent())
     {
@@ -707,7 +734,7 @@ bool UIRoot::_isAncestorOf(const Widget& ancestor, const Widget* node) noexcept
     return false;
 }
 
-void UIRoot::_forget(Widget& widget)
+void UIRoot::_forget(Widget &widget)
 {
     // Finish bookkeeping before callbacks can remove another part of the tree.
     const bool losesFocus = _isAncestorOf(widget, _focused);
@@ -715,12 +742,15 @@ void UIRoot::_forget(Widget& widget)
     const bool losesCapture = _isAncestorOf(widget, _capture);
     const WidgetRef capture(losesCapture ? std::exchange(_capture, nullptr) : nullptr);
     InlineScratch<WidgetRef> leavingStorage;
-    auto& leaving = leavingStorage.values;
-    for (Widget* node : _hoverChain)
+    auto &leaving = leavingStorage.values;
+    for (Widget *node : _hoverChain)
         if (_isAncestorOf(widget, node))
             leaving.emplace_back(node);
     std::erase_if(_hoverChain,
-                  [&widget](Widget* node) { return _isAncestorOf(widget, node); });
+                  [&widget](Widget *node)
+                  {
+                      return _isAncestorOf(widget, node);
+                  });
 
     if (_tooltipTarget && _isAncestorOf(widget, _tooltipTarget))
     {
@@ -730,17 +760,21 @@ void UIRoot::_forget(Widget& widget)
     if (_overlay)
         _overlay->forgetOwner(widget);
 
-    if (Widget* node = focus.get()) node->onFocusOut();
-    if (losesFocus) focusChanged.emit(_focused);
-    if (Widget* node = capture.get()) node->onPointerCancel();
+    if (Widget *node = focus.get())
+        node->onFocusOut();
+    if (losesFocus)
+        focusChanged.emit(_focused);
+    if (Widget *node = capture.get())
+        node->onPointerCancel();
     for (usize i = leaving.size(); i-- > 0;)
-        if (Widget* node = leaving[i].get()) node->onPointerLeave();
+        if (Widget *node = leaving[i].get())
+            node->onPointerLeave();
 
     _paintDirty = true;
     _layoutDirty = true;
 }
 
-void UIRoot::_setAnimating(Widget& widget, bool animating)
+void UIRoot::_setAnimating(Widget &widget, bool animating)
 {
     if (animating)
     {
@@ -753,7 +787,7 @@ void UIRoot::_setAnimating(Widget& widget, bool animating)
     }
 }
 
-Widget* UIRoot::_tooltipOwner(Widget* node) noexcept
+Widget *UIRoot::_tooltipOwner(Widget *node) noexcept
 {
     for (; node != nullptr; node = node->parent())
     {
@@ -777,7 +811,7 @@ void UIRoot::_closeTooltip()
 
 void UIRoot::_updateTooltip(f32 deltaSeconds)
 {
-    Widget* owner = _pointerInside ? _tooltipOwner(hovered()) : nullptr;
+    Widget *owner = _pointerInside ? _tooltipOwner(hovered()) : nullptr;
 
     if (owner != _tooltipTarget)
     {
@@ -801,9 +835,9 @@ void UIRoot::_updateTooltip(f32 deltaSeconds)
      * the toolkit has. Anchored to the cursor, not the widget, because a
      * tooltip for a wide row should appear where the eye is.
      */
-    const WidgetStyle& style = _theme[Part::Tooltip];
+    const WidgetStyle &style = _theme[Part::Tooltip];
 
-    auto& box = _overlay->open<Column>(OverlayDesc{
+    auto &box = _overlay->open<Column>(OverlayDesc{
         .anchor = Rect{_pointer, _pointer},
         .placement = Placement::Cursor,
         .dismissOnOutsideClick = false,
@@ -819,7 +853,7 @@ void UIRoot::_updateTooltip(f32 deltaSeconds)
     if (style.borderWidth > 0.0f)
         box.style().outline(style.border.normal, style.borderWidth);
 
-    auto& label = box.add<Label>(owner->tooltip());
+    auto &label = box.add<Label>(owner->tooltip());
     label.style().textColor(style.text);
 }
 

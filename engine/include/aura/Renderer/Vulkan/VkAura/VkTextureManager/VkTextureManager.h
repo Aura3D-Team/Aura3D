@@ -3,16 +3,18 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <array>
 #include <string>
 #include <vector>
-#include <array>
+#include <vulkan/vulkan.h>
 
-#include "aura/aura.h"
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @file VkTextureManager
@@ -21,8 +23,9 @@ namespace vk {
  * This class handles creation, storage, and cleanup of Vulkan textures
  * using a custom allocator for efficient memory management.
  */
-class VkTextureManager {
-public:
+class VkTextureManager
+{
+  public:
     /**
      * @struct TextureData
      * @brief Contains all resources associated with a texture
@@ -34,18 +37,17 @@ public:
     using TextureId = u32;
     static constexpr TextureId kInvalidTextureId = 0;
 
-    struct TextureData {
-        VkImage       image      = VK_NULL_HANDLE;
+    struct TextureData
+    {
+        VkImage image = VK_NULL_HANDLE;
         VmaAllocation allocation = VK_NULL_HANDLE;
-        VkImageView   view       = VK_NULL_HANDLE;
-        VkSampler     sampler    = VK_NULL_HANDLE;
-        u32           width      = 0;
-        u32           height     = 0;
+        VkImageView view = VK_NULL_HANDLE;
+        VkSampler sampler = VK_NULL_HANDLE;
+        u32 width = 0;
+        u32 height = 0;
     };
 
-    VkTextureManager(VulkanMemoryManager* memoryManager,
-                     VkDevice* device,
-                     VkCommandPool commandPool,
+    VkTextureManager(VulkanMemoryManager *memoryManager, VkDevice *device, VkCommandPool commandPool,
                      VkQueue graphicsQueue);
 
     ~VkTextureManager();
@@ -71,7 +73,7 @@ public:
      * @param height Texture height in pixels.
      * @return Id of the new texture, or kInvalidTextureId when the input is empty.
      */
-    TextureId createTextureFromPixels(const u8* rgba, u32 width, u32 height);
+    TextureId createTextureFromPixels(const u8 *rgba, u32 width, u32 height);
 
     /**
      * @brief Allocates an empty texture whose texels are written later by
@@ -104,9 +106,7 @@ public:
      * @param height Rectangle height in pixels.
      * @param rgba Tightly packed @p width * @p height * 4 bytes.
      */
-    void updateRegion(TextureId id,
-                      u32 x, u32 y, u32 width, u32 height,
-                      const u8* rgba);
+    void updateRegion(TextureId id, u32 x, u32 y, u32 width, u32 height, const u8 *rgba);
 
     /**
      * @brief Retrieves a texture by id.
@@ -119,10 +119,13 @@ public:
      * @param id The identifier of the texture to retrieve.
      * @return Pointer to the texture data, or nullptr if @p id was never issued.
      */
-    [[nodiscard]] const TextureData* getTexture(TextureId id) const noexcept;
+    [[nodiscard]] const TextureData *getTexture(TextureId id) const noexcept;
 
     //! Number of ids issued so far; valid ids are [1, textureCount()].
-    [[nodiscard]] u32 textureCount() const noexcept { return static_cast<u32>(_textures.size()); }
+    [[nodiscard]] u32 textureCount() const noexcept
+    {
+        return static_cast<u32>(_textures.size());
+    }
 
     /**
      * @brief Cleans up all texture resources
@@ -142,7 +145,7 @@ public:
      */
     void flushUploads();
 
-private:
+  private:
     /**
      * @brief One in-flight upload batch: its staging memory, command buffer
      *        and the fence that says the GPU is done reading both.
@@ -150,7 +153,8 @@ private:
      * Three of these rotate so that recording the next batch never waits on
      * the previous one; a slot is only reused after its fence has signalled.
      */
-    struct UploadSlot {
+    struct UploadSlot
+    {
         //! Host-visible, persistently mapped; patches are packed into it in order.
         AllocatedBuffer staging{};
         //! Bytes @c staging can hold. Zero until the first upload sizes it.
@@ -171,11 +175,14 @@ private:
     };
 
     //! The slot the next patch goes into.
-    UploadSlot& upload() noexcept { return _uploads[_uploadIndex]; }
+    UploadSlot &upload() noexcept
+    {
+        return _uploads[_uploadIndex];
+    }
 
     //! Blocks until @p slot's submitted batch has retired, freeing its staging range.
     //! A no-op when nothing is pending.
-    void retireUpload(UploadSlot& slot);
+    void retireUpload(UploadSlot &slot);
 
     /**
      * @brief Returns the current slot's command buffer, beginning a new batch
@@ -197,7 +204,7 @@ private:
      * @return Mapped pointer, or nullptr when @p bytes is zero or the slot
      *         could not be allocated or mapped.
      */
-    [[nodiscard]] void* acquireStagingBuffer(VkDeviceSize bytes);
+    [[nodiscard]] void *acquireStagingBuffer(VkDeviceSize bytes);
 
     //! Unmaps (when this class did the mapping) and destroys the current
     //! slot's staging buffer. Safe on an empty slot.
@@ -210,7 +217,7 @@ private:
     VkSampler createSampler();
 
     //! Destroys the image, view, sampler and allocation of @p texture.
-    void destroyTextureData(TextureData& texture);
+    void destroyTextureData(TextureData &texture);
 
     /**
      * @brief Records an image layout transition into @p cmd.
@@ -219,8 +226,8 @@ private:
      * an upload put its two transitions and the copy between them into a single
      * command buffer.
      */
-    void recordLayoutTransition(VkCommandBuffer cmd, VkImage image,
-                                VkImageLayout oldLayout, VkImageLayout newLayout) const;
+    void recordLayoutTransition(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout,
+                                VkImageLayout newLayout) const;
 
     /**
      * @brief Records a buffer -> image sub-rectangle copy into @p cmd, reading
@@ -228,11 +235,11 @@ private:
      *
      * A whole-image upload is this with a zero origin and the image's extent.
      */
-    void recordCopyBufferToImageRegion(VkCommandBuffer cmd, VkBuffer buffer, VkImage image,
-                                      u32 x, u32 y, u32 width, u32 height) const;
+    void recordCopyBufferToImageRegion(VkCommandBuffer cmd, VkBuffer buffer, VkImage image, u32 x, u32 y, u32 width,
+                                       u32 height) const;
 
-    VulkanMemoryManager* _memoryManager;
-    VkDevice* _device;
+    VulkanMemoryManager *_memoryManager;
+    VkDevice *_device;
     //! Upload pool from VkCommandManager; created with the reset bit so batch
     //! buffers can be recycled without freeing them.
     VkCommandPool _commandPool;

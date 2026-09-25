@@ -2,10 +2,13 @@
 
 #include "aura/Core/AuraException/AuraException.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-namespace {
+namespace
+{
 
 //! Source of the per-instance ids _threadPools()' cache is keyed by. Never
 //! reused, unlike the object addresses it stands in for.
@@ -13,23 +16,26 @@ std::atomic<u64> g_nextManagerId{1};
 
 } // namespace
 
-VkCommandManager::VkCommandManager(VkDevice* device, u32 queueFamilyIndex)
-    : _device(device),
-      _queueFamilyIndex(queueFamilyIndex),
-      _managerId(g_nextManagerId.fetch_add(1, std::memory_order_relaxed)) {
+VkCommandManager::VkCommandManager(VkDevice *device, u32 queueFamilyIndex)
+    : _device(device), _queueFamilyIndex(queueFamilyIndex),
+      _managerId(g_nextManagerId.fetch_add(1, std::memory_order_relaxed))
+{
     // Command pools are created on demand, per thread, on first use.
 }
 
-VkCommandManager::~VkCommandManager() {
+VkCommandManager::~VkCommandManager()
+{
     std::lock_guard<std::mutex> lock(_poolMutex);
 
-    for (auto& [threadId, pools] : _threadCommandPools) {
+    for (auto &[threadId, pools] : _threadCommandPools)
+    {
         if (pools->upload != VK_NULL_HANDLE)
             vkDestroyCommandPool(*_device, pools->upload, nullptr);
 
         //! Destroying a pool frees every command buffer allocated from it, so
         //! the cached secondaries need no separate vkFreeCommandBuffers.
-        for (RenderPool& renderPool : pools->render) {
+        for (RenderPool &renderPool : pools->render)
+        {
             if (renderPool.pool != VK_NULL_HANDLE)
                 vkDestroyCommandPool(*_device, renderPool.pool, nullptr);
         }
@@ -55,7 +61,7 @@ VkCommandPool VkCommandManager::_createPool(VkCommandPoolCreateFlags flags) cons
     return commandPool;
 }
 
-VkCommandManager::ThreadPools& VkCommandManager::_threadPools()
+VkCommandManager::ThreadPools &VkCommandManager::_threadPools()
 {
     /*
      * Per-thread memo of the last resolved pool set, ahead of the map lookup.
@@ -77,7 +83,7 @@ VkCommandManager::ThreadPools& VkCommandManager::_threadPools()
      * rehash, and ThreadPools is separately heap-allocated on top of that.
      */
     thread_local u64 cachedManagerId = 0;
-    thread_local ThreadPools* cachedPools = nullptr;
+    thread_local ThreadPools *cachedPools = nullptr;
 
     if (cachedManagerId == _managerId && cachedPools != nullptr)
         return *cachedPools;
@@ -85,7 +91,7 @@ VkCommandManager::ThreadPools& VkCommandManager::_threadPools()
     const std::thread::id threadId = std::this_thread::get_id();
 
     std::lock_guard<std::mutex> lock(_poolMutex);
-    std::unique_ptr<ThreadPools>& pools = _threadCommandPools[threadId];
+    std::unique_ptr<ThreadPools> &pools = _threadCommandPools[threadId];
     if (!pools)
         pools = std::make_unique<ThreadPools>();
 
@@ -96,16 +102,17 @@ VkCommandManager::ThreadPools& VkCommandManager::_threadPools()
 
 VkCommandPool VkCommandManager::getThreadCommandPool()
 {
-    ThreadPools& pools = _threadPools();
+    ThreadPools &pools = _threadPools();
     if (pools.upload == VK_NULL_HANDLE)
-        pools.upload = _createPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+        pools.upload =
+            _createPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
     return pools.upload;
 }
 
 VkFixedArray<VkCommandBuffer> VkCommandManager::createCommandBuffer()
 {
-    ThreadPools& pools = _threadPools();
+    ThreadPools &pools = _threadPools();
     VkFixedArray<VkCommandBuffer> commandBuffers(GetMaxFramesInFlight(), VK_NULL_HANDLE);
 
     /*
@@ -114,8 +121,9 @@ VkFixedArray<VkCommandBuffer> VkCommandManager::createCommandBuffer()
      * be able to recycle exactly one of these without disturbing the other,
      * which is only true if they come from different pools.
      */
-    for (u32 frame = 0; frame < commandBuffers.size(); ++frame) {
-        RenderPool& renderPool = pools.render[frame];
+    for (u32 frame = 0; frame < commandBuffers.size(); ++frame)
+    {
+        RenderPool &renderPool = pools.render[frame];
         if (renderPool.pool == VK_NULL_HANDLE)
             renderPool.pool = _createPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
 
@@ -136,8 +144,8 @@ VkCommandBuffer VkCommandManager::acquireSecondaryCommandBuffer(u32 frameIndex)
     if (frameIndex >= GetMaxFramesInFlight())
         throw AuraException("acquireSecondaryCommandBuffer: frame index out of range");
 
-    ThreadPools& pools = _threadPools();
-    RenderPool& renderPool = pools.render[frameIndex];
+    ThreadPools &pools = _threadPools();
+    RenderPool &renderPool = pools.render[frameIndex];
 
     if (renderPool.pool == VK_NULL_HANDLE)
         renderPool.pool = _createPool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
@@ -174,8 +182,9 @@ void VkCommandManager::resetRenderPools(u32 frameIndex)
      */
     std::lock_guard<std::mutex> lock(_poolMutex);
 
-    for (auto& [threadId, pools] : _threadCommandPools) {
-        RenderPool& renderPool = pools->render[frameIndex];
+    for (auto &[threadId, pools] : _threadCommandPools)
+    {
+        RenderPool &renderPool = pools->render[frameIndex];
         if (renderPool.pool == VK_NULL_HANDLE)
             continue;
 
@@ -201,8 +210,7 @@ void VkCommandManager::beginCommandBuffer(VkCommandBuffer commandBuffer)
     VK_RESULT_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 }
 
-void VkCommandManager::beginSecondaryCommandBuffer(VkCommandBuffer commandBuffer,
-                                                   VkRenderPass renderPass,
+void VkCommandManager::beginSecondaryCommandBuffer(VkCommandBuffer commandBuffer, VkRenderPass renderPass,
                                                    VkFramebuffer framebuffer)
 {
     /*
@@ -221,22 +229,22 @@ void VkCommandManager::beginSecondaryCommandBuffer(VkCommandBuffer commandBuffer
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     //! RENDER_PASS_CONTINUE is what makes this buffer legal as the target of a
     //! vkCmdExecuteCommands inside an already-begun render pass.
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-                     | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
     beginInfo.pInheritanceInfo = &inheritanceInfo;
 
     VK_RESULT_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 }
 
-void VkCommandManager::endCommandBuffer(VkCommandBuffer commandBuffer) {
+void VkCommandManager::endCommandBuffer(VkCommandBuffer commandBuffer)
+{
     VK_RESULT_CHECK(vkEndCommandBuffer(commandBuffer));
 }
 
-void VkCommandManager::freeCmdBuffer(VkCommandBuffer* commandBuffer)
+void VkCommandManager::freeCmdBuffer(VkCommandBuffer *commandBuffer)
 {
     VkCommandPool commandPool = getThreadCommandPool();
     vkFreeCommandBuffers(*_device, commandPool, 1, commandBuffer);
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

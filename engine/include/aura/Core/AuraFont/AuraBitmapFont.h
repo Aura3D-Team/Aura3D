@@ -6,17 +6,21 @@
 #include "aura/Utils/AlignedVector.h"
 #include "aura/aura.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
-struct AuraBitmapFont {
+struct AuraBitmapFont
+{
     i32 charWidth = 5;
     i32 charHeight = 8;
     i32 charSpacing = 1;
     AlignedVector<u8> data[128]; // ASCII characters
 
-    AuraBitmapFont() {
+    AuraBitmapFont()
+    {
         // Initialize all characters
-        for (i32 i = 0; i < 128; i++) {
+        for (i32 i = 0; i < 128; i++)
+        {
             data[i].resize(charHeight, 0);
         }
 
@@ -885,18 +889,20 @@ struct AuraBitmapFont {
         data[127][6] = 0b11111;
 
         // Ensure any characters with extra data get resized to match charHeight
-        for (int i = 0; i < 128; i++) {
+        for (int i = 0; i < 128; i++)
+        {
             data[i].resize(charHeight, 0);
         }
     }
 };
 
 // Singleton accessor for the bitmap font
-inline const AuraBitmapFont& GetDefaultBitmapFont() {
+inline const AuraBitmapFont &GetDefaultBitmapFont()
+{
     static const AuraBitmapFont defaultFont;
     return defaultFont;
 }
 
-} // namespace Aura
+} // namespace aura3d
 
 #endif // AURABITMAPFONT_H

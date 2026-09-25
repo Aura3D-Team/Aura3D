@@ -14,7 +14,8 @@
 
 using namespace aura3d;
 
-namespace {
+namespace
+{
 
 //! Frame times are doubles, so every comparison here is a tolerance one. The
 //! bound is far tighter than any error the two-pass variance can introduce and
@@ -34,10 +35,8 @@ void testEmpty()
     AURA_CHECK(near(summary.mean, 0.0), "empty input: mean is 0");
     AURA_CHECK(near(summary.median, 0.0), "empty input: median is 0");
     AURA_CHECK(near(summary.stddev, 0.0), "empty input: stddev is 0");
-    AURA_CHECK(near(BenchmarkStats::percentileSorted({}, 0.95), 0.0),
-               "empty input: percentile is 0");
-    AURA_CHECK(near(BenchmarkStats::empiricalExceedance({}, 1.0), 0.0),
-               "empty input: empirical exceedance is 0");
+    AURA_CHECK(near(BenchmarkStats::percentileSorted({}, 0.95), 0.0), "empty input: percentile is 0");
+    AURA_CHECK(near(BenchmarkStats::empiricalExceedance({}, 1.0), 0.0), "empty input: empirical exceedance is 0");
 }
 
 void testSingleSample()
@@ -69,10 +68,8 @@ void testAllEqual()
 
     // A zero-variance run has no distribution to extrapolate, so the normal fit
     // degenerates to which side of the threshold the constant value is on.
-    AURA_CHECK(near(BenchmarkStats::normalExceedance(summary, 5.0), 1.0),
-               "all-equal: P(x > 5) is 1 for a constant 7");
-    AURA_CHECK(near(BenchmarkStats::normalExceedance(summary, 9.0), 0.0),
-               "all-equal: P(x > 9) is 0 for a constant 7");
+    AURA_CHECK(near(BenchmarkStats::normalExceedance(summary, 5.0), 1.0), "all-equal: P(x > 5) is 1 for a constant 7");
+    AURA_CHECK(near(BenchmarkStats::normalExceedance(summary, 9.0), 0.0), "all-equal: P(x > 9) is 0 for a constant 7");
 }
 
 void testOddCount()
@@ -112,12 +109,9 @@ void testPercentileBounds()
 {
     const std::vector<f64> sorted{1.0, 2.0, 3.0, 4.0, 5.0};
 
-    AURA_CHECK(near(BenchmarkStats::percentileSorted(sorted, 0.0), 1.0),
-               "percentile: 0.0 is the minimum");
-    AURA_CHECK(near(BenchmarkStats::percentileSorted(sorted, 1.0), 5.0),
-               "percentile: 1.0 is the maximum");
-    AURA_CHECK(near(BenchmarkStats::percentileSorted(sorted, 0.5), 3.0),
-               "percentile: 0.5 is the median");
+    AURA_CHECK(near(BenchmarkStats::percentileSorted(sorted, 0.0), 1.0), "percentile: 0.0 is the minimum");
+    AURA_CHECK(near(BenchmarkStats::percentileSorted(sorted, 1.0), 5.0), "percentile: 1.0 is the maximum");
+    AURA_CHECK(near(BenchmarkStats::percentileSorted(sorted, 0.5), 3.0), "percentile: 0.5 is the median");
 
     // Out-of-range fractions clamp rather than reading past the buffer.
     AURA_CHECK(near(BenchmarkStats::percentileSorted(sorted, -1.0), 1.0),
@@ -140,28 +134,23 @@ void testExceedance()
                "empirical exceedance: everything above 0");
 
     // A threshold exactly at the mean is the centre of the fitted normal.
-    AURA_CHECK(near(BenchmarkStats::normalExceedance(summary, 3.0), 0.5),
-               "normal exceedance: P(x > mean) is 0.5");
+    AURA_CHECK(near(BenchmarkStats::normalExceedance(summary, 3.0), 0.5), "normal exceedance: P(x > mean) is 0.5");
 
     // And the tails are on the correct sides of it.
-    AURA_CHECK(BenchmarkStats::normalExceedance(summary, 10.0) < 1e-6,
-               "normal exceedance: far above the mean is ~0");
+    AURA_CHECK(BenchmarkStats::normalExceedance(summary, 10.0) < 1e-6, "normal exceedance: far above the mean is ~0");
     AURA_CHECK(BenchmarkStats::normalExceedance(summary, -10.0) > 0.999999,
                "normal exceedance: far below the mean is ~1");
 }
 
 void testTrendSlope()
 {
-    AURA_CHECK(near(BenchmarkStats::trendSlope({}), 0.0),
-               "trend: no samples gives slope 0");
+    AURA_CHECK(near(BenchmarkStats::trendSlope({}), 0.0), "trend: no samples gives slope 0");
 
     const std::vector<f64> single{5.0};
-    AURA_CHECK(near(BenchmarkStats::trendSlope(single), 0.0),
-               "trend: one sample gives slope 0");
+    AURA_CHECK(near(BenchmarkStats::trendSlope(single), 0.0), "trend: one sample gives slope 0");
 
     const std::vector<f64> flat{5.0, 5.0, 5.0, 5.0};
-    AURA_CHECK(near(BenchmarkStats::trendSlope(flat), 0.0),
-               "trend: a flat series has slope 0");
+    AURA_CHECK(near(BenchmarkStats::trendSlope(flat), 0.0), "trend: a flat series has slope 0");
 
     // The leak signal: a series that ends where it started has slope 0 no
     // matter how much it moved in between.
@@ -170,12 +159,10 @@ void testTrendSlope()
                "trend: churn without retention has a near-zero slope");
 
     const std::vector<f64> rising{0.0, 1.0, 2.0, 3.0, 4.0};
-    AURA_CHECK(near(BenchmarkStats::trendSlope(rising), 1.0),
-               "trend: +1 per sample gives slope 1");
+    AURA_CHECK(near(BenchmarkStats::trendSlope(rising), 1.0), "trend: +1 per sample gives slope 1");
 
     const std::vector<f64> falling{10.0, 8.0, 6.0};
-    AURA_CHECK(near(BenchmarkStats::trendSlope(falling), -2.0),
-               "trend: -2 per sample gives slope -2");
+    AURA_CHECK(near(BenchmarkStats::trendSlope(falling), -2.0), "trend: -2 per sample gives slope -2");
 }
 
 void testStreamingTrendMatchesBatch()

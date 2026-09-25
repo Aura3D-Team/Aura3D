@@ -33,8 +33,10 @@
  * a distinction that matters.
  */
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @class VkTimestampQuery
@@ -46,12 +48,12 @@ namespace vk {
  */
 class VkTimestampQuery
 {
-public:
+  public:
     VkTimestampQuery() noexcept = default;
     ~VkTimestampQuery();
 
-    VkTimestampQuery(const VkTimestampQuery&)            = delete;
-    VkTimestampQuery& operator=(const VkTimestampQuery&) = delete;
+    VkTimestampQuery(const VkTimestampQuery &) = delete;
+    VkTimestampQuery &operator=(const VkTimestampQuery &) = delete;
 
     /**
      * @brief Creates a pool of 2 * @p frameSlots timestamps.
@@ -66,15 +68,16 @@ public:
      *         pool creation failed. Not an error: the caller carries on with
      *         GPU timing simply reported as unavailable.
      */
-    [[nodiscard]] bool initialize(VkDevice device,
-                                  VkPhysicalDevice physicalDevice,
-                                  u32 queueFamilyIndex,
+    [[nodiscard]] bool initialize(VkDevice device, VkPhysicalDevice physicalDevice, u32 queueFamilyIndex,
                                   u32 frameSlots) noexcept;
 
     //! Destroys the pool. Safe to call twice, and on an uninitialised object.
     void destroy() noexcept;
 
-    [[nodiscard]] bool isReady() const noexcept { return _queryPool != VK_NULL_HANDLE; }
+    [[nodiscard]] bool isReady() const noexcept
+    {
+        return _queryPool != VK_NULL_HANDLE;
+    }
 
     /**
      * @brief Resets @p frameSlot's two queries and writes the opening timestamp.
@@ -102,8 +105,8 @@ public:
     //! The most recent successfully resolved frame time, and the drop count.
     [[nodiscard]] GpuTimingStats stats() const noexcept;
 
-private:
-    VkDevice   _device    = VK_NULL_HANDLE;
+  private:
+    VkDevice _device = VK_NULL_HANDLE;
     VkQueryPool _queryPool = VK_NULL_HANDLE;
 
     //! Nanoseconds per timestamp tick, from VkPhysicalDeviceLimits.
@@ -123,9 +126,9 @@ private:
     //! and reading those back is what the availability bit exists to prevent.
     std::vector<u8> _slotPending;
 
-    f64 _lastFrameMillis  = 0.0;
-    u64 _resolvedSamples  = 0;
-    u64 _droppedSamples   = 0;
+    f64 _lastFrameMillis = 0.0;
+    u64 _resolvedSamples = 0;
+    u64 _droppedSamples = 0;
 };
 
 } // namespace vk

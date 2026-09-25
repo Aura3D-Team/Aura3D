@@ -12,24 +12,26 @@
 #include <string>
 #include <vector>
 
+#include "SmokeTest.h"
 #include "aura/Core/Engine.h"
 #include "aura/Renderer/IRenderer.h"
 #include "aura/UI/UI.hpp"
-#include "SmokeTest.h"
 
 using namespace aura3d;
 using namespace aura3d::ui;
 
-namespace {
+namespace
+{
 
-struct GalleryState {
+struct GalleryState
+{
     RadioGroup quality;
     std::vector<ScopedConnection> bindings;
-    std::vector<TreeNode*> nodes;
+    std::vector<TreeNode *> nodes;
 };
 
 /// A quieter label, for the small-caps headings that group a card's rows.
-[[nodiscard]] Style heading(const Theme& theme)
+[[nodiscard]] Style heading(const Theme &theme)
 {
     glm::vec4 muted = theme[Part::Label].text;
     muted.a *= 0.55f;
@@ -38,14 +40,14 @@ struct GalleryState {
 }
 
 /// A titled, rounded card -- the gallery's unit of grouping.
-Column& card(Widget& parent, std::string_view title, const Theme& theme)
+Column &card(Widget &parent, std::string_view title, const Theme &theme)
 {
-    auto& panel = parent.add<Column>();
+    auto &panel = parent.add<Column>();
     panel.style().fill(theme.palette().window).rounded(10.0f);
     panel.layout().padding = Thickness::all(18.0f);
     panel.setSpacing(12.0f);
 
-    auto& caption = panel.add<Label>(std::string{title});
+    auto &caption = panel.add<Label>(std::string{title});
     caption.setFontSize(12.0f);
     caption.style() = heading(theme);
 
@@ -54,12 +56,12 @@ Column& card(Widget& parent, std::string_view title, const Theme& theme)
 }
 
 /// A scrolling page of cards. Every tab is one of these.
-Column& page(TabView& tabs, std::string title)
+Column &page(TabView &tabs, std::string title)
 {
-    auto& scroll = tabs.addTab(std::move(title)).add<ScrollView>();
+    auto &scroll = tabs.addTab(std::move(title)).add<ScrollView>();
     scroll.layout().height = Length::fill();
 
-    auto& column = scroll.setContent<Column>();
+    auto &column = scroll.setContent<Column>();
     column.layout().padding = Thickness::all(18.0f);
     column.setSpacing(16.0f);
     return column;
@@ -67,16 +69,19 @@ Column& page(TabView& tabs, std::string title)
 
 /// A label whose text follows a slider, through a binding rather than a
 /// hand-written callback.
-Label& readout(Widget& parent, Slider& source, const char* format, GalleryState& state)
+Label &readout(Widget &parent, Slider &source, const char *format, GalleryState &state)
 {
-    auto& label = parent.add<Label>("");
+    auto &label = parent.add<Label>("");
     label.setAlign(Align::Right);
 
-    state.bindings.push_back(label.text.bindFrom(source.value, [format](f32 value) {
-        std::array<char, 32> buffer{};
-        std::snprintf(buffer.data(), buffer.size(), format, static_cast<double>(value));
-        return std::string{buffer.data()};
-    }));
+    state.bindings.push_back(label.text.bindFrom(source.value,
+                                                 [format](f32 value)
+                                                 {
+                                                     std::array<char, 32> buffer{};
+                                                     std::snprintf(buffer.data(), buffer.size(), format,
+                                                                   static_cast<double>(value));
+                                                     return std::string{buffer.data()};
+                                                 }));
 
     return label;
 }
@@ -85,174 +90,213 @@ Label& readout(Widget& parent, Slider& source, const char* format, GalleryState&
 // Pages
 // ---------------------------------------------------------------------------
 
-void buildButtons(Column& into, const Theme& theme, GalleryState& gallery)
+void buildButtons(Column &into, const Theme &theme, GalleryState &gallery)
 {
     {
-        auto& panel = card(into, "BUTTONS", theme);
+        auto &panel = card(into, "BUTTONS", theme);
 
-        auto& row = panel.add<Row>();
+        auto &row = panel.add<Row>();
         row.setSpacing(10.0f);
 
-        auto& normal = row.add<Button>("Normal");
+        auto &normal = row.add<Button>("Normal");
         normal.layout().width = Length::fill();
         normal.setTooltip("An ordinary button.\nHover text lives in the overlay layer.");
 
-        auto& accent = row.add<Button>("Primary");
+        auto &accent = row.add<Button>("Primary");
         accent.layout().width = Length::fill();
         accent.style().fill(theme.palette().accent);
 
-        auto& off = row.add<Button>("Disabled");
+        auto &off = row.add<Button>("Disabled");
         off.layout().width = Length::fill();
         off.setEnabled(false);
 
-        auto& status = panel.add<Label>("Nothing pressed yet.");
+        auto &status = panel.add<Label>("Nothing pressed yet.");
         status.style().textColor(theme.palette().accent);
 
-        normal.clicked.connect([&status] { status.text = "Normal pressed."; });
-        accent.clicked.connect([&status] { status.text = "Primary pressed."; });
+        normal.clicked.connect(
+            [&status]
+            {
+                status.text = "Normal pressed.";
+            });
+        accent.clicked.connect(
+            [&status]
+            {
+                status.text = "Primary pressed.";
+            });
     }
 
     {
-        auto& panel = card(into, "TOGGLES", theme);
+        auto &panel = card(into, "TOGGLES", theme);
 
-        auto& vsync = panel.add<CheckBox>("V-Sync", true);
-        auto& wireframe = panel.add<CheckBox>("Wireframe");
+        auto &vsync = panel.add<CheckBox>("V-Sync", true);
+        auto &wireframe = panel.add<CheckBox>("Wireframe");
         wireframe.setTooltip("Draws edges only.");
 
         panel.add<Separator>();
 
-        auto& quality = panel.add<Row>();
+        auto &quality = panel.add<Row>();
         quality.setSpacing(16.0f);
 
-        auto& group = gallery.quality;
-        for (const char* name : {"Low", "Medium", "High"})
+        auto &group = gallery.quality;
+        for (const char *name : {"Low", "Medium", "High"})
             group.add(quality.add<RadioButton>(name));
         group.select(1);
 
-        auto& state = panel.add<Label>("");
+        auto &state = panel.add<Label>("");
         state.style() = heading(theme);
 
-        const auto refresh = [&] {
+        const auto refresh = [&]
+        {
             state.text = std::string{"vsync="} + (vsync.checked.get() ? "on" : "off") +
                          "  wireframe=" + (wireframe.checked.get() ? "on" : "off") +
                          "  quality=" + std::to_string(group.selected());
         };
 
-        vsync.checked.changed().connect([refresh](bool) { refresh(); });
-        wireframe.checked.changed().connect([refresh](bool) { refresh(); });
-        group.selectionChanged.connect([refresh](int) { refresh(); });
+        vsync.checked.changed().connect(
+            [refresh](bool)
+            {
+                refresh();
+            });
+        wireframe.checked.changed().connect(
+            [refresh](bool)
+            {
+                refresh();
+            });
+        group.selectionChanged.connect(
+            [refresh](int)
+            {
+                refresh();
+            });
         refresh();
     }
 
     {
-        auto& panel = card(into, "SLIDERS", theme);
+        auto &panel = card(into, "SLIDERS", theme);
 
-        auto& exposure = panel.add<Slider>(0.0f, 4.0f);
+        auto &exposure = panel.add<Slider>(0.0f, 4.0f);
         exposure.value = 1.0f;
         readout(panel, exposure, "exposure  %.2f", gallery);
 
-        auto& stepped = panel.add<Slider>(0.0f, 10.0f);
+        auto &stepped = panel.add<Slider>(0.0f, 10.0f);
         stepped.setStep(1.0f);
         stepped.value = 3.0f;
         readout(panel, stepped, "steps of 1  %.0f", gallery);
 
         panel.add<Separator>();
 
-        auto& progress = panel.add<ProgressBar>(0.0f);
+        auto &progress = panel.add<ProgressBar>(0.0f);
         progress.layout().height = Length::px(8.0f);
 
         //! Bound rather than pushed: the bar follows the slider with no
         //! callback of its own.
-        gallery.bindings.push_back(
-            progress.value.bindFrom(exposure.value, [](f32 v) { return v / 4.0f; }));
+        gallery.bindings.push_back(progress.value.bindFrom(exposure.value,
+                                                           [](f32 v)
+                                                           {
+                                                               return v / 4.0f;
+                                                           }));
     }
 }
 
-void buildSelection(Column& into, const Theme& theme)
+void buildSelection(Column &into, const Theme &theme)
 {
     {
-        auto& panel = card(into, "DROP-DOWN", theme);
+        auto &panel = card(into, "DROP-DOWN", theme);
 
-        auto& form = panel.add<Grid>();
+        auto &form = panel.add<Grid>();
         form.setColumns({Length::automatic(), Length::fill()});
         form.setSpacing(12.0f);
 
         form.addAt<Label>(0, 0, "Backend").layout().vAlign = Alignment::Center;
-        auto& backend = form.addAt<Dropdown>(
-            0, 1, std::vector<std::string>{"Vulkan", "OpenGL", "Metal", "Software"});
+        auto &backend = form.addAt<Dropdown>(0, 1, std::vector<std::string>{"Vulkan", "OpenGL", "Metal", "Software"});
         backend.selected = 0;
 
         form.addAt<Label>(1, 0, "Preset").layout().vAlign = Alignment::Center;
-        auto& preset = form.addAt<Dropdown>(
-            1, 1, std::vector<std::string>{"Performance", "Balanced", "Quality"});
+        auto &preset = form.addAt<Dropdown>(1, 1, std::vector<std::string>{"Performance", "Balanced", "Quality"});
         preset.setPlaceholder("Choose a preset");
 
-        auto& chosen = panel.add<Label>("");
+        auto &chosen = panel.add<Label>("");
         chosen.style().textColor(theme.palette().accent);
 
-        const auto refresh = [&] {
-            chosen.text = backend.text() + "  /  " +
-                          (preset.selected.get() < 0 ? std::string{"(none)"} : preset.text());
+        const auto refresh = [&]
+        {
+            chosen.text =
+                backend.text() + "  /  " + (preset.selected.get() < 0 ? std::string{"(none)"} : preset.text());
         };
 
-        backend.selected.changed().connect([refresh](int) { refresh(); });
-        preset.selected.changed().connect([refresh](int) { refresh(); });
+        backend.selected.changed().connect(
+            [refresh](int)
+            {
+                refresh();
+            });
+        preset.selected.changed().connect(
+            [refresh](int)
+            {
+                refresh();
+            });
         refresh();
 
-        panel.add<Label>("Space opens it; arrows move; Enter takes it; Escape closes.")
-            .style() = heading(theme);
+        panel.add<Label>("Space opens it; arrows move; Enter takes it; Escape closes.").style() = heading(theme);
     }
 
     {
-        auto& panel = card(into, "LIST", theme);
+        auto &panel = card(into, "LIST", theme);
 
-        auto& scroll = panel.add<ScrollView>();
+        auto &scroll = panel.add<ScrollView>();
         scroll.layout().height = Length::px(140.0f);
 
-        auto& list = scroll.setContent<Column>();
+        auto &list = scroll.setContent<Column>();
 
         for (int i = 0; i < 24; ++i)
         {
-            auto& row = list.add<Selectable>("Entry " + std::to_string(i));
+            auto &row = list.add<Selectable>("Entry " + std::to_string(i));
             row.setDetail(std::to_string(i * 17) + " kb");
 
-            row.activated.connect([&list, i] {
-                for (usize k = 0; k < list.childCount(); ++k)
-                    static_cast<Selectable&>(list.childAt(k)).selected = static_cast<int>(k) == i;
-            });
+            row.activated.connect(
+                [&list, i]
+                {
+                    for (usize k = 0; k < list.childCount(); ++k)
+                        static_cast<Selectable &>(list.childAt(k)).selected = static_cast<int>(k) == i;
+                });
         }
     }
 }
 
-void buildText(Column& into, const Theme& theme, GalleryState& gallery)
+void buildText(Column &into, const Theme &theme, GalleryState &gallery)
 {
     {
-        auto& panel = card(into, "FIELDS", theme);
+        auto &panel = card(into, "FIELDS", theme);
 
-        auto& form = panel.add<Grid>();
+        auto &form = panel.add<Grid>();
         form.setColumns({Length::automatic(), Length::fill()});
         form.setSpacing(12.0f);
 
         form.addAt<Label>(0, 0, "Name").layout().vAlign = Alignment::Center;
-        auto& name = form.addAt<TextField>(0, 1, "untitled");
+        auto &name = form.addAt<TextField>(0, 1, "untitled");
         name.setPlaceholder("Scene name");
 
         form.addAt<Label>(1, 0, "Read-only").layout().vAlign = Alignment::Center;
-        auto& locked = form.addAt<TextField>(1, 1, "cannot be edited");
+        auto &locked = form.addAt<TextField>(1, 1, "cannot be edited");
         locked.setReadOnly(true);
 
-        auto& echo = panel.add<Label>("");
+        auto &echo = panel.add<Label>("");
         echo.style().textColor(theme.palette().accent);
 
         //! The whole point of Property::bind: no callback, no glue.
-        gallery.bindings.push_back(echo.text.bindFrom(
-            name.text, [](const std::string& value) { return "you typed: " + value; }));
+        gallery.bindings.push_back(echo.text.bindFrom(name.text,
+                                                      [](const std::string &value)
+                                                      {
+                                                          return "you typed: " + value;
+                                                      }));
 
-        name.submitted.connect([&echo] { echo.text = "submitted with Enter."; });
+        name.submitted.connect(
+            [&echo]
+            {
+                echo.text = "submitted with Enter.";
+            });
     }
 
     {
-        auto& panel = card(into, "TYPOGRAPHY", theme);
+        auto &panel = card(into, "TYPOGRAPHY", theme);
 
         panel.add<Label>("Heading").setFontSize(28.0f);
         panel.add<Label>("Subheading").setFontSize(18.0f);
@@ -260,30 +304,29 @@ void buildText(Column& into, const Theme& theme, GalleryState& gallery)
 
         panel.add<Separator>();
 
-        auto& wrapped = panel.add<Label>(
-            "This paragraph wraps to whatever width it is given. Shaping, kerning and word "
-            "breaking all happen in the text engine, and the caret arithmetic every field "
-            "uses is answered from the same shaped result.");
+        auto &wrapped =
+            panel.add<Label>("This paragraph wraps to whatever width it is given. Shaping, kerning and word "
+                             "breaking all happen in the text engine, and the caret arithmetic every field "
+                             "uses is answered from the same shaped result.");
         wrapped.setWrap(TextWrap::Word);
         wrapped.style() = heading(theme);
     }
 }
 
-void buildContainers(Column& into, const Theme& theme)
+void buildContainers(Column &into, const Theme &theme)
 {
     {
-        auto& panel = card(into, "FLEX", theme);
+        auto &panel = card(into, "FLEX", theme);
 
-        panel.add<Label>("Three fill children share the row by weight.")
-            .style() = heading(theme);
+        panel.add<Label>("Three fill children share the row by weight.").style() = heading(theme);
 
-        auto& row = panel.add<Row>();
+        auto &row = panel.add<Row>();
         row.setSpacing(8.0f);
 
         const std::array<f32, 3> weights = {1.0f, 2.0f, 1.0f};
         for (usize i = 0; i < weights.size(); ++i)
         {
-            auto& cell = row.add<Label>("fill(" + std::to_string(static_cast<int>(weights[i])) + ")");
+            auto &cell = row.add<Label>("fill(" + std::to_string(static_cast<int>(weights[i])) + ")");
             cell.setAlign(Align::Center);
             cell.layout().width = Length::fill(weights[i]);
             cell.layout().padding = Thickness::symmetric(0.0f, 10.0f);
@@ -292,19 +335,17 @@ void buildContainers(Column& into, const Theme& theme)
     }
 
     {
-        auto& panel = card(into, "GRID", theme);
+        auto &panel = card(into, "GRID", theme);
 
-        auto& grid = panel.add<Grid>();
+        auto &grid = panel.add<Grid>();
         grid.setColumns({Length::px(70.0f), Length::fill(), Length::fill(2.0f)});
         grid.setSpacing(8.0f);
 
-        const std::array<const char*, 9> cells = {"70px", "fill", "fill(2)", "a", "b",
-                                                  "c",    "d",    "e",       "f"};
+        const std::array<const char *, 9> cells = {"70px", "fill", "fill(2)", "a", "b", "c", "d", "e", "f"};
 
         for (usize i = 0; i < cells.size(); ++i)
         {
-            auto& cell = grid.addAt<Label>(static_cast<u16>(i / 3), static_cast<u16>(i % 3),
-                                           cells[i]);
+            auto &cell = grid.addAt<Label>(static_cast<u16>(i / 3), static_cast<u16>(i % 3), cells[i]);
             cell.setAlign(Align::Center);
             cell.layout().padding = Thickness::symmetric(0.0f, 8.0f);
             cell.style().fill(theme.palette().surface).rounded(4.0f);
@@ -312,176 +353,205 @@ void buildContainers(Column& into, const Theme& theme)
     }
 
     {
-        auto& panel = card(into, "SECTIONS", theme);
+        auto &panel = card(into, "SECTIONS", theme);
 
-        auto& graphics = panel.add<CollapsingHeader>("Graphics");
+        auto &graphics = panel.add<CollapsingHeader>("Graphics");
         graphics.content().layout().padding = Thickness::symmetric(8.0f, 6.0f);
         graphics.content().setSpacing(6.0f);
         graphics.content().add<CheckBox>("Bloom", true);
         graphics.content().add<CheckBox>("Motion blur");
         graphics.content().add<Slider>(30.0f, 240.0f).value = 60.0f;
 
-        auto& audio = panel.add<CollapsingHeader>("Audio", false);
+        auto &audio = panel.add<CollapsingHeader>("Audio", false);
         audio.content().layout().padding = Thickness::symmetric(8.0f, 6.0f);
         audio.content().add<Slider>(0.0f, 1.0f).value = 0.8f;
     }
 }
 
-void buildOverlays(Column& into, UIRoot& root, const Theme& theme)
+void buildOverlays(Column &into, UIRoot &root, const Theme &theme)
 {
     {
-        auto& panel = card(into, "MENUS", theme);
+        auto &panel = card(into, "MENUS", theme);
 
-        panel.add<Label>("Every one of these is the same overlay mechanism.")
-            .style() = heading(theme);
+        panel.add<Label>("Every one of these is the same overlay mechanism.").style() = heading(theme);
 
-        auto& row = panel.add<Row>();
+        auto &row = panel.add<Row>();
         row.setSpacing(10.0f);
 
-        auto& log = panel.add<Label>("");
+        auto &log = panel.add<Label>("");
         log.style().textColor(theme.palette().accent);
 
-        auto& context = row.add<Button>("Context menu");
+        auto &context = row.add<Button>("Context menu");
         context.layout().width = Length::fill();
-        context.clicked.connect([&root, &context, &log] {
-            auto& menu = root.overlay().open<Menu>(
-                OverlayDesc{.anchor = context.bounds(), .placement = Placement::Below});
+        context.clicked.connect(
+            [&root, &context, &log]
+            {
+                auto &menu =
+                    root.overlay().open<Menu>(OverlayDesc{.anchor = context.bounds(), .placement = Placement::Below});
 
-            menu.addItem("Rename", "F2").activated.connect([&log] { log.text = "Rename."; });
-            menu.addItem("Duplicate", "Ctrl+D").activated.connect([&log] {
-                log.text = "Duplicate.";
+                menu.addItem("Rename", "F2")
+                    .activated.connect(
+                        [&log]
+                        {
+                            log.text = "Rename.";
+                        });
+                menu.addItem("Duplicate", "Ctrl+D")
+                    .activated.connect(
+                        [&log]
+                        {
+                            log.text = "Duplicate.";
+                        });
+                menu.addSeparator();
+
+                menu.addSubmenu("Export",
+                                [&log](Menu &sub)
+                                {
+                                    sub.addItem("PNG").activated.connect(
+                                        [&log]
+                                        {
+                                            log.text = "Exported PNG.";
+                                        });
+                                    sub.addItem("JPEG").activated.connect(
+                                        [&log]
+                                        {
+                                            log.text = "Exported JPEG.";
+                                        });
+                                });
+
+                menu.addSeparator();
+                menu.addItem("Delete").activated.connect(
+                    [&log]
+                    {
+                        log.text = "Deleted.";
+                    });
             });
-            menu.addSeparator();
 
-            menu.addSubmenu("Export", [&log](Menu& sub) {
-                sub.addItem("PNG").activated.connect([&log] { log.text = "Exported PNG."; });
-                sub.addItem("JPEG").activated.connect([&log] { log.text = "Exported JPEG."; });
-            });
-
-            menu.addSeparator();
-            menu.addItem("Delete").activated.connect([&log] { log.text = "Deleted."; });
-        });
-
-        auto& dialog = row.add<Button>("Modal dialog");
+        auto &dialog = row.add<Button>("Modal dialog");
         dialog.layout().width = Length::fill();
-        dialog.clicked.connect([&root, &log, &theme] {
-            auto& box = root.overlay().open<Column>(OverlayDesc{
-                .placement = Placement::Center,
-                .modal = true,
-                .dismissOnOutsideClick = false,
+        dialog.clicked.connect(
+            [&root, &log, &theme]
+            {
+                auto &box = root.overlay().open<Column>(OverlayDesc{
+                    .placement = Placement::Center,
+                    .modal = true,
+                    .dismissOnOutsideClick = false,
+                });
+
+                box.style().fill(theme.palette().overlay).outline(theme.palette().border, 1.0f).rounded(10.0f);
+                box.layout().padding = Thickness::all(20.0f);
+                box.layout().minWidth = 280.0f;
+                box.setSpacing(12.0f);
+
+                box.add<Label>("Discard changes?").setFontSize(18.0f);
+                box.add<Label>("Everything outside this dialog is inert while it is up. "
+                               "Tab stays inside it, and Escape closes it.")
+                    .setWrap(TextWrap::Word);
+
+                auto &buttons = box.add<Row>();
+                buttons.setSpacing(10.0f);
+                buttons.add<Spacer>();
+
+                const OverlayLayer::Id id = root.overlay().lastId();
+
+                auto &cancel = buttons.add<Button>("Cancel");
+                cancel.layout().width = Length::px(100.0f);
+                cancel.clicked.connect(
+                    [&root, id, &log]
+                    {
+                        root.overlay().close(id);
+                        log.text = "Cancelled.";
+                    });
+
+                auto &discard = buttons.add<Button>("Discard");
+                discard.layout().width = Length::px(100.0f);
+                discard.style().fill(glm::vec4{0.55f, 0.20f, 0.24f, 1.0f});
+                discard.clicked.connect(
+                    [&root, id, &log]
+                    {
+                        root.overlay().close(id);
+                        log.text = "Discarded.";
+                    });
             });
-
-            box.style().fill(theme.palette().overlay).outline(theme.palette().border, 1.0f)
-                .rounded(10.0f);
-            box.layout().padding = Thickness::all(20.0f);
-            box.layout().minWidth = 280.0f;
-            box.setSpacing(12.0f);
-
-            box.add<Label>("Discard changes?").setFontSize(18.0f);
-            box.add<Label>("Everything outside this dialog is inert while it is up. "
-                           "Tab stays inside it, and Escape closes it.")
-                .setWrap(TextWrap::Word);
-
-            auto& buttons = box.add<Row>();
-            buttons.setSpacing(10.0f);
-            buttons.add<Spacer>();
-
-            const OverlayLayer::Id id = root.overlay().lastId();
-
-            auto& cancel = buttons.add<Button>("Cancel");
-            cancel.layout().width = Length::px(100.0f);
-            cancel.clicked.connect([&root, id, &log] {
-                root.overlay().close(id);
-                log.text = "Cancelled.";
-            });
-
-            auto& discard = buttons.add<Button>("Discard");
-            discard.layout().width = Length::px(100.0f);
-            discard.style().fill(glm::vec4{0.55f, 0.20f, 0.24f, 1.0f});
-            discard.clicked.connect([&root, id, &log] {
-                root.overlay().close(id);
-                log.text = "Discarded.";
-            });
-        });
     }
 
     {
-        auto& panel = card(into, "TOOLTIPS", theme);
+        auto &panel = card(into, "TOOLTIPS", theme);
 
         panel.add<Label>("Rest the pointer on any of these.").style() = heading(theme);
 
-        auto& row = panel.add<Row>();
+        auto &row = panel.add<Row>();
         row.setSpacing(10.0f);
 
-        static constexpr std::array<std::pair<const char*, const char*>, 3> kItems = {{
+        static constexpr std::array<std::pair<const char *, const char *>, 3> kItems = {{
             {"Compile", "Build the current project"},
             {"Run", "Launch the last successful build"},
             {"Profile", "Run with the frame profiler attached"},
         }};
 
-        for (const auto& [label, hint] : kItems)
+        for (const auto &[label, hint] : kItems)
         {
-            auto& button = row.add<Button>(label);
+            auto &button = row.add<Button>(label);
             button.layout().width = Length::fill();
             button.setTooltip(hint);
         }
     }
 }
 
-void buildTree(Column& into, const Theme& theme, GalleryState& gallery)
+void buildTree(Column &into, const Theme &theme, GalleryState &gallery)
 {
-    auto& panel = card(into, "TREE", theme);
+    auto &panel = card(into, "TREE", theme);
 
-    panel.add<Label>("Click a node to select it; click a branch to fold it.")
-        .style() = heading(theme);
+    panel.add<Label>("Click a node to select it; click a branch to fold it.").style() = heading(theme);
 
-    auto& scroll = panel.add<ScrollView>();
+    auto &scroll = panel.add<ScrollView>();
     scroll.layout().height = Length::px(220.0f);
 
-    auto& tree = scroll.setContent<Column>();
+    auto &tree = scroll.setContent<Column>();
 
-    auto& nodes = gallery.nodes;
+    auto &nodes = gallery.nodes;
     nodes.clear();
 
-    auto& assets = tree.add<TreeNode>("Assets", true);
-    auto& textures = assets.addChild("Textures", true);
-    auto& models = assets.addChild("Models");
-    auto& scenes = tree.add<TreeNode>("Scenes", true);
+    auto &assets = tree.add<TreeNode>("Assets", true);
+    auto &textures = assets.addChild("Textures", true);
+    auto &models = assets.addChild("Models");
+    auto &scenes = tree.add<TreeNode>("Scenes", true);
 
     nodes = {&assets, &textures, &models, &scenes};
 
-    for (const char* name : {"brick.png", "orb.png", "noise.png"})
+    for (const char *name : {"brick.png", "orb.png", "noise.png"})
         nodes.push_back(&textures.addChild(name));
 
-    for (const char* name : {"player.obj", "level.obj"})
+    for (const char *name : {"player.obj", "level.obj"})
         nodes.push_back(&models.addChild(name));
 
-    for (const char* name : {"main.scene", "test.scene"})
+    for (const char *name : {"main.scene", "test.scene"})
         nodes.push_back(&scenes.addChild(name));
 
-    auto& chosen = panel.add<Label>("Nothing selected.");
+    auto &chosen = panel.add<Label>("Nothing selected.");
     chosen.style().textColor(theme.palette().accent);
 
-    for (TreeNode* node : nodes)
+    for (TreeNode *node : nodes)
     {
-        node->activated.connect([node, &chosen, &nodes] {
-            for (TreeNode* other : nodes)
-                other->selected = other == node;
+        node->activated.connect(
+            [node, &chosen, &nodes]
+            {
+                for (TreeNode *other : nodes)
+                    other->selected = other == node;
 
-            chosen.text = "Selected: " + node->label().text.get();
-        });
+                chosen.text = "Selected: " + node->label().text.get();
+            });
     }
 }
 
 } // namespace
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     GalleryState gallery;
     Engine engine("settings.json");
 
-    IRenderer* renderer = engine.getRenderer();
-    wma::IWindowManager* window = renderer->getWindowManager();
+    IRenderer *renderer = engine.getRenderer();
+    wma::IWindowManager *window = renderer->getWindowManager();
 
     /*
      * No font ships with the engine, so this is empty and AuraUI falls back to
@@ -495,31 +565,33 @@ int main(int argc, char** argv)
     UIView ui(*renderer, desc);
     ui.attachInput(*window);
 
-    const Theme& theme = ui.theme();
+    const Theme &theme = ui.theme();
 
-    auto& shell = ui.root().setContent<Column>();
+    auto &shell = ui.root().setContent<Column>();
     shell.layout().padding = Thickness::all(16.0f);
     shell.setSpacing(14.0f);
 
-    auto& header = shell.add<Row>();
+    auto &header = shell.add<Row>();
     header.setSpacing(12.0f);
 
-    auto& title = header.add<Label>("AuraUI Gallery");
+    auto &title = header.add<Label>("AuraUI Gallery");
     title.setFontSize(26.0f);
     title.layout().vAlign = Alignment::Center;
 
     header.add<Spacer>();
 
-    auto& palette = header.add<Dropdown>(std::vector<std::string>{"Dark", "Light"});
+    auto &palette = header.add<Dropdown>(std::vector<std::string>{"Dark", "Light"});
     palette.layout().vAlign = Alignment::Center;
     palette.selected = 0;
-    palette.selected.changed().connect([&ui](int index) {
-        ui.theme().applyPalette(index == 0 ? Palette::dark() : Palette::light());
-    });
+    palette.selected.changed().connect(
+        [&ui](int index)
+        {
+            ui.theme().applyPalette(index == 0 ? Palette::dark() : Palette::light());
+        });
 
     shell.add<Separator>();
 
-    auto& tabs = shell.add<TabView>();
+    auto &tabs = shell.add<TabView>();
     tabs.layout().height = Length::fill();
 
     buildButtons(page(tabs, "Buttons"), theme, gallery);
@@ -530,7 +602,10 @@ int main(int argc, char** argv)
     buildTree(page(tabs, "Tree"), theme, gallery);
 
     ui.root().addShortcut(Shortcut::withCtrl(wma::KEY_S),
-                          [] { INK_INFO << "Ctrl+S reached the shortcut table"; });
+                          []
+                          {
+                              INK_INFO << "Ctrl+S reached the shortcut table";
+                          });
 
     const glm::vec4 background = theme.palette().window * 0.35f;
     renderer->setClearColor(background.r, background.g, background.b, 1.0f);
@@ -538,14 +613,15 @@ int main(int argc, char** argv)
     if (argc > 1 && std::string_view(argv[1]) == "--smoke-test")
         return smokeTest(ui, *renderer, tabs);
 
-    renderer->run([renderer, window, &ui] {
-        const f32 deltaSeconds =
-            static_cast<f32>(window->getWindowFlags()->deltaTime) / 1000.0f;
+    renderer->run(
+        [renderer, window, &ui]
+        {
+            const f32 deltaSeconds = static_cast<f32>(window->getWindowFlags()->deltaTime) / 1000.0f;
 
-        renderer->beginRenderPass();
-        ui.render(deltaSeconds);
-        renderer->endRenderPass();
-    });
+            renderer->beginRenderPass();
+            ui.render(deltaSeconds);
+            renderer->endRenderPass();
+        });
 
     return 0;
 }

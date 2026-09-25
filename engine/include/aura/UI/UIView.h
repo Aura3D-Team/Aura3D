@@ -37,14 +37,17 @@
  * @endcode
  */
 
-namespace aura3d {
+namespace aura3d
+{
 class IRenderer;
 } // namespace aura3d
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /// Construction parameters for a @ref UIView.
-struct UIViewDesc {
+struct UIViewDesc
+{
     /// Path to a .ttf/.otf. Empty, or a file that fails to load, falls back to
     /// the engine's embedded bitmap font -- so a UI always draws.
     std::string fontPath;
@@ -61,13 +64,14 @@ struct UIViewDesc {
  *
  * @note Neither copyable nor movable: wma callbacks capture @c this.
  */
-class UIView {
-public:
-    explicit UIView(IRenderer& renderer, const UIViewDesc& desc = UIViewDesc{});
+class UIView
+{
+  public:
+    explicit UIView(IRenderer &renderer, const UIViewDesc &desc = UIViewDesc{});
     ~UIView();
 
-    UIView(const UIView&) = delete;
-    UIView& operator=(const UIView&) = delete;
+    UIView(const UIView &) = delete;
+    UIView &operator=(const UIView &) = delete;
 
     /**
      * @brief Subscribes to @p window's pointer, keyboard, text and touch input.
@@ -80,7 +84,7 @@ public:
      *
      * @param window Must outlive this object.
      */
-    void attachInput(wma::IWindowManager& window);
+    void attachInput(wma::IWindowManager &window);
     void detachInput();
 
     /**
@@ -113,20 +117,38 @@ public:
     /// The drawing half of render(). Call inside a render pass, after update().
     void draw();
 
-    [[nodiscard]] UIRoot& root() noexcept { return _root; }
-    [[nodiscard]] const UIRoot& root() const noexcept { return _root; }
+    [[nodiscard]] UIRoot &root() noexcept
+    {
+        return _root;
+    }
+    [[nodiscard]] const UIRoot &root() const noexcept
+    {
+        return _root;
+    }
 
-    [[nodiscard]] Theme& theme() noexcept { return _root.theme(); }
-    [[nodiscard]] AtlasTextShaper& shaper() noexcept { return _shaper; }
+    [[nodiscard]] Theme &theme() noexcept
+    {
+        return _root.theme();
+    }
+    [[nodiscard]] AtlasTextShaper &shaper() noexcept
+    {
+        return _shaper;
+    }
 
     /// @{
     /// The last frame's output, for profiling and for tests. One draw call is
     /// the expected number for a UI that draws no images.
-    [[nodiscard]] const DrawList& drawList() const noexcept { return _list; }
-    [[nodiscard]] usize drawCallCount() const noexcept { return _backend.batchCount(); }
+    [[nodiscard]] const DrawList &drawList() const noexcept
+    {
+        return _list;
+    }
+    [[nodiscard]] usize drawCallCount() const noexcept
+    {
+        return _backend.batchCount();
+    }
     /// @}
 
-private:
+  private:
     /// Matches the tree to the window: logical size, and the device-pixel
     /// ratio the framebuffer implies.
     void _syncSurface();
@@ -138,7 +160,7 @@ private:
 
     //! False until the first draw(), so the first frame is never skipped.
     bool _drawn = false;
-    IRenderer* _renderer = nullptr;
+    IRenderer *_renderer = nullptr;
 
     //! Declared before _root and _backend, both of which hold a reference to
     //! it for their whole lives.
@@ -148,8 +170,8 @@ private:
     DrawList _list;
     DrawListRenderer _backend;
 
-    wma::IWindowManager* _window = nullptr;
-    wma::MouseListener* _mouse = nullptr;
+    wma::IWindowManager *_window = nullptr;
+    wma::MouseListener *_mouse = nullptr;
 
     glm::vec2 _pointer{0.0f};
     bool _pointerKnown = false;

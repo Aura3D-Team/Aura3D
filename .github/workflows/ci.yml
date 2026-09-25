@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     branches: [main, dev]
 
@@ -18,6 +18,7 @@ jobs:
 
     container:
       image: arthurrl/vulkan-dev:lts
+      options: --user 0
       credentials:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -25,6 +26,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install C++ quality tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends clang-format-21 clang-tidy-21
+
+      - name: Check C++ formatting
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 ci/check-cpp.py format --base "$BASE_SHA"
 
       - name: Configure
         # Mirrors CMakePresets.json's "linux-debug" preset rather than using
@@ -38,11 +52,17 @@ jobs:
         run: >
           cmake -S . -B build/linux/debug -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           -DAURA_BUILD_SANDBOX=ON
           -DAURA_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build/linux/debug --parallel
+
+      - name: Lint C++ changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 ci/check-cpp.py lint --base "$BASE_SHA" --build build/linux/debug
 
       - name: Run tests
         run: ctest --test-dir build/linux/debug --output-on-failure

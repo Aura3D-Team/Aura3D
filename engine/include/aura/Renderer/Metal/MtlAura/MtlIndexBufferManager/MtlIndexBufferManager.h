@@ -10,8 +10,10 @@
 #include "aura/Renderer/Metal/MtlAura/MtlBufferManager/MtlBufferManager.h"
 #include "aura/Renderer/RenderHandles.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @struct IndexBufferRecord
@@ -24,10 +26,11 @@ namespace mtl {
  * them here is what stops a 16-bit buffer from being drawn as 32-bit -- a
  * mismatch that reads twice the memory and renders garbage instead of failing.
  */
-struct IndexBufferRecord {
-    MTL::Buffer* buffer = nullptr;                 //! Borrowed from the owning manager.
+struct IndexBufferRecord
+{
+    MTL::Buffer *buffer = nullptr; //! Borrowed from the owning manager.
     MTL::IndexType indexType = MTL::IndexTypeUInt32;
-    u32 indexCount = 0;                            //! Indices the buffer holds.
+    u32 indexCount = 0; //! Indices the buffer holds.
 };
 
 /**
@@ -40,19 +43,20 @@ struct IndexBufferRecord {
  * match MtlVertexBufferManager exactly -- see its class comment for why the
  * records live in a handle-indexed vector.
  */
-class MtlIndexBufferManager {
-public:
+class MtlIndexBufferManager
+{
+  public:
     /**
      * @brief Binds this manager to the allocator its buffers come from.
      * @param[in] allocator Allocation primitive; must outlive this object.
      * @throws AuraException if @p allocator is null.
      */
-    explicit MtlIndexBufferManager(MtlBufferManager* allocator);
+    explicit MtlIndexBufferManager(MtlBufferManager *allocator);
 
     ~MtlIndexBufferManager();
 
-    MtlIndexBufferManager(const MtlIndexBufferManager&) = delete;
-    MtlIndexBufferManager& operator=(const MtlIndexBufferManager&) = delete;
+    MtlIndexBufferManager(const MtlIndexBufferManager &) = delete;
+    MtlIndexBufferManager &operator=(const MtlIndexBufferManager &) = delete;
 
     /**
      * @brief Uploads 16-bit indices.
@@ -72,15 +76,18 @@ public:
      * @brief Resolves @p handle to its record.
      * @return The record, or nullptr for a handle that was never created.
      */
-    [[nodiscard]] const IndexBufferRecord* resolve(IndexBufferHandle handle) const noexcept;
+    [[nodiscard]] const IndexBufferRecord *resolve(IndexBufferHandle handle) const noexcept;
 
     //! Releases every buffer. Every handle issued before this becomes stale.
     void clear() noexcept;
 
     //! Number of buffers currently held, for logging.
-    [[nodiscard]] size_t count() const noexcept { return _records.size(); }
+    [[nodiscard]] size_t count() const noexcept
+    {
+        return _records.size();
+    }
 
-private:
+  private:
     /**
      * @brief The shared body of both create() overloads.
      *
@@ -90,10 +97,10 @@ private:
      * @param[in] indexCount Number of indices.
      * @return A 1-based handle, or an invalid handle on failure.
      */
-    [[nodiscard]] IndexBufferHandle upload(const void* bytes, size_t byteSize,
-                                          MTL::IndexType indexType, u32 indexCount);
+    [[nodiscard]] IndexBufferHandle upload(const void *bytes, size_t byteSize, MTL::IndexType indexType,
+                                           u32 indexCount);
 
-    MtlBufferManager* _allocator = nullptr; //! Borrowed; owned by MetalRenderer.
+    MtlBufferManager *_allocator = nullptr; //! Borrowed; owned by MetalRenderer.
 
     //! Handle N lives at index N - 1; see MtlVertexBufferManager::_buffers.
     std::vector<NS::SharedPtr<MTL::Buffer>> _buffers;

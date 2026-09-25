@@ -7,7 +7,8 @@
 
 #include "aura/Core/AuraCore.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @class MeshLoader
@@ -16,8 +17,9 @@ namespace aura3d {
  * The OBJ parser is an implementation detail, so this header stays free of
  * third-party includes and can remain part of the installed public API.
  */
-class MeshLoader {
-public:
+class MeshLoader
+{
+  public:
     /**
      * @brief Loads a Wavefront OBJ file.
      *
@@ -29,7 +31,7 @@ public:
      * Never throws: a missing or unparseable file logs a warning and returns
      * createCube(), matching the texture loader's fallback strategy.
      */
-    static gfx::Mesh3D loadOBJ(const std::string& path);
+    static gfx::Mesh3D loadOBJ(const std::string &path);
 
     //! Unit cube centred on the origin, with per-face normals and UVs.
     static gfx::Mesh3D createCube();

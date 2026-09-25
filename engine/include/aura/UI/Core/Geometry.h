@@ -18,7 +18,8 @@
  * widget and the GPU has to flip an axis.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /// Stand-in for "no constraint". Finite so arithmetic on it stays defined:
 /// `kUnbounded - padding` is still huge, where `inf - padding` would be inf
@@ -31,10 +32,16 @@ inline constexpr f32 kUnbounded = 1.0e7f;
 }
 
 /// Horizontal placement of text within the rectangle that holds it.
-enum class Align : u8 { Left, Center, Right };
+enum class Align : u8
+{
+    Left,
+    Center,
+    Right
+};
 
 /// An axis-aligned rectangle, held as opposite corners.
-struct Rect {
+struct Rect
+{
     glm::vec2 min{0.0f};
     glm::vec2 max{0.0f};
 
@@ -43,10 +50,22 @@ struct Rect {
         return {origin, origin + size};
     }
 
-    [[nodiscard]] constexpr f32 width() const noexcept { return max.x - min.x; }
-    [[nodiscard]] constexpr f32 height() const noexcept { return max.y - min.y; }
-    [[nodiscard]] constexpr glm::vec2 size() const noexcept { return max - min; }
-    [[nodiscard]] constexpr glm::vec2 center() const noexcept { return (min + max) * 0.5f; }
+    [[nodiscard]] constexpr f32 width() const noexcept
+    {
+        return max.x - min.x;
+    }
+    [[nodiscard]] constexpr f32 height() const noexcept
+    {
+        return max.y - min.y;
+    }
+    [[nodiscard]] constexpr glm::vec2 size() const noexcept
+    {
+        return max - min;
+    }
+    [[nodiscard]] constexpr glm::vec2 center() const noexcept
+    {
+        return (min + max) * 0.5f;
+    }
 
     /// True when the rectangle encloses no pixels, so a caller can drop it
     /// before doing any work on it.
@@ -73,10 +92,13 @@ struct Rect {
         return {min + half, max - half};
     }
 
-    [[nodiscard]] constexpr Rect grown(f32 by) const noexcept { return inset(-by); }
+    [[nodiscard]] constexpr Rect grown(f32 by) const noexcept
+    {
+        return inset(-by);
+    }
 };
 
-[[nodiscard]] constexpr Rect intersect(const Rect& a, const Rect& b) noexcept
+[[nodiscard]] constexpr Rect intersect(const Rect &a, const Rect &b) noexcept
 {
     return Rect{{std::max(a.min.x, b.min.x), std::max(a.min.y, b.min.y)},
                 {std::min(a.max.x, b.max.x), std::min(a.max.y, b.max.y)}};
@@ -84,7 +106,7 @@ struct Rect {
 
 /// The smallest rectangle covering both. An empty operand is ignored, so
 /// folding this over a child list needs no "first child" special case.
-[[nodiscard]] constexpr Rect unite(const Rect& a, const Rect& b) noexcept
+[[nodiscard]] constexpr Rect unite(const Rect &a, const Rect &b) noexcept
 {
     if (a.empty())
         return b;
@@ -96,7 +118,8 @@ struct Rect {
 }
 
 /// Per-side inset, for margin and padding.
-struct Thickness {
+struct Thickness
+{
     f32 left = 0.0f;
     f32 top = 0.0f;
     f32 right = 0.0f;
@@ -112,33 +135,43 @@ struct Thickness {
         return {horizontal, vertical, horizontal, vertical};
     }
 
-    [[nodiscard]] constexpr f32 horizontal() const noexcept { return left + right; }
-    [[nodiscard]] constexpr f32 vertical() const noexcept { return top + bottom; }
+    [[nodiscard]] constexpr f32 horizontal() const noexcept
+    {
+        return left + right;
+    }
+    [[nodiscard]] constexpr f32 vertical() const noexcept
+    {
+        return top + bottom;
+    }
     [[nodiscard]] constexpr glm::vec2 collapsed() const noexcept
     {
         return {horizontal(), vertical()};
     }
 
-    [[nodiscard]] constexpr glm::vec2 topLeft() const noexcept { return {left, top}; }
+    [[nodiscard]] constexpr glm::vec2 topLeft() const noexcept
+    {
+        return {left, top};
+    }
 
-    [[nodiscard]] constexpr bool operator==(const Thickness&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const Thickness &) const noexcept = default;
 };
 
 /// @p rect with @p by removed from each side. Never inverts: a padding wider
 /// than the rectangle yields an empty one, which every consumer already drops.
-[[nodiscard]] constexpr Rect deflate(const Rect& rect, const Thickness& by) noexcept
+[[nodiscard]] constexpr Rect deflate(const Rect &rect, const Thickness &by) noexcept
 {
     const glm::vec2 lo = rect.min + by.topLeft();
     return {lo, {std::max(lo.x, rect.max.x - by.right), std::max(lo.y, rect.max.y - by.bottom)}};
 }
 
-[[nodiscard]] constexpr Rect inflate(const Rect& rect, const Thickness& by) noexcept
+[[nodiscard]] constexpr Rect inflate(const Rect &rect, const Thickness &by) noexcept
 {
     return {rect.min - by.topLeft(), rect.max + glm::vec2{by.right, by.bottom}};
 }
 
 /// Per-corner radius, clockwise from the top left.
-struct Corners {
+struct Corners
+{
     f32 topLeft = 0.0f;
     f32 topRight = 0.0f;
     f32 bottomRight = 0.0f;
@@ -170,7 +203,7 @@ struct Corners {
         return std::max({topLeft, topRight, bottomRight, bottomLeft});
     }
 
-    [[nodiscard]] constexpr bool operator==(const Corners&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const Corners &) const noexcept = default;
 };
 
 [[nodiscard]] constexpr f32 lerp(f32 a, f32 b, f32 t) noexcept

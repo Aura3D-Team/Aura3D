@@ -15,19 +15,23 @@
 // NDEBUG, which would silently turn every Release-configured test into a
 // no-op.
 
-namespace aura3d::test {
+namespace aura3d::test
+{
 
-inline int& failureCount()
+inline int &failureCount()
 {
     static int count = 0;
     return count;
 }
 
-inline void check(bool condition, const std::string& description, const char* file, int line)
+inline void check(bool condition, const std::string &description, const char *file, int line)
 {
-    if (condition) {
+    if (condition)
+    {
         std::cout << "[PASS] " << description << "\n";
-    } else {
+    }
+    else
+    {
         std::cerr << "[FAIL] " << description << " (" << file << ":" << line << ")\n";
         ++failureCount();
     }
@@ -35,25 +39,29 @@ inline void check(bool condition, const std::string& description, const char* fi
 
 } // namespace aura3d::test
 
-#define AURA_CHECK(cond, description) \
-    ::aura3d::test::check((cond), (description), __FILE__, __LINE__)
+#define AURA_CHECK(cond, description) ::aura3d::test::check((cond), (description), __FILE__, __LINE__)
 
 // Runs `expr` and checks that it throws ExceptionType (exactly, via catch-by-base
 // as usual). Any other exception, or none at all, counts as a failure.
-#define AURA_CHECK_THROWS(expr, ExceptionType, description)                 \
-    do {                                                                    \
-        bool threw = false;                                                 \
-        try {                                                               \
-            (void)(expr);                                                   \
-        } catch (const ExceptionType&) {                                    \
-            threw = true;                                                   \
-        } catch (...) {                                                     \
-            threw = false;                                                  \
-        }                                                                   \
-        ::aura3d::test::check(threw, description, __FILE__, __LINE__);      \
+#define AURA_CHECK_THROWS(expr, ExceptionType, description)                                                            \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        bool threw = false;                                                                                            \
+        try                                                                                                            \
+        {                                                                                                              \
+            (void)(expr);                                                                                              \
+        }                                                                                                              \
+        catch (const ExceptionType &)                                                                                  \
+        {                                                                                                              \
+            threw = true;                                                                                              \
+        }                                                                                                              \
+        catch (...)                                                                                                    \
+        {                                                                                                              \
+            threw = false;                                                                                             \
+        }                                                                                                              \
+        ::aura3d::test::check(threw, description, __FILE__, __LINE__);                                                 \
     } while (0)
 
-#define AURA_TEST_MAIN_RETURN() \
-    return ::aura3d::test::failureCount() == 0 ? 0 : 1
+#define AURA_TEST_MAIN_RETURN() return ::aura3d::test::failureCount() == 0 ? 0 : 1
 
 #endif // AURA_TEST_UTILS_H

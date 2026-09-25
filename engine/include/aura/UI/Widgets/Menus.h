@@ -20,7 +20,8 @@
  * z-order or dismissal -- that is all @ref OverlayLayer's, once.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /**
  * @class Menu
@@ -38,13 +39,14 @@ namespace aura3d::ui {
  * A submenu is simply another overlay anchored to its parent item, so nesting
  * costs the menu nothing it does not already have.
  */
-class Menu final : public Box {
-public:
+class Menu final : public Box
+{
+  public:
     Menu();
 
     /// @param shortcut Right-aligned reminder text. Purely a label -- binding
     ///        the key is UIRoot::addShortcut()'s job, not the menu's.
-    Selectable& addItem(std::string text, std::string shortcut = {});
+    Selectable &addItem(std::string text, std::string shortcut = {});
 
     void addSeparator();
 
@@ -55,12 +57,12 @@ public:
      *        in. Deferred rather than built now, so a submenu costs nothing
      *        until it is actually opened.
      */
-    Selectable& addSubmenu(std::string text, std::function<void(Menu&)> build);
+    Selectable &addSubmenu(std::string text, std::function<void(Menu &)> build);
 
     /// Closes the overlay this menu was opened into, and every menu above it.
     void dismiss();
 
-protected:
+  protected:
     /// Takes the popup surface from the theme once it has one, so opening a
     /// menu needs no styling call beside it.
     void onAttach() override;
@@ -80,8 +82,9 @@ protected:
  * Escape closes. With the list shut, Up/Down step the selection directly,
  * which is what makes a form fillable without ever opening one.
  */
-class Dropdown final : public Control {
-public:
+class Dropdown final : public Control
+{
+  public:
     explicit Dropdown(std::vector<std::string> items = {});
     ~Dropdown() override;
 
@@ -89,31 +92,34 @@ public:
     Property<int> selected;
 
     void setItems(std::vector<std::string> items);
-    [[nodiscard]] const std::vector<std::string>& items() const noexcept { return _items; }
+    [[nodiscard]] const std::vector<std::string> &items() const noexcept
+    {
+        return _items;
+    }
 
     /// Drawn while nothing is selected.
     void setPlaceholder(std::string text);
 
     /// The selected item's text, or the placeholder.
-    [[nodiscard]] const std::string& text() const noexcept;
+    [[nodiscard]] const std::string &text() const noexcept;
 
     [[nodiscard]] bool isOpen() const noexcept;
 
     void open();
     void close();
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void paint(DrawList &out) override;
 
     void activate() override;
-    bool onKeyDown(const KeyEvent& event) override;
+    bool onKeyDown(const KeyEvent &event) override;
 
     void onDetach() override;
 
-private:
+  private:
     /// Moves the highlight while open, or the selection while shut.
     void _step(int delta);
 
@@ -136,7 +142,7 @@ private:
 
     //! The open list, for moving the highlight. Null whenever _popup is kNone;
     //! the overlay's onClosed callback is what keeps the two in step.
-    Column* _list = nullptr;
+    Column *_list = nullptr;
 
     int _highlighted = -1;
 };

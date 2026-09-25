@@ -5,12 +5,14 @@
 #include <numbers>
 #include <utility>
 
-namespace aura3d {
-namespace {
+namespace aura3d
+{
+namespace
+{
 constexpr u32 kVoiceSlotBits = 16;
 constexpr u32 kVoiceSlotMask = (1u << kVoiceSlotBits) - 1u;
 
-std::vector<f32> resample(const std::vector<f32>& input, u16 channels, u32 srcRate, u32 dstRate)
+std::vector<f32> resample(const std::vector<f32> &input, u16 channels, u32 srcRate, u32 dstRate)
 {
     if (srcRate == dstRate || channels == 0 || input.empty())
         return input;
@@ -45,8 +47,7 @@ std::vector<f32> resample(const std::vector<f32>& input, u16 channels, u32 srcRa
 
 } // namespace
 
-AudioEngine::AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoices)
-    : _device(std::move(device))
+AudioEngine::AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoices) : _device(std::move(device))
 {
     if (!_device)
     {
@@ -56,15 +57,19 @@ AudioEngine::AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoice
         _mixerLive = false;
     }
 
-    const wma::AudioDeviceConfig& config = _device->getConfig();
-    _sampleRate   = config.sampleRate;
+    const wma::AudioDeviceConfig &config = _device->getConfig();
+    _sampleRate = config.sampleRate;
     _channelCount = config.channelCount;
 
     _voices.resize(std::clamp<usize>(maxVoices, 1u, kVoiceSlotMask));
     _mixVoices.resize(_voices.size());
     _channels = std::make_unique<VoiceChannel[]>(_voices.size());
 
-    _device->setMixCallback([this](std::span<f32> output) { mix(output); });
+    _device->setMixCallback(
+        [this](std::span<f32> output)
+        {
+            mix(output);
+        });
 
     if (_device->start() != wma::WmaCode::Ok)
     {
@@ -73,9 +78,8 @@ AudioEngine::AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoice
     }
     else
     {
-        INK_INFO << "[Aura3D] audio ready: " << wma::audioBackendName(_device->getBackendType())
-                 << ", " << _sampleRate << " Hz, " << _channelCount << " ch, "
-                 << _voices.size() << " voices";
+        INK_INFO << "[Aura3D] audio ready: " << wma::audioBackendName(_device->getBackendType()) << ", " << _sampleRate
+                 << " Hz, " << _channelCount << " ch, " << _voices.size() << " voices";
     }
 }
 
@@ -88,7 +92,7 @@ AudioEngine::~AudioEngine()
     }
 }
 
-AudioClipHandle AudioEngine::loadClip(const std::string& path, AudioClipMode mode)
+AudioClipHandle AudioEngine::loadClip(const std::string &path, AudioClipMode mode)
 {
     AudioClipData data = AudioClipLoader::loadPCM(path);
 
@@ -101,7 +105,7 @@ AudioClipHandle AudioEngine::loadClip(const std::string& path, AudioClipMode mod
     return createClip(data, mode);
 }
 
-AudioClipHandle AudioEngine::createClip(const AudioClipData& data, AudioClipMode mode)
+AudioClipHandle AudioEngine::createClip(const AudioClipData &data, AudioClipMode mode)
 {
     if (!data.valid())
         return {};
@@ -126,10 +130,12 @@ void AudioEngine::publishVoice(usize index) noexcept
 void AudioEngine::retireClip(AudioClipHandle handle) noexcept
 {
     auto entry = _clips.find(handle);
-    if (entry == _clips.end() || entry->second->retired) return;
+    if (entry == _clips.end() || entry->second->retired)
+        return;
     for (usize i = 0; i < _voices.size(); ++i)
     {
-        if (_voices[i].clip != handle) continue;
+        if (_voices[i].clip != handle)
+            continue;
         _voices[i].active = false;
         _voices[i].clip = {};
         _voices[i].data = nullptr;
@@ -146,10 +152,12 @@ void AudioEngine::reclaimClips() noexcept
     //! fallback runs no callback, so nothing can still be reading the samples.
     const bool live = _mixerLive && _device->isRunning();
     const u32 epoch = _mixEpoch.load(std::memory_order_acquire);
-    std::erase_if(_clips, [live, epoch](const auto& entry) {
-        return entry.second->retired &&
-               (!live || static_cast<i32>(epoch - entry.second->retireAfter) >= 0);
-    });
+    std::erase_if(_clips,
+                  [live, epoch](const auto &entry)
+                  {
+                      return entry.second->retired &&
+                             (!live || static_cast<i32>(epoch - entry.second->retireAfter) >= 0);
+                  });
 }
 
 void AudioEngine::unloadClip(AudioClipHandle clip) noexcept
@@ -162,24 +170,29 @@ void AudioEngine::unloadClip(AudioClipHandle clip) noexcept
 void AudioEngine::unloadAllClips() noexcept
 {
     const std::scoped_lock lock(_voiceMutex);
-    for (const auto& [handle, clip] : _clips) retireClip(handle);
+    for (const auto &[handle, clip] : _clips)
+        retireClip(handle);
     reclaimClips();
 }
 
-AudioSourceHandle AudioEngine::play(const AudioSourceDesc& desc)
+AudioSourceHandle AudioEngine::play(const AudioSourceDesc &desc)
 {
     if (!isValidHandle(desc.clip))
         return {};
 
     const std::scoped_lock lock(_voiceMutex);
     const auto clip = _clips.find(desc.clip);
-    if (clip == _clips.end() || clip->second->retired) return {};
+    if (clip == _clips.end() || clip->second->retired)
+        return {};
     for (usize i = 0; i < _voices.size(); ++i)
         if (_channels[i].finished.load(std::memory_order_acquire) == _voices[i].serial)
             _voices[i].active = false;
 
     const auto slot = std::find_if(_voices.begin(), _voices.end(),
-                                   [](const Voice& v) { return !v.active; });
+                                   [](const Voice &v)
+                                   {
+                                       return !v.active;
+                                   });
 
     if (slot == _voices.end())
     {
@@ -191,19 +204,20 @@ AudioSourceHandle AudioEngine::play(const AudioSourceDesc& desc)
     slot->generation = static_cast<u16>(slot->generation + 1u);
     if (slot->generation == 0)
         slot->generation = 1;
-    if (++slot->serial == 0) ++slot->serial;
+    if (++slot->serial == 0)
+        ++slot->serial;
 
-    slot->clip        = desc.clip;
-    slot->data        = clip->second.get();
-    slot->cursor      = 0;
-    slot->gain        = std::max(0.0f, desc.gain);
-    slot->position    = desc.position;
-    slot->spatial     = desc.spatial;
-    slot->loop        = desc.loop;
+    slot->clip = desc.clip;
+    slot->data = clip->second.get();
+    slot->cursor = 0;
+    slot->gain = std::max(0.0f, desc.gain);
+    slot->position = desc.position;
+    slot->spatial = desc.spatial;
+    slot->loop = desc.loop;
     slot->minDistance = std::max(0.0f, desc.minDistance);
     slot->maxDistance = std::max(slot->minDistance + 0.001f, desc.maxDistance);
-    slot->paused      = false;
-    slot->active      = true;
+    slot->paused = false;
+    slot->active = true;
 
     publishVoice(index);
     return makeSourceHandle(index, slot->generation);
@@ -226,7 +240,7 @@ void AudioEngine::stop(AudioSourceHandle source) noexcept
         return;
 
     _voices[slot].active = false;
-    _voices[slot].clip   = {};
+    _voices[slot].clip = {};
     _voices[slot].data = nullptr;
     publishVoice(slot);
 }
@@ -242,7 +256,6 @@ void AudioEngine::stopAll() noexcept
         _voices[i].data = nullptr;
         publishVoice(i);
     }
-
 }
 
 void AudioEngine::pause(AudioSourceHandle source) noexcept
@@ -314,7 +327,7 @@ void AudioEngine::setSourceGain(AudioSourceHandle source, f32 gain) noexcept
     }
 }
 
-void AudioEngine::setSourcePosition(AudioSourceHandle source, const glm::vec3& position) noexcept
+void AudioEngine::setSourcePosition(AudioSourceHandle source, const glm::vec3 &position) noexcept
 {
     const std::scoped_lock lock(_voiceMutex);
 
@@ -338,7 +351,7 @@ void AudioEngine::setSourceLooping(AudioSourceHandle source, bool loop) noexcept
     }
 }
 
-void AudioEngine::setListener(const AudioListener3D& listener) noexcept
+void AudioEngine::setListener(const AudioListener3D &listener) noexcept
 {
     const std::scoped_lock lock(_voiceMutex);
     _listener = listener;
@@ -399,7 +412,7 @@ AudioSourceHandle AudioEngine::makeSourceHandle(usize slot, u16 generation) noex
                              (static_cast<u32>(slot) & kVoiceSlotMask)};
 }
 
-bool AudioEngine::resolveVoice(AudioSourceHandle handle, usize& slotOut) const noexcept
+bool AudioEngine::resolveVoice(AudioSourceHandle handle, usize &slotOut) const noexcept
 {
     if (!isValidHandle(handle))
         return false;
@@ -410,7 +423,7 @@ bool AudioEngine::resolveVoice(AudioSourceHandle handle, usize& slotOut) const n
     if (slot >= _voices.size())
         return false;
 
-    const Voice& voice = _voices[slot];
+    const Voice &voice = _voices[slot];
 
     if (!voice.active || voice.generation != generation ||
         _channels[slot].finished.load(std::memory_order_acquire) == voice.serial)
@@ -420,7 +433,7 @@ bool AudioEngine::resolveVoice(AudioSourceHandle handle, usize& slotOut) const n
     return true;
 }
 
-void AudioEngine::computeSpatialGains(const Voice& voice, f32& leftGain, f32& rightGain) const noexcept
+void AudioEngine::computeSpatialGains(const Voice &voice, f32 &leftGain, f32 &rightGain) const noexcept
 {
     const glm::vec3 toSource = voice.position - _mixListener.position;
     const f32 distance = glm::length(toSource);
@@ -438,7 +451,7 @@ void AudioEngine::computeSpatialGains(const Voice& voice, f32& leftGain, f32& ri
     if (distance > kMinPanDistance)
     {
         const glm::vec3 forward = glm::normalize(_mixListener.forward);
-        const glm::vec3 up      = glm::normalize(_mixListener.up);
+        const glm::vec3 up = glm::normalize(_mixListener.up);
 
         const glm::vec3 right = glm::normalize(glm::cross(forward, up));
 
@@ -446,7 +459,7 @@ void AudioEngine::computeSpatialGains(const Voice& voice, f32& leftGain, f32& ri
     }
 
     const f32 angle = (pan + 1.0f) * 0.25f * std::numbers::pi_v<f32>;
-    leftGain  = std::cos(angle) * attenuation;
+    leftGain = std::cos(angle) * attenuation;
     rightGain = std::sin(angle) * attenuation;
 }
 
@@ -460,27 +473,33 @@ void AudioEngine::mix(std::span<f32> output)
     for (usize i = 0; i < _mixVoices.size(); ++i)
     {
         Voice command;
-        auto& voice = _mixVoices[i];
-        if (!_channels[i].commands.consume(command)) continue;
+        auto &voice = _mixVoices[i];
+        if (!_channels[i].commands.consume(command))
+            continue;
         const bool restart = command.serial != voice.serial;
         const usize cursor = voice.cursor;
         const bool ended = !voice.active && !restart;
         voice = command;
-        if (!restart) voice.cursor = cursor;
-        if (ended) voice.active = false;
+        if (!restart)
+            voice.cursor = cursor;
+        if (ended)
+            voice.active = false;
     }
 
     const u16 outChannels = _channelCount;
     const usize outFrames = outChannels == 0 ? 0 : output.size() / outChannels;
 
-
-    for (Voice& voice : _mixVoices)
+    for (Voice &voice : _mixVoices)
     {
         if (!voice.active || voice.paused || !isValidHandle(voice.clip))
             continue;
 
-        if (!voice.data) { voice.active = false; continue; }
-        const Clip& clip = *voice.data;
+        if (!voice.data)
+        {
+            voice.active = false;
+            continue;
+        }
+        const Clip &clip = *voice.data;
         const u16 clipChannels = clip.channelCount;
         if (clipChannels == 0 || clip.samples.empty())
         {
@@ -490,13 +509,13 @@ void AudioEngine::mix(std::span<f32> output)
 
         const usize clipFrames = clip.samples.size() / clipChannels;
 
-        f32 leftGain  = 1.0f;
+        f32 leftGain = 1.0f;
         f32 rightGain = 1.0f;
         if (voice.spatial)
             computeSpatialGains(voice, leftGain, rightGain);
 
         const f32 voiceGain = voice.gain * master;
-        leftGain  *= voiceGain;
+        leftGain *= voiceGain;
         rightGain *= voiceGain;
 
         if (leftGain <= 0.0f && rightGain <= 0.0f)
@@ -550,9 +569,7 @@ void AudioEngine::mix(std::span<f32> output)
                     const u16 sourceChannel = std::min<u16>(channel, static_cast<u16>(clipChannels - 1));
                     const f32 sample = clip.samples[clipBase + sourceChannel];
 
-                    const f32 channelGain = (channel == 0) ? leftGain
-                                          : (channel == 1) ? rightGain
-                                                           : voiceGain;
+                    const f32 channelGain = (channel == 0) ? leftGain : (channel == 1) ? rightGain : voiceGain;
 
                     output[frame * outChannels + channel] += sample * channelGain;
                 }
@@ -562,7 +579,7 @@ void AudioEngine::mix(std::span<f32> output)
         }
     }
 
-    for (f32& sample : output)
+    for (f32 &sample : output)
         sample = std::clamp(sample, -1.0f, 1.0f);
     for (usize i = 0; i < _mixVoices.size(); ++i)
         if (!_mixVoices[i].active)

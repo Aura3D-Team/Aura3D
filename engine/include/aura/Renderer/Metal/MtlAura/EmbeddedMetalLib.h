@@ -19,8 +19,10 @@
  */
 #define AURA_METAL_HAS_EMBEDDED_METALLIB 0
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 //! Every MSL source under resources/shaders/metal, concatenated in the
 //! order gen_embedded_metallib.sh lists them. Compiled at runtime by

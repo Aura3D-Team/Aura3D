@@ -18,15 +18,20 @@
  * the logo -- the procedural content -- independent of the backend, portable to
  * every target the engine builds for, and testable without a window.
  */
-namespace orglogo {
+namespace orglogo
+{
 
 /// A tightly packed RGBA8 image, ready for createTextureFromPixels().
-struct Image {
+struct Image
+{
     std::vector<std::uint8_t> pixels;
     int width = 0;
     int height = 0;
 
-    [[nodiscard]] bool empty() const noexcept { return pixels.empty(); }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return pixels.empty();
+    }
 };
 
 /**
@@ -34,9 +39,10 @@ struct Image {
  * @brief Everything the static deep field needs to know about where it will
  *        be shown.
  */
-struct BackdropDesc {
-    int width = 0;   //! Baked at the framebuffer's own resolution, so the
-    int height = 0;  //! rasteriser's nearest-neighbour sampling lands 1:1.
+struct BackdropDesc
+{
+    int width = 0;  //! Baked at the framebuffer's own resolution, so the
+    int height = 0; //! rasteriser's nearest-neighbour sampling lands 1:1.
 
     //! Reference length for resolution-independent sizes; min(width, height).
     float unit = 0.0f;
@@ -56,10 +62,11 @@ struct BackdropDesc {
  * Drawn as opaque geometry underneath everything else, so this is the only
  * layer that does not use the additive glow encoding.
  */
-[[nodiscard]] Image bakeBackdrop(const BackdropDesc& desc, const aura3d::JobSystem& jobs);
+[[nodiscard]] Image bakeBackdrop(const BackdropDesc &desc, const aura3d::JobSystem &jobs);
 
 /// Sub-rectangle of a texture, in normalised coordinates.
-struct UvRect {
+struct UvRect
+{
     float u0 = 0.0f;
     float v0 = 0.0f;
     float u1 = 1.0f;
@@ -74,11 +81,12 @@ struct UvRect {
  * meteors -- go out as one drawBatch2D() call: the overlay path takes one
  * texture per batch, so a second sprite sheet would mean a second draw.
  */
-struct StarAtlas {
+struct StarAtlas
+{
     Image image;
-    UvRect soft{};    //! Round star: core plus halo, no spikes.
-    UvRect spiked{};  //! Bright star: core, diffraction spikes, halo.
-    UvRect comet{};   //! Meteor: head at the -U edge, tail trailing to +U.
+    UvRect soft{};   //! Round star: core plus halo, no spikes.
+    UvRect spiked{}; //! Bright star: core, diffraction spikes, halo.
+    UvRect comet{};  //! Meteor: head at the -U edge, tail trailing to +U.
 };
 
 /// Bakes the sprite atlas. Sizes are fixed and small; this is startup work.
@@ -106,8 +114,9 @@ struct StarAtlas {
  * bake() is the only mutating entry point and is not itself thread-safe;
  * internally it fans out over disjoint bands of the output image.
  */
-class FlameField {
-public:
+class FlameField
+{
+  public:
     //! Disc radius in quad-UV units, at rest. The disc breathes around it.
     static constexpr float kDiscRadiusUv = 0.185f;
 
@@ -121,51 +130,61 @@ public:
      *        up to a multiple of the internal coarse-grid step.
      * @param jobs Parallel-for used by bake(); must outlive this object.
      */
-    FlameField(int resolution, const aura3d::JobSystem& jobs);
+    FlameField(int resolution, const aura3d::JobSystem &jobs);
 
-    FlameField(const FlameField&) = delete;
-    FlameField& operator=(const FlameField&) = delete;
-    FlameField(FlameField&&) = delete;
-    FlameField& operator=(FlameField&&) = delete;
+    FlameField(const FlameField &) = delete;
+    FlameField &operator=(const FlameField &) = delete;
+    FlameField(FlameField &&) = delete;
+    FlameField &operator=(FlameField &&) = delete;
 
     /// Regenerates the texture for @p time, in seconds since the logo appeared.
     void bake(float time);
 
     /// The most recent bake's RGBA8 texels, row-major, resolution() wide.
-    [[nodiscard]] std::span<const std::uint8_t> pixels() const noexcept { return _pixels; }
+    [[nodiscard]] std::span<const std::uint8_t> pixels() const noexcept
+    {
+        return _pixels;
+    }
 
-    [[nodiscard]] int resolution() const noexcept { return _resolution; }
+    [[nodiscard]] int resolution() const noexcept
+    {
+        return _resolution;
+    }
 
     /// The core's breath at the last bake, in [-1,1]. Exposed so other layers
     /// can move with the orb rather than beside it.
-    [[nodiscard]] float pulse() const noexcept { return _pulse; }
+    [[nodiscard]] float pulse() const noexcept
+    {
+        return _pulse;
+    }
 
-private:
+  private:
     //! Per-frame scalars, resolved once per bake and read by every band.
-    struct Frame {
+    struct Frame
+    {
         float time = 0.0f;
-        float discRadius = 0.0f;   //! Breathing disc radius, quad-UV units.
-        float hotGain = 0.0f;      //! Centre flicker.
+        float discRadius = 0.0f; //! Breathing disc radius, quad-UV units.
+        float hotGain = 0.0f;    //! Centre flicker.
         float haloGain = 0.0f;
         float rayGain = 0.0f;
-        float rise = 0.0f;         //! Radial advection distance, noise units.
+        float rise = 0.0f; //! Radial advection distance, noise units.
     };
 
-    void _buildRayTable(const Frame& frame) noexcept;
-    void _buildRadialTables(const Frame& frame) noexcept;
-    void _bakeCoarseBand(const Frame& frame, int rowBegin, int rowEnd) noexcept;
-    void _shadeBand(const Frame& frame, int rowBegin, int rowEnd) noexcept;
+    void _buildRayTable(const Frame &frame) noexcept;
+    void _buildRadialTables(const Frame &frame) noexcept;
+    void _bakeCoarseBand(const Frame &frame, int rowBegin, int rowEnd) noexcept;
+    void _shadeBand(const Frame &frame, int rowBegin, int rowEnd) noexcept;
 
     int _resolution = 0;
-    int _coarseDim = 0;  //! Coarse samples per axis, including the far edge.
+    int _coarseDim = 0; //! Coarse samples per axis, including the far edge.
 
-    const aura3d::JobSystem& _jobs;
+    const aura3d::JobSystem &_jobs;
 
-    std::vector<std::uint8_t> _pixels;  //! RGBA8 output, _resolution^2 texels.
-    std::vector<float> _coarse;         //! (turbulence, ray) pairs, interleaved.
-    std::vector<float> _rayTable;       //! Ray intensity by angle.
-    std::vector<float> _haloTable;      //! Core halo by radius.
-    std::vector<float> _rayFalloff;     //! Ray radial profile, incl. edge fade.
+    std::vector<std::uint8_t> _pixels; //! RGBA8 output, _resolution^2 texels.
+    std::vector<float> _coarse;        //! (turbulence, ray) pairs, interleaved.
+    std::vector<float> _rayTable;      //! Ray intensity by angle.
+    std::vector<float> _haloTable;     //! Core halo by radius.
+    std::vector<float> _rayFalloff;    //! Ray radial profile, incl. edge fade.
 
     float _pulse = 0.0f;
 };

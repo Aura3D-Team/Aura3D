@@ -19,7 +19,8 @@
  * another control to change how it looks -- that is what @ref Style is for.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /**
  * @class Control
@@ -30,13 +31,17 @@ namespace aura3d::ui {
  * UI. Both are ordinary transitions, so a theme can turn them off by setting
  * the duration to zero.
  */
-class Control : public Widget {
-public:
+class Control : public Widget
+{
+  public:
     /// Whether the control draws a focus ring when focused by keyboard. On by
     /// default; a control focused by a click does not show one.
-    void setShowsFocusRing(bool shows) noexcept { _showsFocusRing = shows; }
+    void setShowsFocusRing(bool shows) noexcept
+    {
+        _showsFocusRing = shows;
+    }
 
-protected:
+  protected:
     Control();
 
     void onPointerEnter() override;
@@ -48,22 +53,28 @@ protected:
     bool onTick(f32 deltaSeconds) override;
 
     /// Interpolation between the style's normal and hovered colours.
-    [[nodiscard]] f32 hoverAmount() const noexcept { return _hover.value(); }
-    [[nodiscard]] bool pressed() const noexcept { return _pressed; }
+    [[nodiscard]] f32 hoverAmount() const noexcept
+    {
+        return _hover.value();
+    }
+    [[nodiscard]] bool pressed() const noexcept
+    {
+        return _pressed;
+    }
 
     /// The surface colour for the control's current state, blended across the
     /// hover transition.
-    [[nodiscard]] glm::vec4 surfaceColor(const WidgetStyle& style) const;
+    [[nodiscard]] glm::vec4 surfaceColor(const WidgetStyle &style) const;
 
     /// Draws the focus ring, if one is due. Call at the end of paint().
-    void paintFocusRing(DrawList& out, const WidgetStyle& style, const Rect& bounds) const;
+    void paintFocusRing(DrawList &out, const WidgetStyle &style, const Rect &bounds) const;
 
     /// @{
     /// Press tracking shared by every clickable control: capture on press,
     /// fire on release inside. Subclasses call activate() to do the work.
-    bool onPointerDown(const PointerEvent& event) override;
-    bool onPointerUp(const PointerEvent& event) override;
-    bool onKeyDown(const KeyEvent& event) override;
+    bool onPointerDown(const PointerEvent &event) override;
+    bool onPointerUp(const PointerEvent &event) override;
+    bool onKeyDown(const KeyEvent &event) override;
     /// @}
 
     /// What the control does when clicked, or when Space/Enter is pressed on
@@ -72,7 +83,7 @@ protected:
 
     void setPressed(bool pressed);
 
-private:
+  private:
     Transition<f32> _hover{0.0f};
     bool _pressed = false;
     bool _showsFocusRing = true;
@@ -88,8 +99,9 @@ private:
  * launch.clicked.connect([this] { launchApplication(); });
  * @endcode
  */
-class Button final : public Control {
-public:
+class Button final : public Control
+{
+  public:
     explicit Button(std::string text = {});
 
     /// Fires on release inside the button, and on Space or Enter while it has
@@ -97,21 +109,24 @@ public:
     Signal<> clicked;
 
     void setText(std::string text);
-    [[nodiscard]] const std::string& text() const noexcept;
+    [[nodiscard]] const std::string &text() const noexcept;
 
     /// The button's own label, for restyling it or replacing its content.
-    [[nodiscard]] Label& label() noexcept { return *_label; }
+    [[nodiscard]] Label &label() noexcept
+    {
+        return *_label;
+    }
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    void paint(DrawList& out) override;
+  protected:
+    void paint(DrawList &out) override;
     void activate() override;
 
-    glm::vec2 measureContent(const Constraints& available) override;
+    glm::vec2 measureContent(const Constraints &available) override;
 
-private:
-    Label* _label = nullptr;
+  private:
+    Label *_label = nullptr;
 };
 
 /**
@@ -123,35 +138,39 @@ private:
  * wireframe.checked.changed().connect([&](bool on) { renderer.setWireframe(on); });
  * @endcode
  */
-class CheckBox final : public Control {
-public:
+class CheckBox final : public Control
+{
+  public:
     explicit CheckBox(std::string text = {}, bool checked = false);
 
     Property<bool> checked;
 
     void setText(std::string text);
-    [[nodiscard]] Label& label() noexcept { return *_label; }
+    [[nodiscard]] Label &label() noexcept
+    {
+        return *_label;
+    }
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
 
-    void paint(DrawList& out) override;
+    void paint(DrawList &out) override;
     void activate() override;
 
     /// The tick box itself. A radio button is the same widget with a round
     /// box and a dot, which is why this is a hook rather than a constant.
-    [[nodiscard]] Rect markBox(const Rect& content) const;
+    [[nodiscard]] Rect markBox(const Rect &content) const;
 
     /// Draws what a checked box contains. Overridden to make it a dot.
-    virtual void paintMark(DrawList& out, const Rect& box, const glm::vec4& color);
+    virtual void paintMark(DrawList &out, const Rect &box, const glm::vec4 &color);
 
-    Label* _label = nullptr;
+    Label *_label = nullptr;
     Transition<f32> _check{0.0f};
 
-private:
+  private:
     bool onTick(f32 deltaSeconds) override;
 };
 
@@ -160,25 +179,29 @@ class RadioGroup;
 /// One option of a @ref RadioGroup. Looks like a CheckBox with a round box,
 /// and behaves differently in exactly one way: it cannot be unchecked by
 /// clicking it.
-class RadioButton final : public Control {
-public:
+class RadioButton final : public Control
+{
+  public:
     explicit RadioButton(std::string text = {});
 
     Property<bool> checked;
 
     void setText(std::string text);
-    [[nodiscard]] Label& label() noexcept { return *_label; }
+    [[nodiscard]] Label &label() noexcept
+    {
+        return *_label;
+    }
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
+    void paint(DrawList &out) override;
     void activate() override;
 
-private:
-    Label* _label = nullptr;
+  private:
+    Label *_label = nullptr;
 };
 
 /**
@@ -196,19 +219,23 @@ private:
  * quality.selectionChanged.connect([](int index) { ... });
  * @endcode
  */
-class RadioGroup {
-public:
+class RadioGroup
+{
+  public:
     /// Fires with the index of the newly selected button, or -1.
     Signal<int> selectionChanged;
 
     /// Removed buttons leave a vacant index; existing indices stay stable.
-    void add(RadioButton& button);
+    void add(RadioButton &button);
 
     void select(int index);
     [[nodiscard]] int selected() const noexcept;
-    [[nodiscard]] usize size() const noexcept { return _buttons.size(); }
+    [[nodiscard]] usize size() const noexcept
+    {
+        return _buttons.size();
+    }
 
-private:
+  private:
     std::vector<WidgetRef> _buttons;
     std::vector<ScopedConnection> _connections;
     int _selected = -1;
@@ -229,8 +256,9 @@ private:
  * row.activated.connect([&] { rename(); });
  * @endcode
  */
-class Selectable final : public Control {
-public:
+class Selectable final : public Control
+{
+  public:
     explicit Selectable(std::string text = {});
 
     /// Drawn as the current choice. Set by whatever owns the list; a
@@ -242,27 +270,30 @@ public:
     Signal<> activated;
 
     void setText(std::string text);
-    [[nodiscard]] const std::string& text() const noexcept;
+    [[nodiscard]] const std::string &text() const noexcept;
 
     /// Trailing text, right-aligned: a menu's shortcut, a list row's value.
     void setDetail(std::string text);
 
     /// Empty when setDetail() was never called.
-    [[nodiscard]] const std::string& detail() const noexcept;
+    [[nodiscard]] const std::string &detail() const noexcept;
 
-    [[nodiscard]] Label& label() noexcept { return *_label; }
+    [[nodiscard]] Label &label() noexcept
+    {
+        return *_label;
+    }
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
+    void paint(DrawList &out) override;
     void activate() override;
 
-private:
-    Label* _label = nullptr;
-    Label* _detail = nullptr; //! Null until setDetail() is called.
+  private:
+    Label *_label = nullptr;
+    Label *_detail = nullptr; //! Null until setDetail() is called.
 };
 
 /**
@@ -272,8 +303,9 @@ private:
  * Dragging is tracked to release even after the pointer leaves the track, so a
  * fast drag does not snap back. Left/Right adjust by one step when focused.
  */
-class Slider final : public Control {
-public:
+class Slider final : public Control
+{
+  public:
     explicit Slider(f32 minimum = 0.0f, f32 maximum = 1.0f);
 
     Property<f32> value;
@@ -284,28 +316,34 @@ public:
     /// a fiftieth of the range.
     void setStep(f32 step);
 
-    [[nodiscard]] f32 minimum() const noexcept { return _minimum; }
-    [[nodiscard]] f32 maximum() const noexcept { return _maximum; }
+    [[nodiscard]] f32 minimum() const noexcept
+    {
+        return _minimum;
+    }
+    [[nodiscard]] f32 maximum() const noexcept
+    {
+        return _maximum;
+    }
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void paint(DrawList &out) override;
 
-    bool onPointerDown(const PointerEvent& event) override;
-    bool onPointerMove(const PointerEvent& event) override;
-    bool onPointerUp(const PointerEvent& event) override;
-    bool onKeyDown(const KeyEvent& event) override;
+    bool onPointerDown(const PointerEvent &event) override;
+    bool onPointerMove(const PointerEvent &event) override;
+    bool onPointerUp(const PointerEvent &event) override;
+    bool onKeyDown(const KeyEvent &event) override;
 
-private:
+  private:
     /// Value at pointer position @p x, snapped to the step and clamped.
     [[nodiscard]] f32 _valueAt(f32 x) const;
 
     /// Where in [0,1] the current value sits.
     [[nodiscard]] f32 _fraction() const noexcept;
 
-    [[nodiscard]] Rect _track(const Rect& content) const;
+    [[nodiscard]] Rect _track(const Rect &content) const;
     [[nodiscard]] f32 _knobRadius() const noexcept;
 
     void _commit(f32 raw);
@@ -317,17 +355,18 @@ private:
 
 /// A read-only bar. @c value is a fraction in [0,1]; set it above 1 and it
 /// clamps rather than overflowing its track.
-class ProgressBar final : public Widget {
-public:
+class ProgressBar final : public Widget
+{
+  public:
     explicit ProgressBar(f32 value = 0.0f);
 
     Property<f32> value;
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void paint(DrawList &out) override;
 };
 
 /**
@@ -345,8 +384,9 @@ protected:
  * name.submitted.connect([&] { rename(name.text.get()); });
  * @endcode
  */
-class TextField final : public Control {
-public:
+class TextField final : public Control
+{
+  public:
     explicit TextField(std::string text = {});
 
     Property<std::string> text;
@@ -359,40 +399,55 @@ public:
 
     /// Upper bound on the stored text. Input past it is dropped whole, never
     /// cutting a character in half.
-    void setMaxBytes(usize bytes) noexcept { _maxBytes = bytes; }
+    void setMaxBytes(usize bytes) noexcept
+    {
+        _maxBytes = bytes;
+    }
 
     void setReadOnly(bool readOnly);
-    [[nodiscard]] bool readOnly() const noexcept { return _readOnly; }
+    [[nodiscard]] bool readOnly() const noexcept
+    {
+        return _readOnly;
+    }
 
     /// Draws one asterisk per byte in place of the text, for a passphrase.
     /// The text itself, the caret and the selection are untouched.
     void setObscured(bool obscured);
-    [[nodiscard]] bool obscured() const noexcept { return _obscured; }
+    [[nodiscard]] bool obscured() const noexcept
+    {
+        return _obscured;
+    }
 
     void selectAll();
     void setCaret(usize byte, bool extendSelection = false);
-    [[nodiscard]] usize caret() const noexcept { return _caret; }
+    [[nodiscard]] usize caret() const noexcept
+    {
+        return _caret;
+    }
 
-    [[nodiscard]] bool wantsTextInput() const noexcept override { return !_readOnly; }
+    [[nodiscard]] bool wantsTextInput() const noexcept override
+    {
+        return !_readOnly;
+    }
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void paint(DrawList &out) override;
 
-    bool onPointerDown(const PointerEvent& event) override;
-    bool onPointerMove(const PointerEvent& event) override;
-    bool onPointerUp(const PointerEvent& event) override;
-    bool onKeyDown(const KeyEvent& event) override;
-    bool onTextInput(const TextEvent& event) override;
+    bool onPointerDown(const PointerEvent &event) override;
+    bool onPointerMove(const PointerEvent &event) override;
+    bool onPointerUp(const PointerEvent &event) override;
+    bool onKeyDown(const KeyEvent &event) override;
+    bool onTextInput(const TextEvent &event) override;
 
     void onFocusIn(FocusReason reason) override;
     void onFocusOut() override;
 
     bool onTick(f32 deltaSeconds) override;
 
-private:
+  private:
     void _reshape();
 
     /// Replaces the selection (or inserts at the caret) with @p insertion.
@@ -400,9 +455,18 @@ private:
 
     void _deleteSelection();
 
-    [[nodiscard]] bool _hasSelection() const noexcept { return _selection != _caret; }
-    [[nodiscard]] usize _selectionBegin() const noexcept { return std::min(_selection, _caret); }
-    [[nodiscard]] usize _selectionEnd() const noexcept { return std::max(_selection, _caret); }
+    [[nodiscard]] bool _hasSelection() const noexcept
+    {
+        return _selection != _caret;
+    }
+    [[nodiscard]] usize _selectionBegin() const noexcept
+    {
+        return std::min(_selection, _caret);
+    }
+    [[nodiscard]] usize _selectionEnd() const noexcept
+    {
+        return std::max(_selection, _caret);
+    }
 
     /// Slides the horizontal scroll so the caret is inside the viewport.
     void _revealCaret(f32 viewportWidth);

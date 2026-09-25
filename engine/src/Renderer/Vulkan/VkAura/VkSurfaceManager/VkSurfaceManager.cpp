@@ -2,8 +2,8 @@
 
 #include <ink/ink.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
 #if WMA_HAS_GLFW
 #define GLFW_INCLUDE_NONE
@@ -29,50 +29,57 @@
 #include <vulkan/vulkan_wayland.h>
 #endif
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window, void* nativeDisplay)
+VkSurfaceManager::VkSurfaceManager(VkInstance *vkInstance, wma::WindowBackend windowBackend, void *window,
+                                   void *nativeDisplay)
     : _vkInstance(vkInstance), _vkSurface(VK_NULL_HANDLE), _windowBackend(windowBackend)
 {
     if (!window)
         throw AuraException("VkSurfaceManager: window handle is null");
 
-    switch (windowBackend) {
+    switch (windowBackend)
+    {
 #if WMA_HAS_GLFW
     case wma::WindowBackend::GLFW:
-        VK_RESULT_CHECK(glfwCreateWindowSurface(*_vkInstance, (GLFWwindow*)window, nullptr, &_vkSurface));
+        VK_RESULT_CHECK(glfwCreateWindowSurface(*_vkInstance, (GLFWwindow *)window, nullptr, &_vkSurface));
         break;
 #endif
 #if WMA_HAS_SDL
     case wma::WindowBackend::SDL3:
-        if (!SDL_Vulkan_CreateSurface((SDL_Window*)window, *_vkInstance, nullptr, &_vkSurface)) {
+        if (!SDL_Vulkan_CreateSurface((SDL_Window *)window, *_vkInstance, nullptr, &_vkSurface))
+        {
             throw AuraException("Fail to create SDL Window surface! SDL Error: " + std::string(SDL_GetError()));
         }
         break;
 #endif
 #if WMA_HAS_X11
-    case wma::WindowBackend::X11: {
+    case wma::WindowBackend::X11:
+    {
         if (!nativeDisplay)
             throw AuraException("VkSurfaceManager: X11 backend requires a native display handle");
 
         VkXlibSurfaceCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-        createInfo.dpy = static_cast<Display*>(nativeDisplay);
+        createInfo.dpy = static_cast<Display *>(nativeDisplay);
         createInfo.window = reinterpret_cast<Window>(window);
         VK_RESULT_CHECK(vkCreateXlibSurfaceKHR(*_vkInstance, &createInfo, nullptr, &_vkSurface));
         break;
     }
 #endif
 #if WMA_HAS_WAYLAND
-    case wma::WindowBackend::WAYLAND: {
+    case wma::WindowBackend::WAYLAND:
+    {
         if (!nativeDisplay)
             throw AuraException("VkSurfaceManager: Wayland backend requires a native display handle");
 
         VkWaylandSurfaceCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-        createInfo.display = static_cast<struct wl_display*>(nativeDisplay);
-        createInfo.surface = static_cast<struct wl_surface*>(window);
+        createInfo.display = static_cast<struct wl_display *>(nativeDisplay);
+        createInfo.surface = static_cast<struct wl_surface *>(window);
         VK_RESULT_CHECK(vkCreateWaylandSurfaceKHR(*_vkInstance, &createInfo, nullptr, &_vkSurface));
         break;
     }
@@ -82,24 +89,27 @@ VkSurfaceManager::VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend wi
     }
 }
 
-VkSurfaceManager::~VkSurfaceManager() {
-    if (_vkSurface != VK_NULL_HANDLE) {
+VkSurfaceManager::~VkSurfaceManager()
+{
+    if (_vkSurface != VK_NULL_HANDLE)
+    {
         vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
         INK_DEBUG << "VkSurface deleted";
     }
     _vkInstance = nullptr;
 }
 
-VkSurfaceKHR* VkSurfaceManager::getSurface()
+VkSurfaceKHR *VkSurfaceManager::getSurface()
 {
     return &_vkSurface;
 }
 
-VkBool32 VkSurfaceManager::getQueuePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, const int familyIndex) {
+VkBool32 VkSurfaceManager::getQueuePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, const int familyIndex)
+{
     VkBool32 presentSupport = false;
     vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, familyIndex, _vkSurface, &presentSupport);
     return presentSupport;
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

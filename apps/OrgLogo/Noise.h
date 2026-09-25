@@ -16,7 +16,8 @@
  * nothing but a timestamp, and both of them be split across worker threads
  * without a single shared byte of state.
  */
-namespace orglogo {
+namespace orglogo
+{
 
 [[nodiscard]] constexpr float clamp01(float x) noexcept
 {
@@ -74,8 +75,7 @@ namespace orglogo {
 /// well-defined, so the mixing below carries no overflow UB.
 [[nodiscard]] constexpr float hash2(std::int32_t x, std::int32_t y) noexcept
 {
-    std::uint32_t h = static_cast<std::uint32_t>(x) * 374761393u
-                    + static_cast<std::uint32_t>(y) * 668265263u;
+    std::uint32_t h = static_cast<std::uint32_t>(x) * 374761393u + static_cast<std::uint32_t>(y) * 668265263u;
     h = (h ^ (h >> 13)) * 1274126177u;
     h ^= h >> 16;
     return static_cast<float>(h) * (1.0f / 4294967296.0f);
@@ -86,9 +86,8 @@ namespace orglogo {
 /// flame pulsing in lockstep across the whole field.
 [[nodiscard]] constexpr float hash3(std::int32_t x, std::int32_t y, std::int32_t z) noexcept
 {
-    std::uint32_t h = static_cast<std::uint32_t>(x) * 374761393u
-                    + static_cast<std::uint32_t>(y) * 668265263u
-                    + static_cast<std::uint32_t>(z) * 2147483647u;
+    std::uint32_t h = static_cast<std::uint32_t>(x) * 374761393u + static_cast<std::uint32_t>(y) * 668265263u +
+                      static_cast<std::uint32_t>(z) * 2147483647u;
     h = (h ^ (h >> 13)) * 1274126177u;
     h = (h ^ (h >> 16)) * 2246822519u;
     h ^= h >> 13;
@@ -103,9 +102,9 @@ namespace orglogo {
     const float u = fade3(x - static_cast<float>(xi));
     const float v = fade3(y - static_cast<float>(yi));
 
-    const float c00 = hash2(xi,     yi);
+    const float c00 = hash2(xi, yi);
     const float c10 = hash2(xi + 1, yi);
-    const float c01 = hash2(xi,     yi + 1);
+    const float c01 = hash2(xi, yi + 1);
     const float c11 = hash2(xi + 1, yi + 1);
 
     return lerp(lerp(c00, c10, u), lerp(c01, c11, u), v);
@@ -127,13 +126,13 @@ namespace orglogo {
     const float v = fade5(y - static_cast<float>(yi));
     const float w = fade5(z - static_cast<float>(zi));
 
-    const float c000 = hash3(xi,     yi,     zi);
-    const float c100 = hash3(xi + 1, yi,     zi);
-    const float c010 = hash3(xi,     yi + 1, zi);
+    const float c000 = hash3(xi, yi, zi);
+    const float c100 = hash3(xi + 1, yi, zi);
+    const float c010 = hash3(xi, yi + 1, zi);
     const float c110 = hash3(xi + 1, yi + 1, zi);
-    const float c001 = hash3(xi,     yi,     zi + 1);
-    const float c101 = hash3(xi + 1, yi,     zi + 1);
-    const float c011 = hash3(xi,     yi + 1, zi + 1);
+    const float c001 = hash3(xi, yi, zi + 1);
+    const float c101 = hash3(xi + 1, yi, zi + 1);
+    const float c011 = hash3(xi, yi + 1, zi + 1);
     const float c111 = hash3(xi + 1, yi + 1, zi + 1);
 
     const float x00 = lerp(c000, c100, u);

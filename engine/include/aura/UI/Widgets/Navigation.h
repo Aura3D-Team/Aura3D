@@ -14,7 +14,8 @@
  * @brief The widgets that show one part of their content at a time.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /**
  * @class Disclosure
@@ -28,24 +29,31 @@ namespace aura3d::ui {
  * Only the header takes clicks. The content below it is ordinary tree, so
  * whatever is in there keeps its own input.
  */
-class Disclosure : public Control {
-public:
+class Disclosure : public Control
+{
+  public:
     Property<bool> expanded;
 
     /// Where children go. Laid out only while @ref expanded.
-    [[nodiscard]] Column& content() noexcept { return *_content; }
+    [[nodiscard]] Column &content() noexcept
+    {
+        return *_content;
+    }
 
-    [[nodiscard]] Label& label() noexcept { return *_label; }
+    [[nodiscard]] Label &label() noexcept
+    {
+        return *_label;
+    }
     void setTitle(std::string title);
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
+  protected:
     Disclosure(Part part, std::string title, bool expanded);
 
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
-    void paint(DrawList& out) override;
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
+    void paint(DrawList &out) override;
     void activate() override;
 
     /// The header row only -- the content underneath must not toggle the
@@ -62,9 +70,9 @@ protected:
     /// False for a node with no children, which gets no arrow and no toggle.
     bool _foldable = true;
 
-private:
-    Label* _label = nullptr;
-    Column* _content = nullptr;
+  private:
+    Label *_label = nullptr;
+    Column *_content = nullptr;
 };
 
 /**
@@ -77,8 +85,9 @@ private:
  * graphics.content().add<Slider>(30.0f, 240.0f);
  * @endcode
  */
-class CollapsingHeader final : public Disclosure {
-public:
+class CollapsingHeader final : public Disclosure
+{
+  public:
     explicit CollapsingHeader(std::string title = {}, bool expanded = true);
 };
 
@@ -95,8 +104,9 @@ public:
  * A tree is a Column of these; there is no separate view type, because a list
  * of roots is already what a tree is.
  */
-class TreeNode final : public Disclosure {
-public:
+class TreeNode final : public Disclosure
+{
+  public:
     explicit TreeNode(std::string title = {}, bool expanded = false);
 
     /// Drawn as the current selection. A tree does not manage selection
@@ -107,12 +117,12 @@ public:
     Signal<> activated;
 
     /// Adds a child node and returns it, for nesting.
-    TreeNode& addChild(std::string title, bool expanded = false);
+    TreeNode &addChild(std::string title, bool expanded = false);
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    void paint(DrawList& out) override;
+  protected:
+    void paint(DrawList &out) override;
     void activate() override;
 };
 
@@ -128,38 +138,39 @@ protected:
  *
  * Left and Right move between tabs while any of them has focus.
  */
-class TabView final : public Widget {
-public:
+class TabView final : public Widget
+{
+  public:
     TabView();
 
     /// The selected tab. Out-of-range values are clamped.
     Property<int> current;
 
     /// Adds a tab and returns its page, for filling in.
-    Column& addTab(std::string title);
+    Column &addTab(std::string title);
 
     [[nodiscard]] usize tabCount() const noexcept;
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
+    void paint(DrawList &out) override;
 
-    bool onKeyDown(const KeyEvent& event) override;
+    bool onKeyDown(const KeyEvent &event) override;
     bool onTick(f32 deltaSeconds) override;
 
-private:
+  private:
     /// Shows the selected page, marks the selected tab, and sends the
     /// underline after it.
     void _apply();
 
-    Row* _bar = nullptr;
+    Row *_bar = nullptr;
 
     //! A plain Widget: its default layout overlays its children, which is
     //! exactly a stack of pages with one of them visible.
-    Widget* _pages = nullptr;
+    Widget *_pages = nullptr;
 
     //! The underline, animated rather than jumped, because a tab strip is the
     //! one place a UI can afford to show where the selection went.

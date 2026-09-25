@@ -24,15 +24,19 @@
 #include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkDebugMetrics.h"
 #endif
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-namespace {
+namespace
+{
 
 [[nodiscard]] constexpr u32 parseVulkanApiVersion(std::string_view version) noexcept
 {
     const auto dot = version.find('.');
-    if (dot == std::string_view::npos) {
+    if (dot == std::string_view::npos)
+    {
         return kVulkanApiVersion;
     }
 
@@ -46,7 +50,8 @@ namespace {
 [[nodiscard]] constexpr VmaAllocationCreateFlags uploadAllocationFlags(bool persistentlyMapped) noexcept
 {
     VmaAllocationCreateFlags flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    if (persistentlyMapped) {
+    if (persistentlyMapped)
+    {
         flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT;
     }
     return flags;
@@ -54,15 +59,16 @@ namespace {
 
 } // namespace
 
-VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(AuraSettings* settings)
+VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(AuraSettings *settings)
 {
     Config cfg;
 
-    if (!settings) {
+    if (!settings)
+    {
         return cfg;
     }
 
-    ink::EnhancedJson* json = settings->getSettings();
+    ink::EnhancedJson *json = settings->getSettings();
     cfg.bufferDeviceAddress = json->getPath<bool>("/memory/vma/buffer_device_address", true);
     cfg.preferDeviceMemory = json->getPath<bool>("/memory/vma/prefer_device_memory", true);
     cfg.persistentlyMapUploadBuffers = json->getPath<bool>("/memory/vma/persistently_map_upload_buffers", true);
@@ -88,12 +94,11 @@ VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(AuraSettings* settin
     return cfg;
 }
 
-void VulkanMemoryManager::initialize(VkInstance instance,
-                                     VkPhysicalDevice physicalDevice,
-                                     VkDevice device,
-                                     const Config& config)
+void VulkanMemoryManager::initialize(VkInstance instance, VkPhysicalDevice physicalDevice, VkDevice device,
+                                     const Config &config)
 {
-    if (_allocator != VK_NULL_HANDLE) {
+    if (_allocator != VK_NULL_HANDLE)
+    {
         return;
     }
 
@@ -134,24 +139,21 @@ void VulkanMemoryManager::initialize(VkInstance instance,
     };
 
     VK_RESULT_CHECK(vmaCreateAllocator(&allocatorInfo, &_allocator));
-    INK_INFO << std::format(
-        "VMA allocator initialized (Vulkan {}.{})",
-        VK_VERSION_MAJOR(config.vulkanApiVersion),
-        VK_VERSION_MINOR(config.vulkanApiVersion));
+    INK_INFO << std::format("VMA allocator initialized (Vulkan {}.{})", VK_VERSION_MAJOR(config.vulkanApiVersion),
+                            VK_VERSION_MINOR(config.vulkanApiVersion));
 }
 
 void VulkanMemoryManager::shutdown()
 {
-    if (_allocator != VK_NULL_HANDLE) {
+    if (_allocator != VK_NULL_HANDLE)
+    {
         vmaDestroyAllocator(_allocator);
         _allocator = VK_NULL_HANDLE;
     }
 }
 
-AllocatedBuffer VulkanMemoryManager::createBuffer(VkDeviceSize size,
-                                                  VkBufferUsageFlags usage,
-                                                  VkSharingMode sharingMode,
-                                                  VmaMemoryUsage memoryUsage,
+AllocatedBuffer VulkanMemoryManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                                                  VkSharingMode sharingMode, VmaMemoryUsage memoryUsage,
                                                   VmaAllocationCreateFlags extraFlags)
 {
     AllocatedBuffer result;
@@ -169,12 +171,8 @@ AllocatedBuffer VulkanMemoryManager::createBuffer(VkDeviceSize size,
     };
 
     VmaAllocationInfo allocationInfo{};
-    VK_RESULT_CHECK(vmaCreateBuffer(_allocator,
-                                    &bufferInfo,
-                                    &allocInfo,
-                                    &result.buffer,
-                                    &result.allocation,
-                                    &allocationInfo));
+    VK_RESULT_CHECK(
+        vmaCreateBuffer(_allocator, &bufferInfo, &allocInfo, &result.buffer, &result.allocation, &allocationInfo));
 
     result.mappedData = allocationInfo.pMappedData;
     result.offset = allocationInfo.offset;
@@ -183,37 +181,29 @@ AllocatedBuffer VulkanMemoryManager::createBuffer(VkDeviceSize size,
 
 AllocatedBuffer VulkanMemoryManager::createUploadBuffer(VkDeviceSize size, VkSharingMode sharingMode)
 {
-    return createBuffer(size,
-                        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                        sharingMode,
-                        VMA_MEMORY_USAGE_AUTO,
+    return createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, sharingMode, VMA_MEMORY_USAGE_AUTO,
                         uploadAllocationFlags(_config.persistentlyMapUploadBuffers));
 }
 
-AllocatedBuffer VulkanMemoryManager::createDeviceLocalBuffer(VkDeviceSize size,
-                                                             VkBufferUsageFlags usage,
+AllocatedBuffer VulkanMemoryManager::createDeviceLocalBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                                                              VkSharingMode sharingMode)
 {
-    const VmaMemoryUsage memoryUsage = _config.preferDeviceMemory
-        ? VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-        : VMA_MEMORY_USAGE_AUTO;
+    const VmaMemoryUsage memoryUsage =
+        _config.preferDeviceMemory ? VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE : VMA_MEMORY_USAGE_AUTO;
 
-    return createBuffer(size,
-                        usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                        sharingMode,
-                        memoryUsage,
-                        0);
+    return createBuffer(size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sharingMode, memoryUsage, 0);
 }
 
-void VulkanMemoryManager::destroyBuffer(AllocatedBuffer& buffer)
+void VulkanMemoryManager::destroyBuffer(AllocatedBuffer &buffer)
 {
-    if (buffer.allocation != VK_NULL_HANDLE || buffer.buffer != VK_NULL_HANDLE) {
+    if (buffer.allocation != VK_NULL_HANDLE || buffer.buffer != VK_NULL_HANDLE)
+    {
         vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
     }
     buffer = {};
 }
 
-AllocatedImage VulkanMemoryManager::createImage(const VkImageCreateInfo& imageInfo, VmaMemoryUsage memoryUsage)
+AllocatedImage VulkanMemoryManager::createImage(const VkImageCreateInfo &imageInfo, VmaMemoryUsage memoryUsage)
 {
     AllocatedImage result;
 
@@ -221,33 +211,29 @@ AllocatedImage VulkanMemoryManager::createImage(const VkImageCreateInfo& imageIn
         .usage = memoryUsage,
     };
 
-    VK_RESULT_CHECK(vmaCreateImage(_allocator,
-                                   &imageInfo,
-                                   &allocInfo,
-                                   &result.image,
-                                   &result.allocation,
-                                   nullptr));
+    VK_RESULT_CHECK(vmaCreateImage(_allocator, &imageInfo, &allocInfo, &result.image, &result.allocation, nullptr));
 
     return result;
 }
 
-void VulkanMemoryManager::destroyImage(AllocatedImage& image)
+void VulkanMemoryManager::destroyImage(AllocatedImage &image)
 {
-    if (image.allocation != VK_NULL_HANDLE || image.image != VK_NULL_HANDLE) {
+    if (image.allocation != VK_NULL_HANDLE || image.image != VK_NULL_HANDLE)
+    {
         vmaDestroyImage(_allocator, image.image, image.allocation);
     }
     image = {};
 }
 
-void* VulkanMemoryManager::map(AllocatedBuffer& buffer)
+void *VulkanMemoryManager::map(AllocatedBuffer &buffer)
 {
-    void* data = nullptr;
+    void *data = nullptr;
     VK_RESULT_CHECK(vmaMapMemory(_allocator, buffer.allocation, &data));
     buffer.mappedData = data;
     return data;
 }
 
-void VulkanMemoryManager::unmap(AllocatedBuffer& buffer)
+void VulkanMemoryManager::unmap(AllocatedBuffer &buffer)
 {
     vmaUnmapMemory(_allocator, buffer.allocation);
     buffer.mappedData = nullptr;

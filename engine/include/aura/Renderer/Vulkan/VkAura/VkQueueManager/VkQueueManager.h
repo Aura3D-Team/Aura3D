@@ -3,25 +3,29 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 
 // Custom hash function for std::pair<u32, VkQueueFlags>
 // so that it can be used as a key in std::unordered_map.
-namespace std {
-    template <>
-    struct hash<std::pair<u32, VkQueueFlags>> {
-        std::size_t operator()(const std::pair<u32, VkQueueFlags>& p) const noexcept {
-            return std::hash<u32>{}(p.first) ^ (std::hash<VkQueueFlags>{}(p.second) << 1);
-        }
-    };
-}
+namespace std
+{
+template <> struct hash<std::pair<u32, VkQueueFlags>>
+{
+    std::size_t operator()(const std::pair<u32, VkQueueFlags> &p) const noexcept
+    {
+        return std::hash<u32>{}(p.first) ^ (std::hash<VkQueueFlags>{}(p.second) << 1);
+    }
+};
+} // namespace std
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @class VkQueueManager
@@ -34,7 +38,7 @@ namespace vk {
  */
 class VkQueueManager
 {
-public:
+  public:
     /**
      * @brief Constructor for the queue manager.
      *
@@ -95,7 +99,8 @@ public:
      *
      * @return u32 The index of a suitable queue family, or UINT32_MAX if none is found.
      */
-    static u32 findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface = VK_NULL_HANDLE);
+    static u32 findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueueFlags flags,
+                                    VkSurfaceKHR surface = VK_NULL_HANDLE);
 
     /**
      * @brief Finds all queue family indices that support the specified operations.
@@ -110,7 +115,8 @@ public:
      *
      * @return std::vector<u32> A vector of matching queue family indices.
      */
-    static std::vector<u32> findQueueFamilyIndices(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface = VK_NULL_HANDLE);
+    static std::vector<u32> findQueueFamilyIndices(VkPhysicalDevice physicalDevice, VkQueueFlags flags,
+                                                   VkSurfaceKHR surface = VK_NULL_HANDLE);
 
     /**
      * @brief Retrieves the properties of all queue families for a physical device.
@@ -145,7 +151,7 @@ public:
      * @param flags The Vulkan queue flags to match.
      * @return std::vector<QueueData*> A vector of pointers to matching QueueData.
      */
-    std::vector<QueueData*> getQueues(VkQueueFlags flags);
+    std::vector<QueueData *> getQueues(VkQueueFlags flags);
 
     /**
      * @brief Gets the number of registered queue groups.
@@ -163,19 +169,16 @@ public:
      */
     std::vector<VkDeviceQueueCreateInfo> getDeviceQueueCreateInfos() const;
 
-    static void submitCmdIntoQueue(VkQueue queue,
-                                   VkCommandBuffer* commandBuffer,
-                                   VkSemaphore* imageAvailableSemaphore,
-                                   VkSemaphore* renderFinishedSemaphore,
-                                   VkFence fence);
+    static void submitCmdIntoQueue(VkQueue queue, VkCommandBuffer *commandBuffer, VkSemaphore *imageAvailableSemaphore,
+                                   VkSemaphore *renderFinishedSemaphore, VkFence fence);
 
-private:
+  private:
     // The key is a pair consisting of (queueFamilyIndex, VkQueueFlags).
     // This allows multiple queue families (with different indices) that satisfy the same flag requirement.
     std::unordered_map<std::pair<u32, VkQueueFlags>, QueueData> _mapVkQueues;
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKQUEUEMANAGER_H

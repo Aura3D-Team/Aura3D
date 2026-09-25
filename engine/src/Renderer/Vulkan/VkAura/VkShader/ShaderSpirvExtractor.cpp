@@ -2,16 +2,21 @@
 
 #include <fstream>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-ShaderSpirvExtractor::ShaderSpirvExtractor() : _vertShaderCode(), _fragShaderCode() {}
-ShaderSpirvExtractor::~ShaderSpirvExtractor() {
+ShaderSpirvExtractor::ShaderSpirvExtractor() : _vertShaderCode(), _fragShaderCode()
+{
+}
+ShaderSpirvExtractor::~ShaderSpirvExtractor()
+{
     _vertShaderCode.clear();
     _vertShaderCode.clear();
 }
 
-void ShaderSpirvExtractor::readVertFile(const std::string& filename)
+void ShaderSpirvExtractor::readVertFile(const std::string &filename)
 {
     std::string pattern = "vert.spv";
     if (filename.size() < pattern.size() || filename.substr(filename.size() - pattern.size()) != pattern)
@@ -21,7 +26,7 @@ void ShaderSpirvExtractor::readVertFile(const std::string& filename)
     _vertShaderCode = _readFile(filename);
 }
 
-void ShaderSpirvExtractor::readFragFile(const std::string& filename)
+void ShaderSpirvExtractor::readFragFile(const std::string &filename)
 {
     std::string pattern = "frag.spv";
     if (filename.size() < pattern.size() || filename.substr(filename.size() - pattern.size()) != pattern)
@@ -31,12 +36,12 @@ void ShaderSpirvExtractor::readFragFile(const std::string& filename)
     _fragShaderCode = _readFile(filename);
 }
 
-const std::vector<char>& ShaderSpirvExtractor::getVertByteCode() const
+const std::vector<char> &ShaderSpirvExtractor::getVertByteCode() const
 {
     return _vertShaderCode;
 }
 
-const std::vector<char>& ShaderSpirvExtractor::getFragByteCode() const
+const std::vector<char> &ShaderSpirvExtractor::getFragByteCode() const
 {
     return _fragShaderCode;
 }
@@ -47,11 +52,12 @@ void ShaderSpirvExtractor::clear()
     _vertShaderCode.clear();
 }
 
-std::vector<char> ShaderSpirvExtractor::_readFile(const std::string& filename)
+std::vector<char> ShaderSpirvExtractor::_readFile(const std::string &filename)
 {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         throw std::runtime_error("failed to open file!");
     }
 
@@ -65,5 +71,5 @@ std::vector<char> ShaderSpirvExtractor::_readFile(const std::string& filename)
     return buffer;
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

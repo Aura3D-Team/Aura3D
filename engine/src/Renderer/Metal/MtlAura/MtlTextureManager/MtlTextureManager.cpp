@@ -4,13 +4,16 @@
 
 #include <ink/ink.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
-namespace {
+namespace
+{
 
 //! Bytes one row of an RGBA8 image occupies.
 [[nodiscard]] constexpr NS::UInteger rowBytes(u32 width) noexcept
@@ -20,14 +23,12 @@ namespace {
 
 } // namespace
 
-MtlTextureManager::MtlTextureManager(MTL::Device* device)
-    : _device(device)
+MtlTextureManager::MtlTextureManager(MTL::Device *device) : _device(device)
 {
     if (!_device)
         throw AuraException("MtlTextureManager: device is null");
 
-    NS::SharedPtr<MTL::SamplerDescriptor> descriptor =
-        adopt(MTL::SamplerDescriptor::alloc()->init());
+    NS::SharedPtr<MTL::SamplerDescriptor> descriptor = adopt(MTL::SamplerDescriptor::alloc()->init());
 
     const NS::SharedPtr<NS::String> label = makeString("Aura3D albedo sampler");
     descriptor->setLabel(label.get());
@@ -61,16 +62,15 @@ MtlTextureManager::~MtlTextureManager()
     INK_DEBUG << "MtlTextureManager destroyed";
 }
 
-NS::SharedPtr<MTL::Texture> MtlTextureManager::allocate(u32 width, u32 height,
-                                                       const char* label) const
+NS::SharedPtr<MTL::Texture> MtlTextureManager::allocate(u32 width, u32 height, const char *label) const
 {
-    if (width == 0 || height == 0) {
+    if (width == 0 || height == 0)
+    {
         INK_ERROR << "MtlTextureManager: refusing a " << width << "x" << height << " texture";
         return nullptr;
     }
 
-    NS::SharedPtr<MTL::TextureDescriptor> descriptor =
-        adopt(MTL::TextureDescriptor::alloc()->init());
+    NS::SharedPtr<MTL::TextureDescriptor> descriptor = adopt(MTL::TextureDescriptor::alloc()->init());
 
     descriptor->setTextureType(MTL::TextureType2D);
     descriptor->setPixelFormat(kTextureFormat);
@@ -90,9 +90,9 @@ NS::SharedPtr<MTL::Texture> MtlTextureManager::allocate(u32 width, u32 height,
     descriptor->setStorageMode(MTL::StorageModeShared);
 
     NS::SharedPtr<MTL::Texture> texture = adopt(_device->newTexture(descriptor.get()));
-    if (!texture) {
-        INK_ERROR << "MtlTextureManager: the device refused a " << width << "x" << height
-                  << " texture allocation";
+    if (!texture)
+    {
+        INK_ERROR << "MtlTextureManager: the device refused a " << width << "x" << height << " texture allocation";
         return nullptr;
     }
 
@@ -102,9 +102,10 @@ NS::SharedPtr<MTL::Texture> MtlTextureManager::allocate(u32 width, u32 height,
     return texture;
 }
 
-TextureHandle MtlTextureManager::createFromPixels(const u8* rgbaPixels, u32 width, u32 height)
+TextureHandle MtlTextureManager::createFromPixels(const u8 *rgbaPixels, u32 width, u32 height)
 {
-    if (!rgbaPixels) {
+    if (!rgbaPixels)
+    {
         INK_ERROR << "MtlTextureManager: createFromPixels was given a null pixel pointer";
         return {};
     }
@@ -113,8 +114,7 @@ TextureHandle MtlTextureManager::createFromPixels(const u8* rgbaPixels, u32 widt
     if (!texture)
         return {};
 
-    texture->replaceRegion(MTL::Region::Make2D(0, 0, width, height), 0,
-                           rgbaPixels, rowBytes(width));
+    texture->replaceRegion(MTL::Region::Make2D(0, 0, width, height), 0, rgbaPixels, rowBytes(width));
 
     _textures.push_back(std::move(texture));
     return static_cast<TextureHandle>(_textures.size()); // 1-based
@@ -133,30 +133,30 @@ TextureHandle MtlTextureManager::createDynamic(u32 width, u32 height)
      * what makes the promise true.
      */
     const std::vector<u8> zeros(static_cast<size_t>(width) * height * 4u, 0u);
-    texture->replaceRegion(MTL::Region::Make2D(0, 0, width, height), 0,
-                           zeros.data(), rowBytes(width));
+    texture->replaceRegion(MTL::Region::Make2D(0, 0, width, height), 0, zeros.data(), rowBytes(width));
 
     _textures.push_back(std::move(texture));
     return static_cast<TextureHandle>(_textures.size()); // 1-based
 }
 
-bool MtlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y,
-                                    u32 width, u32 height, const u8* rgbaPixels)
+bool MtlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels)
 {
-    MTL::Texture* texture = resolve(handle);
-    if (!texture) {
+    MTL::Texture *texture = resolve(handle);
+    if (!texture)
+    {
         INK_WARN << "MtlTextureManager: updateRegion on unknown texture handle " << handle;
         return false;
     }
 
-    if (!rgbaPixels) {
+    if (!rgbaPixels)
+    {
         INK_ERROR << "MtlTextureManager: updateRegion was given a null pixel pointer";
         return false;
     }
 
-    if (width == 0 || height == 0) {
-        INK_WARN << "MtlTextureManager: updateRegion asked for an empty "
-                 << width << "x" << height << " rectangle";
+    if (width == 0 || height == 0)
+    {
+        INK_WARN << "MtlTextureManager: updateRegion asked for an empty " << width << "x" << height << " rectangle";
         return false;
     }
 
@@ -168,19 +168,18 @@ bool MtlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y,
      */
     const u64 right = static_cast<u64>(x) + width;
     const u64 bottom = static_cast<u64>(y) + height;
-    if (right > texture->width() || bottom > texture->height()) {
-        INK_WARN << "MtlTextureManager: updateRegion rectangle (" << x << ", " << y << ", "
-                 << width << ", " << height << ") reaches outside the "
-                 << texture->width() << "x" << texture->height() << " texture";
+    if (right > texture->width() || bottom > texture->height())
+    {
+        INK_WARN << "MtlTextureManager: updateRegion rectangle (" << x << ", " << y << ", " << width << ", " << height
+                 << ") reaches outside the " << texture->width() << "x" << texture->height() << " texture";
         return false;
     }
 
-    texture->replaceRegion(MTL::Region::Make2D(x, y, width, height), 0,
-                           rgbaPixels, rowBytes(width));
+    texture->replaceRegion(MTL::Region::Make2D(x, y, width, height), 0, rgbaPixels, rowBytes(width));
     return true;
 }
 
-MTL::Texture* MtlTextureManager::resolve(TextureHandle handle) const noexcept
+MTL::Texture *MtlTextureManager::resolve(TextureHandle handle) const noexcept
 {
     if (!isValidHandle(handle))
         return nullptr;

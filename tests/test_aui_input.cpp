@@ -25,20 +25,28 @@
 using namespace aura3d;
 using namespace aura3d::ui;
 
-namespace {
+namespace
+{
 
 [[nodiscard]] bool near(f32 a, f32 b, f32 tolerance = 0.51f)
 {
     return std::fabs(a - b) <= tolerance;
 }
 
-struct Harness {
+struct Harness
+{
     AtlasTextShaper shaper{TextShaperDesc{}};
     UIRoot root{shaper};
 
-    explicit Harness(glm::vec2 size = {400.0f, 300.0f}) { root.resize(size); }
+    explicit Harness(glm::vec2 size = {400.0f, 300.0f})
+    {
+        root.resize(size);
+    }
 
-    void layout() { root.update(0.0f); }
+    void layout()
+    {
+        root.update(0.0f);
+    }
 
     /// A press and a release at the same point: one complete click.
     void click(glm::vec2 at)
@@ -52,20 +60,19 @@ struct Harness {
 void testHitTesting()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
+    auto &column = harness.root.setContent<Column>();
 
-    auto& first = column.add<Widget>();
+    auto &first = column.add<Widget>();
     first.layout().height = Length::px(50.0f);
 
-    auto& second = column.add<Widget>();
+    auto &second = column.add<Widget>();
     second.layout().height = Length::px(50.0f);
 
     harness.layout();
 
     AURA_CHECK(harness.root.widgetAt({10.0f, 10.0f}) == &first, "a point picks the widget under it");
     AURA_CHECK(harness.root.widgetAt({10.0f, 60.0f}) == &second, "and the next one below");
-    AURA_CHECK(harness.root.widgetAt({10.0f, 250.0f}) == &column,
-               "a point in no child falls through to the container");
+    AURA_CHECK(harness.root.widgetAt({10.0f, 250.0f}) == &column, "a point in no child falls through to the container");
 
     first.setHitTestVisible(false);
     AURA_CHECK(harness.root.widgetAt({10.0f, 10.0f}) == &column,
@@ -75,10 +82,10 @@ void testHitTesting()
 void testTopmostWins()
 {
     Harness harness;
-    auto& stack = harness.root.setContent<Stack>();
+    auto &stack = harness.root.setContent<Stack>();
 
-    auto& under = stack.add<Widget>();
-    auto& over = stack.add<Widget>();
+    auto &under = stack.add<Widget>();
+    auto &over = stack.add<Widget>();
 
     harness.layout();
 
@@ -90,8 +97,8 @@ void testTopmostWins()
 void testHoverChain()
 {
     Harness harness;
-    auto& card = harness.root.setContent<Column>();
-    auto& button = card.add<Button>("Hover me");
+    auto &card = harness.root.setContent<Column>();
+    auto &button = card.add<Button>("Hover me");
 
     harness.layout();
 
@@ -108,11 +115,15 @@ void testHoverChain()
 void testButtonClick()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
-    auto& button = column.add<Button>("Launch");
+    auto &column = harness.root.setContent<Column>();
+    auto &button = column.add<Button>("Launch");
 
     int clicks = 0;
-    button.clicked.connect([&clicks] { ++clicks; });
+    button.clicked.connect(
+        [&clicks]
+        {
+            ++clicks;
+        });
 
     harness.layout();
 
@@ -138,10 +149,14 @@ void testButtonClick()
 void testKeyboardActivation()
 {
     Harness harness;
-    auto& button = harness.root.setContent<Column>().add<Button>("Go");
+    auto &button = harness.root.setContent<Column>().add<Button>("Go");
 
     int clicks = 0;
-    button.clicked.connect([&clicks] { ++clicks; });
+    button.clicked.connect(
+        [&clicks]
+        {
+            ++clicks;
+        });
 
     harness.layout();
     button.requestFocus();
@@ -155,13 +170,17 @@ void testKeyboardActivation()
 void testDisabledSwallowsInput()
 {
     Harness harness;
-    auto& panel = harness.root.setContent<Column>();
-    auto& button = panel.add<Button>("Disabled");
+    auto &panel = harness.root.setContent<Column>();
+    auto &button = panel.add<Button>("Disabled");
 
     int clicks = 0;
     int panelPresses = 0;
 
-    button.clicked.connect([&clicks] { ++clicks; });
+    button.clicked.connect(
+        [&clicks]
+        {
+            ++clicks;
+        });
 
     harness.layout();
     button.setEnabled(false);
@@ -180,10 +199,14 @@ void testDisabledSwallowsInput()
 void testCheckBox()
 {
     Harness harness;
-    auto& check = harness.root.setContent<Column>().add<CheckBox>("Wireframe");
+    auto &check = harness.root.setContent<Column>().add<CheckBox>("Wireframe");
 
     int changes = 0;
-    check.checked.changed().connect([&changes](bool) { ++changes; });
+    check.checked.changed().connect(
+        [&changes](bool)
+        {
+            ++changes;
+        });
 
     harness.layout();
     harness.click(check.bounds().center());
@@ -197,17 +220,21 @@ void testCheckBox()
 void testRadioGroup()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
+    auto &column = harness.root.setContent<Column>();
 
     RadioGroup group;
-    auto& low = column.add<RadioButton>("Low");
-    auto& high = column.add<RadioButton>("High");
+    auto &low = column.add<RadioButton>("Low");
+    auto &high = column.add<RadioButton>("High");
 
     group.add(low);
     group.add(high);
 
     int selections = 0;
-    group.selectionChanged.connect([&selections](int) { ++selections; });
+    group.selectionChanged.connect(
+        [&selections](int)
+        {
+            ++selections;
+        });
 
     harness.layout();
     harness.click(high.bounds().center());
@@ -216,14 +243,13 @@ void testRadioGroup()
     AURA_CHECK(group.selected() == 1 && selections == 1, "and reports the new selection once");
 
     harness.click(high.bounds().center());
-    AURA_CHECK(high.checked.get() && selections == 1,
-               "clicking the selected radio again is not a change");
+    AURA_CHECK(high.checked.get() && selections == 1, "clicking the selected radio again is not a change");
 }
 
 void testSliderDragSurvivesLeaving()
 {
     Harness harness;
-    auto& slider = harness.root.setContent<Column>().add<Slider>(0.0f, 100.0f);
+    auto &slider = harness.root.setContent<Column>().add<Slider>(0.0f, 100.0f);
     slider.layout().width = Length::px(200.0f);
     slider.layout().hAlign = Alignment::Start;
 
@@ -251,7 +277,7 @@ void testSliderDragSurvivesLeaving()
 void testSliderKeyboardAndStep()
 {
     Harness harness;
-    auto& slider = harness.root.setContent<Column>().add<Slider>(0.0f, 10.0f);
+    auto &slider = harness.root.setContent<Column>().add<Slider>(0.0f, 10.0f);
     slider.setStep(1.0f);
     slider.value = 5.0f;
 
@@ -271,11 +297,11 @@ void testSliderKeyboardAndStep()
 void testFocusTraversal()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
+    auto &column = harness.root.setContent<Column>();
 
-    auto& first = column.add<Button>("One");
-    auto& second = column.add<Button>("Two");
-    auto& third = column.add<Button>("Three");
+    auto &first = column.add<Button>("One");
+    auto &second = column.add<Button>("Two");
+    auto &third = column.add<Button>("Three");
 
     harness.layout();
 
@@ -301,28 +327,35 @@ void testFocusTraversal()
 void testFocusIsDroppedWithTheWidget()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
-    auto& button = column.add<Button>("Doomed");
+    auto &column = harness.root.setContent<Column>();
+    auto &button = column.add<Button>("Doomed");
 
     harness.layout();
     button.requestFocus();
     AURA_CHECK(harness.root.focused() == &button, "the button has focus");
 
     column.remove(button);
-    AURA_CHECK(harness.root.focused() == nullptr,
-               "removing the focused widget clears the root's pointer to it");
+    AURA_CHECK(harness.root.focused() == nullptr, "removing the focused widget clears the root's pointer to it");
 }
 
 void testShortcuts()
 {
     Harness harness;
-    auto& field = harness.root.setContent<Column>().add<TextField>();
+    auto &field = harness.root.setContent<Column>().add<TextField>();
 
     int saves = 0;
     int deletes = 0;
 
-    harness.root.addShortcut(Shortcut::withCtrl(wma::KEY_S), [&saves] { ++saves; });
-    harness.root.addShortcut(Shortcut{.key = wma::KEY_DELETE}, [&deletes] { ++deletes; });
+    harness.root.addShortcut(Shortcut::withCtrl(wma::KEY_S),
+                             [&saves]
+                             {
+                                 ++saves;
+                             });
+    harness.root.addShortcut(Shortcut{.key = wma::KEY_DELETE},
+                             [&deletes]
+                             {
+                                 ++deletes;
+                             });
 
     harness.layout();
     field.requestFocus();
@@ -333,14 +366,13 @@ void testShortcuts()
     AURA_CHECK(saves == 1, "a modified shortcut fires even while a field has focus");
 
     harness.root.keyDown(wma::KEY_DELETE);
-    AURA_CHECK(deletes == 0 && field.text.get() == "bc",
-               "an unmodified shortcut loses to the focused widget");
+    AURA_CHECK(deletes == 0 && field.text.get() == "bc", "an unmodified shortcut loses to the focused widget");
 }
 
 void testTextFieldEditing()
 {
     Harness harness;
-    auto& field = harness.root.setContent<Column>().add<TextField>();
+    auto &field = harness.root.setContent<Column>().add<TextField>();
 
     harness.layout();
     field.requestFocus();
@@ -361,18 +393,21 @@ void testTextFieldEditing()
     AURA_CHECK(field.text.get() == "x", "typing over a selection replaces it");
 
     int submits = 0;
-    field.submitted.connect([&submits] { ++submits; });
+    field.submitted.connect(
+        [&submits]
+        {
+            ++submits;
+        });
     harness.root.keyDown(wma::KEY_ENTER);
     AURA_CHECK(submits == 1, "Enter submits");
 
-    AURA_CHECK(harness.root.capturesTextInput(),
-               "a focused field tells the platform to enable text input");
+    AURA_CHECK(harness.root.capturesTextInput(), "a focused field tells the platform to enable text input");
 }
 
 void testTextFieldKeepsUtf8Valid()
 {
     Harness harness;
-    auto& field = harness.root.setContent<Column>().add<TextField>();
+    auto &field = harness.root.setContent<Column>().add<TextField>();
 
     harness.layout();
     field.requestFocus();
@@ -394,7 +429,7 @@ void testTextFieldKeepsUtf8Valid()
 void testTextFieldObscured()
 {
     Harness harness;
-    auto& field = harness.root.setContent<Column>().add<TextField>();
+    auto &field = harness.root.setContent<Column>().add<TextField>();
     field.setObscured(true);
 
     harness.layout();
@@ -423,7 +458,7 @@ void testTextFieldObscured()
 void testTextFieldReadOnly()
 {
     Harness harness;
-    auto& field = harness.root.setContent<Column>().add<TextField>("locked");
+    auto &field = harness.root.setContent<Column>().add<TextField>("locked");
     field.setReadOnly(true);
 
     harness.layout();
@@ -433,18 +468,17 @@ void testTextFieldReadOnly()
     harness.root.keyDown(wma::KEY_BACKSPACE);
 
     AURA_CHECK(field.text.get() == "locked", "a read-only field refuses every edit");
-    AURA_CHECK(!harness.root.capturesTextInput(),
-               "and does not ask the platform for text input");
+    AURA_CHECK(!harness.root.capturesTextInput(), "and does not ask the platform for text input");
 }
 
 void testWheelReachesTheScrollView()
 {
     Harness harness({200.0f, 100.0f});
 
-    auto& scroll = harness.root.setContent<ScrollView>();
+    auto &scroll = harness.root.setContent<ScrollView>();
     scroll.setSmooth(false);
 
-    auto& column = scroll.setContent<Column>();
+    auto &column = scroll.setContent<Column>();
     for (int i = 0; i < 10; ++i)
         column.add<Widget>().layout().height = Length::px(30.0f);
 
@@ -466,11 +500,11 @@ void testWheelReachesTheScrollView()
 void testAccessibilityTree()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
+    auto &column = harness.root.setContent<Column>();
 
-    auto& button = column.add<Button>("Launch");
-    auto& check = column.add<CheckBox>("Wireframe", true);
-    auto& slider = column.add<Slider>(0.0f, 10.0f);
+    auto &button = column.add<Button>("Launch");
+    auto &check = column.add<CheckBox>("Wireframe", true);
+    auto &slider = column.add<Slider>(0.0f, 10.0f);
     slider.value = 4.0f;
 
     harness.layout();
@@ -486,8 +520,7 @@ void testAccessibilityTree()
                "a button reports its role, its label and its focus");
 
     check.accessibility(info = {});
-    AURA_CHECK(info.role == Role::CheckBox && info.checked,
-               "a check box reports its checked state");
+    AURA_CHECK(info.role == Role::CheckBox && info.checked, "a check box reports its checked state");
 
     slider.accessibility(info = {});
     AURA_CHECK(info.role == Role::Slider && near(info.value, 4.0f) && near(info.maxValue, 10.0f),
@@ -504,7 +537,11 @@ void testSignalLifetime()
 
     int calls = 0;
     {
-        const ScopedConnection scoped = signal.connect([&calls](int) { ++calls; });
+        const ScopedConnection scoped = signal.connect(
+            [&calls](int)
+            {
+                ++calls;
+            });
         signal.emit(1);
     }
 
@@ -514,10 +551,12 @@ void testSignalLifetime()
     //! Disconnecting from inside an emit must not corrupt the iteration.
     Connection self;
     int reentrant = 0;
-    self = signal.connect([&](int) {
-        ++reentrant;
-        self.disconnect();
-    });
+    self = signal.connect(
+        [&](int)
+        {
+            ++reentrant;
+            self.disconnect();
+        });
 
     signal.emit(3);
     signal.emit(4);
@@ -526,7 +565,10 @@ void testSignalLifetime()
     Connection dangling;
     {
         Signal<int> temporary;
-        dangling = temporary.connect([](int) {});
+        dangling = temporary.connect(
+            [](int)
+            {
+            });
     }
 
     dangling.disconnect();

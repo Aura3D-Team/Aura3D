@@ -6,7 +6,8 @@
 #include "aura/Core/Handle.h"
 #include "aura/aura.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 //! Tag types distinguishing one resource family from another at compile
 //! time. Never defined -- see Handle<Tag>'s class comment.

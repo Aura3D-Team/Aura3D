@@ -3,11 +3,13 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <string>
+#include <vulkan/vulkan.h>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @brief The VkDebugger class
@@ -19,7 +21,7 @@ namespace vk {
  */
 class VkDebugger
 {
-public:
+  public:
     /**
      * @brief Constructs a VkDebugger with the specified Vulkan instance.
      *
@@ -32,7 +34,7 @@ public:
      *
      * @param vkInstance A pointer to the Vulkan instance with which to associate the debug messenger.
      */
-    VkDebugger(VkInstance* vkInstance);
+    VkDebugger(VkInstance *vkInstance);
 
     /**
      * @brief Destructor for VkDebugger.
@@ -56,12 +58,10 @@ public:
      *
      * @return VK_FALSE Always returns VK_FALSE to indicate that Vulkan should not abort.
      */
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-        VkDebugUtilsMessageTypeFlagsEXT messageType,
-        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-        void* pUserData
-        );
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                        VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                        const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+                                                        void *pUserData);
 
     /**
      * @brief Sets up configuration information for Vulkan's debug messenger.
@@ -91,7 +91,8 @@ public:
      *
      * @return VkResult Result of the creation call (VK_SUCCESS if successful).
      */
-    VkResult createDebugUtilsMessengerEXT(VkDebugUtilsMessengerCreateInfoEXT* debugInfo, VkAllocationCallbacks* pAllocator);
+    VkResult createDebugUtilsMessengerEXT(VkDebugUtilsMessengerCreateInfoEXT *debugInfo,
+                                          VkAllocationCallbacks *pAllocator);
 
     /**
      * @brief Retrieves a pointer to the debug messenger.
@@ -101,9 +102,9 @@ public:
      *
      * @return VkDebugUtilsMessengerEXT* A pointer to the Vulkan debug messenger.
      */
-    VkDebugUtilsMessengerEXT* getVkDebugMessenger();
+    VkDebugUtilsMessengerEXT *getVkDebugMessenger();
 
-private:
+  private:
     /**
      * @brief Convert VkDebugUtilsMessageSeverityFlagBitsEXT to string
      */
@@ -117,18 +118,18 @@ private:
     /**
      * @brief Format object information from debug callback data
      */
-    static std::string formatObjectInfo(const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+    static std::string formatObjectInfo(const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData);
 
     /**
      * @brief Format label information from debug callback data
      */
-    static std::string formatLabelInfo(const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+    static std::string formatLabelInfo(const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData);
 
-    VkInstance* _vkInstance; ///< Pointer to the Vulkan instance associated with this debug messenger.
+    VkInstance *_vkInstance;                  ///< Pointer to the Vulkan instance associated with this debug messenger.
     VkDebugUtilsMessengerEXT _debugMessenger; ///< The Vulkan debug messenger handle.
 };
 
-}
+} // namespace vk
 } // namespace aura3d
 
 #endif // VKDEBUGGER_H

@@ -8,7 +8,8 @@
 
 #include "aura/aura.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @struct AudioClipData
@@ -18,11 +19,12 @@ namespace aura3d {
  * the mixer and wma::IAudioDevice both consume -- converted once at load time
  * rather than per sample in the audio callback.
  */
-struct AudioClipData {
+struct AudioClipData
+{
     //! frameCount * channelCount samples, interleaved (L, R, L, R, ...),
     //! nominally in [-1, 1].
     std::vector<f32> samples;
-    u32 sampleRate   = 0;
+    u32 sampleRate = 0;
     u16 channelCount = 0;
 
     //! Samples per channel. The clip's duration is this over sampleRate.
@@ -41,8 +43,7 @@ struct AudioClipData {
     [[nodiscard]]
     bool valid() const noexcept
     {
-        return sampleRate > 0 && channelCount > 0 && !samples.empty() &&
-               samples.size() % channelCount == 0;
+        return sampleRate > 0 && channelCount > 0 && !samples.empty() && samples.size() % channelCount == 0;
     }
 };
 
@@ -54,12 +55,13 @@ struct AudioClipData {
  * parsed in-tree) and OGG Vorbis (via the vendored stb_vorbis). Format is
  * chosen by sniffing magic bytes, not the file extension.
  */
-class AudioClipLoader {
-public:
+class AudioClipLoader
+{
+  public:
     /// Decodes @p path to interleaved float PCM. Returns an invalid
     /// AudioClipData if missing, truncated, or unsupported; see makeSilence()
     /// for a fallback that lets playback continue regardless.
-    static AudioClipData loadPCM(const std::string& path);
+    static AudioClipData loadPCM(const std::string &path);
 
     /**
      * @brief Builds a silent clip of @p durationSeconds. Generated in memory,
@@ -69,9 +71,7 @@ public:
      * @param sampleRate      Frames per second; clamped to at least 1.
      * @param channelCount    Interleaved channels; clamped to at least 1.
      */
-    static AudioClipData makeSilence(f32 durationSeconds = 0.25f,
-                                     u32 sampleRate = 48000,
-                                     u16 channelCount = 2);
+    static AudioClipData makeSilence(f32 durationSeconds = 0.25f, u32 sampleRate = 48000, u16 channelCount = 2);
 
     /**
      * @brief Builds a @p frequencyHz sine tone: a test signal with known
@@ -81,11 +81,8 @@ public:
      * @param durationSeconds Clamped to at least one frame.
      * @param amplitude       Peak amplitude, clamped to [0, 1].
      */
-    static AudioClipData makeSineTone(f32 frequencyHz = 440.0f,
-                                      f32 durationSeconds = 1.0f,
-                                      f32 amplitude = 0.25f,
-                                      u32 sampleRate = 48000,
-                                      u16 channelCount = 2);
+    static AudioClipData makeSineTone(f32 frequencyHz = 440.0f, f32 durationSeconds = 1.0f, f32 amplitude = 0.25f,
+                                      u32 sampleRate = 48000, u16 channelCount = 2);
 };
 
 } // namespace aura3d

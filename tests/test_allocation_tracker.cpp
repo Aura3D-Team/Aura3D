@@ -30,7 +30,8 @@
 
 using namespace aura3d;
 
-namespace {
+namespace
+{
 
 void testDirectCounters()
 {
@@ -71,23 +72,19 @@ void testReset()
 
     const AllocationStats stats = tracker.snapshot();
 
-    AURA_CHECK(stats.liveBytes == 0 && stats.peakBytes == 0,
-               "reset: byte counters return to zero");
-    AURA_CHECK(stats.allocationCount == 0 && stats.freeCount == 0,
-               "reset: operation counters return to zero");
-    AURA_CHECK(stats.totalAllocatedBytes == 0 && stats.totalFreedBytes == 0,
-               "reset: cumulative totals return to zero");
-    AURA_CHECK(stats.sizeClasses[12] == 0 && stats.sizeClasses[3] == 0,
-               "reset: the size histogram is cleared too");
+    AURA_CHECK(stats.liveBytes == 0 && stats.peakBytes == 0, "reset: byte counters return to zero");
+    AURA_CHECK(stats.allocationCount == 0 && stats.freeCount == 0, "reset: operation counters return to zero");
+    AURA_CHECK(stats.totalAllocatedBytes == 0 && stats.totalFreedBytes == 0, "reset: cumulative totals return to zero");
+    AURA_CHECK(stats.sizeClasses[12] == 0 && stats.sizeClasses[3] == 0, "reset: the size histogram is cleared too");
 }
 
 void testOutstandingHelpers()
 {
     AllocationStats stats;
     stats.totalAllocatedBytes = 5000;
-    stats.totalFreedBytes     = 1500;
-    stats.allocationCount     = 9;
-    stats.freeCount           = 4;
+    stats.totalFreedBytes = 1500;
+    stats.allocationCount = 9;
+    stats.freeCount = 4;
 
     AURA_CHECK(stats.outstandingBytes() == 3500, "outstanding: 5000 - 1500 bytes");
     AURA_CHECK(stats.outstandingAllocations() == 5, "outstanding: 9 - 4 allocations");
@@ -97,14 +94,12 @@ void testOutstandingHelpers()
     // an eighteen-quintillion-byte "leak".
     AllocationStats skewed;
     skewed.totalAllocatedBytes = 10;
-    skewed.totalFreedBytes     = 40;
-    skewed.allocationCount     = 1;
-    skewed.freeCount           = 3;
+    skewed.totalFreedBytes = 40;
+    skewed.allocationCount = 1;
+    skewed.freeCount = 3;
 
-    AURA_CHECK(skewed.outstandingBytes() == 0,
-               "outstanding: a racing snapshot clamps to 0 rather than wrapping");
-    AURA_CHECK(skewed.outstandingAllocations() == 0,
-               "outstanding: allocation count clamps the same way");
+    AURA_CHECK(skewed.outstandingBytes() == 0, "outstanding: a racing snapshot clamps to 0 rather than wrapping");
+    AURA_CHECK(skewed.outstandingAllocations() == 0, "outstanding: allocation count clamps the same way");
 }
 
 void testSizeClassMapping()
@@ -122,15 +117,13 @@ void testSizeClassMapping()
     AURA_CHECK(AllocationTracker::sizeClassOf(~usize{0}) == AllocationStats::kSizeClassCount - 1,
                "size class: the largest possible size saturates in the last class");
 
-    AURA_CHECK(AllocationTracker::sizeClassLowerBound(0) == 0,
-               "size class bound: class 0 starts at 0");
-    AURA_CHECK(AllocationTracker::sizeClassLowerBound(10) == 1024,
-               "size class bound: class 10 starts at 1 KiB");
+    AURA_CHECK(AllocationTracker::sizeClassLowerBound(0) == 0, "size class bound: class 0 starts at 0");
+    AURA_CHECK(AllocationTracker::sizeClassLowerBound(10) == 1024, "size class bound: class 10 starts at 1 KiB");
 }
 
 void testHooksCountRealAllocations()
 {
-    AllocationTracker& tracker = AllocationTracker::get();
+    AllocationTracker &tracker = AllocationTracker::get();
 
     constexpr usize kBlockBytes = 1u << 20; // 1 MiB, far above any incidental noise
 
@@ -140,11 +133,11 @@ void testHooksCountRealAllocations()
         // is absent without the hooks is anything *feeding* them. Assert
         // exactly that: a real allocation must move nothing.
         const u64 countBefore = tracker.allocationCount();
-        const u64 liveBefore  = tracker.liveBytes();
+        const u64 liveBefore = tracker.liveBytes();
 
         const auto block = std::make_unique<std::byte[]>(kBlockBytes);
         const u64 countAfter = tracker.allocationCount();
-        const u64 liveAfter  = tracker.liveBytes();
+        const u64 liveAfter = tracker.liveBytes();
 
         AURA_CHECK(block[0] == std::byte{0}, "hooks: the block is value-initialised");
         AURA_CHECK(countAfter == countBefore && liveAfter == liveBefore,
@@ -152,16 +145,16 @@ void testHooksCountRealAllocations()
         return;
     }
 
-    const u64 liveBefore   = tracker.liveBytes();
-    const u64 countBefore  = tracker.allocationCount();
+    const u64 liveBefore = tracker.liveBytes();
+    const u64 countBefore = tracker.allocationCount();
 
-    u64 liveDuring  = 0;
+    u64 liveDuring = 0;
     u64 countDuring = 0;
     {
         // make_unique rather than a bare new: this exercises operator new[]
         // through the same route engine code would take.
         const auto block = std::make_unique<std::byte[]>(kBlockBytes);
-        liveDuring  = tracker.liveBytes();
+        liveDuring = tracker.liveBytes();
         countDuring = tracker.allocationCount();
 
         // Touch it so nothing is optimised away.
@@ -170,17 +163,15 @@ void testHooksCountRealAllocations()
 
     const u64 liveAfter = tracker.liveBytes();
 
-    AURA_CHECK(liveDuring - liveBefore >= kBlockBytes,
-               "hooks: live bytes rose by at least the block size");
-    AURA_CHECK(countDuring > countBefore,
-               "hooks: the allocation count rose");
+    AURA_CHECK(liveDuring - liveBefore >= kBlockBytes, "hooks: live bytes rose by at least the block size");
+    AURA_CHECK(countDuring > countBefore, "hooks: the allocation count rose");
     AURA_CHECK(liveAfter <= liveBefore + (kBlockBytes / 2),
                "hooks: live bytes came back down when the block was freed");
 }
 
 void testScopedMuteExcludesItsOwnAllocations()
 {
-    AllocationTracker& tracker = AllocationTracker::get();
+    AllocationTracker &tracker = AllocationTracker::get();
 
     if constexpr (!AllocationTracker::isHooked())
     {
@@ -216,12 +207,10 @@ void testScopedMuteExcludesItsOwnAllocations()
     const u64 liveAfterFree = tracker.liveBytes();
 
     const i64 duringDelta = static_cast<i64>(liveDuring) - static_cast<i64>(liveBefore);
-    const i64 freeDelta   = static_cast<i64>(liveAfterFree) - static_cast<i64>(liveBeforeFree);
+    const i64 freeDelta = static_cast<i64>(liveAfterFree) - static_cast<i64>(liveBeforeFree);
 
-    AURA_CHECK(duringDelta < kNoiseMargin,
-               "mute: a muted allocation is not counted");
-    AURA_CHECK(freeDelta > -kNoiseMargin,
-               "mute: freeing a muted block outside the mute does not decrement either");
+    AURA_CHECK(duringDelta < kNoiseMargin, "mute: a muted allocation is not counted");
+    AURA_CHECK(freeDelta > -kNoiseMargin, "mute: freeing a muted block outside the mute does not decrement either");
 }
 
 } // namespace

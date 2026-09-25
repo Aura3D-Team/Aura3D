@@ -7,8 +7,10 @@
 
 #include "aura/Renderer/Metal/MtlAura/MtlAuraCore.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @class MtlDeviceManager
@@ -26,8 +28,9 @@ namespace mtl {
  * limits the rest of the backend needs (see maxBufferLength()) so no other
  * manager has to reach for the device to ask.
  */
-class MtlDeviceManager {
-public:
+class MtlDeviceManager
+{
+  public:
     /**
      * @brief Selects the system default device and creates its command queue.
      *
@@ -39,15 +42,18 @@ public:
 
     ~MtlDeviceManager();
 
-    MtlDeviceManager(const MtlDeviceManager&) = delete;
-    MtlDeviceManager& operator=(const MtlDeviceManager&) = delete;
+    MtlDeviceManager(const MtlDeviceManager &) = delete;
+    MtlDeviceManager &operator=(const MtlDeviceManager &) = delete;
 
     /**
      * @brief The device every resource in this backend is created against.
      *
      * Never null once the constructor returns.
      */
-    [[nodiscard]] MTL::Device* getDevice() const noexcept { return _device.get(); }
+    [[nodiscard]] MTL::Device *getDevice() const noexcept
+    {
+        return _device.get();
+    }
 
     /**
      * @brief The queue every command buffer is taken from.
@@ -57,14 +63,20 @@ public:
      * texture uploaded during a frame be sampled by that same frame without an
      * explicit barrier. Never null once the constructor returns.
      */
-    [[nodiscard]] MTL::CommandQueue* getCommandQueue() const noexcept { return _commandQueue.get(); }
+    [[nodiscard]] MTL::CommandQueue *getCommandQueue() const noexcept
+    {
+        return _commandQueue.get();
+    }
 
     /**
      * @brief Human-readable device name, for logs.
      *
      * Never empty: falls back to a placeholder if the device reports no name.
      */
-    [[nodiscard]] const std::string& getDeviceName() const noexcept { return _deviceName; }
+    [[nodiscard]] const std::string &getDeviceName() const noexcept
+    {
+        return _deviceName;
+    }
 
     /**
      * @brief Largest buffer the device will allocate, in bytes.
@@ -73,7 +85,10 @@ public:
      * mesh is rejected with a diagnostic rather than handed to Metal, which
      * fails such an allocation by returning nil and logging nothing useful.
      */
-    [[nodiscard]] NS::UInteger maxBufferLength() const noexcept { return _maxBufferLength; }
+    [[nodiscard]] NS::UInteger maxBufferLength() const noexcept
+    {
+        return _maxBufferLength;
+    }
 
     /**
      * @brief Whether the device belongs to the Apple GPU families (Apple
@@ -84,9 +99,12 @@ public:
      * nothing extra to read, while a discrete GPU wants its geometry in private
      * VRAM. See MtlBufferManager::preferredStorageMode().
      */
-    [[nodiscard]] bool hasUnifiedMemory() const noexcept { return _unifiedMemory; }
+    [[nodiscard]] bool hasUnifiedMemory() const noexcept
+    {
+        return _unifiedMemory;
+    }
 
-private:
+  private:
     NS::SharedPtr<MTL::Device> _device;
     NS::SharedPtr<MTL::CommandQueue> _commandQueue;
 

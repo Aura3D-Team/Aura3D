@@ -5,7 +5,8 @@
 
 #include <functional>
 
-namespace aura3d {
+namespace aura3d
+{
 
 /*
  * move_only_function<Sig>
@@ -19,11 +20,9 @@ namespace aura3d {
  *   aura3d::move_only_function<void()> onFrame = std::move(myLambda);
  */
 #if defined(__cpp_lib_move_only_function)
-template <typename Sig>
-using move_only_function = std::move_only_function<Sig>;
+template <typename Sig> using move_only_function = std::move_only_function<Sig>;
 #else
-template <typename Sig>
-using move_only_function = std::function<Sig>;
+template <typename Sig> using move_only_function = std::function<Sig>;
 #endif
 
 } // namespace aura3d

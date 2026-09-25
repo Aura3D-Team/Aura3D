@@ -4,10 +4,13 @@
 
 #include <ink/Inkogger.h>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-namespace {
+namespace
+{
 
 //! Two timestamps per frame slot: one before the frame's work, one after.
 constexpr u32 kQueriesPerSlot = 2;
@@ -19,9 +22,7 @@ VkTimestampQuery::~VkTimestampQuery()
     destroy();
 }
 
-bool VkTimestampQuery::initialize(VkDevice device,
-                                  VkPhysicalDevice physicalDevice,
-                                  u32 queueFamilyIndex,
+bool VkTimestampQuery::initialize(VkDevice device, VkPhysicalDevice physicalDevice, u32 queueFamilyIndex,
                                   u32 frameSlots) noexcept
 {
     destroy();
@@ -71,8 +72,8 @@ bool VkTimestampQuery::initialize(VkDevice device,
     _validBitsMask = validBits >= 64 ? ~u64{0} : ((u64{1} << validBits) - 1);
 
     const VkQueryPoolCreateInfo poolInfo{
-        .sType      = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-        .queryType  = VK_QUERY_TYPE_TIMESTAMP,
+        .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+        .queryType = VK_QUERY_TYPE_TIMESTAMP,
         .queryCount = frameSlots * kQueriesPerSlot,
     };
 
@@ -83,16 +84,16 @@ bool VkTimestampQuery::initialize(VkDevice device,
         return false;
     }
 
-    _device       = device;
+    _device = device;
     _nanosPerTick = static_cast<f64>(properties.limits.timestampPeriod);
     _slotPending.assign(frameSlots, 0);
 
     _lastFrameMillis = 0.0;
     _resolvedSamples = 0;
-    _droppedSamples  = 0;
+    _droppedSamples = 0;
 
-    INK_INFO << "VkTimestampQuery: " << frameSlots << " slots, " << validBits
-             << " valid bits, " << _nanosPerTick << " ns/tick";
+    INK_INFO << "VkTimestampQuery: " << frameSlots << " slots, " << validBits << " valid bits, " << _nanosPerTick
+             << " ns/tick";
 
     return true;
 }
@@ -103,7 +104,7 @@ void VkTimestampQuery::destroy() noexcept
         vkDestroyQueryPool(_device, _queryPool, nullptr);
 
     _queryPool = VK_NULL_HANDLE;
-    _device    = VK_NULL_HANDLE;
+    _device = VK_NULL_HANDLE;
     _slotPending.clear();
 }
 
@@ -167,10 +168,8 @@ void VkTimestampQuery::resolve(u32 frameSlot) noexcept
      * into a stall inside the profiler. VK_NOT_READY comes back instead, and is
      * counted rather than waited out.
      */
-    const VkResult result = vkGetQueryPoolResults(
-        _device, _queryPool, frameSlot * kQueriesPerSlot, kQueriesPerSlot,
-        sizeof(ticks), ticks.data(), sizeof(u64),
-        VK_QUERY_RESULT_64_BIT);
+    const VkResult result = vkGetQueryPoolResults(_device, _queryPool, frameSlot * kQueriesPerSlot, kQueriesPerSlot,
+                                                  sizeof(ticks), ticks.data(), sizeof(u64), VK_QUERY_RESULT_64_BIT);
 
     if (result != VK_SUCCESS)
     {
@@ -179,7 +178,7 @@ void VkTimestampQuery::resolve(u32 frameSlot) noexcept
     }
 
     const u64 begin = ticks[0] & _validBitsMask;
-    const u64 end   = ticks[1] & _validBitsMask;
+    const u64 end = ticks[1] & _validBitsMask;
 
     //! Masked timestamps wrap, so end < begin is a wrap rather than an error.
     //! One frame's worth of samples is not worth reconstructing it for.
@@ -197,8 +196,8 @@ GpuTimingStats VkTimestampQuery::stats() const noexcept
 {
     GpuTimingStats timing;
 
-    timing.available      = isReady() && _resolvedSamples > 0;
-    timing.frameMillis    = _lastFrameMillis;
+    timing.available = isReady() && _resolvedSamples > 0;
+    timing.frameMillis = _lastFrameMillis;
     timing.droppedSamples = _droppedSamples;
 
     return timing;

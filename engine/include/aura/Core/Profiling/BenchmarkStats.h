@@ -22,7 +22,8 @@
  * testable without AURA_ENABLE_DEBUG_MODE.
  */
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @struct StatSummary
@@ -34,14 +35,14 @@ namespace aura3d {
  */
 struct StatSummary
 {
-    u64 count  = 0;    ///< Number of samples the summary was computed from.
-    f64 min    = 0.0;
-    f64 max    = 0.0;
-    f64 mean   = 0.0;  ///< Arithmetic mean.
-    f64 median = 0.0;  ///< 50th percentile, interpolated for even counts.
-    f64 stddev = 0.0;  ///< Population standard deviation.
-    f64 p95    = 0.0;  ///< 95th percentile.
-    f64 p99    = 0.0;  ///< 99th percentile.
+    u64 count = 0; ///< Number of samples the summary was computed from.
+    f64 min = 0.0;
+    f64 max = 0.0;
+    f64 mean = 0.0;   ///< Arithmetic mean.
+    f64 median = 0.0; ///< 50th percentile, interpolated for even counts.
+    f64 stddev = 0.0; ///< Population standard deviation.
+    f64 p95 = 0.0;    ///< 95th percentile.
+    f64 p99 = 0.0;    ///< 99th percentile.
 
     //! Median absolute deviation: median(|x - median|). Reported beside stddev
     //! because the two disagreeing is itself informative: small MAD with large
@@ -59,7 +60,7 @@ struct StatSummary
  */
 class BenchmarkStats
 {
-public:
+  public:
     BenchmarkStats() = delete;
 
     /// Summarises @p samples, which need not be sorted. Copies and sorts
@@ -100,12 +101,12 @@ public:
 
         const auto n = static_cast<f64>(sorted.size());
 
-        summary.count  = static_cast<u64>(sorted.size());
-        summary.min    = sorted.front();
-        summary.max    = sorted.back();
+        summary.count = static_cast<u64>(sorted.size());
+        summary.min = sorted.front();
+        summary.max = sorted.back();
         summary.median = percentileSorted(sorted, 0.50);
-        summary.p95    = percentileSorted(sorted, 0.95);
-        summary.p99    = percentileSorted(sorted, 0.99);
+        summary.p95 = percentileSorted(sorted, 0.95);
+        summary.p99 = percentileSorted(sorted, 0.99);
 
         f64 sum = 0.0;
         for (const f64 sample : sorted)
@@ -138,11 +139,11 @@ public:
             return 0.0;
 
         const f64 clamped = std::clamp(fraction, 0.0, 1.0);
-        const f64 rank    = clamped * static_cast<f64>(sorted.size() - 1);
+        const f64 rank = clamped * static_cast<f64>(sorted.size() - 1);
 
-        const auto lower  = static_cast<usize>(rank);
-        const auto upper  = std::min(lower + 1, sorted.size() - 1);
-        const f64 weight  = rank - static_cast<f64>(lower);
+        const auto lower = static_cast<usize>(rank);
+        const auto upper = std::min(lower + 1, sorted.size() - 1);
+        const f64 weight = rank - static_cast<f64>(lower);
 
         return sorted[lower] * (1.0 - weight) + sorted[upper] * weight;
     }
@@ -176,7 +177,7 @@ public:
      *
      * @return 0 or 1 for a degenerate (zero-variance) run.
      */
-    [[nodiscard]] static f64 normalExceedance(const StatSummary& summary, f64 threshold) noexcept
+    [[nodiscard]] static f64 normalExceedance(const StatSummary &summary, f64 threshold) noexcept
     {
         if (summary.count == 0)
             return 0.0;
@@ -207,14 +208,14 @@ public:
     /// without keeping the samples, just four running sums.
     class LinearTrend
     {
-    public:
+      public:
         //! Appends @p value at the next index.
         void add(f64 value) noexcept
         {
             const f64 x = static_cast<f64>(_count);
 
-            _sumX  += x;
-            _sumY  += value;
+            _sumX += x;
+            _sumY += value;
             _sumXY += x * value;
             _sumXX += x * x;
             ++_count;
@@ -238,17 +239,20 @@ public:
             return (n * _sumXY - _sumX * _sumY) / denominator;
         }
 
-        [[nodiscard]] u64 count() const noexcept { return _count; }
+        [[nodiscard]] u64 count() const noexcept
+        {
+            return _count;
+        }
 
-    private:
-        f64 _sumX  = 0.0;
-        f64 _sumY  = 0.0;
+      private:
+        f64 _sumX = 0.0;
+        f64 _sumY = 0.0;
         f64 _sumXY = 0.0;
         f64 _sumXX = 0.0;
         u64 _count = 0;
     };
 
-private:
+  private:
     //! std::numbers::inv_sqrt2 by another name, spelled out so this header does
     //! not pull <numbers> in for one constant.
     static constexpr f64 kInvSqrt2 = 0.70710678118654752440;

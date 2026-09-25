@@ -10,23 +10,23 @@
 #include <vector>
 
 #include "aura/Renderer/IRenderer.h"
-#include "aura/Renderer/Vulkan/VkAura/VkInstanceManager/VkInstanceManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkCommandManager/VkCommandManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkCommandRecordingContext/VkCommandRecordingContext.h"
+#include "aura/Renderer/Vulkan/VkAura/VkDescriptorManager/VkDescriptorManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkDeviceManager/VkDeviceManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkSurfaceManager/VkSurfaceManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkSwapChainManager/VkSwapChainManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkGraphicsPipelineManager/VkGraphicsPipelineManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkImageViewsManager/VkImageViewsManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkRenderPassManager/VkRenderPassManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkDescriptorManager/VkDescriptorManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkTextureManager/VkTextureManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkVertexBufferManager/VkVertexBufferManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkIndexBufferManager/VkIndexBufferManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkCommandManager/VkCommandManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkRenderSyncManager/VkRenderSyncManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkInstanceManager/VkInstanceManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkCommandRecordingContext/VkCommandRecordingContext.h"
+#include "aura/Renderer/Vulkan/VkAura/VkRenderPassManager/VkRenderPassManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkRenderSyncManager/VkRenderSyncManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkSurfaceManager/VkSurfaceManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkSwapChainManager/VkSwapChainManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkTextureManager/VkTextureManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
+#include "aura/Renderer/Vulkan/VkAura/VkVertexBufferManager/VkVertexBufferManager.h"
 
 #ifdef AURA_ENABLE_DEBUG_MODE
 #include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkDebugMetrics.h"
@@ -35,37 +35,45 @@
 //! Forward-declared to keep ink/ThreadPool.h (and its <thread>/<mutex>
 //! transitive includes) out of every translation unit that includes this
 //! header -- same reasoning as CpuFrameBufferManager.
-namespace ink { class ThreadPool; }
+namespace ink
+{
+class ThreadPool;
+}
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-class VulkanRenderer : public IRenderer {
-public:
-    VulkanRenderer(const wma::WindowDetails& windowDetails);
+class VulkanRenderer : public IRenderer
+{
+  public:
+    VulkanRenderer(const wma::WindowDetails &windowDetails);
     virtual ~VulkanRenderer();
 
-    void initialize(AuraSettings* settings, const JobSystem* jobs) override;
+    void initialize(AuraSettings *settings, const JobSystem *jobs) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
-    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices) override;
-    IndexBufferHandle createIndexBuffer(std::vector<u16>&& indices) override;
-    IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;
+    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices) override;
+    IndexBufferHandle createIndexBuffer(std::vector<u16> &&indices) override;
+    IndexBufferHandle createIndexBuffer(std::vector<u32> &&indices) override;
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
-    TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) override;
+    TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
     TextureHandle createDynamicTexture(u32 width, u32 height) override;
-    void updateTextureRegion(TextureHandle handle, u32 x, u32 y,
-                             u32 width, u32 height, const u8* rgbaPixels) override;
+    void updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels) override;
 
     void beginFrame() override;
-    [[nodiscard]] bool frameBegun() const noexcept override { return _frameBegun; }
+    [[nodiscard]] bool frameBegun() const noexcept override
+    {
+        return _frameBegun;
+    }
     void beginRenderPass() override;
     void endRenderPass() override;
     void endFrame() override;
 
-    void setTransform(const gfx::TransformUBO& ubo) override;
-    void setLight(const gfx::LightUBO& light) override;
+    void setTransform(const gfx::TransformUBO &ubo) override;
+    void setLight(const gfx::LightUBO &light) override;
     void bindVertexBuffer(VertexBufferHandle handle) override;
     void bindIndexBuffer(IndexBufferHandle handle) override;
     void bindTexture(TextureHandle handle) override;
@@ -82,31 +90,30 @@ public:
      * for batches too small for the hand-off to pay for itself.
      */
     void drawMeshes(std::span<const DrawItem> items) override;
-    void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
-                     std::span<const u32> indices,
+    void drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
                      TextureHandle texture) override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
 
-    wma::IWindowManager* getWindowManager() override;
+    wma::IWindowManager *getWindowManager() override;
     RendererChoice getBackendType() const override;
 
-    VkVertexBufferManager* getVertexBufferManager();
-    VkIndexBufferManager* getIndexBufferManager();
-    VkUniformBufferManager* getUniformBufferManager();
-    VkDescriptorManager* getDescriptorManager();
-    VkGraphicsPipelineManager* getGraphicsPipelineManager();
-    VkSwapChainManager* getSwapChainManager();
-    VkRenderPassManager* getRenderPassManager();
-    VkFrameBuffersManager* getFrameBuffersManager();
-    VkCommandManager* getCommandManager();
-    VkRenderSyncManager* getRenderSyncManager();
-    VkTextureManager* getTextureManager();
-    VkDeviceManager* getDeviceManager();
-    VulkanMemoryManager* getMemoryManager();
+    VkVertexBufferManager *getVertexBufferManager();
+    VkIndexBufferManager *getIndexBufferManager();
+    VkUniformBufferManager *getUniformBufferManager();
+    VkDescriptorManager *getDescriptorManager();
+    VkGraphicsPipelineManager *getGraphicsPipelineManager();
+    VkSwapChainManager *getSwapChainManager();
+    VkRenderPassManager *getRenderPassManager();
+    VkFrameBuffersManager *getFrameBuffersManager();
+    VkCommandManager *getCommandManager();
+    VkRenderSyncManager *getRenderSyncManager();
+    VkTextureManager *getTextureManager();
+    VkDeviceManager *getDeviceManager();
+    VulkanMemoryManager *getMemoryManager();
 
-    const std::vector<aura3d::vk::QueueData*>& getQueues() const;
-    void setupPipeline(const std::string& vertShaderPath, const std::string& fragShaderPath);
-    VkFixedArray<VkCommandBuffer>& getCommandBuffers();
+    const std::vector<aura3d::vk::QueueData *> &getQueues() const;
+    void setupPipeline(const std::string &vertShaderPath, const std::string &fragShaderPath);
+    VkFixedArray<VkCommandBuffer> &getCommandBuffers();
     u32 getCurrentFrame() const;
     void advanceFrame();
 
@@ -117,16 +124,16 @@ public:
      * The only backend that answers this today. See VkDebugMetrics for what
      * each of the three sources behind it actually measures.
      */
-    [[nodiscard]] const IGpuDebugSource* gpuDebugSource() const noexcept override
+    [[nodiscard]] const IGpuDebugSource *gpuDebugSource() const noexcept override
     {
         return &_debugMetrics;
     }
 #endif
 
-protected:
-    void createWindow(const char* title, const wma::WindowBackend& wBackend) override;
+  protected:
+    void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
 
-private:
+  private:
     void createCoreObjects(bool enableValidation);
     void recreateSurfaceAndSwapchain();
     void createResourceManagers();
@@ -350,7 +357,7 @@ private:
     VkInstanceData _vkInstanceData;
     VkDeviceData _vkDeviceData;
     ImageViewData _vkImageViewData;
-    std::vector<aura3d::vk::QueueData*> _queueDataFromExclusiveFlags;
+    std::vector<aura3d::vk::QueueData *> _queueDataFromExclusiveFlags;
     u32 _graphicsIndexFamily = 0;
     DepthResources _depth;
     MsaaColorResources _msaaColor;
@@ -382,7 +389,7 @@ private:
     std::vector<VertexBufferInfo> _vbByHandle;
     std::vector<IndexBufferInfo> _ibByHandle;
 
-    std::vector<VkDescriptorSet> _descSets; //! set 0: transform, per image
+    std::vector<VkDescriptorSet> _descSets;      //! set 0: transform, per image
     std::vector<VkDescriptorSet> _lightDescSets; //! set 2: light, per image
 
     /*
@@ -414,13 +421,13 @@ private:
      * nullptr for a handle that was never created (or was created and failed),
      * which is exactly the "skip this bind" case the draw path already had.
      */
-    [[nodiscard]] const VertexBufferInfo* vertexBufferOf(VertexBufferHandle handle) const noexcept
+    [[nodiscard]] const VertexBufferInfo *vertexBufferOf(VertexBufferHandle handle) const noexcept
     {
         const size_t index = static_cast<size_t>(handle.value()) - 1;
         return (isValidHandle(handle) && index < _vbByHandle.size()) ? &_vbByHandle[index] : nullptr;
     }
 
-    [[nodiscard]] const IndexBufferInfo* indexBufferOf(IndexBufferHandle handle) const noexcept
+    [[nodiscard]] const IndexBufferInfo *indexBufferOf(IndexBufferHandle handle) const noexcept
     {
         const size_t index = static_cast<size_t>(handle.value()) - 1;
         return (isValidHandle(handle) && index < _ibByHandle.size()) ? &_ibByHandle[index] : nullptr;

@@ -6,8 +6,10 @@
 #include "aura/Renderer/Metal/MtlAura/MtlAuraCore.h"
 #include "aura/Renderer/Metal/MtlAura/MtlLayerManager/MtlLayerManager.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @class MtlDrawableManager
@@ -29,8 +31,9 @@ namespace mtl {
  *       AuraSettings::getMsaaSamples() documents; adding it here means a
  *       multisample colour texture plus a resolve attachment, not a flag.
  */
-class MtlDrawableManager {
-public:
+class MtlDrawableManager
+{
+  public:
     /**
      * @brief Allocates the depth attachment for @p layers' current size.
      *
@@ -41,12 +44,12 @@ public:
      * @throws AuraException if either argument is null, or if the depth texture
      *         cannot be allocated.
      */
-    MtlDrawableManager(MTL::Device* device, MtlLayerManager* layers);
+    MtlDrawableManager(MTL::Device *device, MtlLayerManager *layers);
 
     ~MtlDrawableManager();
 
-    MtlDrawableManager(const MtlDrawableManager&) = delete;
-    MtlDrawableManager& operator=(const MtlDrawableManager&) = delete;
+    MtlDrawableManager(const MtlDrawableManager &) = delete;
+    MtlDrawableManager &operator=(const MtlDrawableManager &) = delete;
 
     /**
      * @brief Takes the next drawable from the layer's pool.
@@ -71,10 +74,16 @@ public:
     void release() noexcept;
 
     //! The drawable acquired by the current frame, or nullptr outside a frame.
-    [[nodiscard]] CA::MetalDrawable* getDrawable() const noexcept { return _drawable.get(); }
+    [[nodiscard]] CA::MetalDrawable *getDrawable() const noexcept
+    {
+        return _drawable.get();
+    }
 
     //! The depth attachment, sized to the layer. Never null after construction.
-    [[nodiscard]] MTL::Texture* getDepthTexture() const noexcept { return _depthTexture.get(); }
+    [[nodiscard]] MTL::Texture *getDepthTexture() const noexcept
+    {
+        return _depthTexture.get();
+    }
 
     /**
      * @brief Configures and returns the render pass over this frame's drawable.
@@ -97,8 +106,7 @@ public:
      * @return The configured descriptor, or nullptr when no drawable is
      *         currently acquired.
      */
-    [[nodiscard]] MTL::RenderPassDescriptor* buildRenderPass(f32 clearR, f32 clearG,
-                                                            f32 clearB, f32 clearA);
+    [[nodiscard]] MTL::RenderPassDescriptor *buildRenderPass(f32 clearR, f32 clearG, f32 clearB, f32 clearA);
 
     /**
      * @brief Re-allocates the depth attachment to match the layer's size.
@@ -108,15 +116,15 @@ public:
      */
     void handleResize();
 
-private:
+  private:
     /**
      * @brief Allocates the depth attachment at @p width x @p height pixels.
      * @throws AuraException if the device refuses the allocation.
      */
     void createDepthTexture(u32 width, u32 height);
 
-    MTL::Device* _device = nullptr;     //! Borrowed; owned by MtlDeviceManager.
-    MtlLayerManager* _layers = nullptr; //! Borrowed; owned by MetalRenderer.
+    MTL::Device *_device = nullptr;     //! Borrowed; owned by MtlDeviceManager.
+    MtlLayerManager *_layers = nullptr; //! Borrowed; owned by MetalRenderer.
 
     NS::SharedPtr<MTL::Texture> _depthTexture;
     NS::SharedPtr<MTL::RenderPassDescriptor> _renderPass;

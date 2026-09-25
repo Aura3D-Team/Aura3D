@@ -1,36 +1,56 @@
+#include "RuntimeAudioDevice.h"
+#include "TestUtils.h"
+#include "aura/Core/AudioEngine/AudioEngine.h"
 #include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <new>
 #include <thread>
-#include "aura/Core/AudioEngine/AudioEngine.h"
-#include "RuntimeAudioDevice.h"
-#include "TestUtils.h"
 
 #ifndef AURA_ENABLE_DEBUG_MODE
-namespace {
+namespace
+{
 thread_local bool inCallback = false;
 thread_local unsigned callbackAllocations = 0, callbackFrees = 0;
-}
-void* operator new(std::size_t n)
+} // namespace
+void *operator new(std::size_t n)
 {
-    if (inCallback) ++callbackAllocations;
-    if (void* p = std::malloc(n ? n : 1)) return p;
+    if (inCallback)
+        ++callbackAllocations;
+    if (void *p = std::malloc(n ? n : 1))
+        return p;
     throw std::bad_alloc();
 }
-void operator delete(void* p) noexcept { if (p && inCallback) ++callbackFrees; std::free(p); }
-void* operator new[](std::size_t n) { return ::operator new(n); }
-void operator delete[](void* p) noexcept { ::operator delete(p); }
-void operator delete(void* p, std::size_t) noexcept { ::operator delete(p); }
-void operator delete[](void* p, std::size_t) noexcept { ::operator delete(p); }
+void operator delete(void *p) noexcept
+{
+    if (p && inCallback)
+        ++callbackFrees;
+    std::free(p);
+}
+void *operator new[](std::size_t n)
+{
+    return ::operator new(n);
+}
+void operator delete[](void *p) noexcept
+{
+    ::operator delete(p);
+}
+void operator delete(void *p, std::size_t) noexcept
+{
+    ::operator delete(p);
+}
+void operator delete[](void *p, std::size_t) noexcept
+{
+    ::operator delete(p);
+}
 #endif
 
 int main()
 {
     using namespace aura3d;
     auto owned = std::make_unique<RuntimeAudioDevice>();
-    auto* device = owned.get();
+    auto *device = owned.get();
     AudioEngine engine(std::move(owned), 8);
     AudioClipData data;
     data.sampleRate = engine.sampleRate();
@@ -38,7 +58,8 @@ int main()
     data.samples.assign(8192, .25f);
     const auto clip = engine.createClip(data);
     const auto source = engine.play(AudioSourceDesc{.clip = clip, .loop = true});
-    for (int i = 0; i < 100000; ++i) engine.setSourceGain(source, (i & 1) ? .5f : .75f);
+    for (int i = 0; i < 100000; ++i)
+        engine.setSourceGain(source, (i & 1) ? .5f : .75f);
     std::array<f32, 512> output{};
     device->callback(output);
     AURA_CHECK(std::abs(output[0] - .125f) < .0001f, "saturated controls apply the latest gain");
@@ -48,7 +69,8 @@ int main()
     for (int i = 0; i < 65535; ++i)
     {
         recycled = engine.play(clip);
-        if (i != 65534) engine.stop(recycled);
+        if (i != 65534)
+            engine.stop(recycled);
     }
     AURA_CHECK(engine.isPlaying(recycled), "completion does not alias a wrapped handle generation");
     device->callback(output);
@@ -56,24 +78,28 @@ int main()
     std::atomic<bool> stop{false};
     std::atomic<bool> valid{true};
     std::atomic<unsigned> allocations{0}, frees{0};
-    std::thread audio([&] {
-        std::array<f32, 512> block{};
-        while (!stop.load(std::memory_order_acquire))
+    std::thread audio(
+        [&]
         {
+            std::array<f32, 512> block{};
+            while (!stop.load(std::memory_order_acquire))
+            {
 #ifndef AURA_ENABLE_DEBUG_MODE
-            inCallback = true;
+                inCallback = true;
 #endif
-            device->callback(block);
+                device->callback(block);
 #ifndef AURA_ENABLE_DEBUG_MODE
-            inCallback = false;
+                inCallback = false;
 #endif
-            for (f32 sample : block) if (!std::isfinite(sample)) valid = false;
-        }
+                for (f32 sample : block)
+                    if (!std::isfinite(sample))
+                        valid = false;
+            }
 #ifndef AURA_ENABLE_DEBUG_MODE
-        allocations = callbackAllocations;
-        frees = callbackFrees;
+            allocations = callbackAllocations;
+            frees = callbackFrees;
 #endif
-    });
+        });
     for (int i = 0; i < 4000; ++i)
     {
         auto temporary = engine.createClip(data);

@@ -1,6 +1,6 @@
 #include "aura/Core/Engine.h"
-#include "aura/Renderer/RendererFactory.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Renderer/RendererFactory.h"
 
 #include <filesystem>
 
@@ -8,17 +8,15 @@
 #include <emscripten/html5.h>
 #endif
 
-Engine::Engine(const std::string& configPath)
-    : Engine(aura3d::AuraConfig{}, configPath)
+Engine::Engine(const std::string &configPath) : Engine(aura3d::AuraConfig{}, configPath)
 {
 }
 
-Engine::Engine(const aura3d::AuraConfig& config)
-    : Engine(config, std::string{})
+Engine::Engine(const aura3d::AuraConfig &config) : Engine(config, std::string{})
 {
 }
 
-Engine::Engine(const aura3d::AuraConfig& defaults, const std::string& configPath,
+Engine::Engine(const aura3d::AuraConfig &defaults, const std::string &configPath,
                aura3d::IRenderer::WindowFactory windowFactory)
     : _windowFactory(std::move(windowFactory))
 {
@@ -32,9 +30,10 @@ Engine::Engine(const aura3d::AuraConfig& defaults, const std::string& configPath
     if (!configPath.empty())
         aura3d::AuraSettings::get()->reload(configPath);
 
-    const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
+    const aura3d::AuraSettings *config = aura3d::AuraSettings::get();
     ink::LogManager::getInstance().setGlobalLevel(config->getLogLevel());
-    if (config->getLogToFile()) {
+    if (config->getLogToFile())
+    {
         const std::string logsPath = config->getLogsPath();
         std::error_code ec;
         std::filesystem::create_directories(logsPath, ec);
@@ -61,14 +60,14 @@ Engine::~Engine()
     _audio.reset();
 }
 
-const aura3d::AuraSettings* Engine::getSettings() const
+const aura3d::AuraSettings *Engine::getSettings() const
 {
     return aura3d::AuraSettings::get();
 }
 
 void Engine::_configureWindow()
 {
-    const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
+    const aura3d::AuraSettings *config = aura3d::AuraSettings::get();
 
     _windowDetails = {};
     _windowDetails.width = config->getWindowWidth();
@@ -78,14 +77,16 @@ void Engine::_configureWindow()
     _windowDetails.vsync = config->getVSync();
     _windowDetails.targetFPS = config->getFPSLimit();
 
-    if (_windowDetails.vsync) {
+    if (_windowDetails.vsync)
+    {
         _windowDetails.targetFPS = 0;
     }
 
 #ifdef __EMSCRIPTEN__
     double cssWidth = 0.0, cssHeight = 0.0;
-    if (emscripten_get_element_css_size("#canvas", &cssWidth, &cssHeight) == EMSCRIPTEN_RESULT_SUCCESS
-        && cssWidth > 0.0 && cssHeight > 0.0) {
+    if (emscripten_get_element_css_size("#canvas", &cssWidth, &cssHeight) == EMSCRIPTEN_RESULT_SUCCESS &&
+        cssWidth > 0.0 && cssHeight > 0.0)
+    {
         _windowDetails.width = static_cast<int>(cssWidth);
         _windowDetails.height = static_cast<int>(cssHeight);
     }
@@ -94,17 +95,16 @@ void Engine::_configureWindow()
 
 void Engine::_createRenderer()
 {
-    const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
+    const aura3d::AuraSettings *config = aura3d::AuraSettings::get();
 
-    const std::string defaultBackend =
-        aura3d::RendererChoiceToString(aura3d::RendererFactory::defaultChoice());
+    const std::string defaultBackend = aura3d::RendererChoiceToString(aura3d::RendererFactory::defaultChoice());
 
     std::string backendStr = config->getRendererBackend();
 
     aura3d::RendererChoice requested;
-    if (!aura3d::RendererChoiceFromString(backendStr, requested)) {
-        INK_WARN << "Unsupported renderer backend '" << backendStr
-                 << "'; falling back to " << defaultBackend;
+    if (!aura3d::RendererChoiceFromString(backendStr, requested))
+    {
+        INK_WARN << "Unsupported renderer backend '" << backendStr << "'; falling back to " << defaultBackend;
         requested = aura3d::RendererFactory::defaultChoice();
     }
 
@@ -115,16 +115,15 @@ void Engine::_createRenderer()
 
 void Engine::_createAudio()
 {
-    const aura3d::AuraSettings* config = aura3d::AuraSettings::get();
+    const aura3d::AuraSettings *config = aura3d::AuraSettings::get();
 
     wma::AudioDeviceConfig deviceConfig;
-    deviceConfig.sampleRate      = static_cast<u32>(config->getAudioSampleRate());
-    deviceConfig.channelCount    = static_cast<u16>(config->getAudioChannels());
+    deviceConfig.sampleRate = static_cast<u32>(config->getAudioSampleRate());
+    deviceConfig.channelCount = static_cast<u16>(config->getAudioChannels());
     deviceConfig.framesPerBuffer = static_cast<u32>(config->getAudioBufferFrames());
 
-    _audio = std::make_unique<aura3d::AudioEngine>(
-        wma::openAudioDevice(deviceConfig, config->getAudioBackend()),
-        static_cast<u32>(config->getAudioMaxVoices()));
+    _audio = std::make_unique<aura3d::AudioEngine>(wma::openAudioDevice(deviceConfig, config->getAudioBackend()),
+                                                   static_cast<u32>(config->getAudioMaxVoices()));
 
     _audio->setMasterVolume(config->getMasterVolume());
 
@@ -135,8 +134,8 @@ void Engine::_createAudio()
 void Engine::_createDebugMode()
 {
 #ifdef AURA_ENABLE_DEBUG_MODE
-    _debugMode = std::make_unique<aura3d::DebugMode>(
-        aura3d::DebugModeConfig::fromSettings(aura3d::AuraSettings::get()));
+    _debugMode =
+        std::make_unique<aura3d::DebugMode>(aura3d::DebugModeConfig::fromSettings(aura3d::AuraSettings::get()));
 
     _debugMode->attachRenderer(_renderer.get());
 
@@ -169,14 +168,14 @@ void Engine::switchBackend(aura3d::RendererChoice choice)
 {
     const aura3d::RendererChoice resolved = aura3d::RendererFactory::resolve(choice);
 
-    if (resolved == _rendererChoice && _renderer) {
-        INK_INFO << "switchBackend: already running on "
-                 << aura3d::RendererChoiceToString(resolved);
+    if (resolved == _rendererChoice && _renderer)
+    {
+        INK_INFO << "switchBackend: already running on " << aura3d::RendererChoiceToString(resolved);
         return;
     }
 
-    INK_INFO << "switchBackend: " << aura3d::RendererChoiceToString(_rendererChoice)
-             << " -> " << aura3d::RendererChoiceToString(resolved);
+    INK_INFO << "switchBackend: " << aura3d::RendererChoiceToString(_rendererChoice) << " -> "
+             << aura3d::RendererChoiceToString(resolved);
 
     if (_resources)
         _resources->unloadAll();

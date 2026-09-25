@@ -3,18 +3,20 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <atomic>
 #include <memory>
-#include <unordered_map>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @brief Manages Vulkan command pools and command buffers in a multi-threaded environment.
@@ -40,7 +42,7 @@ namespace vk {
  */
 class VkCommandManager
 {
-public:
+  public:
     /**
      * @brief Constructs a `VkCommandManager` with a logical device and queue family index.
      *
@@ -51,7 +53,7 @@ public:
      * @param device Pointer to a Vulkan logical device.
      * @param queueFamilyIndex Queue family index used for creating command pools.
      */
-    VkCommandManager(VkDevice* device, u32 queueFamilyIndex);
+    VkCommandManager(VkDevice *device, u32 queueFamilyIndex);
 
     /**
      * @brief Destroys the `VkCommandManager` and releases resources.
@@ -102,8 +104,7 @@ public:
      * Sets RENDER_PASS_CONTINUE, which is what makes the buffer legal inside a
      * render pass begun with VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS.
      */
-    static void beginSecondaryCommandBuffer(VkCommandBuffer commandBuffer,
-                                            VkRenderPass renderPass,
+    static void beginSecondaryCommandBuffer(VkCommandBuffer commandBuffer, VkRenderPass renderPass,
                                             VkFramebuffer framebuffer);
 
     static void resetCommandBuffer(VkCommandBuffer commandBuffer);
@@ -141,14 +142,15 @@ public:
      */
     static void endCommandBuffer(VkCommandBuffer commandBuffer);
 
-    void freeCmdBuffer(VkCommandBuffer* commandBuffer);
+    void freeCmdBuffer(VkCommandBuffer *commandBuffer);
 
-private:
+  private:
     /**
      * @brief One thread's render pool for one frame in flight, plus the
      *        secondary buffers recycled from it.
      */
-    struct RenderPool {
+    struct RenderPool
+    {
         VkCommandPool pool = VK_NULL_HANDLE;
         //! Allocated on demand and reused every frame thereafter.
         std::vector<VkCommandBuffer> secondaries;
@@ -159,13 +161,16 @@ private:
 
     //! Every pool belonging to one thread: the frame-agnostic upload pool plus
     //! one render pool per frame in flight.
-    struct ThreadPools {
+    struct ThreadPools
+    {
         //! Sizes `render` to the configured frame count up front: it is
         //! indexed directly by frame slot (see createCommandBuffer(),
         //! acquireSecondaryCommandBuffer()) with no resize anywhere else, so
         //! a default-constructed (empty) vector would make the very first
         //! access on a freshly-created thread's pool set go out of bounds.
-        ThreadPools() : render(GetMaxFramesInFlight()) {}
+        ThreadPools() : render(GetMaxFramesInFlight())
+        {
+        }
 
         VkCommandPool upload = VK_NULL_HANDLE;
         VkFixedArray<RenderPool> render;
@@ -181,11 +186,11 @@ private:
      * entry -- only the map lookup needs to be serialized, not the recording
      * that follows it.
      */
-    ThreadPools& _threadPools();
+    ThreadPools &_threadPools();
 
     VkCommandPool _createPool(VkCommandPoolCreateFlags flags) const;
 
-    VkDevice* _device;
+    VkDevice *_device;
     u32 _queueFamilyIndex; /**< The queue family index for command pool allocation. */
 
     /**
@@ -208,7 +213,7 @@ private:
     mutable std::mutex _poolMutex; /**< Mutex to protect access to the command pool map. */
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKCOMMANDMANAGER_H

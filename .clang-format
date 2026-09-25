@@ -1,0 +1,22 @@
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+ColumnLimit: 120
+
+# {
+#     Braces start on a new line
+# }
+BreakBeforeBraces: Allman
+
+# Never compress control statements
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Don't compress blocks
+AllowShortBlocksOnASingleLine: Never
+
+# Don't compress functions
+AllowShortFunctionsOnASingleLine: None
+
+# Don't compress lambdas either
+AllowShortLambdasOnASingleLine: None

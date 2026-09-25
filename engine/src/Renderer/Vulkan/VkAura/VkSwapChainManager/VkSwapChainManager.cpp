@@ -4,14 +4,14 @@
 
 #include <algorithm>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface)
-    : _swapChainSupportDetails({}), _swapChainCreateInfo({}),
-    _swapChain(VK_NULL_HANDLE), _device(device),
-    _choosedSurfaceFormat(), _choosedPresentMode(),
-    _choosedExtent(), _swapChainImages({})
+VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice *device, VkSurfaceKHR vkSurface)
+    : _swapChainSupportDetails({}), _swapChainCreateInfo({}), _swapChain(VK_NULL_HANDLE), _device(device),
+      _choosedSurfaceFormat(), _choosedPresentMode(), _choosedExtent(), _swapChainImages({})
 {
     initSwapChainSupportDetails(physicalDevice, vkSurface);
 }
@@ -23,45 +23,47 @@ VkSwapChainManager::~VkSwapChainManager()
     INK_INFO << "SwapChain cleaned";
 }
 
-VkSwapchainCreateInfoKHR* VkSwapChainManager::getSwapchainCreateInfoKHR()
+VkSwapchainCreateInfoKHR *VkSwapChainManager::getSwapchainCreateInfoKHR()
 {
     return &_swapChainCreateInfo;
 }
 
-SwapChainSupportDetails* VkSwapChainManager::getSwapChainSupportDetails()
+SwapChainSupportDetails *VkSwapChainManager::getSwapChainSupportDetails()
 {
     return &_swapChainSupportDetails;
 }
 
-VkSurfaceFormatKHR* VkSwapChainManager::getChoosedSurfaceFormat()
+VkSurfaceFormatKHR *VkSwapChainManager::getChoosedSurfaceFormat()
 {
     return &_choosedSurfaceFormat;
 }
 
-VkPresentModeKHR* VkSwapChainManager::getChoosedPresentMode()
+VkPresentModeKHR *VkSwapChainManager::getChoosedPresentMode()
 {
     return &_choosedPresentMode;
 }
 
-const std::vector<VkImage>& VkSwapChainManager::getSwapChainImages()
+const std::vector<VkImage> &VkSwapChainManager::getSwapChainImages()
 {
     return _swapChainImages;
 }
 
-VkSwapchainKHR* VkSwapChainManager::getSwapChain()
+VkSwapchainKHR *VkSwapChainManager::getSwapChain()
 {
     return &_swapChain;
 }
 
-VkExtent2D* VkSwapChainManager::getExtent2D()
+VkExtent2D *VkSwapChainManager::getExtent2D()
 {
     return &_choosedExtent;
 }
 
-void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount, bool transparent)
+void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSurfaceKHR surface,
+                                         VkDeviceManager *vkDeviceManager, u32 layerCount, bool transparent)
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
-    _choosedPresentMode = _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, AuraSettings::get()->getVSyncMode());
+    _choosedPresentMode =
+        _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, AuraSettings::get()->getVSyncMode());
     _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, windowDetails);
 
     /*
@@ -76,8 +78,9 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
      */
     u32 imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
 
-    if (_swapChainSupportDetails.capabilities.maxImageCount > 0
-        && imageCount > _swapChainSupportDetails.capabilities.maxImageCount) {
+    if (_swapChainSupportDetails.capabilities.maxImageCount > 0 &&
+        imageCount > _swapChainSupportDetails.capabilities.maxImageCount)
+    {
         imageCount = _swapChainSupportDetails.capabilities.maxImageCount;
     }
 
@@ -88,26 +91,28 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
     _swapChainCreateInfo.imageFormat = _choosedSurfaceFormat.format;
     _swapChainCreateInfo.imageColorSpace = _choosedSurfaceFormat.colorSpace;
     _swapChainCreateInfo.imageExtent = _choosedExtent;
-    _swapChainCreateInfo.imageArrayLayers = std::min(layerCount, _swapChainSupportDetails.capabilities.maxImageArrayLayers);
+    _swapChainCreateInfo.imageArrayLayers =
+        std::min(layerCount, _swapChainSupportDetails.capabilities.maxImageArrayLayers);
     _swapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-    VkDeviceData* vkDeviceCreationData = vkDeviceManager->getDeviceCreationData();
-    VkQueueFlags& exclusiveQueueFlag = vkDeviceCreationData->exclusiveQueueFlags;
-    std::vector<VkQueueFlags>& concurrentQueueFlags = vkDeviceCreationData->concurrentQueueFlags;
+    VkDeviceData *vkDeviceCreationData = vkDeviceManager->getDeviceCreationData();
+    VkQueueFlags &exclusiveQueueFlag = vkDeviceCreationData->exclusiveQueueFlags;
+    std::vector<VkQueueFlags> &concurrentQueueFlags = vkDeviceCreationData->concurrentQueueFlags;
 
     std::vector<u32> queueFamilyIndices;
 
     if (exclusiveQueueFlag != 0)
-        queueFamilyIndices.push_back(VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), exclusiveQueueFlag));
+        queueFamilyIndices.push_back(
+            VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), exclusiveQueueFlag));
 
-
-    if (!concurrentQueueFlags.empty()) 
+    if (!concurrentQueueFlags.empty())
     {
         _swapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
 
-        for (const u32& concurrentFlag : concurrentQueueFlags) 
+        for (const u32 &concurrentFlag : concurrentQueueFlags)
         {
-            queueFamilyIndices.push_back(VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), concurrentFlag));
+            queueFamilyIndices.push_back(
+                VkQueueManager::findQueueFamilyIndex(*vkDeviceManager->getPhysicalDevice(), concurrentFlag));
         }
 
         _swapChainCreateInfo.queueFamilyIndexCount = static_cast<u32>(queueFamilyIndices.size());
@@ -115,7 +120,7 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
 
         INK_DEBUG << "VK_SHARING_MODE_CONCURRENT";
     }
-    else 
+    else
     {
         _swapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         _swapChainCreateInfo.queueFamilyIndexCount = static_cast<u32>(queueFamilyIndices.size());
@@ -136,13 +141,16 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
     const auto supportedAlpha = _swapChainSupportDetails.capabilities.supportedCompositeAlpha;
     if (transparent && !(supportedAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR))
         throw std::runtime_error("Vulkan surface does not support premultiplied transparency");
-    _swapChainCreateInfo.compositeAlpha = transparent ? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR
-                                                     : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    _swapChainCreateInfo.compositeAlpha =
+        transparent ? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     if (!(supportedAlpha & _swapChainCreateInfo.compositeAlpha))
-        for (auto mode : {VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
-                          VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+        for (auto mode : {VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
                           VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR})
-            if (supportedAlpha & mode) { _swapChainCreateInfo.compositeAlpha = mode; break; }
+            if (supportedAlpha & mode)
+            {
+                _swapChainCreateInfo.compositeAlpha = mode;
+                break;
+            }
     _swapChainCreateInfo.presentMode = _choosedPresentMode;
     _swapChainCreateInfo.clipped = VK_TRUE;
     _swapChainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
@@ -159,12 +167,13 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails* windowDetails, VkSu
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
 }
 
-u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags* windowFlags)
+u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags *windowFlags)
 {
     u32 imageIndex = UINT32_MAX;
-    VkResult result = vkAcquireNextImageKHR(*_device, _swapChain, UINT64_MAX, imageSemaphore, VK_NULL_HANDLE, &imageIndex);
+    VkResult result =
+        vkAcquireNextImageKHR(*_device, _swapChain, UINT64_MAX, imageSemaphore, VK_NULL_HANDLE, &imageIndex);
 
-    if (result == VK_ERROR_SURFACE_LOST_KHR) 
+    if (result == VK_ERROR_SURFACE_LOST_KHR)
     {
         windowFlags->surfaceLost = true;
         return imageIndex;
@@ -181,7 +190,7 @@ u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::Window
         return imageIndex;
     }
 
-    if (result == VK_SUBOPTIMAL_KHR || windowFlags->resized) 
+    if (result == VK_SUBOPTIMAL_KHR || windowFlags->resized)
     {
         // VK_SUBOPTIMAL_KHR is advisory, not an error imageIndex is still
         // valid and the frame still renders fine. On this app's landscape-
@@ -198,7 +207,8 @@ u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::Window
     return imageIndex;
 }
 
-void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex, wma::WindowFlags* windowFlags)
+void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore *renderFinishedSemaphore,
+                                                const u32 &imageIndex, wma::WindowFlags *windowFlags)
 {
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -222,13 +232,10 @@ void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore* rend
         windowFlags->resized = true;
 }
 
-void VkSwapChainManager::transitionImageLayout(
-    VkCommandBuffer commandBuffer,
-    const u32& imageIndex,
-    VkImageLayout oldLayout,
-    VkImageLayout newLayout,
-    std::array<VkPipelineStageFlags, 2> stages,
-    std::array<VkAccessFlags, 2> accessFlags)
+void VkSwapChainManager::transitionImageLayout(VkCommandBuffer commandBuffer, const u32 &imageIndex,
+                                               VkImageLayout oldLayout, VkImageLayout newLayout,
+                                               std::array<VkPipelineStageFlags, 2> stages,
+                                               std::array<VkAccessFlags, 2> accessFlags)
 
 {
     VkImageMemoryBarrier barrier = {};
@@ -253,36 +260,34 @@ void VkSwapChainManager::transitionImageLayout(
     //                                           imageIndex,
     //                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
-    //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
-
+    //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    //                                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT}, {VK_ACCESS_NONE,
+    //                                           VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
 
     // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
     //                                           imageIndex,
     //                                           VK_IMAGE_LAYOUT_UNDEFINED,
     //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
-    //                                           {VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
+    //                                           {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    //                                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT}, {VK_ACCESS_NONE,
+    //                                           VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT});
 
     // Transition image layout for presentation.
     // vkSwapChainManager->transitionImageLayout(cmdBuffers[currentFrame],
     //                                           imageIndex,
     //                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     //                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-    //                                           {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
+    //                                           {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    //                                           VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT},
     //                                           {VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE});
 
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        stages[0],
-        stages[1],
-        0, 0, nullptr, 0, nullptr, 1, &barrier
-        );
+    vkCmdPipelineBarrier(commandBuffer, stages[0], stages[1], 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 void VkSwapChainManager::cleanup()
 {
-    if (_swapChain != VK_NULL_HANDLE) {
+    if (_swapChain != VK_NULL_HANDLE)
+    {
         vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
         // Without this, a second cleanup() call before a successful
         // createSwapChain() rebuild (e.g. recreateSurfaceAndSwapchain()'s
@@ -300,101 +305,112 @@ void VkSwapChainManager::cleanup()
 
 void VkSwapChainManager::initSwapChainSupportDetails(VkPhysicalDevice physicalDevice, VkSurfaceKHR vkSurface)
 {
-    VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, vkSurface, &_swapChainSupportDetails.capabilities);
+    VkResult result =
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, vkSurface, &_swapChainSupportDetails.capabilities);
     VK_RESULT_CHECK(result);
 
     u32 formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vkSurface, &formatCount, nullptr);
 
-    if (formatCount != 0) {
+    if (formatCount != 0)
+    {
         _swapChainSupportDetails.formats.resize(formatCount);
-        result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vkSurface, &formatCount, _swapChainSupportDetails.formats.data());
+        result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vkSurface, &formatCount,
+                                                      _swapChainSupportDetails.formats.data());
         VK_RESULT_CHECK(result);
     }
 
     u32 presentModeCount = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, vkSurface, &presentModeCount, nullptr);
 
-    if (presentModeCount != 0) {
+    if (presentModeCount != 0)
+    {
         _swapChainSupportDetails.presentModes.resize(presentModeCount);
-        result = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, vkSurface, &presentModeCount, _swapChainSupportDetails.presentModes.data());
+        result = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, vkSurface, &presentModeCount,
+                                                           _swapChainSupportDetails.presentModes.data());
         VK_RESULT_CHECK(result);
     }
 }
 
-VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, wma::WindowDetails* windowDetails)
+VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities,
+                                                wma::WindowDetails *windowDetails)
 {
-    VkExtent2D actualExtent = {
-        static_cast<u32>(windowDetails->width),
-        static_cast<u32>(windowDetails->height)
-    };
+    VkExtent2D actualExtent = {static_cast<u32>(windowDetails->width), static_cast<u32>(windowDetails->height)};
 
-    actualExtent.width = INK_CLAMP(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-    actualExtent.height = INK_CLAMP(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    actualExtent.width =
+        INK_CLAMP(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+    actualExtent.height =
+        INK_CLAMP(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
     return actualExtent;
 }
 
-VkSurfaceFormatKHR VkSwapChainManager::_chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats,
-                                                              const VkFormat vkFormat, const VkColorSpaceKHR vkColorSpace)
+VkSurfaceFormatKHR VkSwapChainManager::_chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats,
+                                                                const VkFormat vkFormat,
+                                                                const VkColorSpaceKHR vkColorSpace)
 {
-    if (availableFormats.empty()) {
+    if (availableFormats.empty())
+    {
         throw AuraException("No available surface formats found.");
     }
 
-    for (const VkSurfaceFormatKHR& format : availableFormats) {
-        if (format.format == vkFormat && format.colorSpace == vkColorSpace) {
+    for (const VkSurfaceFormatKHR &format : availableFormats)
+    {
+        if (format.format == vkFormat && format.colorSpace == vkColorSpace)
+        {
             return format;
         }
     }
 
-    INK_WARN << "Unavailable vkFormat " << std::to_string(vkFormat) << " , fallback to the first available vkFormat: " << std::to_string(availableFormats[0].format);
+    INK_WARN << "Unavailable vkFormat " << std::to_string(vkFormat)
+             << " , fallback to the first available vkFormat: " << std::to_string(availableFormats[0].format);
 
     return availableFormats[0];
 }
 
-VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VSyncMode mode)
+VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes,
+                                                            const VSyncMode mode)
 {
     switch (mode)
     {
-        case VSyncMode::AutoVsync:
-            // FifoRelaxed, then Fifo (always supported).
-            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
-                return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-            return VK_PRESENT_MODE_FIFO_KHR;
+    case VSyncMode::AutoVsync:
+        // FifoRelaxed, then Fifo (always supported).
+        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
+            return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+        return VK_PRESENT_MODE_FIFO_KHR;
 
-        case VSyncMode::AutoNoVsync:
-            // Immediate, then Mailbox, then Fifo (always supported).
-            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
-                return VK_PRESENT_MODE_IMMEDIATE_KHR;
-            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
-                return VK_PRESENT_MODE_MAILBOX_KHR;
-            return VK_PRESENT_MODE_FIFO_KHR;
+    case VSyncMode::AutoNoVsync:
+        // Immediate, then Mailbox, then Fifo (always supported).
+        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
+            return VK_PRESENT_MODE_IMMEDIATE_KHR;
+        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+            return VK_PRESENT_MODE_MAILBOX_KHR;
+        return VK_PRESENT_MODE_FIFO_KHR;
 
-        case VSyncMode::FifoRelaxed:
-            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
-                return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-            INK_WARN << "VK_PRESENT_MODE_FIFO_RELAXED_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
-            return VK_PRESENT_MODE_FIFO_KHR;
+    case VSyncMode::FifoRelaxed:
+        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
+            return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+        INK_WARN << "VK_PRESENT_MODE_FIFO_RELAXED_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+        return VK_PRESENT_MODE_FIFO_KHR;
 
-        case VSyncMode::Immediate:
-            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
-                return VK_PRESENT_MODE_IMMEDIATE_KHR;
-            INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
-            return VK_PRESENT_MODE_FIFO_KHR;
+    case VSyncMode::Immediate:
+        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
+            return VK_PRESENT_MODE_IMMEDIATE_KHR;
+        INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+        return VK_PRESENT_MODE_FIFO_KHR;
 
-        case VSyncMode::Mailbox:
-            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
-                return VK_PRESENT_MODE_MAILBOX_KHR;
-            INK_WARN << "VK_PRESENT_MODE_MAILBOX_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
-            return VK_PRESENT_MODE_FIFO_KHR;
+    case VSyncMode::Mailbox:
+        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+            return VK_PRESENT_MODE_MAILBOX_KHR;
+        INK_WARN << "VK_PRESENT_MODE_MAILBOX_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
+        return VK_PRESENT_MODE_FIFO_KHR;
 
-        case VSyncMode::Fifo:
-            return VK_PRESENT_MODE_FIFO_KHR;
+    case VSyncMode::Fifo:
+        return VK_PRESENT_MODE_FIFO_KHR;
     }
 
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

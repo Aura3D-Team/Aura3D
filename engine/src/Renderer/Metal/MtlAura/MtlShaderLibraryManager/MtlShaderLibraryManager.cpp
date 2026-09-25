@@ -4,14 +4,16 @@
 
 #include <ink/ink.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Renderer/Metal/MtlAura/EmbeddedMetalLib.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
-MtlShaderLibraryManager::MtlShaderLibraryManager(MTL::Device* device)
+MtlShaderLibraryManager::MtlShaderLibraryManager(MTL::Device *device)
 {
     if (!device)
         throw AuraException("MtlShaderLibraryManager: device is null");
@@ -22,8 +24,7 @@ MtlShaderLibraryManager::MtlShaderLibraryManager(MTL::Device* device)
     compileSourceLibrary(device);
 #endif
 
-    INK_INFO << "Metal shader library loaded from "
-             << (_precompiled ? "embedded metallib" : "embedded MSL source");
+    INK_INFO << "Metal shader library loaded from " << (_precompiled ? "embedded metallib" : "embedded MSL source");
 }
 
 MtlShaderLibraryManager::~MtlShaderLibraryManager()
@@ -32,7 +33,7 @@ MtlShaderLibraryManager::~MtlShaderLibraryManager()
     INK_DEBUG << "MtlShaderLibraryManager destroyed";
 }
 
-void MtlShaderLibraryManager::loadPrecompiledLibrary(MTL::Device* device)
+void MtlShaderLibraryManager::loadPrecompiledLibrary(MTL::Device *device)
 {
 #if AURA_METAL_HAS_EMBEDDED_METALLIB
     /*
@@ -43,22 +44,22 @@ void MtlShaderLibraryManager::loadPrecompiledLibrary(MTL::Device* device)
      * kilobytes at the cost of tying the data object's lifetime to the binary's,
      * which is not worth reasoning about.
      */
-    dispatch_data_t libraryData = dispatch_data_create(
-        mtl_library_data, mtl_library_data_len, nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    dispatch_data_t libraryData =
+        dispatch_data_create(mtl_library_data, mtl_library_data_len, nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
 
     if (!libraryData)
         throw AuraException("MtlShaderLibraryManager: failed to wrap the embedded metallib");
 
-    NS::Error* error = nullptr;
+    NS::Error *error = nullptr;
     _library = adopt(device->newLibrary(libraryData, &error));
 
     //! Balanced here rather than left to scope exit: dispatch objects are not
     //! reference-counted by NS::SharedPtr, and this TU is plain C++ (no ARC).
     dispatch_release(libraryData);
 
-    if (!_library) {
-        throw AuraException("MtlShaderLibraryManager: the embedded metallib was rejected: "
-                            + describeError(error));
+    if (!_library)
+    {
+        throw AuraException("MtlShaderLibraryManager: the embedded metallib was rejected: " + describeError(error));
     }
 
     _precompiled = true;
@@ -67,7 +68,7 @@ void MtlShaderLibraryManager::loadPrecompiledLibrary(MTL::Device* device)
 #endif
 }
 
-void MtlShaderLibraryManager::compileSourceLibrary(MTL::Device* device)
+void MtlShaderLibraryManager::compileSourceLibrary(MTL::Device *device)
 {
     const NS::SharedPtr<NS::String> source = makeString(mtl_library_source);
 
@@ -81,18 +82,18 @@ void MtlShaderLibraryManager::compileSourceLibrary(MTL::Device* device)
      */
     options->setLanguageVersion(MTL::LanguageVersion3_0);
 
-    NS::Error* error = nullptr;
+    NS::Error *error = nullptr;
     _library = adopt(device->newLibrary(source.get(), options.get(), &error));
 
-    if (!_library) {
-        throw AuraException("MtlShaderLibraryManager: failed to compile the embedded MSL: "
-                            + describeError(error));
+    if (!_library)
+    {
+        throw AuraException("MtlShaderLibraryManager: failed to compile the embedded MSL: " + describeError(error));
     }
 
     _precompiled = false;
 }
 
-NS::SharedPtr<MTL::Function> MtlShaderLibraryManager::newFunction(const char* functionName) const
+NS::SharedPtr<MTL::Function> MtlShaderLibraryManager::newFunction(const char *functionName) const
 {
     if (!functionName)
         throw AuraException("MtlShaderLibraryManager: function name is null");
@@ -100,11 +101,12 @@ NS::SharedPtr<MTL::Function> MtlShaderLibraryManager::newFunction(const char* fu
     const NS::SharedPtr<NS::String> name = makeString(functionName);
     NS::SharedPtr<MTL::Function> function = adopt(_library->newFunction(name.get()));
 
-    if (!function) {
-        throw AuraException("MtlShaderLibraryManager: the shader library has no function named '"
-                            + std::string(functionName)
-                            + "' (MtlAuraCore.h and resources/shaders/metal/* disagree; "
-                              "re-run scripts/gen_embedded_metallib.sh)");
+    if (!function)
+    {
+        throw AuraException("MtlShaderLibraryManager: the shader library has no function named '" +
+                            std::string(functionName) +
+                            "' (MtlAuraCore.h and resources/shaders/metal/* disagree; "
+                            "re-run scripts/gen_embedded_metallib.sh)");
     }
 
     return function;

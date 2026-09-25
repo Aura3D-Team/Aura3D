@@ -134,6 +134,10 @@ Windows (`cmake --preset windows-release`, needs vcpkg — see
 Android, and WebAssembly have their own presets and prerequisites — see
 [docs/10-platform-builds.md](docs/10-platform-builds.md).
 
+### Code Quality
+
+C++ formatting and static analysis: [local commands and CI scope](docs/code-quality.md).
+
 ### Using Aura3D as a library
 
 Building from source:

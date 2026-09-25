@@ -1,16 +1,16 @@
 #include "aura/Renderer/RendererFactory.h"
 
 #ifdef AURA_HAS_VULKAN
-#  include "aura/Renderer/Vulkan/VulkanRenderer.h"
+#include "aura/Renderer/Vulkan/VulkanRenderer.h"
 #endif
 #ifdef AURA_HAS_OPENGL
-#  include "aura/Renderer/OpenGL/OpenGLRenderer.h"
+#include "aura/Renderer/OpenGL/OpenGLRenderer.h"
 #endif
 #ifdef AURA_HAS_METAL
-#  include "aura/Renderer/Metal/MetalRenderer.h"
+#include "aura/Renderer/Metal/MetalRenderer.h"
 #endif
 #ifdef AURA_HAS_CPU
-#  include "aura/Renderer/Software/CPURenderer.h"
+#include "aura/Renderer/Software/CPURenderer.h"
 #endif
 
 #include <array>
@@ -18,9 +18,11 @@
 
 #include "aura/aura.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
-namespace {
+namespace
+{
 
 /*
  * Degradation order shared by resolve() and create(). Starting from the
@@ -164,16 +166,14 @@ RendererChoice RendererFactory::resolve(RendererChoice choice) noexcept
     return choice;
 }
 
-std::unique_ptr<IRenderer> RendererFactory::create(RendererChoice choice,
-                                                   const wma::WindowDetails& details)
+std::unique_ptr<IRenderer> RendererFactory::create(RendererChoice choice, const wma::WindowDetails &details)
 {
     const RendererChoice resolved = resolve(choice);
 
     if (resolved != choice)
     {
         INK_WARN << "RendererFactory: backend '" << RendererChoiceToString(choice)
-                 << "' was not compiled into this build; falling back to '"
-                 << RendererChoiceToString(resolved) << "'";
+                 << "' was not compiled into this build; falling back to '" << RendererChoiceToString(resolved) << "'";
     }
 
     std::unique_ptr<IRenderer> renderer;
@@ -207,9 +207,8 @@ std::unique_ptr<IRenderer> RendererFactory::create(RendererChoice choice,
     default:
         //! Only reachable when every backend was switched off at configure time,
         //! which leaves nothing to degrade to.
-        throw std::runtime_error(
-            "RendererFactory: no renderer backend was compiled into this build "
-            "(enable at least one of AURA_ENABLE_VULKAN/OPENGL/METAL/CPU)");
+        throw std::runtime_error("RendererFactory: no renderer backend was compiled into this build "
+                                 "(enable at least one of AURA_ENABLE_VULKAN/OPENGL/METAL/CPU)");
     }
 
     /*

@@ -12,9 +12,13 @@
 //! Forward-declared, not included: only the private member's type needs the
 //! name, and pulling ink/ParallelProcessor.h and its threading implementation
 //! into a header this widely included would cost every translation unit.
-namespace ink { class ParallelProcessor; }
+namespace ink
+{
+class ParallelProcessor;
+}
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @class JobSystem
@@ -32,8 +36,9 @@ namespace aura3d {
  * dispatch() joins all bands before returning or rethrowing an exception.
  * Parallel calls serialize; nested dispatch runs inline on its caller.
  */
-class JobSystem {
-public:
+class JobSystem
+{
+  public:
     /// Body of one band, called as @c body(begin, end) over a half-open range.
     using BandBody = std::function<void(i32 begin, i32 end)>;
 
@@ -42,10 +47,10 @@ public:
     explicit JobSystem(i32 workerCount = 0);
     ~JobSystem();
 
-    JobSystem(const JobSystem&) = delete;
-    JobSystem& operator=(const JobSystem&) = delete;
-    JobSystem(JobSystem&&) = delete;
-    JobSystem& operator=(JobSystem&&) = delete;
+    JobSystem(const JobSystem &) = delete;
+    JobSystem &operator=(const JobSystem &) = delete;
+    JobSystem(JobSystem &&) = delete;
+    JobSystem &operator=(JobSystem &&) = delete;
 
     /**
      * @brief Splits [0, @p itemCount) into contiguous bands and runs @p body on
@@ -57,12 +62,15 @@ public:
      * @param itemCount Size of the range; zero or negative does nothing.
      * @param body Exceptions propagate after all bands finish.
      */
-    void dispatch(i32 itemCount, const BandBody& body) const;
+    void dispatch(i32 itemCount, const BandBody &body) const;
 
     /// Bands dispatch() splits work into, after auto-detection.
-    [[nodiscard]] i32 workerCount() const noexcept { return _workerCount; }
+    [[nodiscard]] i32 workerCount() const noexcept
+    {
+        return _workerCount;
+    }
 
-private:
+  private:
     //! Builds _pool exactly once, from whichever thread's dispatch() gets
     //! there first. A no-op on every call after the first.
     void _ensurePool() const;

@@ -10,8 +10,10 @@
 #include "aura/Renderer/Metal/MtlAura/MtlBufferManager/MtlBufferManager.h"
 #include "aura/Renderer/RenderHandles.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @class MtlVertexBufferManager
@@ -30,19 +32,20 @@ namespace mtl {
  * Handles are 1-based, matching the engine-wide convention that a valid handle
  * is never 0 (see isValidHandle()).
  */
-class MtlVertexBufferManager {
-public:
+class MtlVertexBufferManager
+{
+  public:
     /**
      * @brief Binds this manager to the allocator its buffers come from.
      * @param[in] allocator Allocation primitive; must outlive this object.
      * @throws AuraException if @p allocator is null.
      */
-    explicit MtlVertexBufferManager(MtlBufferManager* allocator);
+    explicit MtlVertexBufferManager(MtlBufferManager *allocator);
 
     ~MtlVertexBufferManager();
 
-    MtlVertexBufferManager(const MtlVertexBufferManager&) = delete;
-    MtlVertexBufferManager& operator=(const MtlVertexBufferManager&) = delete;
+    MtlVertexBufferManager(const MtlVertexBufferManager &) = delete;
+    MtlVertexBufferManager &operator=(const MtlVertexBufferManager &) = delete;
 
     /**
      * @brief Uploads @p vertices and returns a handle to the result.
@@ -57,16 +60,19 @@ public:
      * @return The buffer, or nullptr for a handle that was never created (which
      *         is the "skip this bind" case the draw path already handles).
      */
-    [[nodiscard]] MTL::Buffer* resolve(VertexBufferHandle handle) const noexcept;
+    [[nodiscard]] MTL::Buffer *resolve(VertexBufferHandle handle) const noexcept;
 
     //! Releases every buffer. Every handle issued before this becomes stale.
     void clear() noexcept;
 
     //! Number of buffers currently held, for logging.
-    [[nodiscard]] size_t count() const noexcept { return _buffers.size(); }
+    [[nodiscard]] size_t count() const noexcept
+    {
+        return _buffers.size();
+    }
 
-private:
-    MtlBufferManager* _allocator = nullptr; //! Borrowed; owned by MetalRenderer.
+  private:
+    MtlBufferManager *_allocator = nullptr; //! Borrowed; owned by MetalRenderer.
 
     /*
      * Handle N lives at index N - 1. A failed upload still occupies its slot,

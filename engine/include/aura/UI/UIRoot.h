@@ -37,7 +37,8 @@
  * @endcode
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 class ITextShaper;
 
@@ -47,34 +48,37 @@ class ITextShaper;
  *
  * @note Not thread-safe: one tree, one thread, like the renderer it feeds.
  */
-class UIRoot {
-public:
+class UIRoot
+{
+  public:
     /**
      * @param shaper Text engine the whole tree lays out with; must outlive
      *        this object.
      */
-    explicit UIRoot(ITextShaper& shaper, Theme theme = Theme{});
+    explicit UIRoot(ITextShaper &shaper, Theme theme = Theme{});
     ~UIRoot();
 
-    UIRoot(const UIRoot&) = delete;
-    UIRoot& operator=(const UIRoot&) = delete;
+    UIRoot(const UIRoot &) = delete;
+    UIRoot &operator=(const UIRoot &) = delete;
 
     /// @name Content
     /// @{
 
     /// Replaces the tree with a fresh widget of type @p W and returns it.
-    template <class W, class... Args>
-    W& setContent(Args&&... args)
+    template <class W, class... Args> W &setContent(Args &&...args)
     {
         auto content = std::make_unique<W>(std::forward<Args>(args)...);
-        W& reference = *content;
+        W &reference = *content;
         _adopt(std::move(content));
         return reference;
     }
 
-    Widget& setContent(std::unique_ptr<Widget> content);
+    Widget &setContent(std::unique_ptr<Widget> content);
 
-    [[nodiscard]] Widget* content() const noexcept { return _content.get(); }
+    [[nodiscard]] Widget *content() const noexcept
+    {
+        return _content.get();
+    }
 
     /**
      * @brief The floating layer: drop-downs, menus, tooltips, dialogs.
@@ -82,8 +86,14 @@ public:
      * Drawn over the content, hit-tested before it, and where anything that
      * has to escape its parent's rectangle belongs. See @ref OverlayLayer.
      */
-    [[nodiscard]] OverlayLayer& overlay() noexcept { return *_overlay; }
-    [[nodiscard]] const OverlayLayer& overlay() const noexcept { return *_overlay; }
+    [[nodiscard]] OverlayLayer &overlay() noexcept
+    {
+        return *_overlay;
+    }
+    [[nodiscard]] const OverlayLayer &overlay() const noexcept
+    {
+        return *_overlay;
+    }
 
     /// @}
 
@@ -94,8 +104,14 @@ public:
     /// see setScale().
     void resize(glm::vec2 logicalSize);
 
-    [[nodiscard]] glm::vec2 size() const noexcept { return _size; }
-    [[nodiscard]] Rect surface() const noexcept { return Rect::fromSize({0.0f, 0.0f}, _size); }
+    [[nodiscard]] glm::vec2 size() const noexcept
+    {
+        return _size;
+    }
+    [[nodiscard]] Rect surface() const noexcept
+    {
+        return Rect::fromSize({0.0f, 0.0f}, _size);
+    }
 
     /**
      * @brief Sets the device-pixel ratio.
@@ -105,7 +121,10 @@ public:
      * ever multiplies by it.
      */
     void setScale(f32 scale);
-    [[nodiscard]] f32 scale() const noexcept { return _scale; }
+    [[nodiscard]] f32 scale() const noexcept
+    {
+        return _scale;
+    }
 
     /// @}
 
@@ -124,9 +143,12 @@ public:
      *         contents still stand, which lets a backend re-submit the vertex
      *         buffer it already built instead of rebuilding it.
      */
-    bool paint(DrawList& out);
+    bool paint(DrawList &out);
 
-    [[nodiscard]] bool needsPaint() const noexcept { return _paintDirty || _layoutDirty; }
+    [[nodiscard]] bool needsPaint() const noexcept
+    {
+        return _paintDirty || _layoutDirty;
+    }
 
     /// @}
 
@@ -136,10 +158,8 @@ public:
     /// @return True when the UI consumed the event and the application should
     ///         not also act on it.
     bool pointerMoved(glm::vec2 position);
-    bool pointerDown(glm::vec2 position, PointerButton button = PointerButton::Left,
-                     Modifiers mods = {});
-    bool pointerUp(glm::vec2 position, PointerButton button = PointerButton::Left,
-                   Modifiers mods = {});
+    bool pointerDown(glm::vec2 position, PointerButton button = PointerButton::Left, Modifiers mods = {});
+    bool pointerUp(glm::vec2 position, PointerButton button = PointerButton::Left, Modifiers mods = {});
     bool wheel(glm::vec2 delta, glm::vec2 position, Modifiers mods = {});
 
     /// The cursor left the surface: drops the hover chain. A drag in progress
@@ -162,10 +182,13 @@ public:
     /// @name Focus and pointer state
     /// @{
 
-    void setFocus(Widget* widget, FocusReason reason = FocusReason::Programmatic);
+    void setFocus(Widget *widget, FocusReason reason = FocusReason::Programmatic);
     void clearFocus();
 
-    [[nodiscard]] Widget* focused() const noexcept { return _focused; }
+    [[nodiscard]] Widget *focused() const noexcept
+    {
+        return _focused;
+    }
 
     /// Moves focus to the next (or previous) focusable widget in tree order,
     /// wrapping around. What Tab and Shift+Tab do.
@@ -174,14 +197,17 @@ public:
 
     /// Deepest widget under the cursor. The hover *chain* reaches from here to
     /// the root, so an ancestor can style itself on a descendant's hover.
-    [[nodiscard]] Widget* hovered() const noexcept;
-    [[nodiscard]] bool isHovered(const Widget* widget) const noexcept;
+    [[nodiscard]] Widget *hovered() const noexcept;
+    [[nodiscard]] bool isHovered(const Widget *widget) const noexcept;
 
-    void capturePointer(Widget* widget);
-    [[nodiscard]] Widget* pointerCapture() const noexcept { return _capture; }
+    void capturePointer(Widget *widget);
+    [[nodiscard]] Widget *pointerCapture() const noexcept
+    {
+        return _capture;
+    }
 
     /// The widget at @p position, ignoring anything not hit-test visible.
-    [[nodiscard]] Widget* widgetAt(glm::vec2 position) const;
+    [[nodiscard]] Widget *widgetAt(glm::vec2 position) const;
 
     /// @{
     /// What an application gates its own input on: true means the UI is using
@@ -207,33 +233,46 @@ public:
 
     /// Editable theme. Every widget resolves its style per paint, so an edit
     /// here shows up on the next frame with nothing to invalidate by hand.
-    [[nodiscard]] Theme& theme() noexcept
+    [[nodiscard]] Theme &theme() noexcept
     {
         _requestLayout();
         return _theme;
     }
 
-    [[nodiscard]] const Theme& theme() const noexcept { return _theme; }
-    [[nodiscard]] ITextShaper& shaper() const noexcept { return *_shaper; }
+    [[nodiscard]] const Theme &theme() const noexcept
+    {
+        return _theme;
+    }
+    [[nodiscard]] ITextShaper &shaper() const noexcept
+    {
+        return *_shaper;
+    }
 
     /// @}
 
     /// @{
     /// How long the pointer must rest on a widget before its tooltip opens.
-    void setTooltipDelay(f32 seconds) noexcept { _tooltipDelay = std::max(0.0f, seconds); }
-    [[nodiscard]] f32 tooltipDelay() const noexcept { return _tooltipDelay; }
+    void setTooltipDelay(f32 seconds) noexcept
+    {
+        _tooltipDelay = std::max(0.0f, seconds);
+    }
+    [[nodiscard]] f32 tooltipDelay() const noexcept
+    {
+        return _tooltipDelay;
+    }
     /// @}
 
     /// Snapshot of the whole tree for an accessibility bridge, or a test.
     [[nodiscard]] AccessibilityNode accessibilityTree() const;
 
     /// Fires whenever focus moves, with the widget that gained it (or null).
-    Signal<Widget*> focusChanged;
+    Signal<Widget *> focusChanged;
 
-private:
+  private:
     friend class Widget;
 
-    struct ShortcutEntry {
+    struct ShortcutEntry
+    {
         u64 id = 0;
         Shortcut shortcut{};
         std::function<void()> action;
@@ -243,11 +282,17 @@ private:
 
     /// Clears every pointer this root holds into @p widget or its subtree.
     /// Called when a widget is detached, destroyed or disabled.
-    void _forget(Widget& widget);
+    void _forget(Widget &widget);
 
-    void _requestLayout() noexcept { _layoutDirty = true; }
-    void _requestPaint() noexcept { _paintDirty = true; }
-    void _setAnimating(Widget& widget, bool animating);
+    void _requestLayout() noexcept
+    {
+        _layoutDirty = true;
+    }
+    void _requestPaint() noexcept
+    {
+        _paintDirty = true;
+    }
+    void _setAnimating(Widget &widget, bool animating);
 
     void _layout();
 
@@ -258,28 +303,27 @@ private:
     void _closeTooltip();
 
     /// Nearest widget at or above @p node carrying tooltip text.
-    [[nodiscard]] static Widget* _tooltipOwner(Widget* node) noexcept;
+    [[nodiscard]] static Widget *_tooltipOwner(Widget *node) noexcept;
 
     /// Walks from @p target up the parent chain until a handler consumes the
     /// event, refilling the event's local coordinates at each step.
-    template <class Event, class Handler>
-    bool _bubble(Widget* target, Event& event, Handler&& handler);
+    template <class Event, class Handler> bool _bubble(Widget *target, Event &event, Handler &&handler);
 
     void _updateHover(glm::vec2 position);
     void _dropHover();
 
-    [[nodiscard]] bool _runShortcuts(const KeyEvent& event, bool beforeWidget);
+    [[nodiscard]] bool _runShortcuts(const KeyEvent &event, bool beforeWidget);
 
     /// Focusable widgets in tree order. Rebuilt per traversal rather than
     /// cached: Tab is a human-speed event, and a cache would have to be
     /// invalidated by every structural change in the tree.
-    void _collectFocusable(Widget& node, std::vector<Widget*>& out) const;
+    void _collectFocusable(Widget &node, std::vector<Widget *> &out) const;
 
     bool _moveFocus(int direction);
 
-    [[nodiscard]] static bool _isAncestorOf(const Widget& ancestor, const Widget* node) noexcept;
+    [[nodiscard]] static bool _isAncestorOf(const Widget &ancestor, const Widget *node) noexcept;
 
-    ITextShaper* _shaper = nullptr;
+    ITextShaper *_shaper = nullptr;
     Theme _theme{};
 
     std::unique_ptr<Widget> _content;
@@ -293,18 +337,18 @@ private:
     bool _layoutDirty = true;
     bool _paintDirty = true;
 
-    Widget* _focused = nullptr;
-    Widget* _capture = nullptr;
+    Widget *_focused = nullptr;
+    Widget *_capture = nullptr;
 
     //! Deepest-last, so back() is the hovered widget and the rest are its
     //! ancestors. Kept as a chain so enter/leave fire once per widget rather
     //! than once per pointer move.
-    std::vector<Widget*> _hoverChain;
-    std::vector<Widget*> _hoverScratch;
+    std::vector<Widget *> _hoverChain;
+    std::vector<Widget *> _hoverScratch;
 
-    std::vector<Widget*> _animating;
+    std::vector<Widget *> _animating;
     std::vector<WidgetRef> _tickScratch;
-    std::vector<Widget*> _focusScratch;
+    std::vector<Widget *> _focusScratch;
 
     std::vector<ShortcutEntry> _shortcuts;
     u64 _nextShortcutId = 1;
@@ -314,7 +358,7 @@ private:
 
     //! Tooltip state: what the pointer is resting on, for how long, and the
     //! overlay currently showing for it.
-    Widget* _tooltipTarget = nullptr;
+    Widget *_tooltipTarget = nullptr;
     f32 _tooltipDwell = 0.0f;
     f32 _tooltipDelay = 0.5f;
     OverlayLayer::Id _tooltipOverlay = OverlayLayer::kNone;

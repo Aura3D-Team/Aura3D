@@ -5,8 +5,10 @@
 
 #include <ink/ParallelProcessor.h>
 
-namespace aura3d {
-namespace {
+namespace aura3d
+{
+namespace
+{
 
 [[nodiscard]] i32 resolveWorkerCount(i32 configured) noexcept
 {
@@ -24,8 +26,7 @@ namespace {
 
 } // namespace
 
-JobSystem::JobSystem(i32 workerCount)
-    : _workerCount(resolveWorkerCount(workerCount))
+JobSystem::JobSystem(i32 workerCount) : _workerCount(resolveWorkerCount(workerCount))
 {
     INK_VERBOSE << "JobSystem: " << _workerCount << " band(s)";
 }
@@ -37,12 +38,14 @@ void JobSystem::_ensurePool() const
     if (_workerCount <= 1)
         return;
 
-    std::call_once(_poolOnce, [this] {
-        _pool = std::make_unique<ink::ParallelProcessor>(static_cast<std::size_t>(_workerCount));
-    });
+    std::call_once(_poolOnce,
+                   [this]
+                   {
+                       _pool = std::make_unique<ink::ParallelProcessor>(static_cast<std::size_t>(_workerCount));
+                   });
 }
 
-void JobSystem::dispatch(i32 itemCount, const BandBody& body) const
+void JobSystem::dispatch(i32 itemCount, const BandBody &body) const
 {
     if (itemCount <= 0 || !body)
         return;
@@ -56,11 +59,18 @@ void JobSystem::dispatch(i32 itemCount, const BandBody& body) const
         return;
     }
 
-    struct Dispatch { const BandBody& body; i32 items; i32 bands; } work{body, itemCount, bands};
-    _pool->run(static_cast<std::size_t>(bands), [&work](std::size_t band) {
-        work.body(bandEdge(static_cast<i64>(band), work.items, work.bands),
-                  bandEdge(static_cast<i64>(band + 1), work.items, work.bands));
-    });
+    struct Dispatch
+    {
+        const BandBody &body;
+        i32 items;
+        i32 bands;
+    } work{body, itemCount, bands};
+    _pool->run(static_cast<std::size_t>(bands),
+               [&work](std::size_t band)
+               {
+                   work.body(bandEdge(static_cast<i64>(band), work.items, work.bands),
+                             bandEdge(static_cast<i64>(band + 1), work.items, work.bands));
+               });
 }
 
 } // namespace aura3d

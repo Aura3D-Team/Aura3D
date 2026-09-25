@@ -3,18 +3,21 @@
 #include <fstream>
 #include <sstream>
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
 GlShaderManager::GlShaderManager()
 {
     // Empty
 }
 
-std::string GlShaderManager::readShaderSource_GL(const std::string& filename)
+std::string GlShaderManager::readShaderSource_GL(const std::string &filename)
 {
     std::ifstream file(filename);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         throw std::runtime_error("Falha ao abrir o arquivo (OpenGL): " + filename);
     }
 
@@ -25,5 +28,5 @@ std::string GlShaderManager::readShaderSource_GL(const std::string& filename)
     return buffer.str();
 }
 
-}
-}
+} // namespace gl
+} // namespace aura3d

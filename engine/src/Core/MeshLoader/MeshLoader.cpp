@@ -3,33 +3,35 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
-#include <unordered_map>
 #include <ink/ArenaResource.h>
+#include <unordered_map>
 
 #include "aura/aura.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
-namespace aura3d {
-namespace {
+namespace aura3d
+{
+namespace
+{
 constexpr float kPi = 3.14159265358979323846f;
 
-struct VertexKey {
+struct VertexKey
+{
     int position = -1;
     int normal = -1;
     int texcoord = -1;
 
-    bool operator==(const VertexKey& other) const noexcept
+    bool operator==(const VertexKey &other) const noexcept
     {
-        return position == other.position &&
-               normal == other.normal &&
-               texcoord == other.texcoord;
+        return position == other.position && normal == other.normal && texcoord == other.texcoord;
     }
 };
 
-struct VertexKeyHash {
-    size_t operator()(const VertexKey& key) const noexcept
+struct VertexKeyHash
+{
+    size_t operator()(const VertexKey &key) const noexcept
     {
         size_t hash = std::hash<int>{}(key.position);
         hash ^= std::hash<int>{}(key.normal) + 0x9e3779b9u + (hash << 6) + (hash >> 2);
@@ -38,9 +40,9 @@ struct VertexKeyHash {
     }
 };
 
-void generateNormals(gfx::Mesh3D& mesh)
+void generateNormals(gfx::Mesh3D &mesh)
 {
-    for (auto& vertex : mesh.vertices)
+    for (auto &vertex : mesh.vertices)
         vertex.normal = glm::vec3(0.0f);
 
     for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
@@ -52,9 +54,9 @@ void generateNormals(gfx::Mesh3D& mesh)
         if (i0 >= mesh.vertices.size() || i1 >= mesh.vertices.size() || i2 >= mesh.vertices.size())
             continue;
 
-        const glm::vec3& p0 = mesh.vertices[i0].pos;
-        const glm::vec3& p1 = mesh.vertices[i1].pos;
-        const glm::vec3& p2 = mesh.vertices[i2].pos;
+        const glm::vec3 &p0 = mesh.vertices[i0].pos;
+        const glm::vec3 &p1 = mesh.vertices[i1].pos;
+        const glm::vec3 &p2 = mesh.vertices[i2].pos;
 
         const glm::vec3 faceNormal = glm::cross(p1 - p0, p2 - p0);
 
@@ -63,7 +65,7 @@ void generateNormals(gfx::Mesh3D& mesh)
         mesh.vertices[i2].normal += faceNormal;
     }
 
-    for (auto& vertex : mesh.vertices)
+    for (auto &vertex : mesh.vertices)
     {
         const float length = glm::length(vertex.normal);
         vertex.normal = (length > 0.0f) ? vertex.normal / length : glm::vec3(0.0f, 1.0f, 0.0f);
@@ -72,7 +74,7 @@ void generateNormals(gfx::Mesh3D& mesh)
 
 } // namespace
 
-gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
+gfx::Mesh3D MeshLoader::loadOBJ(const std::string &path)
 {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -80,17 +82,15 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
     std::string warn;
     std::string err;
 
-    const bool loaded = tinyobj::LoadObj(
-        &attrib, &shapes, &materials, &warn, &err, path.c_str(),
-        /*mtl_basedir=*/nullptr, /*triangulate=*/true);
+    const bool loaded = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str(),
+                                         /*mtl_basedir=*/nullptr, /*triangulate=*/true);
 
     if (!warn.empty())
         INK_WARN << "MeshLoader: " << path << ": " << warn;
 
     if (!loaded || !err.empty())
     {
-        INK_WARN << "MeshLoader: failed to load '" << path << "': "
-                 << (err.empty() ? "unknown error" : err)
+        INK_WARN << "MeshLoader: failed to load '" << path << "': " << (err.empty() ? "unknown error" : err)
                  << "; substituting the cube fallback";
         return createCube();
     }
@@ -100,16 +100,17 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
     const ink::ArenaResource::Scope scope(scratch);
     std::pmr::unordered_map<VertexKey, u32, VertexKeyHash> uniqueVertices{&scratch};
     usize indexCount = 0;
-    for (const auto& shape : shapes) indexCount += shape.mesh.indices.size();
+    for (const auto &shape : shapes)
+        indexCount += shape.mesh.indices.size();
     uniqueVertices.reserve(indexCount);
     mesh.indices.reserve(indexCount);
     mesh.vertices.reserve(std::min(indexCount, attrib.vertices.size() / 3));
 
     const bool fileHasNormals = !attrib.normals.empty();
 
-    for (const auto& shape : shapes)
+    for (const auto &shape : shapes)
     {
-        for (const auto& index : shape.mesh.indices)
+        for (const auto &index : shape.mesh.indices)
         {
             VertexKey key;
             key.position = index.vertex_index;
@@ -130,9 +131,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
                 const size_t base = static_cast<size_t>(index.vertex_index) * 3;
                 if (base + 2 < attrib.vertices.size())
                 {
-                    vertex.pos = {attrib.vertices[base + 0],
-                                  attrib.vertices[base + 1],
-                                  attrib.vertices[base + 2]};
+                    vertex.pos = {attrib.vertices[base + 0], attrib.vertices[base + 1], attrib.vertices[base + 2]};
                 }
             }
 
@@ -141,9 +140,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
                 const size_t base = static_cast<size_t>(index.normal_index) * 3;
                 if (base + 2 < attrib.normals.size())
                 {
-                    vertex.normal = {attrib.normals[base + 0],
-                                     attrib.normals[base + 1],
-                                     attrib.normals[base + 2]};
+                    vertex.normal = {attrib.normals[base + 0], attrib.normals[base + 1], attrib.normals[base + 2]};
                 }
             }
 
@@ -152,8 +149,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
                 const size_t base = static_cast<size_t>(index.texcoord_index) * 2;
                 if (base + 1 < attrib.texcoords.size())
                 {
-                    vertex.texCoord = {attrib.texcoords[base + 0],
-                                       1.0f - attrib.texcoords[base + 1]};
+                    vertex.texCoord = {attrib.texcoords[base + 0], 1.0f - attrib.texcoords[base + 1]};
                 }
             }
 
@@ -163,10 +159,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
                 const size_t base = static_cast<size_t>(index.vertex_index) * 3;
                 if (base + 2 < attrib.colors.size())
                 {
-                    vertex.color = {attrib.colors[base + 0],
-                                    attrib.colors[base + 1],
-                                    attrib.colors[base + 2],
-                                    1.0f};
+                    vertex.color = {attrib.colors[base + 0], attrib.colors[base + 1], attrib.colors[base + 2], 1.0f};
                 }
             }
 
@@ -179,8 +172,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
 
     if (mesh.empty())
     {
-        INK_WARN << "MeshLoader: '" << path
-                 << "' contained no geometry; substituting the cube fallback";
+        INK_WARN << "MeshLoader: '" << path << "' contained no geometry; substituting the cube fallback";
         return createCube();
     }
 
@@ -190,8 +182,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string& path)
         generateNormals(mesh);
     }
 
-    INK_INFO << "MeshLoader: loaded '" << path << "' ("
-             << mesh.vertices.size() << " vertices, "
+    INK_INFO << "MeshLoader: loaded '" << path << "' (" << mesh.vertices.size() << " vertices, "
              << mesh.indices.size() / 3 << " triangles)";
 
     return mesh;
@@ -201,34 +192,29 @@ gfx::Mesh3D MeshLoader::createCube()
 {
     gfx::Mesh3D mesh;
 
-    struct Face {
+    struct Face
+    {
         glm::vec3 normal;
         glm::vec3 corners[4];
     };
 
     const Face faces[6] = {
-        {{0.0f, 0.0f, 1.0f},
-         {{-0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f}}},
+        {{0.0f, 0.0f, 1.0f}, {{-0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f}}},
 
-        {{0.0f, 0.0f, -1.0f},
-         {{0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}}},
+        {{0.0f, 0.0f, -1.0f}, {{0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}}},
 
-        {{-1.0f, 0.0f, 0.0f},
-         {{-0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, -0.5f}}},
+        {{-1.0f, 0.0f, 0.0f}, {{-0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, -0.5f}}},
 
-        {{1.0f, 0.0f, 0.0f},
-         {{0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}}},
+        {{1.0f, 0.0f, 0.0f}, {{0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}}},
 
-        {{0.0f, 1.0f, 0.0f},
-         {{-0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}}},
+        {{0.0f, 1.0f, 0.0f}, {{-0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}}},
 
-        {{0.0f, -1.0f, 0.0f},
-         {{-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, 0.5f}, {-0.5f, -0.5f, 0.5f}}},
+        {{0.0f, -1.0f, 0.0f}, {{-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, 0.5f}, {-0.5f, -0.5f, 0.5f}}},
     };
 
     const glm::vec2 uvs[4] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
 
-    for (const Face& face : faces)
+    for (const Face &face : faces)
     {
         const auto base = static_cast<u32>(mesh.vertices.size());
 
@@ -242,9 +228,7 @@ gfx::Mesh3D MeshLoader::createCube()
             mesh.vertices.push_back(vertex);
         }
 
-        mesh.indices.insert(mesh.indices.end(),
-                            {base + 0, base + 1, base + 2,
-                             base + 2, base + 3, base + 0});
+        mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2, base + 2, base + 3, base + 0});
     }
 
     return mesh;
@@ -255,9 +239,9 @@ gfx::Mesh3D MeshLoader::createPlane()
     gfx::Mesh3D mesh;
 
     const glm::vec3 corners[4] = {
-        {-0.5f, 0.0f,  0.5f},
-        { 0.5f, 0.0f,  0.5f},
-        { 0.5f, 0.0f, -0.5f},
+        {-0.5f, 0.0f, 0.5f},
+        {0.5f, 0.0f, 0.5f},
+        {0.5f, 0.0f, -0.5f},
         {-0.5f, 0.0f, -0.5f},
     };
     const glm::vec2 uvs[4] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
@@ -280,8 +264,8 @@ gfx::Mesh3D MeshLoader::createSphere(int subdivisions)
 {
     gfx::Mesh3D mesh;
 
-    const int level   = std::max(subdivisions, 1);
-    const int stacks  = std::max(2, 8 * level);
+    const int level = std::max(subdivisions, 1);
+    const int stacks = std::max(2, 8 * level);
     const int sectors = std::max(3, 16 * level);
     constexpr float radius = 0.5f;
 
@@ -312,10 +296,12 @@ gfx::Mesh3D MeshLoader::createSphere(int subdivisions)
 
         for (int j = 0; j < sectors; ++j, ++k1, ++k2)
         {
-            if (i != 0) {
+            if (i != 0)
+            {
                 mesh.indices.insert(mesh.indices.end(), {k1, k1 + 1, k2});
             }
-            if (i != stacks - 1) {
+            if (i != stacks - 1)
+            {
                 mesh.indices.insert(mesh.indices.end(), {k1 + 1, k2 + 1, k2});
             }
         }

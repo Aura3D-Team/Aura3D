@@ -7,11 +7,14 @@
 
 #include "aura/Core/AuraCore.h"
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
-class GlUniformBufferManager {
-public:
+class GlUniformBufferManager
+{
+  public:
     GlUniformBufferManager();
     ~GlUniformBufferManager();
 
@@ -19,15 +22,15 @@ public:
     //! wires them to @p shaderProgram.
     void create(GLuint shaderProgram);
 
-    void update(const gfx::TransformUBO& ubo);
+    void update(const gfx::TransformUBO &ubo);
 
     //! Uploads the directional light consumed by the fragment stage.
-    void updateLight(const gfx::LightUBO& light);
+    void updateLight(const gfx::LightUBO &light);
 
     void bind(GLuint shaderProgram);
     void cleanup();
 
-private:
+  private:
     /**
      * @brief Makes @p buffer current on GL_UNIFORM_BUFFER, skipping the call
      *        when it already is.

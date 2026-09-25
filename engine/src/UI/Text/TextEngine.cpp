@@ -9,9 +9,11 @@
 #include "aura/Core/AuraFont/FontAtlas.h"
 #include "aura/UI/Text/Utf8.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 /// Rasterization sizes are snapped to whole device pixels: a font hinted at
 /// 15.6px is rasterized at 16 and scaled by 0.975 in layout, which is
@@ -29,14 +31,18 @@ namespace {
 // Utf8
 // -----------------------------------------------------------------------------
 
-namespace utf8 {
+namespace utf8
+{
 
-void append(std::string& out, char32_t codepoint)
+void append(std::string &out, char32_t codepoint)
 {
     if (codepoint > 0x10FFFFu || (codepoint >= 0xD800u && codepoint <= 0xDFFFu))
         return;
 
-    const auto emit = [&out](u32 byte) { out.push_back(static_cast<char>(byte)); };
+    const auto emit = [&out](u32 byte)
+    {
+        out.push_back(static_cast<char>(byte));
+    };
 
     if (codepoint < 0x80u)
     {
@@ -84,8 +90,8 @@ u32 ShapedText::lineOf(usize byte, CaretAffinity affinity) const noexcept
     {
         if (byte <= lines[i].byteEnd)
         {
-            if (byte == lines[i].byteEnd && i + 1 < lines.size() &&
-                lines[i + 1].byteBegin == byte && affinity == CaretAffinity::Downstream)
+            if (byte == lines[i].byteEnd && i + 1 < lines.size() && lines[i + 1].byteBegin == byte &&
+                affinity == CaretAffinity::Downstream)
                 continue;
             return i;
         }
@@ -94,9 +100,10 @@ u32 ShapedText::lineOf(usize byte, CaretAffinity affinity) const noexcept
     return static_cast<u32>(lines.size() - 1);
 }
 
-usize ShapedText::byteAt(glm::vec2 point, CaretAffinity* affinity) const noexcept
+usize ShapedText::byteAt(glm::vec2 point, CaretAffinity *affinity) const noexcept
 {
-    if (affinity) *affinity = CaretAffinity::Downstream;
+    if (affinity)
+        *affinity = CaretAffinity::Downstream;
     if (lines.empty())
         return 0;
 
@@ -112,11 +119,11 @@ usize ShapedText::byteAt(glm::vec2 point, CaretAffinity* affinity) const noexcep
         }
     }
 
-    const ShapedLine& line = lines[lineIndex];
+    const ShapedLine &line = lines[lineIndex];
 
     for (u32 i = 0; i < line.glyphCount; ++i)
     {
-        const ShapedGlyph& glyph = glyphs[line.firstGlyph + i];
+        const ShapedGlyph &glyph = glyphs[line.firstGlyph + i];
 
         //! The caret snaps to whichever side of the glyph the click is nearer,
         //! which is what makes clicking "the left half of a letter" put the
@@ -125,7 +132,8 @@ usize ShapedText::byteAt(glm::vec2 point, CaretAffinity* affinity) const noexcep
             return glyph.cluster;
     }
 
-    if (affinity) *affinity = CaretAffinity::Upstream;
+    if (affinity)
+        *affinity = CaretAffinity::Upstream;
     return line.byteEnd;
 }
 
@@ -139,21 +147,20 @@ glm::vec2 ShapedText::caretPosition(usize byte, CaretAffinity affinity) const no
 
 glm::vec2 ShapedText::caretOnLine(usize byte, u32 lineIndex) const noexcept
 {
-    const ShapedLine& line = lines[lineIndex];
+    const ShapedLine &line = lines[lineIndex];
 
     for (u32 i = 0; i < line.glyphCount; ++i)
     {
-        const ShapedGlyph& glyph = glyphs[line.firstGlyph + i];
+        const ShapedGlyph &glyph = glyphs[line.firstGlyph + i];
         if (glyph.cluster >= byte)
             return {glyph.penX, line.top};
     }
 
     //! Past the last glyph: the end of the line, which is where a caret at the
     //! end of the string belongs.
-    const f32 x = line.glyphCount > 0
-                      ? glyphs[line.firstGlyph + line.glyphCount - 1].penX +
-                            glyphs[line.firstGlyph + line.glyphCount - 1].advance
-                      : lineStartX(lineIndex);
+    const f32 x = line.glyphCount > 0 ? glyphs[line.firstGlyph + line.glyphCount - 1].penX +
+                                            glyphs[line.firstGlyph + line.glyphCount - 1].advance
+                                      : lineStartX(lineIndex);
 
     return {x, line.top};
 }
@@ -164,14 +171,14 @@ Rect ShapedText::caretRect(usize byte, f32 width, CaretAffinity affinity) const 
     return Rect::fromSize(position, {width, lineHeight});
 }
 
-void ShapedText::selectionRects(usize begin, usize end, std::vector<Rect>& out) const
+void ShapedText::selectionRects(usize begin, usize end, std::vector<Rect> &out) const
 {
     if (begin >= end || lines.empty())
         return;
 
     for (u32 i = 0; i < lines.size(); ++i)
     {
-        const ShapedLine& line = lines[i];
+        const ShapedLine &line = lines[i];
         if (end <= line.byteBegin || begin > line.byteEnd)
             continue;
 
@@ -197,7 +204,7 @@ f32 ShapedText::lineStartX(u32 lineIndex) const noexcept
     if (lineIndex >= lines.size())
         return 0.0f;
 
-    const ShapedLine& line = lines[lineIndex];
+    const ShapedLine &line = lines[lineIndex];
     return line.glyphCount > 0 ? glyphs[line.firstGlyph].penX : 0.0f;
 }
 
@@ -205,7 +212,7 @@ f32 ShapedText::lineStartX(u32 lineIndex) const noexcept
 // AtlasTextShaper
 // -----------------------------------------------------------------------------
 
-AtlasTextShaper::AtlasTextShaper(const TextShaperDesc& desc) : _desc(desc)
+AtlasTextShaper::AtlasTextShaper(const TextShaperDesc &desc) : _desc(desc)
 {
     _desc.maxPages = std::max(1u, _desc.maxPages);
 
@@ -217,7 +224,7 @@ AtlasTextShaper::AtlasTextShaper(const TextShaperDesc& desc) : _desc(desc)
      * different size, and stb_truetype keeps pointing at the bytes it was
      * handed, so FontAtlas::fromMemory() has to own its copy.
      */
-    if (std::FILE* file = std::fopen(_desc.fontPath.c_str(), "rb"))
+    if (std::FILE *file = std::fopen(_desc.fontPath.c_str(), "rb"))
     {
         std::fseek(file, 0, SEEK_END);
         const long size = std::ftell(file);
@@ -234,8 +241,7 @@ AtlasTextShaper::AtlasTextShaper(const TextShaperDesc& desc) : _desc(desc)
     }
 
     if (_fontData.empty())
-        INK_WARN << "AuraUI: font '" << _desc.fontPath
-                 << "' unreadable; using the embedded bitmap font";
+        INK_WARN << "AuraUI: font '" << _desc.fontPath << "' unreadable; using the embedded bitmap font";
 }
 
 AtlasTextShaper::~AtlasTextShaper() = default;
@@ -259,21 +265,21 @@ u32 AtlasTextShaper::pageCount() const noexcept
     return static_cast<u32>(_pages.size());
 }
 
-FontAtlas* AtlasTextShaper::page(u32 index) noexcept
+FontAtlas *AtlasTextShaper::page(u32 index) noexcept
 {
     return index < _pages.size() ? _pages[index].atlas.get() : nullptr;
 }
 
-u32 AtlasTextShaper::_devicePixelsFor(const TextStyle& style) const noexcept
+u32 AtlasTextShaper::_devicePixelsFor(const TextStyle &style) const noexcept
 {
     return snapToDevicePixels(style.pixelSize, _scale);
 }
 
-AtlasTextShaper::Page* AtlasTextShaper::_pageFor(const TextStyle& style)
+AtlasTextShaper::Page *AtlasTextShaper::_pageFor(const TextStyle &style)
 {
     const u32 wanted = _devicePixelsFor(style);
 
-    for (Page& page : _pages)
+    for (Page &page : _pages)
     {
         if (page.devicePixels == wanted)
             return &page;
@@ -287,22 +293,20 @@ AtlasTextShaper::Page* AtlasTextShaper::_pageFor(const TextStyle& style)
          * alternatives: evicting a page still on screen (every label that used
          * it re-rasterizes on the same frame) or refusing to draw.
          */
-        Page* nearest = &_pages.front();
-        for (Page& page : _pages)
+        Page *nearest = &_pages.front();
+        for (Page &page : _pages)
         {
-            const u32 delta = page.devicePixels > wanted ? page.devicePixels - wanted
-                                                         : wanted - page.devicePixels;
-            const u32 best = nearest->devicePixels > wanted ? nearest->devicePixels - wanted
-                                                            : wanted - nearest->devicePixels;
+            const u32 delta = page.devicePixels > wanted ? page.devicePixels - wanted : wanted - page.devicePixels;
+            const u32 best =
+                nearest->devicePixels > wanted ? nearest->devicePixels - wanted : wanted - nearest->devicePixels;
             if (delta < best)
                 nearest = &page;
         }
         return nearest;
     }
 
-    const FontAtlasDesc desc{.width = _desc.pageSize,
-                             .height = _desc.pageSize,
-                             .pixelHeight = static_cast<f32>(wanted)};
+    const FontAtlasDesc desc{
+        .width = _desc.pageSize, .height = _desc.pageSize, .pixelHeight = static_cast<f32>(wanted)};
 
     Page page{};
     page.devicePixels = wanted;
@@ -331,15 +335,15 @@ AtlasTextShaper::Page* AtlasTextShaper::_pageFor(const TextStyle& style)
     return &_pages.back();
 }
 
-f32 AtlasTextShaper::lineHeight(const TextStyle& style)
+f32 AtlasTextShaper::lineHeight(const TextStyle &style)
 {
-    const Page* page = _pageFor(style);
+    const Page *page = _pageFor(style);
     return page ? page->lineHeight * style.pixelSize * style.lineSpacing : 0.0f;
 }
 
-f32 AtlasTextShaper::ascent(const TextStyle& style)
+f32 AtlasTextShaper::ascent(const TextStyle &style)
 {
-    const Page* page = _pageFor(style);
+    const Page *page = _pageFor(style);
     if (!page)
         return 0.0f;
 
@@ -349,16 +353,15 @@ f32 AtlasTextShaper::ascent(const TextStyle& style)
     return page->ascent * style.pixelSize + leading;
 }
 
-void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 maxWidth,
-                            ShapedText& out)
+void AtlasTextShaper::shape(std::string_view utf8, const TextStyle &style, f32 maxWidth, ShapedText &out)
 {
     out.clear();
 
-    Page* page = _pageFor(style);
+    Page *page = _pageFor(style);
     if (!page)
         return;
 
-    FontAtlas& atlas = *page->atlas;
+    FontAtlas &atlas = *page->atlas;
 
     //! Atlas metrics are in the page's device pixels; this converts them to the
     //! logical pixels layout works in, and absorbs the rounding that snapping
@@ -376,8 +379,7 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
     if (utf8.empty())
     {
         out.size = {0.0f, lineHeight};
-        out.lines.push_back(ShapedLine{.byteBegin = 0, .byteEnd = 0, .top = 0.0f,
-                                       .baseline = out.ascent});
+        out.lines.push_back(ShapedLine{.byteBegin = 0, .byteEnd = 0, .top = 0.0f, .baseline = out.ascent});
         return;
     }
 
@@ -401,7 +403,8 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
     f32 breakWidth = 0.0f;
     bool haveBreak = false;
 
-    const auto closeLine = [&](u32 glyphEnd, u32 byteEnd, f32 width) {
+    const auto closeLine = [&](u32 glyphEnd, u32 byteEnd, f32 width)
+    {
         line.glyphCount = glyphEnd - line.firstGlyph;
         line.byteEnd = byteEnd;
         line.width = width;
@@ -438,7 +441,7 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
         if (codepoint == U'\r')
             continue;
 
-        const GlyphInfo* info = atlas.glyph(codepoint);
+        const GlyphInfo *info = atlas.glyph(codepoint);
         if (!info)
             continue;
 
@@ -457,8 +460,7 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
             breakWidth = penX;
         }
 
-        const bool overflows = wrapping && penX + advance > maxWidth &&
-                               out.glyphs.size() > line.firstGlyph;
+        const bool overflows = wrapping && penX + advance > maxWidth && out.glyphs.size() > line.firstGlyph;
 
         if (overflows)
         {
@@ -473,14 +475,13 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
                  * amounts to.
                  */
                 const u32 moved = static_cast<u32>(out.glyphs.size()) - breakGlyph;
-                const u32 wordByte = moved > 0 ? out.glyphs[breakGlyph].cluster
-                                               : static_cast<u32>(glyphStart);
+                const u32 wordByte = moved > 0 ? out.glyphs[breakGlyph].cluster : static_cast<u32>(glyphStart);
 
                 closeLine(breakGlyph, wordByte, breakWidth);
 
                 for (usize i = breakGlyph; i < out.glyphs.size(); ++i)
                 {
-                    ShapedGlyph& moving = out.glyphs[i];
+                    ShapedGlyph &moving = out.glyphs[i];
                     moving.bounds = moving.bounds.translated({-breakPenX, lineHeight});
                     moving.penX -= breakPenX;
                     moving.line = static_cast<u32>(out.lines.size());
@@ -497,8 +498,7 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
             }
         }
 
-        const glm::vec2 origin{penX + info->bearing.x * unit,
-                               lineTop + leading + info->bearing.y * unit};
+        const glm::vec2 origin{penX + info->bearing.x * unit, lineTop + leading + info->bearing.y * unit};
 
         out.glyphs.push_back(ShapedGlyph{
             .bounds = Rect::fromSize(origin, info->size * unit),
@@ -517,7 +517,7 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
     closeLine(static_cast<u32>(out.glyphs.size()), static_cast<u32>(utf8.size()), penX);
 
     f32 blockWidth = 0.0f;
-    for (const ShapedLine& shaped : out.lines)
+    for (const ShapedLine &shaped : out.lines)
         blockWidth = std::max(blockWidth, shaped.width);
 
     out.size = {blockWidth, lineTop};
@@ -527,7 +527,7 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
 
     const f32 factor = style.align == Align::Center ? 0.5f : 1.0f;
 
-    for (ShapedLine& shaped : out.lines)
+    for (ShapedLine &shaped : out.lines)
     {
         const f32 shift = (blockWidth - shaped.width) * factor;
         if (shift <= 0.0f)
@@ -535,7 +535,7 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle& style, f32 m
 
         for (u32 i = 0; i < shaped.glyphCount; ++i)
         {
-            ShapedGlyph& glyph = out.glyphs[shaped.firstGlyph + i];
+            ShapedGlyph &glyph = out.glyphs[shaped.firstGlyph + i];
             glyph.bounds = glyph.bounds.translated({shift, 0.0f});
             glyph.penX += shift;
         }

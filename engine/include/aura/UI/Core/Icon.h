@@ -26,14 +26,22 @@
  * @endcode
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 class DrawList;
 class ITextShaper;
 
-namespace icon {
+namespace icon
+{
 
-enum class Direction : u8 { Right, Down, Left, Up };
+enum class Direction : u8
+{
+    Right,
+    Down,
+    Left,
+    Up
+};
 
 /**
  * @brief Draws a solid triangle pointing @p direction, inscribed in @p bounds.
@@ -42,8 +50,7 @@ enum class Direction : u8 { Right, Down, Left, Up };
  * the size asked for and cached in the atlas thereafter, so the shape costs
  * its rasterization once per size and direction.
  */
-void triangle(DrawList& out, ITextShaper& shaper, const Rect& bounds, Direction direction,
-              const glm::vec4& color);
+void triangle(DrawList &out, ITextShaper &shaper, const Rect &bounds, Direction direction, const glm::vec4 &color);
 
 /**
  * @brief Draws an arbitrary convex polygon, given in @c [0,1] cell space.
@@ -52,8 +59,8 @@ void triangle(DrawList& out, ITextShaper& shaper, const Rect& bounds, Direction 
  * does not name. @p id must be unique per shape; ids below @ref kFirstUserId
  * are reserved.
  */
-void convex(DrawList& out, ITextShaper& shaper, const Rect& bounds,
-            std::span<const glm::vec2> unitPolygon, u32 id, const glm::vec4& color);
+void convex(DrawList &out, ITextShaper &shaper, const Rect &bounds, std::span<const glm::vec2> unitPolygon, u32 id,
+            const glm::vec4 &color);
 
 /// Shape ids at or above this are the caller's to allocate.
 inline constexpr u32 kFirstUserId = 1024;

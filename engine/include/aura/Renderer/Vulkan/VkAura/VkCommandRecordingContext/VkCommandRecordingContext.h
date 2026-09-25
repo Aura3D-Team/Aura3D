@@ -12,8 +12,10 @@
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkGraphicsPipelineManager/VkGraphicsPipelineManager.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /*
  * The inverse-transpose used for normals lives in aura/Core/AuraMath.h, since
@@ -36,7 +38,8 @@ using gfx::normalMatrixOf;
  * loop into a linear walk over a compact POD array instead of a chain of
  * pointer hops.
  */
-struct ResolvedDraw {
+struct ResolvedDraw
+{
     glm::mat4 model{1.0f};
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
     //! VK_NULL_HANDLE for a non-indexed draw, where vertexCount is used instead.
@@ -56,11 +59,12 @@ struct ResolvedDraw {
  * to hand the same instance to every worker thread: all of it is created or
  * updated between frames, never while a command buffer is open.
  */
-struct SceneBindings {
-    VkGraphicsPipelineManager* pipeline = nullptr;
-    VkDescriptorSet transformSet = VK_NULL_HANDLE;  //!< set 0
-    VkDescriptorSet textureTable = VK_NULL_HANDLE;  //!< set 1, the bindless table
-    VkDescriptorSet lightSet = VK_NULL_HANDLE;      //!< set 2
+struct SceneBindings
+{
+    VkGraphicsPipelineManager *pipeline = nullptr;
+    VkDescriptorSet transformSet = VK_NULL_HANDLE; //!< set 0
+    VkDescriptorSet textureTable = VK_NULL_HANDLE; //!< set 1, the bindless table
+    VkDescriptorSet lightSet = VK_NULL_HANDLE;     //!< set 2
     VkExtent2D extent{};
 };
 
@@ -80,7 +84,8 @@ struct SceneBindings {
  * pass state -- starts with everything unbound, so a cache carried over from
  * another buffer would skip binds that this one still needs.
  */
-struct RecordedState {
+struct RecordedState
+{
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
     VkBuffer indexBuffer = VK_NULL_HANDLE;
@@ -90,7 +95,10 @@ struct RecordedState {
     bool staticSetsBound = false;
     bool viewportSet = false; //!< dynamic viewport + scissor
 
-    void reset() noexcept { *this = RecordedState{}; }
+    void reset() noexcept
+    {
+        *this = RecordedState{};
+    }
 };
 
 /**
@@ -103,10 +111,7 @@ struct RecordedState {
  * Issuing the draw command itself is left to the caller, which is the only
  * part that genuinely differs between them.
  */
-void bindDrawState(VkCommandBuffer cmd,
-                   RecordedState& state,
-                   const SceneBindings& bindings,
-                   const ResolvedDraw& draw);
+void bindDrawState(VkCommandBuffer cmd, RecordedState &state, const SceneBindings &bindings, const ResolvedDraw &draw);
 
 /**
  * @class VkCommandRecordingContext
@@ -125,7 +130,7 @@ void bindDrawState(VkCommandBuffer cmd,
  */
 class VkCommandRecordingContext
 {
-public:
+  public:
     /**
      * @brief Records @p draws into @p cmd as a complete secondary command buffer.
      *
@@ -136,13 +141,10 @@ public:
      * Safe to call concurrently on different contexts, provided each was given
      * a command buffer from its own thread's pool.
      */
-    void recordChunk(VkCommandBuffer cmd,
-                     VkRenderPass renderPass,
-                     VkFramebuffer framebuffer,
-                     const SceneBindings& bindings,
-                     std::span<const ResolvedDraw> draws);
+    void recordChunk(VkCommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer,
+                     const SceneBindings &bindings, std::span<const ResolvedDraw> draws);
 
-private:
+  private:
     //! This context's private view of what is bound in the buffer it is
     //! currently recording. Reset at the start of every chunk.
     RecordedState _recorded;

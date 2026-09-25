@@ -1,15 +1,17 @@
 #pragma once
 
+#include "aura/Renderer/Software/CpuAura/CpuFrameBufferManager.h"
 #include <array>
 #include <cmath>
 #include <glm/glm.hpp>
-#include "aura/Renderer/Software/CpuAura/CpuFrameBufferManager.h"
 
-namespace aura3d::cpu {
+namespace aura3d::cpu
+{
 
 /// A vertex after the vertex stage and before perspective division: still in
 /// clip space, so it can be interpolated linearly along an edge.
-struct ClipVertex {
+struct ClipVertex
+{
     /// Clip-space position (MVP applied, not yet divided by w).
     glm::vec4 position{};
     /// Texture coordinate, interpolated linearly by the clipper.
@@ -32,9 +34,8 @@ struct ClipVertex {
 /// @param width    Framebuffer width in pixels, for the viewport transform.
 /// @param height   Framebuffer height in pixels.
 /// @param emit     Called once per front-facing `ScreenTriangle` produced; zero to seven calls.
-template<class Emit>
-void clipTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c,
-                  f32 width, f32 height, Emit&& emit)
+template <class Emit>
+void clipTriangle(const ClipVertex &a, const ClipVertex &b, const ClipVertex &c, f32 width, f32 height, Emit &&emit)
 {
     std::array<ClipVertex, 12> front{a, b, c}, back{};
     usize count = 3;
@@ -43,22 +44,28 @@ void clipTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c,
     {
         unsigned outside = 0;
         for (int axis = 0; axis < 4; ++axis)
-            if (!std::isfinite(front[i].position[axis])) return;
+            if (!std::isfinite(front[i].position[axis]))
+                return;
         for (int axis = 0; axis < 3; ++axis)
         {
-            if (front[i].position[axis] < -front[i].position.w) outside |= 1u << (axis * 2);
-            if (front[i].position[axis] > front[i].position.w) outside |= 2u << (axis * 2);
+            if (front[i].position[axis] < -front[i].position.w)
+                outside |= 1u << (axis * 2);
+            if (front[i].position[axis] > front[i].position.w)
+                outside |= 2u << (axis * 2);
         }
         outsideAny |= outside;
         outsideAll &= outside;
     }
-    if (outsideAll) return;
+    if (outsideAll)
+        return;
 
     for (int plane = 0; plane < 6 && count; ++plane)
     {
         // Convex interpolation cannot leave a plane containing all input vertices.
-        if (!(outsideAny & (1u << plane))) continue;
-        const auto distance = [plane](const ClipVertex& v) {
+        if (!(outsideAny & (1u << plane)))
+            continue;
+        const auto distance = [plane](const ClipVertex &v)
+        {
             return v.position.w + ((plane & 1) ? -v.position[plane / 2] : v.position[plane / 2]);
         };
         usize next = 0;
@@ -71,23 +78,25 @@ void clipTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c,
             if ((previousDistance >= 0) != (currentDistance >= 0))
             {
                 const f32 t = previousDistance / (previousDistance - currentDistance);
-                back[next++] = {glm::mix(previous.position, current.position, t),
-                                glm::mix(previous.uv, current.uv, t),
+                back[next++] = {glm::mix(previous.position, current.position, t), glm::mix(previous.uv, current.uv, t),
                                 glm::mix(previous.color, current.color, t)};
             }
-            if (currentDistance >= 0) back[next++] = current;
+            if (currentDistance >= 0)
+                back[next++] = current;
             previous = current;
             previousDistance = currentDistance;
         }
         front.swap(back);
         count = next;
     }
-    if (count < 3) return;
+    if (count < 3)
+        return;
     std::array<ScreenVertex, 12> screen{};
     for (usize i = 0; i < count; ++i)
     {
-        if (front[i].position.w <= 0) return;
-        auto& v = screen[i];
+        if (front[i].position.w <= 0)
+            return;
+        auto &v = screen[i];
         v.invW = 1.0f / front[i].position.w;
         const glm::vec3 ndc = glm::vec3(front[i].position) * v.invW;
         v.x = (ndc.x + 1) * .5f * width;

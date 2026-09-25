@@ -4,7 +4,8 @@
 #include <atomic>
 #include <type_traits>
 
-namespace aura3d {
+namespace aura3d
+{
 
 /// Single-producer, single-consumer latest-value slot for the audio thread.
 ///
@@ -15,14 +16,15 @@ namespace aura3d {
 ///
 /// The consumer is the real-time thread, so @p T must be trivially copyable:
 /// the copy in consume() is a memcpy with no allocation and no destructor.
-template<class T>
-class AudioMailbox {
+template <class T> class AudioMailbox
+{
     static_assert(std::is_trivially_copyable_v<T>);
     static_assert(std::atomic<unsigned>::is_always_lock_free);
-public:
+
+  public:
     /// Replaces the pending value, overwriting one not yet consumed rather
     /// than queueing behind it. Producer thread only.
-    void publish(const T& value) noexcept
+    void publish(const T &value) noexcept
     {
         _values[_write] = value;
         _write = _middle.exchange(_write | kReady, std::memory_order_acq_rel) & kIndex;
@@ -30,15 +32,16 @@ public:
 
     /// Takes the newest published value into @p value. Consumer thread only.
     /// @return `true` when @p value was written; `false` leaves it untouched.
-    bool consume(T& value) noexcept
+    bool consume(T &value) noexcept
     {
-        if (!(_middle.load(std::memory_order_acquire) & kReady)) return false;
+        if (!(_middle.load(std::memory_order_acquire) & kReady))
+            return false;
         _read = _middle.exchange(_read, std::memory_order_acq_rel) & kIndex;
         value = _values[_read];
         return true;
     }
 
-private:
+  private:
     /// kReady flags an unconsumed value in the middle slot; kIndex masks its index.
     static constexpr unsigned kReady = 4, kIndex = 3;
     /// One slot each for the writer, the reader and the value in transit.

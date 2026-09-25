@@ -4,16 +4,16 @@
 #include <cstdio>
 #include <utility>
 
-namespace aura3d {
-namespace {
+namespace aura3d
+{
+namespace
+{
 constexpr size_t kVerticesPerGlyph = 4;
 constexpr size_t kIndicesPerGlyph = 6;
 
 } // namespace
 
-TextOverlay::TextOverlay(IRenderer* renderer, const TextOverlayDesc& desc)
-    : _renderer(renderer),
-      _color(desc.color)
+TextOverlay::TextOverlay(IRenderer *renderer, const TextOverlayDesc &desc) : _renderer(renderer), _color(desc.color)
 {
     FontAtlasDesc atlasDesc{};
     atlasDesc.width = desc.atlasSize;
@@ -47,8 +47,7 @@ void TextOverlay::drawText(std::string_view text, float x, float y, float scale)
     drawText(text, x, y, _color, scale);
 }
 
-void TextOverlay::drawText(std::string_view text, float x, float y,
-                           const glm::vec4& color, float scale)
+void TextOverlay::drawText(std::string_view text, float x, float y, const glm::vec4 &color, float scale)
 {
     if (text.empty() || !isValidHandle(_atlasTexture))
         return;
@@ -63,8 +62,7 @@ void TextOverlay::drawText(std::string_view text, float x, float y,
     _renderer->drawBatch2D(_vertices, _indices, _atlasTexture);
 }
 
-void TextOverlay::buildBatch(std::string_view text, float x, float y,
-                             const glm::vec4& color, float scale)
+void TextOverlay::buildBatch(std::string_view text, float x, float y, const glm::vec4 &color, float scale)
 {
     _vertices.clear();
     _indices.clear();
@@ -94,7 +92,7 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y,
             continue;
         }
 
-        const GlyphInfo* glyph = _atlas->glyph(codepoint);
+        const GlyphInfo *glyph = _atlas->glyph(codepoint);
         if (!glyph)
             continue;
 
@@ -110,10 +108,10 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y,
 
             const auto base = static_cast<u32>(_vertices.size());
 
-            _vertices.push_back({{left,  top},    {glyph->uvMin.x, glyph->uvMin.y}, color});
-            _vertices.push_back({{right, top},    {glyph->uvMax.x, glyph->uvMin.y}, color});
+            _vertices.push_back({{left, top}, {glyph->uvMin.x, glyph->uvMin.y}, color});
+            _vertices.push_back({{right, top}, {glyph->uvMax.x, glyph->uvMin.y}, color});
             _vertices.push_back({{right, bottom}, {glyph->uvMax.x, glyph->uvMax.y}, color});
-            _vertices.push_back({{left,  bottom}, {glyph->uvMin.x, glyph->uvMax.y}, color});
+            _vertices.push_back({{left, bottom}, {glyph->uvMin.x, glyph->uvMax.y}, color});
 
             _indices.push_back(base + 0);
             _indices.push_back(base + 1);
@@ -134,10 +132,8 @@ void TextOverlay::uploadAtlasChanges()
     if (!pending)
         return;
 
-    _renderer->updateTextureRegion(_atlasTexture,
-                                   pending->region.x, pending->region.y,
-                                   pending->region.width, pending->region.height,
-                                   pending->rgba.data());
+    _renderer->updateTextureRegion(_atlasTexture, pending->region.x, pending->region.y, pending->region.width,
+                                   pending->region.height, pending->rgba.data());
 }
 
 glm::vec2 TextOverlay::measureText(std::string_view text, float scale)
@@ -168,7 +164,7 @@ glm::vec2 TextOverlay::measureText(std::string_view text, float scale)
             continue;
         }
 
-        const GlyphInfo* glyph = _atlas->glyph(codepoint);
+        const GlyphInfo *glyph = _atlas->glyph(codepoint);
         if (!glyph)
             continue;
 
@@ -189,8 +185,9 @@ float TextOverlay::lineHeight(float scale) const noexcept
 
 void TextOverlay::drawFPS(float x, float y, float scale)
 {
-wma::IWindowManager* windowManager = _renderer->getWindowManager();
-    if (!windowManager) return;
+    wma::IWindowManager *windowManager = _renderer->getWindowManager();
+    if (!windowManager)
+        return;
 
     const f64 currentFps = windowManager->getWindowFlags()->fps;
 
@@ -198,8 +195,7 @@ wma::IWindowManager* windowManager = _renderer->getWindowManager();
     if (currentFps != _fps)
     {
         _fps = currentFps;
-        std::snprintf(_cachedFpsString, sizeof(_cachedFpsString), 
-                      "FPS: %.0f", currentFps);
+        std::snprintf(_cachedFpsString, sizeof(_cachedFpsString), "FPS: %.0f", currentFps);
     }
 
     drawText(_cachedFpsString, x, y, scale);

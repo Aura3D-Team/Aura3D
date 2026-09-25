@@ -10,16 +10,19 @@
 #include <glm/ext/matrix_clip_space.hpp>
 #include <ink/ThreadPool.h>
 
-#include "aura/aura.h"
-#include "aura/Utils/FutureJoiner.h"
 #include "aura/Core/AuraException/AuraException.h"
-#include "aura/Renderer/Vulkan/VkAura/EmbeddedSpirv.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
+#include "aura/Renderer/Vulkan/VkAura/EmbeddedSpirv.h"
+#include "aura/Utils/FutureJoiner.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-namespace {
+namespace
+{
 
 //! Vertex layout consumed by the overlay pipeline; mirrors gfx::Vertex2D.
 [[nodiscard]] VkVertexInputBindingDescription overlay2DBindingDescription() noexcept
@@ -60,9 +63,9 @@ namespace {
 [[nodiscard]] VkSampleCountFlagBits resolveSampleCount(int requested, VkSampleCountFlagBits deviceMax) noexcept
 {
     VkSampleCountFlagBits resolved = VK_SAMPLE_COUNT_1_BIT;
-    for (VkSampleCountFlagBits candidate : { VK_SAMPLE_COUNT_2_BIT, VK_SAMPLE_COUNT_4_BIT,
-                                              VK_SAMPLE_COUNT_8_BIT, VK_SAMPLE_COUNT_16_BIT,
-                                              VK_SAMPLE_COUNT_32_BIT, VK_SAMPLE_COUNT_64_BIT }) {
+    for (VkSampleCountFlagBits candidate : {VK_SAMPLE_COUNT_2_BIT, VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_8_BIT,
+                                            VK_SAMPLE_COUNT_16_BIT, VK_SAMPLE_COUNT_32_BIT, VK_SAMPLE_COUNT_64_BIT})
+    {
         if (static_cast<int>(candidate) <= requested && candidate <= deviceMax)
             resolved = candidate;
     }
@@ -81,7 +84,7 @@ namespace {
  * persistent _bindlessTextureSet3D allocated once in createDescriptorSets() --
  * binding a descriptor set to a structurally different layout is invalid.
  */
-void declareScene3DInterface(VkGraphicsPipelineManager& pipeline, u32 bindlessTextureCapacity)
+void declareScene3DInterface(VkGraphicsPipelineManager &pipeline, u32 bindlessTextureCapacity)
 {
     pipeline.resetInterface();
 
@@ -97,8 +100,8 @@ void declareScene3DInterface(VkGraphicsPipelineManager& pipeline, u32 bindlessTe
     bindlessSampler3D.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindlessSampler3D.descriptorCount = bindlessTextureCapacity;
     bindlessSampler3D.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    bindlessSampler3D.bindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
-                                    | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    bindlessSampler3D.bindingFlags =
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
     pipeline.addDescriptorBinding(1, bindlessSampler3D);
 
     // set 2: directional light, read by the fragment stage.
@@ -114,11 +117,8 @@ void declareScene3DInterface(VkGraphicsPipelineManager& pipeline, u32 bindlessTe
 
 } // namespace
 
-VulkanRenderer::VulkanRenderer(const wma::WindowDetails& windowDetails)
-    : IRenderer(windowDetails),
-      _vkInstanceData({}),
-      _vkDeviceData({}),
-      _vkImageViewData({})
+VulkanRenderer::VulkanRenderer(const wma::WindowDetails &windowDetails)
+    : IRenderer(windowDetails), _vkInstanceData({}), _vkDeviceData({}), _vkImageViewData({})
 {
     INK_INFO << "Renderer - VULKAN";
 
@@ -126,15 +126,14 @@ VulkanRenderer::VulkanRenderer(const wma::WindowDetails& windowDetails)
     _vkInstanceData.engineName = "Aura3DEngine";
     _vkInstanceData.appVersion = {1, 0, 0};
     _vkInstanceData.vkInstanceExtensions = {};
-    _vkInstanceData.vkValidationLayers = { "VK_LAYER_KHRONOS_validation" };
+    _vkInstanceData.vkValidationLayers = {"VK_LAYER_KHRONOS_validation"};
 
-    _vkDeviceData.vkDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    _vkDeviceData.vkDeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     _vkDeviceData.vkEnabledLayers = {};
     _vkDeviceData.concurrentQueueFlags = {};
-    _vkDeviceData.exclusiveQueueFlags =
-        VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+    _vkDeviceData.exclusiveQueueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
 
-    _vkImageViewData = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    _vkImageViewData = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -144,9 +143,10 @@ VulkanRenderer::~VulkanRenderer()
     cleanup();
 }
 
-void VulkanRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
+void VulkanRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
 {
-    if (_isInitialized) return;
+    if (_isInitialized)
+        return;
 
     //! Unused here: draw-call recording has its own dedicated pool
     //! (_recordPool below), sized and shaped for per-thread Vulkan command
@@ -189,16 +189,15 @@ void VulkanRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
     _isInitialized = true;
 }
 
-void VulkanRenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
+void VulkanRenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)
 {
     _windowManagerApi = makeWindow(wBackend, _windowDetails, wma::GraphicsAPI::Vulkan);
     _windowManagerApi->createWindow(title);
 }
 
-
 void VulkanRenderer::createCoreObjects(bool enableValidation)
 {
-    for (const char* ext : _windowManagerApi->getVulkanExtensions())
+    for (const char *ext : _windowManagerApi->getVulkanExtensions())
         _vkInstanceData.vkInstanceExtensions.push_back(ext);
 
     _vkInstance = std::make_unique<VkInstanceManager>(_vkInstanceData, enableValidation);
@@ -213,22 +212,15 @@ void VulkanRenderer::createCoreObjects(bool enableValidation)
         throw std::runtime_error("VulkanRenderer: window never became ready for surface creation");
 
     _vkSurfaceManager = std::make_unique<VkSurfaceManager>(
-        _vkInstance->getVkInstance(),
-        _windowManagerApi->getBackendType(),
-        _windowManagerApi->getWindowInstance(),
+        _vkInstance->getVkInstance(), _windowManagerApi->getBackendType(), _windowManagerApi->getWindowInstance(),
         _windowManagerApi->getNativeDisplayHandle());
 
-    _memoryManager->initialize(
-        *_vkInstance->getVkInstance(),
-        *_vkDeviceManager->getPhysicalDevice(),
-        *_vkDeviceManager->getDevice(),
-        _vmaConfig);
+    _memoryManager->initialize(*_vkInstance->getVkInstance(), *_vkDeviceManager->getPhysicalDevice(),
+                               *_vkDeviceManager->getDevice(), _vmaConfig);
 
     _queueDataFromExclusiveFlags = _vkDeviceManager->getQueueManager()->getQueues(_vkDeviceData.exclusiveQueueFlags);
     _graphicsIndexFamily = VkQueueManager::findQueueFamilyIndex(
-        *_vkDeviceManager->getPhysicalDevice(),
-        _vkDeviceData.exclusiveQueueFlags,
-        *_vkSurfaceManager->getSurface());
+        *_vkDeviceManager->getPhysicalDevice(), _vkDeviceData.exclusiveQueueFlags, *_vkSurfaceManager->getSurface());
     if (_graphicsIndexFamily == VK_QUEUE_FAMILY_IGNORED)
         throw std::runtime_error("Vulkan device cannot present to this window surface");
 
@@ -241,11 +233,8 @@ void VulkanRenderer::createCoreObjects(bool enableValidation)
      * A device that cannot timestamp is not an error: initialize() reports it
      * and GPU timing is simply marked unavailable in the report.
      */
-    (void)_debugMetrics.timestamps().initialize(
-        *_vkDeviceManager->getDevice(),
-        *_vkDeviceManager->getPhysicalDevice(),
-        _graphicsIndexFamily,
-        GetMaxFramesInFlight());
+    (void)_debugMetrics.timestamps().initialize(*_vkDeviceManager->getDevice(), *_vkDeviceManager->getPhysicalDevice(),
+                                                _graphicsIndexFamily, GetMaxFramesInFlight());
 
     //! The raw device-memory counters come from VMA's callbacks regardless;
     //! this is what adds the suballocation and heap-budget detail.
@@ -255,7 +244,7 @@ void VulkanRenderer::createCoreObjects(bool enableValidation)
 
 void VulkanRenderer::createResourceManagers()
 {
-    VkDevice* dev = _vkDeviceManager->getDevice();
+    VkDevice *dev = _vkDeviceManager->getDevice();
 
     //! Resolved against this device's update-after-bind limits, not the
     //! kDesiredBindlessTextures constant -- see maxBindlessTextures(). Cached
@@ -263,19 +252,19 @@ void VulkanRenderer::createResourceManagers()
     //! textureArrayIndexOf() can never disagree about the table's size.
     _bindlessTextureCapacity = _vkDeviceManager->maxBindlessTextures();
 
-    _vkSwapChainManager = std::make_unique<VkSwapChainManager>(
-        *_vkDeviceManager->getPhysicalDevice(), dev, *_vkSurfaceManager->getSurface());
+    _vkSwapChainManager = std::make_unique<VkSwapChainManager>(*_vkDeviceManager->getPhysicalDevice(), dev,
+                                                               *_vkSurfaceManager->getSurface());
     _vkImageViewsManager = std::make_unique<VkImageViewsManager>(dev);
     _vkRenderPassManager = std::make_unique<VkRenderPassManager>(dev);
     _vkFrameBuffersManager = std::make_unique<VkFrameBuffersManager>(dev);
     _vkDescriptorManager = std::make_unique<VkDescriptorManager>(dev, _bindlessTextureCapacity);
 
-    _vkGraphicsPipelineManager = std::make_unique<VkGraphicsPipelineManager>(
-        vk_vert_3d, vk_vert_3d_len, vk_frag_3d, vk_frag_3d_len, dev);
+    _vkGraphicsPipelineManager =
+        std::make_unique<VkGraphicsPipelineManager>(vk_vert_3d, vk_vert_3d_len, vk_frag_3d, vk_frag_3d_len, dev);
     declareScene3DInterface(*_vkGraphicsPipelineManager, _bindlessTextureCapacity);
 
-    _vkOverlay2DPipelineManager = std::make_unique<VkGraphicsPipelineManager>(
-        vk_vert_2d, vk_vert_2d_len, vk_frag_2d, vk_frag_2d_len, dev);
+    _vkOverlay2DPipelineManager =
+        std::make_unique<VkGraphicsPipelineManager>(vk_vert_2d, vk_vert_2d_len, vk_frag_2d, vk_frag_2d_len, dev);
 
     /*
      * Replace the 3D interface the constructor installed. The overlay shaders
@@ -292,12 +281,11 @@ void VulkanRenderer::createResourceManagers()
     overlaySampler.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     overlaySampler.descriptorCount = _bindlessTextureCapacity;
     overlaySampler.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    overlaySampler.bindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
-                                 | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    overlaySampler.bindingFlags =
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
     _vkOverlay2DPipelineManager->addDescriptorBinding(0, overlaySampler);
 
-    _vkOverlay2DPipelineManager->setPushConstantRange(
-        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Overlay2DPushConstants));
+    _vkOverlay2DPipelineManager->setPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Overlay2DPushConstants));
 
     _vkVertexBufferManager = std::make_unique<VkVertexBufferManager>(_memoryManager.get(), dev);
     _vkIndexBufferManager = std::make_unique<VkIndexBufferManager>(_memoryManager.get(), dev);
@@ -305,11 +293,9 @@ void VulkanRenderer::createResourceManagers()
     _vkLightUniformBufferManager = std::make_unique<VkUniformBufferManager>(_memoryManager.get(), dev);
     _vkCommandManager = std::make_unique<VkCommandManager>(dev, _graphicsIndexFamily);
 
-    _vkTextureManager = std::make_unique<VkTextureManager>(
-        _memoryManager.get(),
-        dev,
-        _vkCommandManager->getThreadCommandPool(),
-        _queueDataFromExclusiveFlags.front()->queues.front());
+    _vkTextureManager =
+        std::make_unique<VkTextureManager>(_memoryManager.get(), dev, _vkCommandManager->getThreadCommandPool(),
+                                           _queueDataFromExclusiveFlags.front()->queues.front());
 
     _vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(dev);
 
@@ -322,9 +308,7 @@ void VulkanRenderer::createResourceManagers()
      */
     const int configuredThreads = AuraSettings::get()->getCpuThreads();
     const unsigned detected = std::thread::hardware_concurrency();
-    _recordWorkerCount = configuredThreads > 0
-                             ? static_cast<u32>(configuredThreads)
-                             : (detected > 0 ? detected : 1u);
+    _recordWorkerCount = configuredThreads > 0 ? static_cast<u32>(configuredThreads) : (detected > 0 ? detected : 1u);
 
     _recordingContexts.clear();
     _recordingContexts.reserve(_recordWorkerCount);
@@ -339,15 +323,16 @@ void VulkanRenderer::createResourceManagers()
     INK_VERBOSE << "Command recording workers: " << _recordWorkerCount;
 }
 
-void VulkanRenderer::setupPipeline(const std::string& vertShaderPath, const std::string& fragShaderPath)
+void VulkanRenderer::setupPipeline(const std::string &vertShaderPath, const std::string &fragShaderPath)
 {
-    _vkGraphicsPipelineManager = std::make_unique<VkGraphicsPipelineManager>(
-        vertShaderPath, fragShaderPath, _vkDeviceManager->getDevice());
+    _vkGraphicsPipelineManager =
+        std::make_unique<VkGraphicsPipelineManager>(vertShaderPath, fragShaderPath, _vkDeviceManager->getDevice());
     //! Must match createResourceManagers()'s pipeline exactly: set 1 has to
     //! stay layout-compatible with the already-allocated, persistent
     //! _bindlessTextureSet3D, which this custom pipeline does not reallocate.
     declareScene3DInterface(*_vkGraphicsPipelineManager, _bindlessTextureCapacity);
-    if (_isInitialized) {
+    if (_isInitialized)
+    {
         createDescriptorSets();
     }
 }
@@ -358,27 +343,20 @@ void VulkanRenderer::buildSwapchainResources()
     auto drawableDetails = *_windowManagerApi->getWindowDetails();
     drawableDetails.width = framebuffer.width;
     drawableDetails.height = framebuffer.height;
-    _vkSwapChainManager->createSwapChain(&drawableDetails, *_vkSurfaceManager->getSurface(),
-        _vkDeviceManager.get(), 2, _windowManagerApi->transparentFramebuffer());
-    _vkImageViewsManager->createImageViews(
-        _vkSwapChainManager->getSwapChainImages(),
-        _vkSwapChainManager->getChoosedSurfaceFormat()->format,
-        _vkImageViewData);
+    _vkSwapChainManager->createSwapChain(&drawableDetails, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get(), 2,
+                                         _windowManagerApi->transparentFramebuffer());
+    _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
+                                           _vkSwapChainManager->getChoosedSurfaceFormat()->format, _vkImageViewData);
 
     createDepthResources();
     createMsaaColorResources();
 
-    _vkRenderPassManager->createRenderPass(
-        _vkSwapChainManager->getChoosedSurfaceFormat()->format,
-        true,
-        _depth.format,
-        _msaaSamples);
+    _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format, true, _depth.format,
+                                           _msaaSamples);
 
     _vkFrameBuffersManager->createFrameBuffers(
-        _vkImageViewsManager->getImageViews(),
-        *_vkRenderPassManager->getRenderPass(),
-        *_vkSwapChainManager->getExtent2D(),
-        _vkImageViewsManager->getDepthImageView(),
+        _vkImageViewsManager->getImageViews(), *_vkRenderPassManager->getRenderPass(),
+        *_vkSwapChainManager->getExtent2D(), _vkImageViewsManager->getDepthImageView(),
         _vkImageViewsManager->getColorMsaaImageView());
 
     _imagesCount = static_cast<u32>(_vkSwapChainManager->getSwapChainImages().size());
@@ -403,7 +381,7 @@ void VulkanRenderer::createUniformBuffers()
 
     for (u32 i = 0; i < framesInFlight; ++i)
     {
-        _vkUniformBufferManager->updateUniformBuffer(i, const_cast<gfx::TransformUBO&>(_currentTransform));
+        _vkUniformBufferManager->updateUniformBuffer(i, const_cast<gfx::TransformUBO &>(_currentTransform));
     }
 
     _vkLightUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight, sizeof(gfx::LightUBO));
@@ -413,7 +391,7 @@ void VulkanRenderer::createUniformBuffers()
 
 void VulkanRenderer::updateLightUniformBuffers()
 {
-    if (!_vkLightUniformBufferManager) 
+    if (!_vkLightUniformBufferManager)
         return;
 
     //! Every frame slot's copy, for the reason given in createUniformBuffers():
@@ -425,7 +403,7 @@ void VulkanRenderer::updateLightUniformBuffers()
     }
 }
 
-void VulkanRenderer::setLight(const gfx::LightUBO& light)
+void VulkanRenderer::setLight(const gfx::LightUBO &light)
 {
     IRenderer::setLight(light);
     updateLightUniformBuffers();
@@ -433,7 +411,8 @@ void VulkanRenderer::setLight(const gfx::LightUBO& light)
 
 void VulkanRenderer::createDescriptorSets()
 {
-    if (!_vkGraphicsPipelineManager) return;
+    if (!_vkGraphicsPipelineManager)
+        return;
 
     _vkGraphicsPipelineManager->createDescriptorSetLayouts();
 
@@ -442,9 +421,10 @@ void VulkanRenderer::createDescriptorSets()
     //! later call here from handleWindowChanges()/recreateSurfaceAndSwapchain()
     //! finds it already non-null and leaves it -- and every texture already
     //! written into it -- untouched.
-    if (_bindlessTextureSet3D == VK_NULL_HANDLE) {
-        _bindlessTextureSet3D = _vkDescriptorManager->allocateDescriptorSet(
-            _vkGraphicsPipelineManager->getDescriptorSetLayout(1));
+    if (_bindlessTextureSet3D == VK_NULL_HANDLE)
+    {
+        _bindlessTextureSet3D =
+            _vkDescriptorManager->allocateDescriptorSet(_vkGraphicsPipelineManager->getDescriptorSetLayout(1));
     }
 
     const u32 framesInFlight = GetMaxFramesInFlight();
@@ -469,21 +449,23 @@ void VulkanRenderer::createDescriptorSets()
     _overlay2DIndexUsed.resize(framesInFlight);
     _overlay2DRetiredBuffers.resize(framesInFlight);
 
-    for (u32 i = 0; i < framesInFlight; ++i) {
-        _descSets[i] = _vkDescriptorManager->allocateDescriptorSet(
-            _vkGraphicsPipelineManager->getDescriptorSetLayout(0));
+    for (u32 i = 0; i < framesInFlight; ++i)
+    {
+        _descSets[i] =
+            _vkDescriptorManager->allocateDescriptorSet(_vkGraphicsPipelineManager->getDescriptorSetLayout(0));
 
         VkDescriptorBufferInfo bufInfo = _vkUniformBufferManager->getDescriptorBufferInfo(i);
-        _vkDescriptorManager->updateDescriptorSet(
-            _descSets[i], 0, bufInfo.buffer, bufInfo.range, bufInfo.offset);
+        _vkDescriptorManager->updateDescriptorSet(_descSets[i], 0, bufInfo.buffer, bufInfo.range, bufInfo.offset);
 
-        _lightDescSets[i] = _vkDescriptorManager->allocateDescriptorSet(_vkGraphicsPipelineManager->getDescriptorSetLayout(2));
+        _lightDescSets[i] =
+            _vkDescriptorManager->allocateDescriptorSet(_vkGraphicsPipelineManager->getDescriptorSetLayout(2));
 
         VkDescriptorBufferInfo lightInfo = _vkLightUniformBufferManager->getDescriptorBufferInfo(i);
-        _vkDescriptorManager->updateDescriptorSet(_lightDescSets[i], 0, lightInfo.buffer, lightInfo.range, lightInfo.offset);
+        _vkDescriptorManager->updateDescriptorSet(_lightDescSets[i], 0, lightInfo.buffer, lightInfo.range,
+                                                  lightInfo.offset);
     }
 
-    std::vector<VkVertexInputBindingDescription> bindings = { VkVertexBufferManager::getBindingDescription() };
+    std::vector<VkVertexInputBindingDescription> bindings = {VkVertexBufferManager::getBindingDescription()};
     auto attributes = VkVertexBufferManager::getAttributeDescriptions();
 
     PipelineOptions sceneOptions{};
@@ -491,13 +473,9 @@ void VulkanRenderer::createDescriptorSets()
     sceneOptions.cullBackFaces = true;
     sceneOptions.sampleCount = _msaaSamples;
 
-    _vkGraphicsPipelineManager->createPipeline(
-        *_vkRenderPassManager->getRenderPass(),
-        *_vkSwapChainManager->getExtent2D(),
-        bindings,
-        attributes,
-        VkVertexBufferManager::getAttributeDescriptionCount(),
-        sceneOptions);
+    _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(),
+                                               *_vkSwapChainManager->getExtent2D(), bindings, attributes,
+                                               VkVertexBufferManager::getAttributeDescriptionCount(), sceneOptions);
 
     createOverlay2DPipeline();
 
@@ -506,17 +484,19 @@ void VulkanRenderer::createDescriptorSets()
 
 void VulkanRenderer::createOverlay2DPipeline()
 {
-    if (!_vkOverlay2DPipelineManager) return;
+    if (!_vkOverlay2DPipelineManager)
+        return;
 
     _vkOverlay2DPipelineManager->createDescriptorSetLayouts();
 
     //! Allocated exactly once -- see the matching comment in createDescriptorSets().
-    if (_bindlessTextureSet2D == VK_NULL_HANDLE) {
-        _bindlessTextureSet2D = _vkDescriptorManager->allocateDescriptorSet(
-            _vkOverlay2DPipelineManager->getDescriptorSetLayout(0));
+    if (_bindlessTextureSet2D == VK_NULL_HANDLE)
+    {
+        _bindlessTextureSet2D =
+            _vkDescriptorManager->allocateDescriptorSet(_vkOverlay2DPipelineManager->getDescriptorSetLayout(0));
     }
 
-    const std::vector<VkVertexInputBindingDescription> bindings = { overlay2DBindingDescription() };
+    const std::vector<VkVertexInputBindingDescription> bindings = {overlay2DBindingDescription()};
     const auto attributes = overlay2DAttributeDescriptions();
 
     /*
@@ -533,13 +513,9 @@ void VulkanRenderer::createOverlay2DPipeline()
     //! every pipeline bound within it.
     overlayOptions.sampleCount = _msaaSamples;
 
-    _vkOverlay2DPipelineManager->createPipeline(
-        *_vkRenderPassManager->getRenderPass(),
-        *_vkSwapChainManager->getExtent2D(),
-        bindings,
-        attributes,
-        MAX_ATTRIBUTE_DESCRIPTION_2D,
-        overlayOptions);
+    _vkOverlay2DPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(),
+                                                *_vkSwapChainManager->getExtent2D(), bindings, attributes,
+                                                MAX_ATTRIBUTE_DESCRIPTION_2D, overlayOptions);
 }
 
 void VulkanRenderer::publishTexture(TextureHandle textureHandle)
@@ -565,8 +541,7 @@ void VulkanRenderer::publishTexture(TextureHandle textureHandle)
     const u32 slot = textureHandle.value() - 1u;
     if (slot >= _bindlessTextureCapacity)
     {
-        INK_WARN << "Bindless texture table full (" << _bindlessTextureCapacity
-                 << " slots); texture " << textureHandle
+        INK_WARN << "Bindless texture table full (" << _bindlessTextureCapacity << " slots); texture " << textureHandle
                  << " will render with the fallback texture.";
         return;
     }
@@ -580,23 +555,25 @@ void VulkanRenderer::updateOverlay2DTextureDescriptorSets(TextureHandle textureH
     if (!_vkOverlay2DPipelineManager || _bindlessTextureSet2D == VK_NULL_HANDLE)
         return;
 
-    const auto* texture = _vkTextureManager->getTexture(textureHandle.value());
+    const auto *texture = _vkTextureManager->getTexture(textureHandle.value());
     if (!texture)
         return;
 
-    _vkDescriptorManager->updateTextureArrayElement(
-        _bindlessTextureSet2D, 0, textureArrayIndexOf(textureHandle), texture->view, texture->sampler);
+    _vkDescriptorManager->updateTextureArrayElement(_bindlessTextureSet2D, 0, textureArrayIndexOf(textureHandle),
+                                                    texture->view, texture->sampler);
 }
 
 void VulkanRenderer::updateTextureDescriptorSets(TextureHandle textureHandle)
 {
-    if (!_pipelineReady || !_vkGraphicsPipelineManager || _bindlessTextureSet3D == VK_NULL_HANDLE) return;
+    if (!_pipelineReady || !_vkGraphicsPipelineManager || _bindlessTextureSet3D == VK_NULL_HANDLE)
+        return;
 
-    const auto* texture = _vkTextureManager->getTexture(textureHandle.value());
-    if (!texture) return;
+    const auto *texture = _vkTextureManager->getTexture(textureHandle.value());
+    if (!texture)
+        return;
 
-    _vkDescriptorManager->updateTextureArrayElement(
-        _bindlessTextureSet3D, 0, textureArrayIndexOf(textureHandle), texture->view, texture->sampler);
+    _vkDescriptorManager->updateTextureArrayElement(_bindlessTextureSet3D, 0, textureArrayIndexOf(textureHandle),
+                                                    texture->view, texture->sampler);
 }
 
 void VulkanRenderer::destroySwapchainResources()
@@ -634,7 +611,7 @@ void VulkanRenderer::createDepthResources()
     imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imgInfo.imageType = VK_IMAGE_TYPE_2D;
     imgInfo.format = _depth.format;
-    imgInfo.extent = { extent.width, extent.height, 1 };
+    imgInfo.extent = {extent.width, extent.height, 1};
     imgInfo.mipLevels = 1;
     imgInfo.arrayLayers = 1;
     // Must match the color attachment's sample count (see VkRenderPassManager);
@@ -654,7 +631,8 @@ void VulkanRenderer::createDepthResources()
 
 void VulkanRenderer::destroyDepthResources()
 {
-    if (!_depth.isValid()) return;
+    if (!_depth.isValid())
+        return;
 
     _vkImageViewsManager->cleanupDepthImageView();
 
@@ -665,7 +643,7 @@ void VulkanRenderer::destroyDepthResources()
 
 void VulkanRenderer::createMsaaColorResources()
 {
-    if (_msaaSamples == VK_SAMPLE_COUNT_1_BIT) 
+    if (_msaaSamples == VK_SAMPLE_COUNT_1_BIT)
         return;
 
     VkExtent2D extent = *_vkSwapChainManager->getExtent2D();
@@ -675,7 +653,7 @@ void VulkanRenderer::createMsaaColorResources()
     imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imgInfo.imageType = VK_IMAGE_TYPE_2D;
     imgInfo.format = colorFormat;
-    imgInfo.extent = { extent.width, extent.height, 1 };
+    imgInfo.extent = {extent.width, extent.height, 1};
     imgInfo.mipLevels = 1;
     imgInfo.arrayLayers = 1;
     imgInfo.samples = _msaaSamples;
@@ -696,7 +674,8 @@ void VulkanRenderer::createMsaaColorResources()
 
 void VulkanRenderer::destroyMsaaColorResources()
 {
-    if (!_msaaColor.isValid()) return;
+    if (!_msaaColor.isValid())
+        return;
 
     _vkImageViewsManager->cleanupColorMsaaImageView();
 
@@ -715,9 +694,8 @@ void VulkanRenderer::handleWindowChanges()
 {
     vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
     destroySwapchainResources();
-    _vkSwapChainManager->initSwapChainSupportDetails(
-        *_vkDeviceManager->getPhysicalDevice(),
-        *_vkSurfaceManager->getSurface());
+    _vkSwapChainManager->initSwapChainSupportDetails(*_vkDeviceManager->getPhysicalDevice(),
+                                                     *_vkSurfaceManager->getSurface());
     buildSwapchainResources();
     createUniformBuffers();
     //! No per-texture descriptor work needed here: the bindless texture-array
@@ -736,14 +714,11 @@ void VulkanRenderer::recreateSurfaceAndSwapchain()
 
     _vkSurfaceManager.reset();
     _vkSurfaceManager = std::make_unique<VkSurfaceManager>(
-        _vkInstance->getVkInstance(),
-        _windowManagerApi->getBackendType(),
-        _windowManagerApi->getWindowInstance(),
+        _vkInstance->getVkInstance(), _windowManagerApi->getBackendType(), _windowManagerApi->getWindowInstance(),
         _windowManagerApi->getNativeDisplayHandle());
 
-    _vkSwapChainManager->initSwapChainSupportDetails(
-        *_vkDeviceManager->getPhysicalDevice(),
-        *_vkSurfaceManager->getSurface());
+    _vkSwapChainManager->initSwapChainSupportDetails(*_vkDeviceManager->getPhysicalDevice(),
+                                                     *_vkSurfaceManager->getSurface());
     buildSwapchainResources();
     createUniformBuffers();
     //! No per-texture descriptor work needed here either -- see handleWindowChanges().
@@ -798,13 +773,20 @@ void VulkanRenderer::cleanup()
     //! Before the allocator shuts down below, since these hold VMA allocations.
     destroyOverlay2DBuffers();
 
-    if (_vkVertexBufferManager) _vkVertexBufferManager->cleanup();
-    if (_vkIndexBufferManager) _vkIndexBufferManager->cleanup();
-    if (_vkUniformBufferManager) _vkUniformBufferManager->cleanup();
-    if (_vkLightUniformBufferManager) _vkLightUniformBufferManager->cleanup();
-    if (_vkTextureManager) _vkTextureManager->cleanup();
-    if (_depth.isValid()) destroyDepthResources();
-    if (_msaaColor.isValid()) destroyMsaaColorResources();
+    if (_vkVertexBufferManager)
+        _vkVertexBufferManager->cleanup();
+    if (_vkIndexBufferManager)
+        _vkIndexBufferManager->cleanup();
+    if (_vkUniformBufferManager)
+        _vkUniformBufferManager->cleanup();
+    if (_vkLightUniformBufferManager)
+        _vkLightUniformBufferManager->cleanup();
+    if (_vkTextureManager)
+        _vkTextureManager->cleanup();
+    if (_depth.isValid())
+        destroyDepthResources();
+    if (_msaaColor.isValid())
+        destroyMsaaColorResources();
 
     _vkDescriptorManager.reset();
     _vkFrameBuffersManager.reset();
@@ -821,7 +803,8 @@ void VulkanRenderer::cleanup()
     _vkLightUniformBufferManager.reset();
     _vkTextureManager.reset();
 
-    if (_memoryManager) _memoryManager->shutdown();
+    if (_memoryManager)
+        _memoryManager->shutdown();
 
     _vkSurfaceManager.reset();
     _vkDeviceManager.reset();
@@ -832,18 +815,15 @@ void VulkanRenderer::cleanup()
     _isInitialized = false;
 }
 
-VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
+VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices)
 {
     auto handle = _nextVbHandle++;
     std::string name = "vb_" + std::to_string(handle.value());
 
-    _vkVertexBufferManager->createVertexBuffer(
-        name,
-        _vkCommandManager->getThreadCommandPool(),
-        _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
-        _queueDataFromExclusiveFlags.front()->queues.front(),
-        std::move(vertices),
-        false);
+    _vkVertexBufferManager->createVertexBuffer(name, _vkCommandManager->getThreadCommandPool(),
+                                               _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
+                                               _queueDataFromExclusiveFlags.front()->queues.front(),
+                                               std::move(vertices), false);
 
     _vbNames[handle] = name;
     //! Resolve once here so the draw path never has to (see _vbByHandle).
@@ -852,18 +832,15 @@ VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>
     return handle;
 }
 
-IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16>&& indices)
+IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16> &&indices)
 {
     auto handle = _nextIbHandle++;
     std::string name = "ib_" + std::to_string(handle.value());
 
-    _vkIndexBufferManager->createIndexBuffer(
-        name,
-        _vkCommandManager->getThreadCommandPool(),
-        _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
-        _queueDataFromExclusiveFlags.front()->queues.front(),
-        std::move(indices),
-        false);
+    _vkIndexBufferManager->createIndexBuffer(name, _vkCommandManager->getThreadCommandPool(),
+                                             _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
+                                             _queueDataFromExclusiveFlags.front()->queues.front(), std::move(indices),
+                                             false);
 
     _ibNames[handle] = name;
     //! Resolve once here so the draw path never has to (see _ibByHandle).
@@ -872,19 +849,15 @@ IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16>&& indices)
     return handle;
 }
 
-IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u32>&& indices)
+IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u32> &&indices)
 {
     auto handle = _nextIbHandle++;
     std::string name = "ib_" + std::to_string(handle.value());
 
-    _vkIndexBufferManager->createIndexBuffer(
-        name,
-        _vkCommandManager->getThreadCommandPool(),
-        _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
-        _queueDataFromExclusiveFlags.front()->queues.front(),
-        std::move(indices),
-        false
-    );
+    _vkIndexBufferManager->createIndexBuffer(name, _vkCommandManager->getThreadCommandPool(),
+                                             _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
+                                             _queueDataFromExclusiveFlags.front()->queues.front(), std::move(indices),
+                                             false);
 
     _ibNames[handle] = name;
     //! Resolve once here so the draw path never has to (see _ibByHandle).
@@ -899,7 +872,7 @@ TextureHandle VulkanRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
     return createTextureFromPixels(pixel, 1, 1);
 }
 
-TextureHandle VulkanRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
+TextureHandle VulkanRenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height)
 {
     if (!rgbaPixels || width == 0 || height == 0)
     {
@@ -939,10 +912,11 @@ TextureHandle VulkanRenderer::createDynamicTexture(u32 width, u32 height)
     return handle;
 }
 
-void VulkanRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
-                                         u32 width, u32 height, const u8* rgbaPixels)
+void VulkanRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                         const u8 *rgbaPixels)
 {
-    if (!_vkTextureManager) return;
+    if (!_vkTextureManager)
+        return;
 
     _vkTextureManager->updateRegion(handle.value(), x, y, width, height, rgbaPixels);
 }
@@ -952,8 +926,8 @@ void VulkanRenderer::beginFrame()
     _frameBegun = false;
     _renderPassActive = false;
 
-    auto* windowFlags = _windowManagerApi->getWindowFlags();
-    if (!windowFlags) 
+    auto *windowFlags = _windowManagerApi->getWindowFlags();
+    if (!windowFlags)
         return;
 
     // While backgrounded (Android onPause/minimize), the ANativeWindow can be
@@ -972,11 +946,13 @@ void VulkanRenderer::beginFrame()
     {
         windowFlags->surfaceLost = false;
 
-        if (!_windowManagerApi->isSurfaceAvailable()) {
+        if (!_windowManagerApi->isSurfaceAvailable())
+        {
             return;
         }
 
-        if (!_windowManagerApi->waitUntilWindowReady()) {
+        if (!_windowManagerApi->waitUntilWindowReady())
+        {
             return;
         }
 
@@ -984,7 +960,7 @@ void VulkanRenderer::beginFrame()
         {
             recreateSurfaceAndSwapchain();
         }
-        catch (const AuraException& e)
+        catch (const AuraException &e)
         {
             // The freshly (re)created VkSurfaceKHR can still be bound to an
             // ANativeWindow/BufferQueue that Android is mid-abandoning
@@ -1007,7 +983,7 @@ void VulkanRenderer::beginFrame()
         {
             handleWindowChanges();
         }
-        catch (const AuraException& e)
+        catch (const AuraException &e)
         {
             // A plain resize can reuse a VkSurfaceKHR whose backing window
             // already died out from under it e.g. the transient portrait
@@ -1050,8 +1026,7 @@ void VulkanRenderer::beginFrame()
     {
         AURA_FRAME_SCOPE(FramePhase::Acquire);
         imageIndex = _vkSwapChainManager->acquireNextImage(
-            _vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
-            windowFlags);
+            _vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame], windowFlags);
     }
 
     if (imageIndex >= _imagesCount)
@@ -1096,7 +1071,7 @@ void VulkanRenderer::beginFrame()
     _overlay2DVertexUsed[_currentFrame] = 0;
     _overlay2DIndexUsed[_currentFrame] = 0;
 
-    for (AllocatedBuffer& retired : _overlay2DRetiredBuffers[_currentFrame])
+    for (AllocatedBuffer &retired : _overlay2DRetiredBuffers[_currentFrame])
         _memoryManager->destroyBuffer(retired);
 
     _overlay2DRetiredBuffers[_currentFrame].clear();
@@ -1107,19 +1082,16 @@ void VulkanRenderer::beginRenderPass()
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
     _renderPassActive = false;
-    if (!_frameBegun || !_pipelineReady) return;
+    if (!_frameBegun || !_pipelineReady)
+        return;
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
-    VkClearValue clearColor = { { {_clearR, _clearG, _clearB, _clearA} } };
+    VkClearValue clearColor = {{{_clearR, _clearG, _clearB, _clearA}}};
 
     VkFramebuffer framebuffer = _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex];
 
-    _vkRenderPassManager->beginRenderPass(
-        cmd,
-        framebuffer,
-        *_vkSwapChainManager->getExtent2D(),
-        &clearColor,
-        /*useSecondaryCommandBuffers=*/true);
+    _vkRenderPassManager->beginRenderPass(cmd, framebuffer, *_vkSwapChainManager->getExtent2D(), &clearColor,
+                                          /*useSecondaryCommandBuffers=*/true);
 
     _renderPassActive = true;
 
@@ -1131,8 +1103,7 @@ void VulkanRenderer::beginRenderPass()
      * branch; an empty secondary buffer is legal and costs a begin/end pair.
      */
     _sceneCmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
-    VkCommandManager::beginSecondaryCommandBuffer(
-        _sceneCmd, *_vkRenderPassManager->getRenderPass(), framebuffer);
+    VkCommandManager::beginSecondaryCommandBuffer(_sceneCmd, *_vkRenderPassManager->getRenderPass(), framebuffer);
 
     /*
      * No pipeline pre-bind here: bindDrawState() binds it lazily in front of
@@ -1148,15 +1119,15 @@ void VulkanRenderer::beginRenderPass()
      */
     _recorded.reset();
 
-    _vkUniformBufferManager->updateUniformBuffer(
-        _currentFrame, const_cast<gfx::TransformUBO&>(_currentTransform));
+    _vkUniformBufferManager->updateUniformBuffer(_currentFrame, const_cast<gfx::TransformUBO &>(_currentTransform));
 }
 
 void VulkanRenderer::endRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::EndPass);
 
-    if (!_frameBegun || !_renderPassActive) return;
+    if (!_frameBegun || !_renderPassActive)
+        return;
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
 
@@ -1165,11 +1136,12 @@ void VulkanRenderer::endRenderPass()
      * recorded separately: it must composite over the scene, so its buffer
      * goes last.
      */
-    std::vector<VkCommandBuffer>& secondaries = _replayList;
+    std::vector<VkCommandBuffer> &secondaries = _replayList;
     secondaries.clear();
 
     for (VkCommandBuffer segment : _chunkCmds)
-        if (segment != VK_NULL_HANDLE) secondaries.push_back(segment);
+        if (segment != VK_NULL_HANDLE)
+            secondaries.push_back(segment);
 
     if (_sceneCmd != VK_NULL_HANDLE)
     {
@@ -1198,7 +1170,8 @@ void VulkanRenderer::endRenderPass()
 
 void VulkanRenderer::endFrame()
 {
-    if (!_frameBegun) return;
+    if (!_frameBegun)
+        return;
 
     _vkTextureManager->flushUploads();
 
@@ -1215,21 +1188,18 @@ void VulkanRenderer::endFrame()
     VkQueue graphicsQueue = _queueDataFromExclusiveFlags.front()->queues.front();
     {
         AURA_FRAME_SCOPE(FramePhase::Submit);
-        VkQueueManager::submitCmdIntoQueue(
-            graphicsQueue, &cmd,
-            &_vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
-            //! Per image, not per frame slot: this one is consumed by the
-            //! present below, whose completion the frame fence does not cover.
-            &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentImageIndex],
-            _vkRenderSyncManager->getInFlightFences()[_currentFrame]);
+        VkQueueManager::submitCmdIntoQueue(graphicsQueue, &cmd,
+                                           &_vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame],
+                                           //! Per image, not per frame slot: this one is consumed by the
+                                           //! present below, whose completion the frame fence does not cover.
+                                           &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentImageIndex],
+                                           _vkRenderSyncManager->getInFlightFences()[_currentFrame]);
     }
 
     {
         AURA_FRAME_SCOPE(FramePhase::Present);
         _vkSwapChainManager->presentBackToSwapChain(
-            graphicsQueue,
-            &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentImageIndex],
-            _currentImageIndex,
+            graphicsQueue, &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentImageIndex], _currentImageIndex,
             _windowManagerApi->getWindowFlags());
     }
 
@@ -1240,10 +1210,22 @@ void VulkanRenderer::endFrame()
     advanceFrame();
 }
 
-void VulkanRenderer::setTransform(const gfx::TransformUBO& ubo) { _currentTransform = ubo; }
-void VulkanRenderer::bindVertexBuffer(VertexBufferHandle handle) { _currentVertexBuffer = handle; }
-void VulkanRenderer::bindIndexBuffer(IndexBufferHandle handle) { _currentIndexBuffer = handle; }
-void VulkanRenderer::bindTexture(TextureHandle handle) { _currentTexture = handle; }
+void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)
+{
+    _currentTransform = ubo;
+}
+void VulkanRenderer::bindVertexBuffer(VertexBufferHandle handle)
+{
+    _currentVertexBuffer = handle;
+}
+void VulkanRenderer::bindIndexBuffer(IndexBufferHandle handle)
+{
+    _currentIndexBuffer = handle;
+}
+void VulkanRenderer::bindTexture(TextureHandle handle)
+{
+    _currentTexture = handle;
+}
 
 void VulkanRenderer::bindDrawState(VkCommandBuffer cmd)
 {
@@ -1258,10 +1240,10 @@ void VulkanRenderer::bindDrawState(VkCommandBuffer cmd)
     draw.model = _currentTransform.model;
     draw.textureIndex = textureArrayIndexOf(_currentTexture);
 
-    if (const VertexBufferInfo* vb = vertexBufferOf(_currentVertexBuffer))
+    if (const VertexBufferInfo *vb = vertexBufferOf(_currentVertexBuffer))
         draw.vertexBuffer = vb->buffer;
 
-    if (const IndexBufferInfo* ib = indexBufferOf(_currentIndexBuffer))
+    if (const IndexBufferInfo *ib = indexBufferOf(_currentIndexBuffer))
     {
         draw.indexBuffer = ib->buffer;
         draw.indexType = ib->indexType;
@@ -1317,8 +1299,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
 
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady || items.empty() ||
-        _sceneCmd == VK_NULL_HANDLE)
+    if (!_frameBegun || !_renderPassActive || !_pipelineReady || items.empty() || _sceneCmd == VK_NULL_HANDLE)
         return;
 
     /*
@@ -1333,14 +1314,14 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     _resolvedDraws.clear();
     _resolvedDraws.reserve(items.size());
 
-    for (const DrawItem& item : items)
+    for (const DrawItem &item : items)
     {
-        const MeshRecord* mesh = getMesh(item.mesh);
+        const MeshRecord *mesh = getMesh(item.mesh);
         if (!mesh)
             continue;
 
-        const VertexBufferInfo* vb = vertexBufferOf(mesh->vertexBuffer);
-        const IndexBufferInfo* ib = indexBufferOf(mesh->indexBuffer);
+        const VertexBufferInfo *vb = vertexBufferOf(mesh->vertexBuffer);
+        const IndexBufferInfo *ib = indexBufferOf(mesh->indexBuffer);
         if (!vb || !ib)
             continue;
 
@@ -1349,11 +1330,11 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
         TextureHandle texture = _currentTexture;
         if (isValidHandle(item.material))
         {
-            if (const Material* material = getMaterial(item.material))
+            if (const Material *material = getMaterial(item.material))
                 texture = material->albedo;
         }
 
-        ResolvedDraw& draw = _resolvedDraws.emplace_back();
+        ResolvedDraw &draw = _resolvedDraws.emplace_back();
         draw.model = item.model;
         draw.vertexBuffer = vb->buffer;
         draw.indexBuffer = ib->buffer;
@@ -1395,7 +1376,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
 
     if (chunkCount <= 1 || !_recordPool)
     {
-        for (const ResolvedDraw& draw : _resolvedDraws)
+        for (const ResolvedDraw &draw : _resolvedDraws)
         {
             aura3d::vk::bindDrawState(_sceneCmd, _recorded, bindings, draw);
             vkCmdDrawIndexed(_sceneCmd, draw.indexCount, 1, 0, 0, 0);
@@ -1443,11 +1424,12 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
             const std::span<const ResolvedDraw> slice(_resolvedDraws.data() + offset, count);
             offset += count;
 
-            VkCommandRecordingContext* context = _recordingContexts[chunk].get();
-            VkCommandBuffer* slot = &_chunkCmds[firstChunkCmd + chunk];
+            VkCommandRecordingContext *context = _recordingContexts[chunk].get();
+            VkCommandBuffer *slot = &_chunkCmds[firstChunkCmd + chunk];
 
             _recordFutures.push_back(_recordPool->submit(
-                [this, context, slot, slice, &bindings, renderPass, framebuffer] {
+                [this, context, slot, slice, &bindings, renderPass, framebuffer]
+                {
                     /*
                      * Allocated on the worker thread on purpose: the buffer must
                      * come from a pool owned by the thread that records into it,
@@ -1472,8 +1454,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
          * with the pool reset. The scene segment is reopened regardless: the
          * rest of the frame must still have somewhere to record.
          */
-        std::fill(_chunkCmds.begin() + static_cast<std::ptrdiff_t>(firstChunkCmd), _chunkCmds.end(),
-                  VK_NULL_HANDLE);
+        std::fill(_chunkCmds.begin() + static_cast<std::ptrdiff_t>(firstChunkCmd), _chunkCmds.end(), VK_NULL_HANDLE);
         _sceneCmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
         VkCommandManager::beginSecondaryCommandBuffer(_sceneCmd, renderPass, framebuffer);
         _recorded.reset();
@@ -1487,8 +1468,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
 
 void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes, VkDeviceSize indexBytes)
 {
-    const VkSharingMode sharingMode =
-        _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode;
+    const VkSharingMode sharingMode = _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode;
 
     /*
      * Host-visible and persistently mapped: the batch is written once by the
@@ -1517,8 +1497,7 @@ void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes
 
         vertexBytes = std::max(vertexBytes, std::max<VkDeviceSize>(65536, _overlay2DVertexCapacity[frame] * 2));
         _overlay2DVertexBuffers[frame] = _memoryManager->createBuffer(
-            vertexBytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sharingMode,
-            VMA_MEMORY_USAGE_AUTO, kDynamicFlags);
+            vertexBytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sharingMode, VMA_MEMORY_USAGE_AUTO, kDynamicFlags);
         _overlay2DVertexCapacity[frame] = vertexBytes;
     }
 
@@ -1528,9 +1507,8 @@ void VulkanRenderer::ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes
             _overlay2DRetiredBuffers[frame].push_back(_overlay2DIndexBuffers[frame]);
 
         indexBytes = std::max(indexBytes, std::max<VkDeviceSize>(16384, _overlay2DIndexCapacity[frame] * 2));
-        _overlay2DIndexBuffers[frame] = _memoryManager->createBuffer(
-            indexBytes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, sharingMode,
-            VMA_MEMORY_USAGE_AUTO, kDynamicFlags);
+        _overlay2DIndexBuffers[frame] = _memoryManager->createBuffer(indexBytes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                                                     sharingMode, VMA_MEMORY_USAGE_AUTO, kDynamicFlags);
         _overlay2DIndexCapacity[frame] = indexBytes;
     }
 }
@@ -1553,7 +1531,7 @@ void VulkanRenderer::destroyOverlay2DBuffers()
 
         //! Anything a mid-frame grow orphaned is still owed a free: teardown is
         //! past every fence, so this is the last and safest chance to take it.
-        for (AllocatedBuffer& retired : _overlay2DRetiredBuffers[frame])
+        for (AllocatedBuffer &retired : _overlay2DRetiredBuffers[frame])
             _memoryManager->destroyBuffer(retired);
 
         _overlay2DRetiredBuffers[frame].clear();
@@ -1567,8 +1545,7 @@ void VulkanRenderer::destroyOverlay2DBuffers()
     }
 }
 
-void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
-                                 std::span<const u32> indices,
+void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
                                  TextureHandle texture)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
@@ -1606,18 +1583,20 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
 
     ensureOverlay2DCapacity(_currentFrame, vertexOffset + vertexBytes, indexOffset + indexBytes);
 
-    AllocatedBuffer& vertexBuffer = _overlay2DVertexBuffers[_currentFrame];
-    AllocatedBuffer& indexBuffer = _overlay2DIndexBuffers[_currentFrame];
+    AllocatedBuffer &vertexBuffer = _overlay2DVertexBuffers[_currentFrame];
+    AllocatedBuffer &indexBuffer = _overlay2DIndexBuffers[_currentFrame];
     if (!vertexBuffer.mappedData || !indexBuffer.mappedData)
         return;
 
-    std::memcpy(static_cast<u8*>(vertexBuffer.mappedData) + vertexOffset,
-                vertices.data(), static_cast<size_t>(vertexBytes));
-    std::memcpy(static_cast<u8*>(indexBuffer.mappedData) + indexOffset,
-                indices.data(), static_cast<size_t>(indexBytes));
+    std::memcpy(static_cast<u8 *>(vertexBuffer.mappedData) + vertexOffset, vertices.data(),
+                static_cast<size_t>(vertexBytes));
+    std::memcpy(static_cast<u8 *>(indexBuffer.mappedData) + indexOffset, indices.data(),
+                static_cast<size_t>(indexBytes));
 
-    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), vertexBuffer.allocation, vertexOffset, vertexBytes));
-    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), indexBuffer.allocation, indexOffset, indexBytes));
+    VK_RESULT_CHECK(
+        vmaFlushAllocation(_memoryManager->getAllocator(), vertexBuffer.allocation, vertexOffset, vertexBytes));
+    VK_RESULT_CHECK(
+        vmaFlushAllocation(_memoryManager->getAllocator(), indexBuffer.allocation, indexOffset, indexBytes));
 
     _overlay2DVertexUsed[_currentFrame] = vertexOffset + vertexBytes;
     _overlay2DIndexUsed[_currentFrame] = indexOffset + indexBytes;
@@ -1631,10 +1610,8 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     if (_overlayCmd == VK_NULL_HANDLE)
     {
         _overlayCmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
-        VkCommandManager::beginSecondaryCommandBuffer(
-            _overlayCmd,
-            *_vkRenderPassManager->getRenderPass(),
-            _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex]);
+        VkCommandManager::beginSecondaryCommandBuffer(_overlayCmd, *_vkRenderPassManager->getRenderPass(),
+                                                      _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex]);
         _overlayStateBound = false;
     }
 
@@ -1650,15 +1627,8 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     if (!_overlayStateBound)
     {
         _vkOverlay2DPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-        _vkOverlay2DPipelineManager->cmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            0,
-            1,
-            &_bindlessTextureSet2D,
-            0,
-            nullptr
-        );
+        _vkOverlay2DPipelineManager->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1,
+                                                           &_bindlessTextureSet2D, 0, nullptr);
         _overlayStateBound = true;
     }
 
@@ -1670,10 +1640,8 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
      * range is [0,1]; the actual depth is irrelevant with the test disabled.
      */
     Overlay2DPushConstants pushConstants;
-    pushConstants.projection = glm::orthoRH_ZO(
-        0.0f, static_cast<f32>(extent.width),
-        static_cast<f32>(extent.height), 0.0f,
-        0.0f, 1.0f);
+    pushConstants.projection =
+        glm::orthoRH_ZO(0.0f, static_cast<f32>(extent.width), static_cast<f32>(extent.height), 0.0f, 0.0f, 1.0f);
     pushConstants.textureIndex = textureArrayIndexOf(sampled);
 
     _vkOverlay2DPipelineManager->cmdPushConstants(cmd, &pushConstants);
@@ -1684,8 +1652,7 @@ void VulkanRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, indexOffset, VK_INDEX_TYPE_UINT32);
 
     //! The whole batch in one call -- the point of the exercise.
-    _vkOverlay2DPipelineManager->cmdIndexedDraw(
-        cmd, extent, static_cast<u32>(indices.size()), 1, 0, 0, 0);
+    _vkOverlay2DPipelineManager->cmdIndexedDraw(cmd, extent, static_cast<u32>(indices.size()), 1, 0, 0, 0);
 
     /*
      * _recorded is deliberately left alone. It tracks bindings in _sceneCmd,
@@ -1704,25 +1671,82 @@ void VulkanRenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
     _clearA = a;
 }
 
-wma::IWindowManager* VulkanRenderer::getWindowManager() { return _windowManagerApi.get(); }
-RendererChoice VulkanRenderer::getBackendType() const { return RendererChoice::VULKAN; }
-VkVertexBufferManager* VulkanRenderer::getVertexBufferManager() { return _vkVertexBufferManager.get(); }
-VkIndexBufferManager* VulkanRenderer::getIndexBufferManager() { return _vkIndexBufferManager.get(); }
-VkUniformBufferManager* VulkanRenderer::getUniformBufferManager() { return _vkUniformBufferManager.get(); }
-VkDescriptorManager* VulkanRenderer::getDescriptorManager() { return _vkDescriptorManager.get(); }
-VkGraphicsPipelineManager* VulkanRenderer::getGraphicsPipelineManager() { return _vkGraphicsPipelineManager.get(); }
-VkSwapChainManager* VulkanRenderer::getSwapChainManager() { return _vkSwapChainManager.get(); }
-VkRenderPassManager* VulkanRenderer::getRenderPassManager() { return _vkRenderPassManager.get(); }
-VkFrameBuffersManager* VulkanRenderer::getFrameBuffersManager() { return _vkFrameBuffersManager.get(); }
-VkCommandManager* VulkanRenderer::getCommandManager() { return _vkCommandManager.get(); }
-VkRenderSyncManager* VulkanRenderer::getRenderSyncManager() { return _vkRenderSyncManager.get(); }
-VkTextureManager* VulkanRenderer::getTextureManager() { return _vkTextureManager.get(); }
-VkDeviceManager* VulkanRenderer::getDeviceManager() { return _vkDeviceManager.get(); }
-VulkanMemoryManager* VulkanRenderer::getMemoryManager() { return _memoryManager.get(); }
-const std::vector<aura3d::vk::QueueData*>& VulkanRenderer::getQueues() const { return _queueDataFromExclusiveFlags; }
-VkFixedArray<VkCommandBuffer>& VulkanRenderer::getCommandBuffers() { return _cmdBuffers; }
-u32 VulkanRenderer::getCurrentFrame() const { return _currentFrame; }
-void VulkanRenderer::advanceFrame() { _currentFrame = (_currentFrame + 1) % GetMaxFramesInFlight(); }
+wma::IWindowManager *VulkanRenderer::getWindowManager()
+{
+    return _windowManagerApi.get();
+}
+RendererChoice VulkanRenderer::getBackendType() const
+{
+    return RendererChoice::VULKAN;
+}
+VkVertexBufferManager *VulkanRenderer::getVertexBufferManager()
+{
+    return _vkVertexBufferManager.get();
+}
+VkIndexBufferManager *VulkanRenderer::getIndexBufferManager()
+{
+    return _vkIndexBufferManager.get();
+}
+VkUniformBufferManager *VulkanRenderer::getUniformBufferManager()
+{
+    return _vkUniformBufferManager.get();
+}
+VkDescriptorManager *VulkanRenderer::getDescriptorManager()
+{
+    return _vkDescriptorManager.get();
+}
+VkGraphicsPipelineManager *VulkanRenderer::getGraphicsPipelineManager()
+{
+    return _vkGraphicsPipelineManager.get();
+}
+VkSwapChainManager *VulkanRenderer::getSwapChainManager()
+{
+    return _vkSwapChainManager.get();
+}
+VkRenderPassManager *VulkanRenderer::getRenderPassManager()
+{
+    return _vkRenderPassManager.get();
+}
+VkFrameBuffersManager *VulkanRenderer::getFrameBuffersManager()
+{
+    return _vkFrameBuffersManager.get();
+}
+VkCommandManager *VulkanRenderer::getCommandManager()
+{
+    return _vkCommandManager.get();
+}
+VkRenderSyncManager *VulkanRenderer::getRenderSyncManager()
+{
+    return _vkRenderSyncManager.get();
+}
+VkTextureManager *VulkanRenderer::getTextureManager()
+{
+    return _vkTextureManager.get();
+}
+VkDeviceManager *VulkanRenderer::getDeviceManager()
+{
+    return _vkDeviceManager.get();
+}
+VulkanMemoryManager *VulkanRenderer::getMemoryManager()
+{
+    return _memoryManager.get();
+}
+const std::vector<aura3d::vk::QueueData *> &VulkanRenderer::getQueues() const
+{
+    return _queueDataFromExclusiveFlags;
+}
+VkFixedArray<VkCommandBuffer> &VulkanRenderer::getCommandBuffers()
+{
+    return _cmdBuffers;
+}
+u32 VulkanRenderer::getCurrentFrame() const
+{
+    return _currentFrame;
+}
+void VulkanRenderer::advanceFrame()
+{
+    _currentFrame = (_currentFrame + 1) % GetMaxFramesInFlight();
+}
 
 } // namespace vk
 } // namespace aura3d

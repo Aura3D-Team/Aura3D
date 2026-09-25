@@ -8,9 +8,11 @@
 #include "aura/UI/Core/DrawList.h"
 #include "aura/UI/Text/TextEngine.h"
 
-namespace aura3d::ui::icon {
+namespace aura3d::ui::icon
+{
 
-namespace {
+namespace
+{
 
 //! Cells are square and small; the shape is drawn at the size the widget asks
 //! for, so a mask larger than this is a mask nobody can see the detail of.
@@ -24,9 +26,9 @@ constexpr u32 kMaxCell = 32;
  * would otherwise find no atlas at all, so asking for the default line height
  * places the page the same way the backend does.
  */
-[[nodiscard]] FontAtlas* iconPage(ITextShaper& shaper)
+[[nodiscard]] FontAtlas *iconPage(ITextShaper &shaper)
 {
-    if (FontAtlas* page = shaper.page(0))
+    if (FontAtlas *page = shaper.page(0))
         return page;
 
     (void)shaper.lineHeight(TextStyle{});
@@ -35,13 +37,13 @@ constexpr u32 kMaxCell = 32;
 
 } // namespace
 
-void convex(DrawList& out, ITextShaper& shaper, const Rect& bounds,
-            std::span<const glm::vec2> unitPolygon, u32 id, const glm::vec4& color)
+void convex(DrawList &out, ITextShaper &shaper, const Rect &bounds, std::span<const glm::vec2> unitPolygon, u32 id,
+            const glm::vec4 &color)
 {
     if (color.a <= 0.0f || bounds.empty() || unitPolygon.size() < 3)
         return;
 
-    FontAtlas* page = iconPage(shaper);
+    FontAtlas *page = iconPage(shaper);
     if (!page)
         return;
 
@@ -59,8 +61,7 @@ void convex(DrawList& out, ITextShaper& shaper, const Rect& bounds,
 
     //! The id folds in the cell size: the same shape at two sizes is two
     //! rasterizations, and sharing one cell between them would scale it.
-    const FontAtlas::UvRect* mask =
-        page->convexMask(id * (kMaxCell + 1) + cell, cell, {scaled.data(), count});
+    const FontAtlas::UvRect *mask = page->convexMask(id * (kMaxCell + 1) + cell, cell, {scaled.data(), count});
 
     if (!mask)
         return;
@@ -73,8 +74,7 @@ void convex(DrawList& out, ITextShaper& shaper, const Rect& bounds,
     out.drawMask(quad, 0, mask->min, mask->max, color);
 }
 
-void triangle(DrawList& out, ITextShaper& shaper, const Rect& bounds, Direction direction,
-              const glm::vec4& color)
+void triangle(DrawList &out, ITextShaper &shaper, const Rect &bounds, Direction direction, const glm::vec4 &color)
 {
     //! Inscribed in the unit cell, apex on the pointing side.
     static constexpr std::array<std::array<glm::vec2, 3>, 4> kShapes = {{

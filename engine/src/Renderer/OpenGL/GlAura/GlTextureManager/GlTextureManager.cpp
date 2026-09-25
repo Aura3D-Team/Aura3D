@@ -1,18 +1,23 @@
 #include "aura/Renderer/OpenGL/GlAura/GlTextureManager/GlTextureManager.h"
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
 GlTextureManager::GlTextureManager() = default;
-GlTextureManager::~GlTextureManager() { cleanup(); }
+GlTextureManager::~GlTextureManager()
+{
+    cleanup();
+}
 
 TextureHandle GlTextureManager::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 {
-    const u8 pixel[4] = { r, g, b, a };
+    const u8 pixel[4] = {r, g, b, a};
     return createTextureFromPixels(pixel, 1, 1, /*smooth=*/false);
 }
 
-TextureHandle GlTextureManager::createTextureFromPixels(const u8* rgba, u32 width, u32 height, bool smooth)
+TextureHandle GlTextureManager::createTextureFromPixels(const u8 *rgba, u32 width, u32 height, bool smooth)
 {
     if (!rgba || width == 0 || height == 0)
     {
@@ -31,9 +36,8 @@ TextureHandle GlTextureManager::createTextureFromPixels(const u8* rgba, u32 widt
     //! Rows are tightly packed; the default 4-byte unpack alignment would skew
     //! any image whose row length is not a multiple of 4.
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 static_cast<GLsizei>(width), static_cast<GLsizei>(height),
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, rgba);
 
     const GLint filter = smooth ? GL_LINEAR : GL_NEAREST;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
@@ -73,9 +77,8 @@ TextureHandle GlTextureManager::createDynamicTexture(u32 width, u32 height)
      * The contents are undefined until updateRegion() writes them, which is
      * exactly the glyph-atlas usage: reserve the sheet once, fill cells later.
      */
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                 static_cast<GLsizei>(width), static_cast<GLsizei>(height),
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, nullptr);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -91,7 +94,7 @@ TextureHandle GlTextureManager::createDynamicTexture(u32 width, u32 height)
     return handle;
 }
 
-void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8* rgba)
+void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgba)
 {
     if (!rgba || width == 0 || height == 0)
         return;
@@ -103,9 +106,8 @@ void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 widt
         return;
     }
 
-    const GlTextureData& data = it->second;
-    if (x > data.width || y > data.height ||
-        width > data.width - x || height > data.height - y)
+    const GlTextureData &data = it->second;
+    if (x > data.width || y > data.height || width > data.width - x || height > data.height - y)
     {
         INK_ERROR << "GlTextureManager: updateRegion rectangle exceeds the texture bounds";
         return;
@@ -113,10 +115,8 @@ void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 widt
 
     glBindTexture(GL_TEXTURE_2D, data.texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexSubImage2D(GL_TEXTURE_2D, 0,
-                    static_cast<GLint>(x), static_cast<GLint>(y),
-                    static_cast<GLsizei>(width), static_cast<GLsizei>(height),
-                    GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width),
+                    static_cast<GLsizei>(height), GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     glBindTexture(GL_TEXTURE_2D, 0);
     invalidateBindings();
 }
@@ -157,7 +157,7 @@ void GlTextureManager::bind(TextureHandle handle, GLuint unit)
     _boundToUnit[unit] = texture;
 }
 
-GlTextureData* GlTextureManager::get(TextureHandle handle)
+GlTextureData *GlTextureManager::get(TextureHandle handle)
 {
     auto it = _textures.find(handle);
     return (it != _textures.end()) ? &it->second : nullptr;
@@ -165,7 +165,8 @@ GlTextureData* GlTextureManager::get(TextureHandle handle)
 
 void GlTextureManager::cleanup()
 {
-    for (auto& [handle, data] : _textures) {
+    for (auto &[handle, data] : _textures)
+    {
         glDeleteTextures(1, &data.texture);
     }
     _textures.clear();

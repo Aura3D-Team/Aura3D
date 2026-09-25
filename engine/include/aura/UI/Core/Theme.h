@@ -29,7 +29,8 @@
  * @endcode
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /**
  * @brief Every component a @ref Theme styles separately.
@@ -38,7 +39,8 @@ namespace aura3d::ui {
  * TextField, and a scroll region's three surfaces are separable because a
  * theme routinely wants the viewport dark and the thumb bright.
  */
-enum class Part : u8 {
+enum class Part : u8
+{
     /// A layout node with no appearance of its own. Transparent in every
     /// palette, so a Column or a Grid draws nothing unless asked to.
     Container,
@@ -73,18 +75,22 @@ enum class Part : u8 {
  * Which of the three a widget calls "active" is the widget's business: a
  * button's is held, a text field's is focused, a header's is open.
  */
-struct ColorSet {
+struct ColorSet
+{
     glm::vec4 normal{0.0f};
     glm::vec4 hovered{0.0f};
     glm::vec4 active{0.0f};
 
-    [[nodiscard]] constexpr const glm::vec4& pick(bool isActive, bool isHovered) const noexcept
+    [[nodiscard]] constexpr const glm::vec4 &pick(bool isActive, bool isHovered) const noexcept
     {
         return isActive ? active : isHovered ? hovered : normal;
     }
 
     /// One colour in all three states, for surfaces that don't react.
-    [[nodiscard]] static ColorSet flat(const glm::vec4& color) { return {color, color, color}; }
+    [[nodiscard]] static ColorSet flat(const glm::vec4 &color)
+    {
+        return {color, color, color};
+    }
 };
 
 /**
@@ -94,7 +100,8 @@ struct ColorSet {
  * unbordered -- so a Part left untouched by a palette draws nothing rather
  * than something arbitrary.
  */
-struct WidgetStyle {
+struct WidgetStyle
+{
     ColorSet surface{}; //! Background fill, by interaction state.
     ColorSet border{};  //! Outline colour, by interaction state.
 
@@ -138,7 +145,8 @@ struct WidgetStyle {
  * The setters chain and return @c *this, so a temporary reads as one
  * expression. Assign the fields directly for anything they don't cover.
  */
-struct Style {
+struct Style
+{
     std::optional<ColorSet> surface{};
     std::optional<ColorSet> border{};
     std::optional<glm::vec4> text{};
@@ -155,34 +163,66 @@ struct Style {
     //! one costs this and no copy.
     [[nodiscard]] bool empty() const noexcept
     {
-        return !surface && !border && !text && !accent && !rounding && !borderWidth &&
-               !padding && !align && !height && !markScale && !markInset;
+        return !surface && !border && !text && !accent && !rounding && !borderWidth && !padding && !align && !height &&
+               !markScale && !markInset;
     }
 
     /// @p base with every field this patch sets replaced.
-    [[nodiscard]] WidgetStyle over(const WidgetStyle& base) const;
+    [[nodiscard]] WidgetStyle over(const WidgetStyle &base) const;
 
     /// @{
     /// Chainable setters. `fill` is the surface, `outline` the border.
-    Style& fill(const glm::vec4& color) { surface = ColorSet::flat(color); return *this; }
-    Style& fill(const ColorSet& colors) { surface = colors; return *this; }
+    Style &fill(const glm::vec4 &color)
+    {
+        surface = ColorSet::flat(color);
+        return *this;
+    }
+    Style &fill(const ColorSet &colors)
+    {
+        surface = colors;
+        return *this;
+    }
 
-    Style& outline(const glm::vec4& color, float width = 1.0f)
+    Style &outline(const glm::vec4 &color, float width = 1.0f)
     {
         border = ColorSet::flat(color);
         borderWidth = width;
         return *this;
     }
 
-    Style& textColor(const glm::vec4& color) { text = color; return *this; }
-    Style& accentColor(const glm::vec4& color) { accent = color; return *this; }
-    Style& rounded(float radius) { rounding = radius; return *this; }
-    Style& pad(float inset) { padding = inset; return *this; }
-    Style& alignText(Align to) { align = to; return *this; }
-    Style& rowHeight(float pixels) { height = pixels; return *this; }
+    Style &textColor(const glm::vec4 &color)
+    {
+        text = color;
+        return *this;
+    }
+    Style &accentColor(const glm::vec4 &color)
+    {
+        accent = color;
+        return *this;
+    }
+    Style &rounded(float radius)
+    {
+        rounding = radius;
+        return *this;
+    }
+    Style &pad(float inset)
+    {
+        padding = inset;
+        return *this;
+    }
+    Style &alignText(Align to)
+    {
+        align = to;
+        return *this;
+    }
+    Style &rowHeight(float pixels)
+    {
+        height = pixels;
+        return *this;
+    }
 
     //! Checkbox and radio only; see WidgetStyle::markScale.
-    Style& mark(float scale, float inset)
+    Style &mark(float scale, float inset)
     {
         markScale = scale;
         markInset = inset;
@@ -192,13 +232,14 @@ struct Style {
 };
 
 /// Layout every component shares. Pixels, unless said otherwise.
-struct Metrics {
-    float fontSize = 14.0f;    //! Default text size, in logical pixels.
-    float rowHeight = 22.0f;   //! Height of one widget row, unless its Part overrides it.
-    float itemSpacing = 4.0f;  //! Vertical gap between rows.
-    float padding = 8.0f;      //! Panel border to content, all four sides.
-    float indent = 12.0f;      //! Left inset added by each open treeNode().
-    float textScale = 1.0f;    //! Multiplier on the atlas rasterization size.
+struct Metrics
+{
+    float fontSize = 14.0f;   //! Default text size, in logical pixels.
+    float rowHeight = 22.0f;  //! Height of one widget row, unless its Part overrides it.
+    float itemSpacing = 4.0f; //! Vertical gap between rows.
+    float padding = 8.0f;     //! Panel border to content, all four sides.
+    float indent = 12.0f;     //! Left inset added by each open treeNode().
+    float textScale = 1.0f;   //! Multiplier on the atlas rasterization size.
     float scrollbarWidth = 10.0f;
     float disabledAlpha = 0.40f; //! Alpha multiplier applied inside beginDisabled().
 };
@@ -210,7 +251,8 @@ struct Metrics {
  * Theme::applyPalette(), which is the difference between restyling the UI and
  * editing a table.
  */
-struct Palette {
+struct Palette
+{
     glm::vec4 window{0.09f, 0.10f, 0.12f, 0.94f}; //! Panel body.
     glm::vec4 titleBar{0.16f, 0.18f, 0.22f, 1.00f};
     glm::vec4 surface{0.20f, 0.22f, 0.27f, 1.00f}; //! A control at rest.
@@ -239,32 +281,45 @@ struct Palette {
  * root.theme()[ui::Part::Button].height = 30.0f;
  * @endcode
  */
-class Theme {
-public:
+class Theme
+{
+  public:
     /// The engine's dark theme.
     Theme();
 
-    explicit Theme(const Palette& palette);
+    explicit Theme(const Palette &palette);
 
-    [[nodiscard]] static Theme dark() { return Theme{Palette::dark()}; }
-    [[nodiscard]] static Theme light() { return Theme{Palette::light()}; }
+    [[nodiscard]] static Theme dark()
+    {
+        return Theme{Palette::dark()};
+    }
+    [[nodiscard]] static Theme light()
+    {
+        return Theme{Palette::light()};
+    }
 
     /// Regenerates every Part from @p palette. Per-Part edits made before this
     /// are lost, which is the point: it re-establishes a coherent base.
-    Theme& applyPalette(const Palette& palette);
+    Theme &applyPalette(const Palette &palette);
 
-    [[nodiscard]] WidgetStyle& operator[](Part part) noexcept { return _parts[_index(part)]; }
-
-    [[nodiscard]] const WidgetStyle& operator[](Part part) const noexcept
+    [[nodiscard]] WidgetStyle &operator[](Part part) noexcept
     {
         return _parts[_index(part)];
     }
 
-    [[nodiscard]] const Palette& palette() const noexcept { return _palette; }
+    [[nodiscard]] const WidgetStyle &operator[](Part part) const noexcept
+    {
+        return _parts[_index(part)];
+    }
+
+    [[nodiscard]] const Palette &palette() const noexcept
+    {
+        return _palette;
+    }
 
     Metrics metrics{};
 
-private:
+  private:
     //! Clamped rather than asserted: operator[] is noexcept and on the path of
     //! every widget, and a bad Part is a caller's bug, not a reason to trap.
     [[nodiscard]] static constexpr size_t _index(Part part) noexcept
