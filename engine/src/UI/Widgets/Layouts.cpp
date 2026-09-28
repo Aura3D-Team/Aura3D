@@ -2,13 +2,16 @@
 
 #include <algorithm>
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 // =============================================================================
 // Box
 // =============================================================================
 
-Box::Box(Axis axis) : _axis(axis) {}
+Box::Box(Axis axis) : _axis(axis)
+{
+}
 
 void Box::setSpacing(f32 pixels)
 {
@@ -28,12 +31,12 @@ void Box::setMainAlignment(Alignment alignment)
     invalidateLayout();
 }
 
-const Length& Box::_mainLength(const Widget& child) const noexcept
+const Length &Box::_mainLength(const Widget &child) const noexcept
 {
     return _axis == Axis::Horizontal ? child.layout().width : child.layout().height;
 }
 
-glm::vec2 Box::measureContent(const Constraints& available)
+glm::vec2 Box::measureContent(const Constraints &available)
 {
     _base.assign(childCount(), 0.0f);
 
@@ -52,7 +55,7 @@ glm::vec2 Box::measureContent(const Constraints& available)
 
     for (usize i = 0; i < childCount(); ++i)
     {
-        Widget& child = childAt(i);
+        Widget &child = childAt(i);
         if (child.visibility() == Visibility::Collapsed)
             continue;
 
@@ -70,7 +73,7 @@ glm::vec2 Box::measureContent(const Constraints& available)
     return fromAxes(_axis, main, cross);
 }
 
-void Box::arrangeContent(const Rect& content)
+void Box::arrangeContent(const Rect &content)
 {
     //! measureContent() fills _base and always runs first in a normal pass;
     //! the guard is for a container arranged without one, where a stale cache
@@ -86,13 +89,13 @@ void Box::arrangeContent(const Rect& content)
 
     for (usize i = 0; i < childCount(); ++i)
     {
-        const Widget& child = childAt(i);
+        const Widget &child = childAt(i);
         if (child.visibility() == Visibility::Collapsed)
             continue;
 
         ++laidOut;
 
-        const Length& length = _mainLength(child);
+        const Length &length = _mainLength(child);
         if (length.isFill())
             weight += length.value;
         else
@@ -110,14 +113,14 @@ void Box::arrangeContent(const Rect& content)
 
     for (usize i = 0; i < childCount(); ++i)
     {
-        Widget& child = childAt(i);
+        Widget &child = childAt(i);
         if (child.visibility() == Visibility::Collapsed)
         {
             child.arrange(Rect{});
             continue;
         }
 
-        const Length& length = _mainLength(child);
+        const Length &length = _mainLength(child);
         const f32 size = length.isFill() ? leftover * (length.value / weight) : _base[i];
 
         const glm::vec2 origin = fromAxes(_axis, cursor, across(_axis, content.min));
@@ -171,21 +174,21 @@ void Grid::setRowSpacing(f32 pixels)
     invalidateLayout();
 }
 
-usize Grid::_trackCount(const std::vector<Length>& tracks, usize used) noexcept
+usize Grid::_trackCount(const std::vector<Length> &tracks, usize used) noexcept
 {
     //! A child placed past the declared tracks extends the grid with Auto
     //! ones, so a form does not have to declare its row count up front.
     return std::max(tracks.size(), used);
 }
 
-void Grid::_resolveTracks(const Constraints& available)
+void Grid::_resolveTracks(const Constraints &available)
 {
     usize columns = 0;
     usize rows = 0;
 
     for (usize i = 0; i < childCount(); ++i)
     {
-        const GridCell& cell = childAt(i).layout().cell;
+        const GridCell &cell = childAt(i).layout().cell;
         columns = std::max<usize>(columns, static_cast<usize>(cell.column) + cell.columnSpan);
         rows = std::max<usize>(rows, static_cast<usize>(cell.row) + cell.rowSpan);
     }
@@ -196,7 +199,8 @@ void Grid::_resolveTracks(const Constraints& available)
     _columnSizes.assign(columns, 0.0f);
     _rowSizes.assign(rows, 0.0f);
 
-    const auto trackAt = [](const std::vector<Length>& tracks, usize index) {
+    const auto trackAt = [](const std::vector<Length> &tracks, usize index)
+    {
         return index < tracks.size() ? tracks[index] : Length::automatic();
     };
 
@@ -229,11 +233,11 @@ void Grid::_resolveTracks(const Constraints& available)
 
     for (usize i = 0; i < childCount(); ++i)
     {
-        Widget& child = childAt(i);
+        Widget &child = childAt(i);
         if (child.visibility() == Visibility::Collapsed)
             continue;
 
-        const GridCell& cell = child.layout().cell;
+        const GridCell &cell = child.layout().cell;
         if (cell.column >= columns || cell.row >= rows)
             continue;
 
@@ -256,8 +260,7 @@ void Grid::_resolveTracks(const Constraints& available)
     }
 }
 
-void Grid::_distribute(std::vector<f32>& sizes, const std::vector<Length>& tracks, f32 available,
-                       f32 spacing) const
+void Grid::_distribute(std::vector<f32> &sizes, const std::vector<Length> &tracks, f32 available, f32 spacing) const
 {
     f32 used = 0.0f;
     f32 weight = 0.0f;
@@ -286,11 +289,12 @@ void Grid::_distribute(std::vector<f32>& sizes, const std::vector<Length>& track
     }
 }
 
-glm::vec2 Grid::measureContent(const Constraints& available)
+glm::vec2 Grid::measureContent(const Constraints &available)
 {
     _resolveTracks(available);
 
-    const auto total = [](const std::vector<f32>& sizes, f32 spacing) {
+    const auto total = [](const std::vector<f32> &sizes, f32 spacing)
+    {
         f32 sum = 0.0f;
         for (const f32 size : sizes)
             sum += size;
@@ -301,12 +305,13 @@ glm::vec2 Grid::measureContent(const Constraints& available)
     return {total(_columnSizes, _columnSpacing), total(_rowSizes, _rowSpacing)};
 }
 
-void Grid::arrangeContent(const Rect& content)
+void Grid::arrangeContent(const Rect &content)
 {
     _distribute(_columnSizes, _columns, content.width(), _columnSpacing);
     _distribute(_rowSizes, _rows, content.height(), _rowSpacing);
 
-    const auto offsetOf = [](const std::vector<f32>& sizes, usize index, f32 spacing) {
+    const auto offsetOf = [](const std::vector<f32> &sizes, usize index, f32 spacing)
+    {
         f32 offset = 0.0f;
         for (usize i = 0; i < index && i < sizes.size(); ++i)
             offset += sizes[i] + spacing;
@@ -314,7 +319,8 @@ void Grid::arrangeContent(const Rect& content)
         return offset;
     };
 
-    const auto extentOf = [](const std::vector<f32>& sizes, usize first, usize span, f32 spacing) {
+    const auto extentOf = [](const std::vector<f32> &sizes, usize first, usize span, f32 spacing)
+    {
         f32 extent = 0.0f;
         for (usize i = first; i < first + span && i < sizes.size(); ++i)
             extent += sizes[i] + spacing;
@@ -324,22 +330,20 @@ void Grid::arrangeContent(const Rect& content)
 
     for (usize i = 0; i < childCount(); ++i)
     {
-        Widget& child = childAt(i);
+        Widget &child = childAt(i);
         if (child.visibility() == Visibility::Collapsed)
         {
             child.arrange(Rect{});
             continue;
         }
 
-        const GridCell& cell = child.layout().cell;
+        const GridCell &cell = child.layout().cell;
 
-        const glm::vec2 origin{
-            content.min.x + offsetOf(_columnSizes, cell.column, _columnSpacing),
-            content.min.y + offsetOf(_rowSizes, cell.row, _rowSpacing)};
+        const glm::vec2 origin{content.min.x + offsetOf(_columnSizes, cell.column, _columnSpacing),
+                               content.min.y + offsetOf(_rowSizes, cell.row, _rowSpacing)};
 
-        const glm::vec2 size{
-            extentOf(_columnSizes, cell.column, std::max<u16>(1, cell.columnSpan), _columnSpacing),
-            extentOf(_rowSizes, cell.row, std::max<u16>(1, cell.rowSpan), _rowSpacing)};
+        const glm::vec2 size{extentOf(_columnSizes, cell.column, std::max<u16>(1, cell.columnSpan), _columnSpacing),
+                             extentOf(_rowSizes, cell.row, std::max<u16>(1, cell.rowSpan), _rowSpacing)};
 
         child.arrange(Rect::fromSize(origin, size));
     }
@@ -360,7 +364,7 @@ Spacer::Spacer(f32 pixels) : _pixels(std::max(0.0f, pixels))
     layout().height = Length::fill();
 }
 
-glm::vec2 Spacer::measureContent(const Constraints&)
+glm::vec2 Spacer::measureContent(const Constraints &)
 {
     if (_pixels <= 0.0f)
         return {0.0f, 0.0f};
@@ -380,7 +384,7 @@ ScrollView::ScrollView()
     _part = Part::ScrollView;
 }
 
-Widget& ScrollView::setContent(std::unique_ptr<Widget> content)
+Widget &ScrollView::setContent(std::unique_ptr<Widget> content)
 {
     clearChildren();
     return adopt(std::move(content));
@@ -431,9 +435,9 @@ glm::vec2 ScrollView::maxOffset() const noexcept
     return {_horizontal ? limit.x : 0.0f, _vertical ? limit.y : 0.0f};
 }
 
-glm::vec2 ScrollView::measureContent(const Constraints& available)
+glm::vec2 ScrollView::measureContent(const Constraints &available)
 {
-    Widget* content = _content();
+    Widget *content = _content();
     if (!content)
     {
         _contentSize = {0.0f, 0.0f};
@@ -455,11 +459,11 @@ glm::vec2 ScrollView::measureContent(const Constraints& available)
     return {_horizontal ? 0.0f : _contentSize.x, _vertical ? 0.0f : _contentSize.y};
 }
 
-void ScrollView::arrangeContent(const Rect& content)
+void ScrollView::arrangeContent(const Rect &content)
 {
     _viewportSize = content.size();
 
-    Widget* child = _content();
+    Widget *child = _content();
     if (!child)
     {
         _offset.reset({0.0f, 0.0f});
@@ -471,12 +475,10 @@ void ScrollView::arrangeContent(const Rect& content)
 
     if (clamped != _offset.value())
         _offset.reset(clamped);
-    else if (const auto target = glm::clamp(_offset.target(), glm::vec2{0.0f}, limit);
-             target != _offset.target())
+    else if (const auto target = glm::clamp(_offset.target(), glm::vec2{0.0f}, limit); target != _offset.target())
         _offset.to(target, 0.12f);
 
-    const glm::vec2 size{_horizontal ? _contentSize.x : content.width(),
-                         _vertical ? _contentSize.y : content.height()};
+    const glm::vec2 size{_horizontal ? _contentSize.x : content.width(), _vertical ? _contentSize.y : content.height()};
 
     child->arrange(Rect::fromSize(content.min - _offset.value(), size));
 }
@@ -501,11 +503,17 @@ void ScrollView::_setOffset(glm::vec2 offset, bool animate)
     invalidateLayout();
 }
 
-void ScrollView::scrollTo(glm::vec2 offset) { _setOffset(offset, false); }
+void ScrollView::scrollTo(glm::vec2 offset)
+{
+    _setOffset(offset, false);
+}
 
-void ScrollView::scrollBy(glm::vec2 delta) { _setOffset(_offset.target() + delta, true); }
+void ScrollView::scrollBy(glm::vec2 delta)
+{
+    _setOffset(_offset.target() + delta, true);
+}
 
-void ScrollView::scrollIntoView(const Rect& rect)
+void ScrollView::scrollIntoView(const Rect &rect)
 {
     const Rect viewport = contentRect();
 
@@ -532,7 +540,7 @@ bool ScrollView::onTick(f32 deltaSeconds)
     return running;
 }
 
-bool ScrollView::onWheel(const WheelEvent& event)
+bool ScrollView::onWheel(const WheelEvent &event)
 {
     const f32 step = theme().metrics.rowHeight * 3.0f;
 
@@ -548,10 +556,8 @@ bool ScrollView::onWheel(const WheelEvent& event)
 
     //! Declined at the end of travel so the parent scroll view takes over,
     //! rather than the inner one swallowing every notch.
-    const bool canScroll = (delta.x < 0.0f && target.x > 0.0f) ||
-                           (delta.x > 0.0f && target.x < limit.x) ||
-                           (delta.y < 0.0f && target.y > 0.0f) ||
-                           (delta.y > 0.0f && target.y < limit.y);
+    const bool canScroll = (delta.x < 0.0f && target.x > 0.0f) || (delta.x > 0.0f && target.x < limit.x) ||
+                           (delta.y < 0.0f && target.y > 0.0f) || (delta.y > 0.0f && target.y < limit.y);
 
     if (!canScroll)
         return false;
@@ -577,11 +583,10 @@ ScrollView::Bar ScrollView::_bar(Axis axis) const
 
     const Rect inner = deflate(bounds(), layout().padding);
 
-    bar.track = axis == Axis::Vertical
-                    ? Rect{{inner.max.x - gutter, inner.min.y},
-                           {inner.max.x, inner.max.y - (_horizontal ? gutter : 0.0f)}}
-                    : Rect{{inner.min.x, inner.max.y - gutter},
-                           {inner.max.x - (_vertical ? gutter : 0.0f), inner.max.y}};
+    bar.track =
+        axis == Axis::Vertical
+            ? Rect{{inner.max.x - gutter, inner.min.y}, {inner.max.x, inner.max.y - (_horizontal ? gutter : 0.0f)}}
+            : Rect{{inner.min.x, inner.max.y - gutter}, {inner.max.x - (_vertical ? gutter : 0.0f), inner.max.y}};
 
     const f32 trackExtent = along(axis, bar.track.size());
     const f32 thumbExtent = std::min(trackExtent, std::max(gutter * 2.0f, trackExtent * (viewport / content)));
@@ -591,19 +596,19 @@ ScrollView::Bar ScrollView::_bar(Axis axis) const
 
     const f32 start = along(axis, bar.track.min) + travel * std::clamp(progress, 0.0f, 1.0f);
 
-    bar.thumb = axis == Axis::Vertical
-                    ? Rect{{bar.track.min.x, start}, {bar.track.max.x, start + thumbExtent}}
-                    : Rect{{start, bar.track.min.y}, {start + thumbExtent, bar.track.max.y}};
+    bar.thumb = axis == Axis::Vertical ? Rect{{bar.track.min.x, start}, {bar.track.max.x, start + thumbExtent}}
+                                       : Rect{{start, bar.track.min.y}, {start + thumbExtent, bar.track.max.y}};
 
     bar.active = true;
     return bar;
 }
 
-void ScrollView::paintChildren(DrawList& out)
+void ScrollView::paintChildren(DrawList &out)
 {
     Widget::paintChildren(out);
 
-    const auto paintBar = [this, &out](Axis axis) {
+    const auto paintBar = [this, &out](Axis axis)
+    {
         const Bar bar = _bar(axis);
         if (!bar.active)
             return;
@@ -614,8 +619,7 @@ void ScrollView::paintChildren(DrawList& out)
         const bool dragging = _dragActive && _dragging == axis;
 
         out.fillRect(bar.track, track.surface.normal, Corners::all(track.rounding));
-        out.fillRect(bar.thumb, thumb.surface.pick(dragging, isHovered()),
-                     Corners::all(thumb.rounding));
+        out.fillRect(bar.thumb, thumb.surface.pick(dragging, isHovered()), Corners::all(thumb.rounding));
     };
 
     /*
@@ -629,7 +633,7 @@ void ScrollView::paintChildren(DrawList& out)
     out.pushClip(contentRect());
 }
 
-bool ScrollView::onPointerDown(const PointerEvent& event)
+bool ScrollView::onPointerDown(const PointerEvent &event)
 {
     if (event.button != PointerButton::Left)
         return false;
@@ -665,7 +669,7 @@ bool ScrollView::onPointerDown(const PointerEvent& event)
     return false;
 }
 
-bool ScrollView::onPointerMove(const PointerEvent& event)
+bool ScrollView::onPointerMove(const PointerEvent &event)
 {
     if (!_dragActive || !hasPointerCapture())
         return false;
@@ -696,7 +700,7 @@ bool ScrollView::onPointerMove(const PointerEvent& event)
     return true;
 }
 
-bool ScrollView::onPointerUp(const PointerEvent& event)
+bool ScrollView::onPointerUp(const PointerEvent &event)
 {
     if (!_dragActive || event.button != PointerButton::Left)
         return false;
@@ -707,7 +711,7 @@ bool ScrollView::onPointerUp(const PointerEvent& event)
     return true;
 }
 
-void ScrollView::accessibility(AccessibilityInfo& out) const
+void ScrollView::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
     out.role = Role::ScrollView;

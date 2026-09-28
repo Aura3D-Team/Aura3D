@@ -33,11 +33,13 @@
  *    tree re-recorded; an idle UI re-submits the buffers it already has.
  */
 
-namespace aura3d {
+namespace aura3d
+{
 class IRenderer;
 } // namespace aura3d
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 class ITextShaper;
 
@@ -48,13 +50,14 @@ class ITextShaper;
  * @note Owns one dynamic texture per glyph page. Both the renderer and the
  *       shaper must outlive it.
  */
-class DrawListRenderer {
-public:
-    DrawListRenderer(IRenderer& renderer, ITextShaper& shaper);
+class DrawListRenderer
+{
+  public:
+    DrawListRenderer(IRenderer &renderer, ITextShaper &shaper);
     ~DrawListRenderer();
 
-    DrawListRenderer(const DrawListRenderer&) = delete;
-    DrawListRenderer& operator=(const DrawListRenderer&) = delete;
+    DrawListRenderer(const DrawListRenderer &) = delete;
+    DrawListRenderer &operator=(const DrawListRenderer &) = delete;
 
     /**
      * @brief Rebuilds the vertex data for @p list.
@@ -62,7 +65,7 @@ public:
      * @param scale Device-pixel ratio. Positions are multiplied by it here and
      *        nowhere else, which is what keeps layout DPI-independent.
      */
-    void build(const DrawList& list, f32 scale = 1.0f);
+    void build(const DrawList &list, f32 scale = 1.0f);
 
     /// Submits what the last build() produced. Call between beginRenderPass()
     /// and endRenderPass(), after the scene.
@@ -72,13 +75,20 @@ public:
     /// What the last build() produced. The batch count is the draw call count,
     /// and the reason it is exposed: a change that quietly broke atlas sharing
     /// would still look correct on screen.
-    [[nodiscard]] usize batchCount() const noexcept { return _batches.size(); }
-    [[nodiscard]] usize quadCount() const noexcept { return _quads; }
+    [[nodiscard]] usize batchCount() const noexcept
+    {
+        return _batches.size();
+    }
+    [[nodiscard]] usize quadCount() const noexcept
+    {
+        return _quads;
+    }
     /// @}
 
-private:
+  private:
     /// One contiguous run of quads that share a texture.
-    struct Batch {
+    struct Batch
+    {
         u32 firstQuad = 0;
         u32 quadCount = 0;
         TextureHandle texture{};
@@ -106,27 +116,24 @@ private:
     /// @{
     /// Emission. Every path funnels into _quad(), which is the one place
     /// clipping, scaling and vertex writing happen.
-    void _quad(const Rect& bounds, const Rect& clip, glm::vec2 uvMin, glm::vec2 uvMax,
-               const glm::vec4& color);
+    void _quad(const Rect &bounds, const Rect &clip, glm::vec2 uvMin, glm::vec2 uvMax, const glm::vec4 &color);
 
-    void _solid(const Rect& bounds, const Rect& clip, const glm::vec4& color);
+    void _solid(const Rect &bounds, const Rect &clip, const glm::vec4 &color);
 
-    void _roundedRect(const Rect& bounds, const Rect& clip, Corners radius,
-                      const glm::vec4& color);
-    void _roundedBorder(const Rect& bounds, const Rect& clip, Corners radius,
-                        f32 width, const glm::vec4& color);
+    void _roundedRect(const Rect &bounds, const Rect &clip, Corners radius, const glm::vec4 &color);
+    void _roundedBorder(const Rect &bounds, const Rect &clip, Corners radius, f32 width, const glm::vec4 &color);
 
-    void _text(const DrawCommand& command);
+    void _text(const DrawCommand &command);
     /// @}
 
     /// Four vertices for the next quad, growing the buffer if it is full.
-    [[nodiscard]] gfx::Vertex2D* _quadSlot();
+    [[nodiscard]] gfx::Vertex2D *_quadSlot();
 
     /// Grows the shared index buffer to cover @p quads, if it does not already.
     void _reserveIndices(usize quads);
 
-    IRenderer* _renderer = nullptr;
-    ITextShaper* _shaper = nullptr;
+    IRenderer *_renderer = nullptr;
+    ITextShaper *_shaper = nullptr;
 
     //! One dynamic texture per glyph page, parallel to the shaper's pages.
     std::vector<TextureHandle> _pageTextures;

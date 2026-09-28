@@ -19,8 +19,10 @@
  * data (@c gfx::Vertex3D, @c gfx::TransformUBO) this operates on.
  */
 
-namespace aura3d {
-namespace gfx {
+namespace aura3d
+{
+namespace gfx
+{
 
 /**
  * @brief The matrix that carries a normal through @p model without shearing it.
@@ -30,7 +32,7 @@ namespace gfx {
  * inverse + transpose. A non-invertible @p model (zero scale) yields the
  * identity rather than infinities.
  */
-[[nodiscard]] inline glm::mat3 normalMatrixOf(const glm::mat4& model) noexcept
+[[nodiscard]] inline glm::mat3 normalMatrixOf(const glm::mat4 &model) noexcept
 {
     const glm::vec3 c0(model[0]);
     const glm::vec3 c1(model[1]);

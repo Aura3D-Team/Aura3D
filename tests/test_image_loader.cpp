@@ -7,9 +7,10 @@
 
 using namespace aura3d;
 
-namespace {
+namespace
+{
 
-std::string assetPath(const std::string& name)
+std::string assetPath(const std::string &name)
 {
     return std::string(AURA_TEST_ASSETS_DIR) + "/" + name;
 }
@@ -17,7 +18,7 @@ std::string assetPath(const std::string& name)
 // tests/assets/valid_texture.png is a hand-built 2x2 RGBA PNG (see
 // scripts used to generate it) with one exact, known color per texel,
 // row-major top-to-bottom: (0,0)=red (1,0)=green / (0,1)=blue (1,1)=white.
-std::array<u8, 4> pixelAt(const ImageData& image, u32 x, u32 y)
+std::array<u8, 4> pixelAt(const ImageData &image, u32 x, u32 y)
 {
     const size_t i = (static_cast<size_t>(y) * image.width + x) * 4;
     return {image.pixels[i], image.pixels[i + 1], image.pixels[i + 2], image.pixels[i + 3]};
@@ -56,15 +57,20 @@ void test_make_checkerboard_defaults()
 
     // Default fallback colors: opaque magenta (r0,g0,b0), then black (r1,g1,b1).
     AURA_CHECK((pixelAt(image, 0, 0) == std::array<u8, 4>{255, 0, 255, 255}),
-              "makeCheckerboard: top-left texel is opaque magenta by default");
+               "makeCheckerboard: top-left texel is opaque magenta by default");
 
     // 64px / 8 cells = 8px per cell, so the cell at x=8 must have flipped color.
     AURA_CHECK((pixelAt(image, 8, 0) == std::array<u8, 4>{0, 0, 0, 255}),
-              "makeCheckerboard: the adjacent cell alternates to the second color");
+               "makeCheckerboard: the adjacent cell alternates to the second color");
 
     bool allOpaque = true;
-    for (size_t i = 3; i < image.pixels.size(); i += 4) {
-        if (image.pixels[i] != 255) { allOpaque = false; break; }
+    for (size_t i = 3; i < image.pixels.size(); i += 4)
+    {
+        if (image.pixels[i] != 255)
+        {
+            allOpaque = false;
+            break;
+        }
     }
     AURA_CHECK(allOpaque, "makeCheckerboard: alpha channel is fully opaque everywhere");
 }
@@ -85,7 +91,7 @@ void test_make_checkerboard_custom_colors()
 
     AURA_CHECK(image.width == 16 && image.height == 16, "makeCheckerboard: honors an explicit size");
     AURA_CHECK((pixelAt(image, 0, 0) == std::array<u8, 4>{10, 20, 30, 255}),
-              "makeCheckerboard: honors a custom first color");
+               "makeCheckerboard: honors a custom first color");
 }
 
 } // namespace

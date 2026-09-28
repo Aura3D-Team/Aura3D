@@ -2,16 +2,17 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Core/JobSystem/JobSystem.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace cpu {
+namespace aura3d
+{
+namespace cpu
+{
 
-CPURenderer::CPURenderer(const wma::WindowDetails& windowDetails) :
-    IRenderer(windowDetails)
+CPURenderer::CPURenderer(const wma::WindowDetails &windowDetails) : IRenderer(windowDetails)
 {
     INK_INFO << "Renderer - SOFTWARE";
 }
@@ -21,7 +22,7 @@ CPURenderer::~CPURenderer()
     cleanup();
 }
 
-void CPURenderer::initialize(aura3d::AuraSettings* settings, const JobSystem* jobs)
+void CPURenderer::initialize(aura3d::AuraSettings *settings, const JobSystem *jobs)
 {
     _vertexBufferPool3d.reserve(256);
     _indexBufferPool.reserve(256);
@@ -36,29 +37,28 @@ void CPURenderer::initialize(aura3d::AuraSettings* settings, const JobSystem* jo
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
 }
 
-void CPURenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
+void CPURenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)
 {
-    _windowManagerApi = makeWindow(
-        wBackend, _windowDetails, wma::GraphicsAPI::CPU);
+    _windowManagerApi = makeWindow(wBackend, _windowDetails, wma::GraphicsAPI::CPU);
     _windowManagerApi->createWindow(title);
 
     CpuFrameBufferManager::Config cfg;
-    cfg.width  = _windowDetails.width;
+    cfg.width = _windowDetails.width;
     cfg.height = _windowDetails.height;
     cfg.useDepthBuffer = true;
 
     _frameBufferManager = std::make_unique<CpuFrameBufferManager>(*_windowManagerApi, cfg, *_jobs);
 
-    INK_INFO << "CPURenderer: rasterising across "
-             << _frameBufferManager->getWorkerCount() << " worker thread(s) (shared engine pool)";
+    INK_INFO << "CPURenderer: rasterising across " << _frameBufferManager->getWorkerCount()
+             << " worker thread(s) (shared engine pool)";
 }
 
 void CPURenderer::handleWindowChanges()
 {
-    if (!_frameBufferManager) 
+    if (!_frameBufferManager)
         return;
-    
-    auto* wd = _windowManagerApi->getWindowDetails();
+
+    auto *wd = _windowManagerApi->getWindowDetails();
     _frameBufferManager->resizeFramebuffer(wd->width, wd->height);
 }
 
@@ -74,13 +74,13 @@ void CPURenderer::cleanup()
 
 //! Pools are indexed 0-based but handles are 1-based, so that no valid handle
 //! collides with the invalid-handle sentinel, and 0 stays reserved as "nothing bound".
-VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
+VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices)
 {
     _vertexBufferPool3d.push_back(std::move(vertices));
     return static_cast<VertexBufferHandle>(_vertexBufferPool3d.size());
 }
 
-IndexBufferHandle CPURenderer::createIndexBuffer(std::vector<u16>&& indices)
+IndexBufferHandle CPURenderer::createIndexBuffer(std::vector<u16> &&indices)
 {
     std::vector<u32> up;
     up.reserve(indices.size());
@@ -90,7 +90,7 @@ IndexBufferHandle CPURenderer::createIndexBuffer(std::vector<u16>&& indices)
     return static_cast<IndexBufferHandle>(_indexBufferPool.size());
 }
 
-IndexBufferHandle CPURenderer::createIndexBuffer(std::vector<u32>&& indices)
+IndexBufferHandle CPURenderer::createIndexBuffer(std::vector<u32> &&indices)
 {
     _indexBufferPool.push_back(std::move(indices));
     return static_cast<IndexBufferHandle>(_indexBufferPool.size());
@@ -98,11 +98,11 @@ IndexBufferHandle CPURenderer::createIndexBuffer(std::vector<u32>&& indices)
 
 TextureHandle CPURenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 {
-    const u8 pixel[4] = { r, g, b, a };
+    const u8 pixel[4] = {r, g, b, a};
     return createTextureFromPixels(pixel, 1, 1);
 }
 
-TextureHandle CPURenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
+TextureHandle CPURenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height)
 {
     if (!rgbaPixels || width == 0 || height == 0)
     {
@@ -114,22 +114,20 @@ TextureHandle CPURenderer::createTextureFromPixels(const u8* rgbaPixels, u32 wid
 
     //! Repack RGBA8 into the ARGB8888 words the framebuffer samples.
     const size_t texelCount = static_cast<size_t>(width) * height;
-    for (size_t i = 0; i < texelCount; ++i) 
+    for (size_t i = 0; i < texelCount; ++i)
     {
         const u8 r = rgbaPixels[i * 4 + 0];
         const u8 g = rgbaPixels[i * 4 + 1];
         const u8 b = rgbaPixels[i * 4 + 2];
         const u8 a = rgbaPixels[i * 4 + 3];
 
-        tex.data[i] = (static_cast<u32>(a) << 24)
-                    | (static_cast<u32>(r) << 16)
-                    | (static_cast<u32>(g) <<  8)
-                    |  static_cast<u32>(b);
+        tex.data[i] = (static_cast<u32>(a) << 24) | (static_cast<u32>(r) << 16) | (static_cast<u32>(g) << 8) |
+                      static_cast<u32>(b);
     }
 
     //! Textures are stored as mip-level vectors.
     //! Handle is 1-based so that no valid handle collides with the invalid-handle sentinel.
-    _texturePool.push_back({ std::move(tex) });
+    _texturePool.push_back({std::move(tex)});
     return static_cast<TextureHandle>(_texturePool.size()); // 1-based
 }
 
@@ -143,12 +141,11 @@ TextureHandle CPURenderer::createDynamicTexture(u32 width, u32 height)
 
     //! Texture's constructor zero-fills, i.e. transparent black.
     Texture tex(static_cast<int>(width), static_cast<int>(height));
-    _texturePool.push_back({ std::move(tex) });
+    _texturePool.push_back({std::move(tex)});
     return static_cast<TextureHandle>(_texturePool.size()); // 1-based
 }
 
-void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
-                                      u32 width, u32 height, const u8* rgbaPixels)
+void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels)
 {
     if (!rgbaPixels || width == 0 || height == 0)
         return;
@@ -159,12 +156,13 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
         return;
     }
 
-    auto& mips = _texturePool[handle.value() - 1];
+    auto &mips = _texturePool[handle.value() - 1];
     if (mips.empty())
         return;
 
-    Texture& tex = mips[0];
-    if (x + width > static_cast<u32>(tex.width) || y + height > static_cast<u32>(tex.height))
+    Texture &tex = mips[0];
+    if (x > static_cast<u32>(tex.width) || y > static_cast<u32>(tex.height) ||
+        width > static_cast<u32>(tex.width) - x || height > static_cast<u32>(tex.height) - y)
     {
         INK_ERROR << "CPURenderer: updateTextureRegion rectangle exceeds the texture bounds";
         return;
@@ -173,15 +171,13 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
     //! Repack RGBA8 rows into the ARGB8888 words the framebuffer samples.
     for (u32 row = 0; row < height; ++row)
     {
-        const u8* src = rgbaPixels + static_cast<size_t>(row) * width * 4;
-        u32* dst = tex.data.data() + static_cast<size_t>(y + row) * tex.width + x;
+        const u8 *src = rgbaPixels + static_cast<size_t>(row) * width * 4;
+        u32 *dst = tex.data.data() + static_cast<size_t>(y + row) * tex.width + x;
 
         for (u32 col = 0; col < width; ++col)
         {
-            dst[col] = (static_cast<u32>(src[col * 4 + 3]) << 24)
-                     | (static_cast<u32>(src[col * 4 + 0]) << 16)
-                     | (static_cast<u32>(src[col * 4 + 1]) <<  8)
-                     |  static_cast<u32>(src[col * 4 + 2]);
+            dst[col] = (static_cast<u32>(src[col * 4 + 3]) << 24) | (static_cast<u32>(src[col * 4 + 0]) << 16) |
+                       (static_cast<u32>(src[col * 4 + 1]) << 8) | static_cast<u32>(src[col * 4 + 2]);
         }
     }
 }
@@ -226,7 +222,7 @@ void CPURenderer::endFrame()
         AURA_FRAME_SCOPE(FramePhase::Present);
 
         if (_frameBufferManager)
-            _frameBufferManager->renderFramebuffer();
+            _presentDropped = !_frameBufferManager->renderFramebuffer();
     }
 
     //! Braced above so the present scope has closed before the frame does.
@@ -239,13 +235,11 @@ void CPURenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
     const u8 lg = static_cast<u8>(g * 255.0f);
     const u8 lb = static_cast<u8>(b * 255.0f);
     const u8 la = static_cast<u8>(a * 255.0f);
-    _clearColorU32 = (static_cast<u32>(la) << 24)
-                   | (static_cast<u32>(lr) << 16)
-                   | (static_cast<u32>(lg) <<  8)
-                   |  static_cast<u32>(lb);
+    _clearColorU32 = (static_cast<u32>(la) << 24) | (static_cast<u32>(lr) << 16) | (static_cast<u32>(lg) << 8) |
+                     static_cast<u32>(lb);
 }
 
-void CPURenderer::setTransform(const gfx::TransformUBO& ubo)
+void CPURenderer::setTransform(const gfx::TransformUBO &ubo)
 {
     _currentTransform = ubo;
 }
@@ -265,89 +259,32 @@ void CPURenderer::bindTexture(TextureHandle handle)
     _boundTexture = handle;
 }
 
-namespace {
-
-/*
- * Evaluate the directional light for one vertex.
- *
- * The rasteriser interpolates ScreenVertex::color, so folding lighting into the
- * vertex colour here gives Gouraud shading without having to carry normals
- * through drawTriangle(). LightUBO::direction is the direction the light
- * travels, so the vector towards the light is its negation - matching the
- * built-in GLSL.
- */
-[[nodiscard]]
-glm::vec4 shadeVertex(const gfx::Vertex3D& v,
-                      const glm::mat3& normalMatrix,
-                      const gfx::LightUBO& light) noexcept
+namespace
 {
-    const glm::vec3 n = glm::normalize(normalMatrix * v.normal);
-    const glm::vec3 toLight = glm::normalize(-light.direction);
 
-    const float diffuse  = glm::max(glm::dot(n, toLight), 0.0f) * light.intensity;
-    const float lighting = light.ambient + diffuse;
-
-    const glm::vec3 lit = glm::vec3(v.color) * glm::vec3(light.color) * lighting;
-    return glm::vec4(lit, v.color.a);
+[[nodiscard]] glm::vec3 safeNormal(glm::vec3 value) noexcept
+{
+    const f32 length2 = glm::dot(value, value);
+    return length2 > 0 ? value / std::sqrt(length2) : glm::vec3{0};
 }
 
-/*
- * Transform a single Vertex3D through the MVP matrix into a ScreenVertex.
- * Returns false (by setting invW < 0) when the vertex is behind the camera.
- */
-[[nodiscard]]
-ScreenVertex projectVertex(const gfx::Vertex3D&  v,
-                                                  const glm::mat4& MVP,
-                                                  const glm::mat3& normalMatrix,
-                                                  const gfx::LightUBO& light,
-                                                  float W,
-                                                  float H) noexcept
+[[nodiscard]] ClipVertex transformVertex(const gfx::Vertex3D &v, const glm::mat4 &mvp, const glm::mat3 &normal,
+                                         const gfx::LightUBO &light, glm::vec3 toLight) noexcept
 {
-    ScreenVertex sv;
-
-    const glm::vec4 clip = MVP * glm::vec4(v.pos, 1.0f);
-
-    if (clip.w <= 0.0f)
-    {
-        // behind camera
-        sv.invW = -1.0f;
-        return sv;
-    }
-
-    const float invW = 1.0f / clip.w;
-    const float nx = clip.x * invW;   // NDC X ∈ [−1, 1]
-    const float ny = clip.y * invW;   // NDC Y ∈ [−1, 1]
-    const float nz = clip.z * invW;   // NDC Z ∈ [−1, 1]
-
-    sv.x = (nx  + 1.0f) * 0.5f * W;
-    sv.y = (1.0f - (ny + 1.0f) * 0.5f) * H;  // flip Y (screen Y grows down)
-    sv.z = (nz  + 1.0f) * 0.5f;               // remap [−1,1] → [0,1]
-    sv.invW = invW;
-    sv.uv = v.texCoord;
-    sv.color= shadeVertex(v, normalMatrix, light);
-
-    return sv;
-}
-
-/*
- * Normals must not be skewed by non-uniform scale, so they use the inverse
- * transpose of the model matrix rather than the model matrix itself.
- */
-[[nodiscard]]
-glm::mat3 makeNormalMatrix(const glm::mat4& model) noexcept
-{
-    return glm::transpose(glm::inverse(glm::mat3(model)));
+    const f32 diffuse = std::max(glm::dot(safeNormal(normal * v.normal), toLight), 0.0f);
+    const glm::vec3 color = glm::vec3(v.color) * glm::vec3(light.color) * (light.ambient + diffuse * light.intensity);
+    return {mvp * glm::vec4(v.pos, 1), v.texCoord, glm::vec4(color, v.color.a)};
 }
 
 } // anonymous namespace
 
-const Texture* CPURenderer::_resolveTexture(TextureHandle handle) const
+const Texture *CPURenderer::_resolveTexture(TextureHandle handle) const
 {
     // Handles are 1-based; anything else means "no texture".
     if (!isValidHandle(handle) || handle.value() > _texturePool.size())
         return nullptr;
 
-    const auto& mips = _texturePool[handle.value() - 1];
+    const auto &mips = _texturePool[handle.value() - 1];
     return mips.empty() ? nullptr : &mips[0];
 }
 
@@ -362,53 +299,51 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     if (!isValidHandle(_boundIndexBuffer) || _boundIndexBuffer.value() > _indexBufferPool.size())
         return;
 
-    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer.value() - 1];
-    const auto& indices = _indexBufferPool   [_boundIndexBuffer.value() - 1];
+    const auto &verts = _vertexBufferPool3d[_boundVertexBuffer.value() - 1];
+    const auto &indices = _indexBufferPool[_boundIndexBuffer.value() - 1];
 
-    const Texture* texture = _resolveTexture(_boundTexture);
+    const Texture *texture = _resolveTexture(_boundTexture);
 
     const float W = static_cast<float>(_frameBufferManager->getWidth());
     const float H = static_cast<float>(_frameBufferManager->getHeight());
     const glm::mat4 MVP = _currentTransform.proj * _currentTransform.view * _currentTransform.model;
-    const glm::mat3 normalMatrix = makeNormalMatrix(_currentTransform.model);
+    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(_currentTransform.model)));
 
     const u32 safeCount = std::min(indexCount, static_cast<u32>(indices.size()));
-    const u32 triCount  = safeCount / 3;
+    const u32 triCount = safeCount / 3;
 
-    /*
-     * Project the whole draw call, then hand the list over as one batch. The
-     * manager queues it and rasterises every batch of the frame in a single
-     * parallel dispatch (see CpuFrameBufferManager::flush), so the thread-pool
-     * fan-out is paid once per frame rather than once per draw call.
-     */
-    _projectedTriangles.clear();
-    _projectedTriangles.reserve(triCount);
-
-    for (u32 t = 0; t < triCount; ++t)
+    if (++_drawStamp == 0)
     {
-        const u32 i0 = indices[t * 3    ];
-        const u32 i1 = indices[t * 3 + 1];
-        const u32 i2 = indices[t * 3 + 2];
-
+        for (auto &vertex : _transformed)
+            vertex.stamp = 0;
+        ++_drawStamp;
+    }
+    // Keep constructed entries across smaller draws; the stamp invalidates
+    // their contents without reinitializing an entire vertex buffer.
+    if (_transformed.size() < verts.size())
+        _transformed.resize(verts.size());
+    const glm::vec3 toLight = safeNormal(-_light.direction);
+    const auto vertex = [&](u32 index) -> const ClipVertex &
+    {
+        auto &cached = _transformed[index];
+        if (cached.stamp != _drawStamp)
+        {
+            cached.vertex = transformVertex(verts[index], MVP, normalMatrix, _light, toLight);
+            cached.stamp = _drawStamp;
+        }
+        return cached.vertex;
+    };
+    for (usize t = 0; t < triCount; ++t)
+    {
+        const u32 i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
         if (i0 >= verts.size() || i1 >= verts.size() || i2 >= verts.size())
             continue;
-
-        const auto sv0 = projectVertex(verts[i0], MVP, normalMatrix, _light, W, H);
-        const auto sv1 = projectVertex(verts[i1], MVP, normalMatrix, _light, W, H);
-        const auto sv2 = projectVertex(verts[i2], MVP, normalMatrix, _light, W, H);
-
-        // Skip triangles with any vertex behind the near plane.
-        if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
-            continue;
-
-        //! Matches the GPU backends' back-face culling; see isFrontFacing().
-        if (!isFrontFacing(sv0, sv1, sv2))
-            continue;
-
-        _projectedTriangles.push_back({sv0, sv1, sv2});
+        clipTriangle(vertex(i0), vertex(i1), vertex(i2), W, H,
+                     [&](const ScreenTriangle &triangle)
+                     {
+                         _frameBufferManager->queueTriangle(triangle, texture);
+                     });
     }
-
-    _frameBufferManager->submitTriangles(_projectedTriangles, texture);
 
     (void)instanceCount;
 }
@@ -421,44 +356,35 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     if (!isValidHandle(_boundVertexBuffer) || _boundVertexBuffer.value() > _vertexBufferPool3d.size())
         return;
 
-    const auto& verts = _vertexBufferPool3d[_boundVertexBuffer.value() - 1];
+    const auto &verts = _vertexBufferPool3d[_boundVertexBuffer.value() - 1];
 
-    const Texture* texture = _resolveTexture(_boundTexture);
+    const Texture *texture = _resolveTexture(_boundTexture);
 
-    const float W   = static_cast<float>(_frameBufferManager->getWidth());
-    const float H   = static_cast<float>(_frameBufferManager->getHeight());
+    const float W = static_cast<float>(_frameBufferManager->getWidth());
+    const float H = static_cast<float>(_frameBufferManager->getHeight());
     const glm::mat4 MVP = _currentTransform.proj * _currentTransform.view * _currentTransform.model;
-    const glm::mat3 normalMatrix = makeNormalMatrix(_currentTransform.model);
+    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(_currentTransform.model)));
 
     const u32 safeCount = std::min(vertexCount, static_cast<u32>(verts.size()));
-    const u32 triCount  = safeCount / 3;
+    const u32 triCount = safeCount / 3;
 
-    _projectedTriangles.clear();
-    _projectedTriangles.reserve(triCount);
-
-    for (u32 t = 0; t < triCount; ++t)
+    const glm::vec3 toLight = safeNormal(-_light.direction);
+    for (usize t = 0; t < triCount; ++t)
     {
-        const auto sv0 = projectVertex(verts[t * 3    ], MVP, normalMatrix, _light, W, H);
-        const auto sv1 = projectVertex(verts[t * 3 + 1], MVP, normalMatrix, _light, W, H);
-        const auto sv2 = projectVertex(verts[t * 3 + 2], MVP, normalMatrix, _light, W, H);
-
-        if (sv0.invW < 0.0f || sv1.invW < 0.0f || sv2.invW < 0.0f)
-            continue;
-
-        //! Matches the GPU backends' back-face culling; see isFrontFacing().
-        if (!isFrontFacing(sv0, sv1, sv2))
-            continue;
-
-        _projectedTriangles.push_back({sv0, sv1, sv2});
+        const auto a = transformVertex(verts[t * 3], MVP, normalMatrix, _light, toLight);
+        const auto b = transformVertex(verts[t * 3 + 1], MVP, normalMatrix, _light, toLight);
+        const auto c = transformVertex(verts[t * 3 + 2], MVP, normalMatrix, _light, toLight);
+        clipTriangle(a, b, c, W, H,
+                     [&](const ScreenTriangle &triangle)
+                     {
+                         _frameBufferManager->queueTriangle(triangle, texture);
+                     });
     }
-
-    _frameBufferManager->submitTriangles(_projectedTriangles, texture);
 
     (void)instanceCount;
 }
 
-void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
-                              std::span<const u32> indices,
+void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
                               TextureHandle texture)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
@@ -466,7 +392,7 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     if (!_frameBufferManager || vertices.empty() || indices.empty())
         return;
 
-    const Texture* sampled = _resolveTexture(texture);
+    const Texture *sampled = _resolveTexture(texture);
 
     /*
      * No projection matrix is needed here: the batch already arrives in window
@@ -474,7 +400,8 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
      * What the GPU backends express as an orthographic matrix is, on this path,
      * simply the absence of a transform.
      */
-    const auto toScreenVertex = [](const gfx::Vertex2D& v) noexcept {
+    const auto toScreenVertex = [](const gfx::Vertex2D &v) noexcept
+    {
         ScreenVertex sv;
         sv.x = v.pos.x;
         sv.y = v.pos.y;
@@ -486,8 +413,6 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     };
 
     const size_t triCount = indices.size() / 3;
-    _projectedTriangles.clear();
-    _projectedTriangles.reserve(triCount);
 
     for (size_t t = 0; t < triCount; ++t)
     {
@@ -504,12 +429,9 @@ void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
          * quads carry no meaningful winding and a glyph must draw whichever
          * way its two triangles happen to be wound.
          */
-        _projectedTriangles.push_back({toScreenVertex(vertices[i0]),
-                                       toScreenVertex(vertices[i1]),
-                                       toScreenVertex(vertices[i2])});
+        _frameBufferManager->queueTriangle(
+            {toScreenVertex(vertices[i0]), toScreenVertex(vertices[i1]), toScreenVertex(vertices[i2])}, sampled, true);
     }
-
-    _frameBufferManager->submitTriangles2D(_projectedTriangles, sampled);
 }
 
 } // namespace cpu

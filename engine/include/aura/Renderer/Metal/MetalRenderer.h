@@ -21,8 +21,10 @@
 #include "aura/Renderer/Metal/MtlAura/MtlTextureManager/MtlTextureManager.h"
 #include "aura/Renderer/Metal/MtlAura/MtlVertexBufferManager/MtlVertexBufferManager.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @class MetalRenderer
@@ -73,30 +75,40 @@ namespace mtl {
  * Single-threaded, like the OpenGL and software backends: every entry point must
  * be called from the thread that called initialize().
  */
-class MetalRenderer : public IRenderer {
-public:
-    MetalRenderer(const wma::WindowDetails& windowDetails);
+class MetalRenderer : public IRenderer
+{
+  public:
+    MetalRenderer(const wma::WindowDetails &windowDetails);
     virtual ~MetalRenderer();
 
-    void initialize(AuraSettings* settings, const JobSystem* jobs) override;
+    void initialize(AuraSettings *settings, const JobSystem *jobs) override;
     void handleWindowChanges() override;
     void cleanup() override;
 
-    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices) override;
-    IndexBufferHandle createIndexBuffer(std::vector<u16>&& indices) override;
-    IndexBufferHandle createIndexBuffer(std::vector<u32>&& indices) override;
+    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices) override;
+    IndexBufferHandle createIndexBuffer(std::vector<u16> &&indices) override;
+    IndexBufferHandle createIndexBuffer(std::vector<u32> &&indices) override;
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
-    TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height) override;
+    TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
     TextureHandle createDynamicTexture(u32 width, u32 height) override;
-    void updateTextureRegion(TextureHandle handle, u32 x, u32 y,
-                             u32 width, u32 height, const u8* rgbaPixels) override;
+    void updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels) override;
 
     void beginFrame() override;
+    [[nodiscard]] bool frameBegun() const noexcept override
+    {
+        return _frameBegun;
+    }
+    //! A resize is applied, and drawn, inside the next beginFrame(); nothing
+    //! else here loses a presented frame.
+    [[nodiscard]] bool needsFrame() const noexcept override
+    {
+        return _windowManagerApi && _windowManagerApi->getWindowFlags()->resized;
+    }
     void beginRenderPass() override;
     void endRenderPass() override;
     void endFrame() override;
 
-    void setTransform(const gfx::TransformUBO& ubo) override;
+    void setTransform(const gfx::TransformUBO &ubo) override;
     /*
      * setLight() is deliberately not overridden. The base implementation records
      * the light in IRenderer::_light, and that is already where bindDrawState()
@@ -108,25 +120,48 @@ public:
     void bindTexture(TextureHandle handle) override;
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
-    void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
-                     std::span<const u32> indices,
+    void drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
                      TextureHandle texture) override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
 
-    wma::IWindowManager* getWindowManager() override { return _windowManagerApi.get(); }
-    RendererChoice getBackendType() const override { return RendererChoice::METAL; }
+    wma::IWindowManager *getWindowManager() override
+    {
+        return _windowManagerApi.get();
+    }
+    RendererChoice getBackendType() const override
+    {
+        return RendererChoice::METAL;
+    }
 
-    MtlDeviceManager* getDeviceManager() { return _deviceManager.get(); }
-    MtlLayerManager* getLayerManager() { return _layerManager.get(); }
-    MtlDrawableManager* getDrawableManager() { return _drawableManager.get(); }
-    MtlVertexBufferManager* getVertexBufferManager() { return _vertexManager.get(); }
-    MtlIndexBufferManager* getIndexBufferManager() { return _indexManager.get(); }
-    MtlTextureManager* getTextureManager() { return _textureManager.get(); }
+    MtlDeviceManager *getDeviceManager()
+    {
+        return _deviceManager.get();
+    }
+    MtlLayerManager *getLayerManager()
+    {
+        return _layerManager.get();
+    }
+    MtlDrawableManager *getDrawableManager()
+    {
+        return _drawableManager.get();
+    }
+    MtlVertexBufferManager *getVertexBufferManager()
+    {
+        return _vertexManager.get();
+    }
+    MtlIndexBufferManager *getIndexBufferManager()
+    {
+        return _indexManager.get();
+    }
+    MtlTextureManager *getTextureManager()
+    {
+        return _textureManager.get();
+    }
 
-protected:
-    void createWindow(const char* title, const wma::WindowBackend& wBackend) override;
+  protected:
+    void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
 
-private:
+  private:
     //! Binds ESC-to-quit and the rest of the shared input wiring.
 
     //! Builds the scene and overlay pipelines against the layer's formats.
@@ -163,7 +198,7 @@ private:
      * texel is substituted in those cases, so vertex colour comes through
      * unchanged -- the same fallback the OpenGL and Vulkan paths use.
      */
-    [[nodiscard]] MTL::Texture* resolveSampledTexture(TextureHandle handle);
+    [[nodiscard]] MTL::Texture *resolveSampledTexture(TextureHandle handle);
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
 
@@ -186,8 +221,8 @@ private:
      * and both live only between beginFrame()/endFrame(), so they are held as
      * raw borrowed pointers kept alive by _framePool rather than being retained.
      */
-    MTL::CommandBuffer* _commandBuffer = nullptr;
-    MTL::RenderCommandEncoder* _encoder = nullptr;
+    MTL::CommandBuffer *_commandBuffer = nullptr;
+    MTL::RenderCommandEncoder *_encoder = nullptr;
 
     //! One pool per frame; see ScopedAutoreleasePool for what would otherwise leak.
     std::optional<ScopedAutoreleasePool> _framePool;
@@ -208,8 +243,7 @@ private:
      */
     std::shared_ptr<FrameSlots> _frameSlots;
 
-    template <typename T>
-    using MtlFixedArray = std::array<T, MTL_MAX_FRAMES_IN_FLIGHT>;
+    template <typename T> using MtlFixedArray = std::array<T, MTL_MAX_FRAMES_IN_FLIGHT>;
 
     MtlFixedArray<NS::SharedPtr<MTL::Buffer>> _overlayVertexBuffers{};
     MtlFixedArray<NS::SharedPtr<MTL::Buffer>> _overlayIndexBuffers{};

@@ -2,32 +2,30 @@
 
 #include "aura/UI/Text/TextEngine.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-void DrawList::begin(const Rect& surface)
+void DrawList::begin(const Rect &surface)
 {
     _commands.clear();
     _clips.assign(1, surface);
 }
 
-bool DrawList::_visible(const Rect& bounds) const noexcept
+bool DrawList::_visible(const Rect &bounds) const noexcept
 {
     return !bounds.empty() && !intersect(bounds, _clips.back()).empty();
 }
 
-void DrawList::fillRect(const Rect& bounds, const glm::vec4& color, Corners radius)
+void DrawList::fillRect(const Rect &bounds, const glm::vec4 &color, Corners radius)
 {
     if (color.a <= 0.0f || !_visible(bounds))
         return;
 
-    _commands.push_back(DrawCommand{.type = DrawCommandType::Rect,
-                                    .bounds = bounds,
-                                    .clip = _clips.back(),
-                                    .color = color,
-                                    .radius = radius});
+    _commands.push_back(DrawCommand{
+        .type = DrawCommandType::Rect, .bounds = bounds, .clip = _clips.back(), .color = color, .radius = radius});
 }
 
-void DrawList::strokeRect(const Rect& bounds, const glm::vec4& color, f32 width, Corners radius)
+void DrawList::strokeRect(const Rect &bounds, const glm::vec4 &color, f32 width, Corners radius)
 {
     if (width <= 0.0f || color.a <= 0.0f || !_visible(bounds))
         return;
@@ -41,8 +39,8 @@ void DrawList::strokeRect(const Rect& bounds, const glm::vec4& color, f32 width,
                                     .radius = radius});
 }
 
-void DrawList::drawRect(const Rect& bounds, const glm::vec4& fill, const glm::vec4& border,
-                        f32 borderWidth, Corners radius)
+void DrawList::drawRect(const Rect &bounds, const glm::vec4 &fill, const glm::vec4 &border, f32 borderWidth,
+                        Corners radius)
 {
     const bool hasBorder = borderWidth > 0.0f && border.a > 0.0f;
 
@@ -58,7 +56,7 @@ void DrawList::drawRect(const Rect& bounds, const glm::vec4& fill, const glm::ve
                                     .radius = radius});
 }
 
-void DrawList::drawText(const ShapedText& text, glm::vec2 origin, const glm::vec4& color)
+void DrawList::drawText(const ShapedText &text, glm::vec2 origin, const glm::vec4 &color)
 {
     if (color.a <= 0.0f || text.empty())
         return;
@@ -75,8 +73,7 @@ void DrawList::drawText(const ShapedText& text, glm::vec2 origin, const glm::vec
                                     .origin = origin});
 }
 
-void DrawList::drawImage(const Rect& bounds, TextureHandle texture, const glm::vec4& tint,
-                         Corners radius)
+void DrawList::drawImage(const Rect &bounds, TextureHandle texture, const glm::vec4 &tint, Corners radius)
 {
     if (tint.a <= 0.0f || !_visible(bounds))
         return;
@@ -89,8 +86,7 @@ void DrawList::drawImage(const Rect& bounds, TextureHandle texture, const glm::v
                                     .texture = texture});
 }
 
-void DrawList::drawMask(const Rect& bounds, u32 page, glm::vec2 uvMin, glm::vec2 uvMax,
-                        const glm::vec4& color)
+void DrawList::drawMask(const Rect &bounds, u32 page, glm::vec2 uvMin, glm::vec2 uvMax, const glm::vec4 &color)
 {
     if (color.a <= 0.0f || !_visible(bounds))
         return;
@@ -104,7 +100,7 @@ void DrawList::drawMask(const Rect& bounds, u32 page, glm::vec2 uvMin, glm::vec2
                                     .page = page});
 }
 
-void DrawList::pushClip(const Rect& bounds)
+void DrawList::pushClip(const Rect &bounds)
 {
     _clips.push_back(intersect(bounds, _clips.back()));
 }

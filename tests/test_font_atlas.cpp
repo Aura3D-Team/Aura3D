@@ -11,12 +11,13 @@
 
 #include "aura/Core/AuraFont/FontAtlas.h"
 
+using aura3d::decodeUtf8;
 using aura3d::FontAtlas;
 using aura3d::FontAtlasDesc;
 using aura3d::GlyphInfo;
-using aura3d::decodeUtf8;
 
-namespace {
+namespace
+{
 
 // A small atlas keeps the test's memory footprint trivial while still
 // exercising the same packing code the 2048x2048 default uses.
@@ -35,16 +36,11 @@ void testUtf8Decoding()
     const std::string text = "Aé€\U0001F600";
 
     std::size_t offset = 0;
-    AURA_CHECK(decodeUtf8(text, offset) == U'A' && offset == 1,
-               "decodeUtf8 reads a 1-byte ASCII scalar");
-    AURA_CHECK(decodeUtf8(text, offset) == U'é' && offset == 3,
-               "decodeUtf8 reads a 2-byte scalar");
-    AURA_CHECK(decodeUtf8(text, offset) == U'€' && offset == 6,
-               "decodeUtf8 reads a 3-byte scalar");
-    AURA_CHECK(decodeUtf8(text, offset) == U'\U0001F600' && offset == 10,
-               "decodeUtf8 reads a 4-byte scalar");
-    AURA_CHECK(decodeUtf8(text, offset) == 0,
-               "decodeUtf8 returns 0 at the end of the string");
+    AURA_CHECK(decodeUtf8(text, offset) == U'A' && offset == 1, "decodeUtf8 reads a 1-byte ASCII scalar");
+    AURA_CHECK(decodeUtf8(text, offset) == U'é' && offset == 3, "decodeUtf8 reads a 2-byte scalar");
+    AURA_CHECK(decodeUtf8(text, offset) == U'€' && offset == 6, "decodeUtf8 reads a 3-byte scalar");
+    AURA_CHECK(decodeUtf8(text, offset) == U'\U0001F600' && offset == 10, "decodeUtf8 reads a 4-byte scalar");
+    AURA_CHECK(decodeUtf8(text, offset) == 0, "decodeUtf8 returns 0 at the end of the string");
 
     // A stray continuation byte must consume exactly one byte, so that a decode
     // loop over malformed input still terminates.
@@ -52,8 +48,7 @@ void testUtf8Decoding()
     std::size_t badOffset = 0;
     AURA_CHECK(decodeUtf8(malformed, badOffset) == 0xFFFDu && badOffset == 1,
                "decodeUtf8 yields U+FFFD and advances one byte on a bad lead");
-    AURA_CHECK(decodeUtf8(malformed, badOffset) == U'A',
-               "decodeUtf8 resynchronises after a malformed sequence");
+    AURA_CHECK(decodeUtf8(malformed, badOffset) == U'A', "decodeUtf8 resynchronises after a malformed sequence");
 
     // A truncated multi-byte sequence at the very end must not read past it.
     const std::string truncated = "\xE2\x82";
@@ -66,58 +61,60 @@ void testBitmapFallbackMetrics()
 {
     auto atlas = FontAtlas::builtinBitmap(smallAtlas());
     AURA_CHECK(atlas != nullptr, "builtinBitmap always produces an atlas");
-    if (!atlas) return;
+    if (!atlas)
+        return;
 
-    AURA_CHECK(atlas->width() == 256 && atlas->height() == 256,
-               "atlas honours the requested dimensions");
+    AURA_CHECK(atlas->width() == 256 && atlas->height() == 256, "atlas honours the requested dimensions");
     AURA_CHECK(atlas->lineHeight() > 0.0f, "bitmap fallback reports a usable line height");
 
-    const GlyphInfo* a = atlas->glyph(U'A');
+    const GlyphInfo *a = atlas->glyph(U'A');
     AURA_CHECK(a != nullptr, "bitmap fallback resolves an ASCII glyph");
-    if (a) {
+    if (a)
+    {
         AURA_CHECK(a->advance > 0.0f, "'A' advances the pen");
         AURA_CHECK(a->size.x > 0.0f && a->size.y > 0.0f, "'A' occupies a non-empty cell");
-        AURA_CHECK(a->uvMax.x > a->uvMin.x && a->uvMax.y > a->uvMin.y,
-                   "'A' has a non-degenerate UV rectangle");
+        AURA_CHECK(a->uvMax.x > a->uvMin.x && a->uvMax.y > a->uvMin.y, "'A' has a non-degenerate UV rectangle");
     }
 
     // Space is metrics-only: it moves the pen but reserves no cell, so its UVs
     // stay degenerate and the batch builder skips emitting a quad for it.
-    const GlyphInfo* space = atlas->glyph(U' ');
+    const GlyphInfo *space = atlas->glyph(U' ');
     AURA_CHECK(space != nullptr, "space resolves");
-    if (space) {
+    if (space)
+    {
         AURA_CHECK(space->advance > 0.0f, "space advances the pen");
-        AURA_CHECK(space->size.x == 0.0f || space->size.y == 0.0f,
-                   "space reserves no atlas cell");
+        AURA_CHECK(space->size.x == 0.0f || space->size.y == 0.0f, "space reserves no atlas cell");
     }
 
     // The embedded font covers 7-bit ASCII only; anything else must fall back to
     // '?' rather than returning nullptr and dropping the character silently.
-    const GlyphInfo* substitute = atlas->glyph(U'€');
-    const GlyphInfo* question = atlas->glyph(U'?');
+    const GlyphInfo *substitute = atlas->glyph(U'€');
+    const GlyphInfo *question = atlas->glyph(U'?');
     AURA_CHECK(substitute != nullptr && question != nullptr,
                "an out-of-range codepoint falls back to a substitute glyph");
-    if (substitute && question) {
-        AURA_CHECK(substitute->uvMin == question->uvMin,
-                   "the substitute is '?' rather than a fresh cell");
+    if (substitute && question)
+    {
+        AURA_CHECK(substitute->uvMin == question->uvMin, "the substitute is '?' rather than a fresh cell");
     }
 }
 
 void testGlyphCachingIsStable()
 {
     auto atlas = FontAtlas::builtinBitmap(smallAtlas());
-    if (!atlas) return;
+    if (!atlas)
+        return;
 
-    const GlyphInfo* first = atlas->glyph(U'M');
+    const GlyphInfo *first = atlas->glyph(U'M');
     AURA_CHECK(first != nullptr, "first request rasterizes 'M'");
-    if (!first) return;
+    if (!first)
+        return;
 
     const GlyphInfo copy = *first;
 
     // Re-requesting must hit the cache: same cell, no second rasterization, and
     // therefore nothing newly dirty once the first upload has been taken.
     (void)atlas->takeDirtyUpload();
-    const GlyphInfo* second = atlas->glyph(U'M');
+    const GlyphInfo *second = atlas->glyph(U'M');
     AURA_CHECK(second != nullptr && second->uvMin == copy.uvMin && second->uvMax == copy.uvMax,
                "a cached glyph keeps its atlas cell");
     AURA_CHECK(!atlas->dirty(), "a cache hit does not dirty the atlas");
@@ -126,11 +123,13 @@ void testGlyphCachingIsStable()
 void testSolidTexelReservation()
 {
     auto atlas = FontAtlas::builtinBitmap(smallAtlas());
-    if (!atlas) return;
+    if (!atlas)
+        return;
 
     const auto uv = atlas->solidTexelUv();
     AURA_CHECK(uv.has_value(), "an empty atlas can reserve its solid texel");
-    if (!uv) return;
+    if (!uv)
+        return;
 
     AURA_CHECK(uv->x > 0.0f && uv->x < 1.0f && uv->y > 0.0f && uv->y < 1.0f,
                "the solid texel's UV addresses somewhere inside the atlas");
@@ -142,10 +141,13 @@ void testSolidTexelReservation()
     // rectangle rather than a faint one.
     const auto pending = atlas->takeDirtyUpload();
     AURA_CHECK(pending.has_value(), "the reserved cell arrives as an upload");
-    if (pending) {
+    if (pending)
+    {
         bool allOpaque = !pending->rgba.empty();
-        for (std::size_t i = 3; i < pending->rgba.size(); i += 4) {
-            if (pending->rgba[i] != 255) {
+        for (std::size_t i = 3; i < pending->rgba.size(); i += 4)
+        {
+            if (pending->rgba[i] != 255)
+            {
                 allOpaque = false;
                 break;
             }
@@ -165,38 +167,35 @@ void testSolidTexelReservation()
         (void)atlas->glyph(c);
 
     const auto third = atlas->solidTexelUv();
-    AURA_CHECK(third.has_value() && *third == *uv,
-               "glyphs rasterized later do not disturb the solid texel");
+    AURA_CHECK(third.has_value() && *third == *uv, "glyphs rasterized later do not disturb the solid texel");
 }
 
 void testDirtyRegionTracking()
 {
     auto atlas = FontAtlas::builtinBitmap(smallAtlas());
-    if (!atlas) return;
+    if (!atlas)
+        return;
 
     AURA_CHECK(!atlas->dirty(), "a fresh atlas has nothing pending");
-    AURA_CHECK(!atlas->takeDirtyUpload().has_value(),
-               "takeDirtyUpload yields nothing when nothing changed");
+    AURA_CHECK(!atlas->takeDirtyUpload().has_value(), "takeDirtyUpload yields nothing when nothing changed");
 
-    const GlyphInfo* g0 = atlas->glyph(U'W');
-    const GlyphInfo* g1 = atlas->glyph(U'i');
+    const GlyphInfo *g0 = atlas->glyph(U'W');
+    const GlyphInfo *g1 = atlas->glyph(U'i');
     AURA_CHECK(g0 && g1, "two distinct glyphs rasterize");
     AURA_CHECK(atlas->dirty(), "rasterizing marks the atlas dirty");
 
     const auto pending = atlas->takeDirtyUpload();
     AURA_CHECK(pending.has_value(), "takeDirtyUpload yields the pending rectangle");
-    if (pending) {
-        const auto& region = pending->region;
-        AURA_CHECK(region.width > 0 && region.height > 0,
-                   "the dirty rectangle is non-empty");
-        AURA_CHECK(region.x + region.width <= atlas->width() &&
-                   region.y + region.height <= atlas->height(),
+    if (pending)
+    {
+        const auto &region = pending->region;
+        AURA_CHECK(region.width > 0 && region.height > 0, "the dirty rectangle is non-empty");
+        AURA_CHECK(region.x + region.width <= atlas->width() && region.y + region.height <= atlas->height(),
                    "the dirty rectangle stays inside the atlas");
 
         // One rectangle must cover both glyphs: that union is what lets a whole
         // string's new characters travel in a single sub-image upload.
-        const std::size_t expectedBytes =
-            static_cast<std::size_t>(region.width) * region.height * 4u;
+        const std::size_t expectedBytes = static_cast<std::size_t>(region.width) * region.height * 4u;
         AURA_CHECK(pending->rgba.size() == expectedBytes,
                    "the upload is a tightly packed RGBA8 expansion of the rectangle");
 
@@ -204,12 +203,14 @@ void testDirtyRegionTracking()
         // decides the text's colour at draw time.
         bool rgbAllWhite = true;
         bool anyCoverage = false;
-        for (std::size_t i = 0; i < pending->rgba.size(); i += 4) {
-            if (pending->rgba[i] != 0xFF || pending->rgba[i + 1] != 0xFF ||
-                pending->rgba[i + 2] != 0xFF) {
+        for (std::size_t i = 0; i < pending->rgba.size(); i += 4)
+        {
+            if (pending->rgba[i] != 0xFF || pending->rgba[i + 1] != 0xFF || pending->rgba[i + 2] != 0xFF)
+            {
                 rgbAllWhite = false;
             }
-            if (pending->rgba[i + 3] != 0) {
+            if (pending->rgba[i + 3] != 0)
+            {
                 anyCoverage = true;
             }
         }
@@ -231,10 +232,10 @@ void testPackerRejectsOversizedAndExhaustedAtlases()
 
     auto atlas = FontAtlas::builtinBitmap(tiny);
     AURA_CHECK(atlas != nullptr, "an undersized atlas still constructs");
-    if (!atlas) return;
+    if (!atlas)
+        return;
 
-    AURA_CHECK(atlas->glyph(U'A') == nullptr,
-               "a glyph that cannot fit is refused rather than overflowing");
+    AURA_CHECK(atlas->glyph(U'A') == nullptr, "a glyph that cannot fit is refused rather than overflowing");
 
     // Filling a small atlas with many distinct glyphs must also terminate
     // without corruption once the shelves run out.
@@ -244,11 +245,14 @@ void testPackerRejectsOversizedAndExhaustedAtlases()
     small.pixelHeight = 24.0f;
 
     auto crowded = FontAtlas::builtinBitmap(small);
-    if (!crowded) return;
+    if (!crowded)
+        return;
 
     bool exhausted = false;
-    for (char32_t cp = U'!'; cp <= U'~'; ++cp) {
-        if (crowded->glyph(cp) == nullptr) {
+    for (char32_t cp = U'!'; cp <= U'~'; ++cp)
+    {
+        if (crowded->glyph(cp) == nullptr)
+        {
             exhausted = true;
             break;
         }
@@ -256,9 +260,10 @@ void testPackerRejectsOversizedAndExhaustedAtlases()
     AURA_CHECK(exhausted, "the shelf packer reports exhaustion instead of overrunning");
 
     const auto pending = crowded->takeDirtyUpload();
-    if (pending) {
+    if (pending)
+    {
         AURA_CHECK(pending->region.x + pending->region.width <= crowded->width() &&
-                   pending->region.y + pending->region.height <= crowded->height(),
+                       pending->region.y + pending->region.height <= crowded->height(),
                    "the dirty rectangle stays in bounds even when the atlas fills up");
     }
 }
@@ -269,7 +274,8 @@ void testTrueTypeLoadFailureIsReported()
     // TextOverlay relies on that to fall back to the embedded bitmap font.
     auto missing = FontAtlas::fromFile("this/path/does/not/exist.ttf", smallAtlas());
     AURA_CHECK(!missing.has_value(), "a missing font file fails");
-    if (!missing) {
+    if (!missing)
+    {
         AURA_CHECK(!missing.error().empty(), "the failure carries a description");
     }
 

@@ -1,15 +1,16 @@
 #include "aura/Renderer/Vulkan/VkAura/VkQueueManager/VkQueueManager.h"
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
 #include <ink/ink.hpp>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkQueueManager::VkQueueManager()
-    : _mapVkQueues()
+VkQueueManager::VkQueueManager() : _mapVkQueues()
 {
     // No additional initialization required.
 }
@@ -23,19 +24,22 @@ void VkQueueManager::setupQueue(VkDevice device, u32 queueFamilyIndex, const VkQ
 {
     std::pair<u32, VkQueueFlags> key = std::make_pair(queueFamilyIndex, flags);
     auto it = _mapVkQueues.find(key);
-    if (it != _mapVkQueues.end()) {
-        QueueData& queueData = it->second;
+    if (it != _mapVkQueues.end())
+    {
+        QueueData &queueData = it->second;
 
-        for (u32 i = 0; i < queueData.vkDeviceQueueCreateInfo.queueCount; ++i) {
+        for (u32 i = 0; i < queueData.vkDeviceQueueCreateInfo.queueCount; ++i)
+        {
             VkQueue queue;
             vkGetDeviceQueue(device, queueData.vkDeviceQueueCreateInfo.queueFamilyIndex, i, &queue);
             queueData.queues.push_back(queue);
 
-            INK_DEBUG << "Queue " << i << " set up successfully for family index "
-                      << queueFamilyIndex << " with flags " << flags;
+            INK_DEBUG << "Queue " << i << " set up successfully for family index " << queueFamilyIndex << " with flags "
+                      << flags;
         }
     }
-    else {
+    else
+    {
         throw AuraException("There is no QueueData registered for the given queue family index and flags.");
     }
 }
@@ -43,13 +47,15 @@ void VkQueueManager::setupQueue(VkDevice device, u32 queueFamilyIndex, const VkQ
 u32 VkQueueManager::pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueueFlags flags, const f32 queuePriority)
 {
     u32 queueFamilyIndex = findQueueFamilyIndex(physicalDevice, flags);
-    if (queueFamilyIndex == UINT32_MAX) {
+    if (queueFamilyIndex == UINT32_MAX)
+    {
         throw AuraException("No suitable queue family found for the requested capabilities.");
     }
 
     std::pair<u32, VkQueueFlags> key = std::make_pair(queueFamilyIndex, flags);
-    if (_mapVkQueues.find(key) == _mapVkQueues.end()) {
-        QueueData& queueData = _mapVkQueues[key];
+    if (_mapVkQueues.find(key) == _mapVkQueues.end())
+    {
+        QueueData &queueData = _mapVkQueues[key];
         queueData.queuePriorities.push_back(queuePriority);
 
         queueData.vkDeviceQueueCreateInfo = {};
@@ -57,8 +63,10 @@ u32 VkQueueManager::pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueue
         queueData.vkDeviceQueueCreateInfo.queueFamilyIndex = queueFamilyIndex;
         queueData.vkDeviceQueueCreateInfo.queueCount = 1;
         queueData.vkDeviceQueueCreateInfo.pQueuePriorities = queueData.queuePriorities.data();
-    } else {
-        QueueData& queueData = _mapVkQueues[key];
+    }
+    else
+    {
+        QueueData &queueData = _mapVkQueues[key];
         queueData.queuePriorities.push_back(queuePriority);
         queueData.vkDeviceQueueCreateInfo.queueCount = static_cast<u32>(queueData.queuePriorities.size());
         queueData.vkDeviceQueueCreateInfo.pQueuePriorities = queueData.queuePriorities.data();
@@ -67,11 +75,13 @@ u32 VkQueueManager::pushQueueInfo(VkPhysicalDevice physicalDevice, const VkQueue
     return queueFamilyIndex;
 }
 
-std::vector<QueueData*> VkQueueManager::getQueues(VkQueueFlags flags)
+std::vector<QueueData *> VkQueueManager::getQueues(VkQueueFlags flags)
 {
-    std::vector<QueueData*> result;
-    for (auto& [key, queueData] : _mapVkQueues) {
-        if ((key.second & flags) == flags) {
+    std::vector<QueueData *> result;
+    for (auto &[key, queueData] : _mapVkQueues)
+    {
+        if ((key.second & flags) == flags)
+        {
             result.push_back(&queueData);
         }
     }
@@ -88,15 +98,20 @@ u32 VkQueueManager::findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueu
     std::vector<VkQueueFamilyProperties> queueFamilies = findQueueFamilies(physicalDevice);
 
     u32 bestIndex = UINT32_MAX;
-    for (u32 i = 0; i < static_cast<u32>(queueFamilies.size()); i++) {
-        if ((queueFamilies[i].queueFlags & flags) == flags) {
-            if (surface != VK_NULL_HANDLE && !isPresentQueueSupported(physicalDevice, i, surface)) {
+    for (u32 i = 0; i < static_cast<u32>(queueFamilies.size()); i++)
+    {
+        if ((queueFamilies[i].queueFlags & flags) == flags)
+        {
+            if (surface != VK_NULL_HANDLE && !isPresentQueueSupported(physicalDevice, i, surface))
+            {
                 continue;
             }
-            if (queueFamilies[i].queueFlags == flags) {
+            if (queueFamilies[i].queueFlags == flags)
+            {
                 return i;
             }
-            if (bestIndex == UINT32_MAX) {
+            if (bestIndex == UINT32_MAX)
+            {
                 bestIndex = i;
             }
         }
@@ -105,18 +120,25 @@ u32 VkQueueManager::findQueueFamilyIndex(VkPhysicalDevice physicalDevice, VkQueu
     return bestIndex;
 }
 
-std::vector<u32> VkQueueManager::findQueueFamilyIndices(VkPhysicalDevice physicalDevice, VkQueueFlags flags, VkSurfaceKHR surface)
+std::vector<u32> VkQueueManager::findQueueFamilyIndices(VkPhysicalDevice physicalDevice, VkQueueFlags flags,
+                                                        VkSurfaceKHR surface)
 {
     std::vector<u32> matchingIndices;
     std::vector<VkQueueFamilyProperties> queueFamilies = findQueueFamilies(physicalDevice);
 
-    for (u32 i = 0; i < static_cast<u32>(queueFamilies.size()); i++) {
-        if ((queueFamilies[i].queueFlags & flags) == flags) {
-            if (surface != VK_NULL_HANDLE) {
-                if (isPresentQueueSupported(physicalDevice, i, surface)) {
+    for (u32 i = 0; i < static_cast<u32>(queueFamilies.size()); i++)
+    {
+        if ((queueFamilies[i].queueFlags & flags) == flags)
+        {
+            if (surface != VK_NULL_HANDLE)
+            {
+                if (isPresentQueueSupported(physicalDevice, i, surface))
+                {
                     matchingIndices.push_back(i);
                 }
-            } else {
+            }
+            else
+            {
                 matchingIndices.push_back(i);
             }
         }
@@ -136,7 +158,8 @@ std::vector<VkQueueFamilyProperties> VkQueueManager::findQueueFamilies(VkPhysica
     return queueFamilies;
 }
 
-bool VkQueueManager::isPresentQueueSupported(VkPhysicalDevice physicalDevice, u32 queueFamilyIndex, VkSurfaceKHR surface)
+bool VkQueueManager::isPresentQueueSupported(VkPhysicalDevice physicalDevice, u32 queueFamilyIndex,
+                                             VkSurfaceKHR surface)
 {
     VkBool32 presentSupport = VK_FALSE;
     vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, queueFamilyIndex, surface, &presentSupport);
@@ -147,17 +170,16 @@ std::vector<VkDeviceQueueCreateInfo> VkQueueManager::getDeviceQueueCreateInfos()
 {
     std::vector<VkDeviceQueueCreateInfo> deviceQueueCreateInfos;
 
-    for (const auto& pair : _mapVkQueues) {
+    for (const auto &pair : _mapVkQueues)
+    {
         deviceQueueCreateInfos.push_back(pair.second.vkDeviceQueueCreateInfo);
     }
 
     return deviceQueueCreateInfos;
 }
 
-void VkQueueManager::submitCmdIntoQueue(VkQueue queue,
-                                        VkCommandBuffer* commandBuffer,
-                                        VkSemaphore* imageAvailableSemaphore,
-                                        VkSemaphore* renderFinishedSemaphore,
+void VkQueueManager::submitCmdIntoQueue(VkQueue queue, VkCommandBuffer *commandBuffer,
+                                        VkSemaphore *imageAvailableSemaphore, VkSemaphore *renderFinishedSemaphore,
                                         VkFence fence)
 {
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -193,5 +215,5 @@ void VkQueueManager::submitCmdIntoQueue(VkQueue queue,
     VK_RESULT_CHECK(vkQueueSubmit(queue, 1, &submitInfo, fence));
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

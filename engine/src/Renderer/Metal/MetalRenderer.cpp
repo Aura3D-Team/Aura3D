@@ -6,10 +6,10 @@
 
 #include <glm/ext/matrix_clip_space.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Core/AuraMath.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
+#include "aura/aura.h"
 
 /*
  * This backend cannot work against a libwma without Metal support: no window
@@ -22,16 +22,17 @@
  * static_assert is a hard error naming the macro rather than the problem.
  */
 #if !defined(WMA_HAS_METAL) || !WMA_HAS_METAL
-#  error "AURA_ENABLE_METAL requires a libwma built with Metal support: an Apple \
+#error "AURA_ENABLE_METAL requires a libwma built with Metal support: an Apple \
 target with the SDL3 or GLFW backend enabled. See WMA_HAS_METAL in \
 wma::wma's compile definitions."
 #endif
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
-MetalRenderer::MetalRenderer(const wma::WindowDetails& windowDetails)
-    : IRenderer(windowDetails)
+MetalRenderer::MetalRenderer(const wma::WindowDetails &windowDetails) : IRenderer(windowDetails)
 {
     INK_INFO << "Renderer - METAL";
 }
@@ -41,7 +42,7 @@ MetalRenderer::~MetalRenderer()
     cleanup();
 }
 
-void MetalRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
+void MetalRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
 {
     if (_isInitialized)
         return;
@@ -59,18 +60,15 @@ void MetalRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
     _frameSlots = std::make_shared<FrameSlots>(MTL_MAX_FRAMES_IN_FLIGHT);
     _deviceManager = std::make_unique<MtlDeviceManager>();
 
-    _layerManager = std::make_unique<MtlLayerManager>(
-        _deviceManager->getDevice(), _windowManagerApi.get(), settings->getVSync());
+    _layerManager =
+        std::make_unique<MtlLayerManager>(_deviceManager->getDevice(), _windowManagerApi.get(), settings->getVSync());
 
-    _drawableManager = std::make_unique<MtlDrawableManager>(
-        _deviceManager->getDevice(), _layerManager.get());
+    _drawableManager = std::make_unique<MtlDrawableManager>(_deviceManager->getDevice(), _layerManager.get());
 
     _shaderLibrary = std::make_unique<MtlShaderLibraryManager>(_deviceManager->getDevice());
 
-    _bufferManager = std::make_unique<MtlBufferManager>(
-        _deviceManager->getDevice(),
-        _deviceManager->hasUnifiedMemory(),
-        _deviceManager->maxBufferLength());
+    _bufferManager = std::make_unique<MtlBufferManager>(_deviceManager->getDevice(), _deviceManager->hasUnifiedMemory(),
+                                                        _deviceManager->maxBufferLength());
 
     _vertexManager = std::make_unique<MtlVertexBufferManager>(_bufferManager.get());
     _indexManager = std::make_unique<MtlIndexBufferManager>(_bufferManager.get());
@@ -88,12 +86,11 @@ void MetalRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
         throw AuraException("MetalRenderer: failed to create the fallback white texture");
 
     _isInitialized = true;
-    INK_INFO << "Metal renderer initialized ("
-             << _layerManager->getWidth() << "x" << _layerManager->getHeight() << " px, "
-             << MTL_MAX_FRAMES_IN_FLIGHT << " frames in flight)";
+    INK_INFO << "Metal renderer initialized (" << _layerManager->getWidth() << "x" << _layerManager->getHeight()
+             << " px, " << MTL_MAX_FRAMES_IN_FLIGHT << " frames in flight)";
 }
 
-void MetalRenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
+void MetalRenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)
 {
     /*
      * wma opens the window with a CAMetalLayer already hosted in the right kind
@@ -105,7 +102,6 @@ void MetalRenderer::createWindow(const char* title, const wma::WindowBackend& wB
     _windowManagerApi->createWindow(title);
 }
 
-
 void MetalRenderer::createPipelines()
 {
     MtlPipelineManager::Options sceneOptions;
@@ -115,8 +111,7 @@ void MetalRenderer::createPipelines()
     sceneOptions.alphaBlend = false;
     sceneOptions.cullBackFaces = true;
     sceneOptions.label = "Aura3D scene 3D";
-    _scenePipeline = std::make_unique<MtlPipelineManager>(
-        _deviceManager->getDevice(), *_shaderLibrary, sceneOptions);
+    _scenePipeline = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, sceneOptions);
 
     MtlPipelineManager::Options overlayOptions;
     overlayOptions.vertexFunction = kVertexFunction2D;
@@ -129,8 +124,8 @@ void MetalRenderer::createPipelines()
     //! whichever winding the batch happened to emit.
     overlayOptions.cullBackFaces = false;
     overlayOptions.label = "Aura3D overlay 2D";
-    _overlayPipeline = std::make_unique<MtlPipelineManager>(
-        _deviceManager->getDevice(), *_shaderLibrary, overlayOptions);
+    _overlayPipeline =
+        std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, overlayOptions);
 }
 
 void MetalRenderer::handleWindowChanges()
@@ -157,8 +152,10 @@ void MetalRenderer::cleanup()
      * without which the drain below would wait on a permit only this thread could
      * release.
      */
-    if (_frameBegun) {
-        if (_renderPassActive) {
+    if (_frameBegun)
+    {
+        if (_renderPassActive)
+        {
             _encoder->endEncoding();
             _encoder = nullptr;
             _renderPassActive = false;
@@ -181,7 +178,8 @@ void MetalRenderer::cleanup()
      * Taking every permit can only succeed once each in-flight frame's completion
      * handler has run, which makes this the Metal equivalent of vkDeviceWaitIdle.
      */
-    if (_frameSlots) {
+    if (_frameSlots)
+    {
         for (u32 slot = 0; slot < MTL_MAX_FRAMES_IN_FLIGHT; ++slot)
             _frameSlots->acquire();
 
@@ -191,7 +189,8 @@ void MetalRenderer::cleanup()
 
     clearSharedResources();
 
-    for (u32 slot = 0; slot < MTL_MAX_FRAMES_IN_FLIGHT; ++slot) {
+    for (u32 slot = 0; slot < MTL_MAX_FRAMES_IN_FLIGHT; ++slot)
+    {
         _overlayVertexBuffers[slot].reset();
         _overlayIndexBuffers[slot].reset();
         _overlayVertexCapacity[slot] = 0;
@@ -228,7 +227,7 @@ void MetalRenderer::cleanup()
     _isInitialized = false;
 }
 
-VertexBufferHandle MetalRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
+VertexBufferHandle MetalRenderer::createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices)
 {
     if (!_vertexManager)
         return {};
@@ -245,7 +244,7 @@ VertexBufferHandle MetalRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&
     return _vertexManager->create(owned);
 }
 
-IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u16>&& indices)
+IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u16> &&indices)
 {
     if (!_indexManager)
         return {};
@@ -254,7 +253,7 @@ IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u16>&& indices)
     return _indexManager->create(owned);
 }
 
-IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u32>&& indices)
+IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u32> &&indices)
 {
     if (!_indexManager)
         return {};
@@ -272,7 +271,7 @@ TextureHandle MetalRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
     return _textureManager->createFromPixels(texel.data(), 1, 1);
 }
 
-TextureHandle MetalRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
+TextureHandle MetalRenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height)
 {
     if (!_textureManager)
         return {};
@@ -288,8 +287,7 @@ TextureHandle MetalRenderer::createDynamicTexture(u32 width, u32 height)
     return _textureManager->createDynamic(width, height);
 }
 
-void MetalRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
-                                       u32 width, u32 height, const u8* rgbaPixels)
+void MetalRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels)
 {
     if (!_textureManager)
         return;
@@ -306,8 +304,9 @@ void MetalRenderer::beginFrame()
 
     _frameBegun = false;
 
-    wma::WindowFlags* flags = _windowManagerApi->getWindowFlags();
-    if (flags->resized) {
+    wma::WindowFlags *flags = _windowManagerApi->getWindowFlags();
+    if (flags->resized)
+    {
         flags->resized = false;
         handleWindowChanges();
     }
@@ -341,7 +340,8 @@ void MetalRenderer::beginFrame()
     {
         AURA_FRAME_SCOPE(FramePhase::Acquire);
 
-        if (!_drawableManager->acquire()) {
+        if (!_drawableManager->acquire())
+        {
             //! No drawable: an ordinary condition (occluded/minimised window), so
             //! the frame is skipped and the slot handed straight back.
             _framePool.reset();
@@ -351,7 +351,8 @@ void MetalRenderer::beginFrame()
     }
 
     _commandBuffer = _deviceManager->getCommandQueue()->commandBuffer();
-    if (!_commandBuffer) {
+    if (!_commandBuffer)
+    {
         INK_WARN << "MetalRenderer: the command queue produced no command buffer; skipping frame";
         _drawableManager->release();
         _framePool.reset();
@@ -371,14 +372,14 @@ void MetalRenderer::beginRenderPass()
     if (!_frameBegun || _renderPassActive || !_drawableManager)
         return;
 
-    MTL::RenderPassDescriptor* pass =
-        _drawableManager->buildRenderPass(_clearR, _clearG, _clearB, _clearA);
+    MTL::RenderPassDescriptor *pass = _drawableManager->buildRenderPass(_clearR, _clearG, _clearB, _clearA);
 
     if (!pass)
         return;
 
     _encoder = _commandBuffer->renderCommandEncoder(pass);
-    if (!_encoder) {
+    if (!_encoder)
+    {
         INK_WARN << "MetalRenderer: failed to open a render command encoder";
         return;
     }
@@ -439,7 +440,11 @@ void MetalRenderer::endFrame()
          * does.
          */
         const std::shared_ptr<FrameSlots> slots = _frameSlots;
-        _commandBuffer->addCompletedHandler([slots](MTL::CommandBuffer*) { slots->release(); });
+        _commandBuffer->addCompletedHandler(
+            [slots](MTL::CommandBuffer *)
+            {
+                slots->release();
+            });
 
         _commandBuffer->commit();
     }
@@ -461,7 +466,7 @@ void MetalRenderer::endFrame()
     AURA_FRAME_END();
 }
 
-void MetalRenderer::setTransform(const gfx::TransformUBO& ubo)
+void MetalRenderer::setTransform(const gfx::TransformUBO &ubo)
 {
     //! Recorded rather than pushed: the bytes travel to the GPU at each draw,
     //! from bindDrawState(). IRenderer::drawMeshes() also reads this back to vary
@@ -484,9 +489,9 @@ void MetalRenderer::bindTexture(TextureHandle handle)
     _currentTexture = handle;
 }
 
-MTL::Texture* MetalRenderer::resolveSampledTexture(TextureHandle handle)
+MTL::Texture *MetalRenderer::resolveSampledTexture(TextureHandle handle)
 {
-    if (MTL::Texture* texture = _textureManager->resolve(handle))
+    if (MTL::Texture *texture = _textureManager->resolve(handle))
         return texture;
 
     return _textureManager->resolve(_fallbackTexture);
@@ -512,7 +517,7 @@ void MetalRenderer::bindDrawState()
     _encoder->setFragmentTexture(resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
     _encoder->setFragmentSamplerState(_textureManager->getSampler(), kFragmentAlbedoSlot);
 
-    if (MTL::Buffer* vertexBuffer = _vertexManager->resolve(_currentVertexBuffer))
+    if (MTL::Buffer *vertexBuffer = _vertexManager->resolve(_currentVertexBuffer))
         _encoder->setVertexBuffer(vertexBuffer, 0, kVertexGeometrySlot);
 }
 
@@ -521,7 +526,7 @@ void MetalRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     if (!_renderPassActive || instanceCount == 0)
         return;
 
-    const IndexBufferRecord* record = _indexManager->resolve(_currentIndexBuffer);
+    const IndexBufferRecord *record = _indexManager->resolve(_currentIndexBuffer);
     if (!record || !record->buffer)
         return;
 
@@ -542,12 +547,8 @@ void MetalRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 
     bindDrawState();
 
-    _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle,
-                                    static_cast<NS::UInteger>(drawnIndices),
-                                    record->indexType,
-                                    record->buffer,
-                                    0,
-                                    static_cast<NS::UInteger>(instanceCount));
+    _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(drawnIndices),
+                                    record->indexType, record->buffer, 0, static_cast<NS::UInteger>(instanceCount));
 }
 
 void MetalRenderer::draw(u32 vertexCount, u32 instanceCount)
@@ -560,19 +561,17 @@ void MetalRenderer::draw(u32 vertexCount, u32 instanceCount)
 
     bindDrawState();
 
-    _encoder->drawPrimitives(MTL::PrimitiveTypeTriangle,
-                             static_cast<NS::UInteger>(0),
-                             static_cast<NS::UInteger>(vertexCount),
-                             static_cast<NS::UInteger>(instanceCount));
+    _encoder->drawPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(0),
+                             static_cast<NS::UInteger>(vertexCount), static_cast<NS::UInteger>(instanceCount));
 }
 
 bool MetalRenderer::ensureOverlay2DCapacity(size_t vertexBytes, size_t indexBytes)
 {
     const u32 frame = _currentFrame;
 
-    if (_overlayVertexCapacity[frame] < vertexBytes) {
-        NS::SharedPtr<MTL::Buffer> buffer =
-            _bufferManager->createDynamic(vertexBytes, "Aura3D overlay vertices");
+    if (_overlayVertexCapacity[frame] < vertexBytes)
+    {
+        NS::SharedPtr<MTL::Buffer> buffer = _bufferManager->createDynamic(vertexBytes, "Aura3D overlay vertices");
 
         if (!buffer)
             return false;
@@ -581,9 +580,9 @@ bool MetalRenderer::ensureOverlay2DCapacity(size_t vertexBytes, size_t indexByte
         _overlayVertexCapacity[frame] = vertexBytes;
     }
 
-    if (_overlayIndexCapacity[frame] < indexBytes) {
-        NS::SharedPtr<MTL::Buffer> buffer =
-            _bufferManager->createDynamic(indexBytes, "Aura3D overlay indices");
+    if (_overlayIndexCapacity[frame] < indexBytes)
+    {
+        NS::SharedPtr<MTL::Buffer> buffer = _bufferManager->createDynamic(indexBytes, "Aura3D overlay indices");
 
         if (!buffer)
             return false;
@@ -595,9 +594,8 @@ bool MetalRenderer::ensureOverlay2DCapacity(size_t vertexBytes, size_t indexByte
     return true;
 }
 
-void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
-                               std::span<const u32> indices,
-                               TextureHandle texture)
+void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
+                                TextureHandle texture)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
 
@@ -621,8 +619,8 @@ void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     if (!ensureOverlay2DCapacity(vertexOffset + vertexBytes, indexOffset + indexBytes))
         return;
 
-    MTL::Buffer* vertexBuffer = _overlayVertexBuffers[_currentFrame].get();
-    MTL::Buffer* indexBuffer = _overlayIndexBuffers[_currentFrame].get();
+    MTL::Buffer *vertexBuffer = _overlayVertexBuffers[_currentFrame].get();
+    MTL::Buffer *indexBuffer = _overlayIndexBuffers[_currentFrame].get();
 
     /*
      * A plain memcpy into shared storage. Safe to write without any barrier
@@ -630,10 +628,8 @@ void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
      * semaphore acquire already established that the last frame to use this slot
      * has completed on the GPU.
      */
-    std::memcpy(static_cast<u8*>(vertexBuffer->contents()) + vertexOffset,
-                vertices.data(), vertexBytes);
-    std::memcpy(static_cast<u8*>(indexBuffer->contents()) + indexOffset,
-                indices.data(), indexBytes);
+    std::memcpy(static_cast<u8 *>(vertexBuffer->contents()) + vertexOffset, vertices.data(), vertexBytes);
+    std::memcpy(static_cast<u8 *>(indexBuffer->contents()) + indexOffset, indices.data(), indexBytes);
 
     _overlayVertexUsed[_currentFrame] = vertexOffset + vertexBytes;
     _overlayIndexUsed[_currentFrame] = indexOffset + indexBytes;
@@ -665,11 +661,8 @@ void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     _encoder->setFragmentSamplerState(_textureManager->getSampler(), kFragmentAlbedoSlot);
 
     //! The whole batch in one call -- the point of the exercise.
-    _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle,
-                                    static_cast<NS::UInteger>(indices.size()),
-                                    MTL::IndexTypeUInt32,
-                                    indexBuffer,
-                                    static_cast<NS::UInteger>(indexOffset));
+    _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(indices.size()),
+                                    MTL::IndexTypeUInt32, indexBuffer, static_cast<NS::UInteger>(indexOffset));
 
     /*
      * Hand the scene pipeline back, so a following 3D draw needs no knowledge

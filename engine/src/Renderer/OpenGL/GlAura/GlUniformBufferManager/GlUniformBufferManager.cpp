@@ -2,11 +2,16 @@
 
 #include <glm/gtc/type_ptr.hpp>
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
 GlUniformBufferManager::GlUniformBufferManager() = default;
-GlUniformBufferManager::~GlUniformBufferManager() { cleanup(); }
+GlUniformBufferManager::~GlUniformBufferManager()
+{
+    cleanup();
+}
 
 void GlUniformBufferManager::create(GLuint shaderProgram)
 {
@@ -18,7 +23,8 @@ void GlUniformBufferManager::create(GLuint shaderProgram)
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
     GLuint blockIdx = glGetUniformBlockIndex(shaderProgram, "UniformBufferObject");
-    if (blockIdx != GL_INVALID_INDEX) {
+    if (blockIdx != GL_INVALID_INDEX)
+    {
         glUniformBlockBinding(shaderProgram, blockIdx, 0);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, _ubo);
     }
@@ -49,17 +55,19 @@ void GlUniformBufferManager::bindUniformBuffer(GLuint buffer)
     _boundUniformBuffer = buffer;
 }
 
-void GlUniformBufferManager::updateLight(const gfx::LightUBO& light)
+void GlUniformBufferManager::updateLight(const gfx::LightUBO &light)
 {
-    if (!_lightUbo) return;
+    if (!_lightUbo)
+        return;
 
     bindUniformBuffer(_lightUbo);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(gfx::LightUBO), &light);
 }
 
-void GlUniformBufferManager::update(const gfx::TransformUBO& ubo)
+void GlUniformBufferManager::update(const gfx::TransformUBO &ubo)
 {
-    if (!_ubo) return;
+    if (!_ubo)
+        return;
 
     /*
      * TransformUBO is three mat4s and nothing else, laid out back to back --
@@ -89,7 +97,7 @@ void GlUniformBufferManager::bind(GLuint shaderProgram)
 
 void GlUniformBufferManager::cleanup()
 {
-    if (_ubo) 
+    if (_ubo)
         glDeleteBuffers(1, &_ubo);
     _ubo = 0;
 

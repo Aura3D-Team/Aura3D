@@ -39,7 +39,8 @@
  * capturing @c this stay valid for as long as the widget is in the tree.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 class UIRoot;
 class ITextShaper;
@@ -47,19 +48,29 @@ class OverlayLayer;
 class Widget;
 
 /// Observes a widget without extending its ownership in the tree.
-class WidgetRef {
-public:
+class WidgetRef
+{
+  public:
     WidgetRef() = default;
-    WidgetRef(Widget* widget);
-    [[nodiscard]] Widget* get() const noexcept { return _alive.expired() ? nullptr : _widget; }
-private:
-    Widget* _widget = nullptr;
+    WidgetRef(Widget *widget);
+    [[nodiscard]] Widget *get() const noexcept
+    {
+        return _alive.expired() ? nullptr : _widget;
+    }
+
+  private:
+    Widget *_widget = nullptr;
     std::weak_ptr<void> _alive;
 };
 
 /// Whether a widget draws, and whether it still takes up room when it does
 /// not. Collapsed is the one that reflows the layout.
-enum class Visibility : u8 { Visible, Hidden, Collapsed };
+enum class Visibility : u8
+{
+    Visible,
+    Hidden,
+    Collapsed
+};
 
 /**
  * @class Widget
@@ -69,15 +80,16 @@ enum class Visibility : u8 { Visible, Hidden, Collapsed };
  *       handlers capture @c this; an address that changes would invalidate
  *       both. Build widgets with add(), which allocates them in place.
  */
-class Widget {
-public:
+class Widget
+{
+  public:
     Widget();
     virtual ~Widget();
 
-    Widget(const Widget&) = delete;
-    Widget& operator=(const Widget&) = delete;
-    Widget(Widget&&) = delete;
-    Widget& operator=(Widget&&) = delete;
+    Widget(const Widget &) = delete;
+    Widget &operator=(const Widget &) = delete;
+    Widget(Widget &&) = delete;
+    Widget &operator=(Widget &&) = delete;
 
     /// @name Tree
     /// @{
@@ -90,44 +102,54 @@ public:
      * title.style().text = theme.palette().accent;
      * @endcode
      */
-    template <class W, class... Args>
-    W& add(Args&&... args)
+    template <class W, class... Args> W &add(Args &&...args)
     {
         auto child = std::make_unique<W>(std::forward<Args>(args)...);
-        W& reference = *child;
+        W &reference = *child;
         _insert(_children.size(), std::move(child));
         return reference;
     }
 
-    template <class W, class... Args>
-    W& insert(usize index, Args&&... args)
+    template <class W, class... Args> W &insert(usize index, Args &&...args)
     {
         auto child = std::make_unique<W>(std::forward<Args>(args)...);
-        W& reference = *child;
+        W &reference = *child;
         _insert(index, std::move(child));
         return reference;
     }
 
     /// Takes ownership of an already-built subtree.
-    Widget& adopt(std::unique_ptr<Widget> child);
+    Widget &adopt(std::unique_ptr<Widget> child);
 
     /// Removes @p child and hands it back, still intact -- for moving a
     /// subtree between parents without rebuilding it.
-    [[nodiscard]] std::unique_ptr<Widget> detach(Widget& child);
+    [[nodiscard]] std::unique_ptr<Widget> detach(Widget &child);
 
-    void remove(Widget& child);
+    void remove(Widget &child);
     void clearChildren();
 
-    [[nodiscard]] Widget* parent() const noexcept { return _parent; }
-    [[nodiscard]] UIRoot* root() const noexcept { return _root; }
+    [[nodiscard]] Widget *parent() const noexcept
+    {
+        return _parent;
+    }
+    [[nodiscard]] UIRoot *root() const noexcept
+    {
+        return _root;
+    }
 
     [[nodiscard]] std::span<const std::unique_ptr<Widget>> children() const noexcept
     {
         return _children;
     }
 
-    [[nodiscard]] usize childCount() const noexcept { return _children.size(); }
-    [[nodiscard]] Widget& childAt(usize index) const { return *_children[index]; }
+    [[nodiscard]] usize childCount() const noexcept
+    {
+        return _children.size();
+    }
+    [[nodiscard]] Widget &childAt(usize index) const
+    {
+        return *_children[index];
+    }
 
     /// @}
 
@@ -135,12 +157,18 @@ public:
     /// @{
 
     /// A name for debugging, tests and accessibility fallback. Not drawn.
-    void setName(std::string name) { _name = std::move(name); }
-    [[nodiscard]] const std::string& name() const noexcept { return _name; }
+    void setName(std::string name)
+    {
+        _name = std::move(name);
+    }
+    [[nodiscard]] const std::string &name() const noexcept
+    {
+        return _name;
+    }
 
     /// The first descendant named @p name, depth first. For wiring up a tree
     /// built elsewhere, and for tests.
-    [[nodiscard]] Widget* find(std::string_view name) noexcept;
+    [[nodiscard]] Widget *find(std::string_view name) noexcept;
 
     /// @}
 
@@ -149,39 +177,57 @@ public:
 
     /// Editable placement. Marks the tree for re-layout, so a widget cannot be
     /// repositioned without the change taking effect.
-    [[nodiscard]] LayoutSpec& layout() noexcept
+    [[nodiscard]] LayoutSpec &layout() noexcept
     {
         invalidateLayout();
         return _layout;
     }
 
-    [[nodiscard]] const LayoutSpec& layout() const noexcept { return _layout; }
+    [[nodiscard]] const LayoutSpec &layout() const noexcept
+    {
+        return _layout;
+    }
 
     /// Final rectangle in surface pixels. Meaningful after the frame's arrange
     /// pass; empty before the first one.
-    [[nodiscard]] const Rect& bounds() const noexcept { return _bounds; }
+    [[nodiscard]] const Rect &bounds() const noexcept
+    {
+        return _bounds;
+    }
 
     /// Where this widget's content lives: @ref bounds minus @ref contentInsets.
     /// Also what clipping and hit testing treat as "inside".
-    [[nodiscard]] Rect contentRect() const noexcept { return deflate(_bounds, contentInsets()); }
+    [[nodiscard]] Rect contentRect() const noexcept
+    {
+        return deflate(_bounds, contentInsets());
+    }
 
     /// Space between this widget's edges and its content. Padding, plus
     /// whatever the widget reserves for itself -- a scroll view's gutters.
-    [[nodiscard]] virtual Thickness contentInsets() const noexcept { return _layout.padding; }
+    [[nodiscard]] virtual Thickness contentInsets() const noexcept
+    {
+        return _layout.padding;
+    }
 
-    [[nodiscard]] glm::vec2 desiredSize() const noexcept { return _desired; }
+    [[nodiscard]] glm::vec2 desiredSize() const noexcept
+    {
+        return _desired;
+    }
 
     /// Pass one: reports how big this widget would like to be within @p space,
     /// margin included.
-    glm::vec2 measure(const Constraints& space);
+    glm::vec2 measure(const Constraints &space);
 
     /// Pass two: takes @p slot, places itself in it and arranges its children.
-    void arrange(const Rect& slot);
+    void arrange(const Rect &slot);
 
     void invalidateLayout() noexcept;
     void invalidatePaint() noexcept;
 
-    [[nodiscard]] bool layoutDirty() const noexcept { return _layoutDirty; }
+    [[nodiscard]] bool layoutDirty() const noexcept
+    {
+        return _layoutDirty;
+    }
 
     /// @}
 
@@ -189,10 +235,16 @@ public:
     /// @{
 
     void setVisibility(Visibility visibility);
-    [[nodiscard]] Visibility visibility() const noexcept { return _visibility; }
+    [[nodiscard]] Visibility visibility() const noexcept
+    {
+        return _visibility;
+    }
 
     void setEnabled(bool enabled);
-    [[nodiscard]] bool enabled() const noexcept { return _enabled; }
+    [[nodiscard]] bool enabled() const noexcept
+    {
+        return _enabled;
+    }
 
     /// False when this widget or any ancestor is disabled -- what a control
     /// must test before reacting, and what greys it out.
@@ -207,7 +259,7 @@ public:
     /// Paints this widget and its subtree into @p out. Applies clipping and
     /// skips what is not visible; override paint()/paintChildren() instead of
     /// this.
-    void paintTree(DrawList& out);
+    void paintTree(DrawList &out);
 
     /// @}
 
@@ -220,27 +272,39 @@ public:
 
     /// True to clip descendants to @ref contentRect. A scroll view says yes.
     /// Also tells hit testing that a point outside cannot belong to a child.
-    [[nodiscard]] virtual bool clipsChildren() const noexcept { return false; }
+    [[nodiscard]] virtual bool clipsChildren() const noexcept
+    {
+        return false;
+    }
 
     /// The axis this widget lays its children out along. A child that has to
     /// know -- a Spacer, which is thick one way and nothing the other -- asks
     /// its parent rather than being told twice.
-    [[nodiscard]] virtual Axis mainAxis() const noexcept { return Axis::Vertical; }
+    [[nodiscard]] virtual Axis mainAxis() const noexcept
+    {
+        return Axis::Vertical;
+    }
 
     /// False lets the pointer through to whatever is underneath -- an overlay,
     /// a decoration, a label on top of a card.
-    void setHitTestVisible(bool visible) noexcept { _hitTestVisible = visible; }
-    [[nodiscard]] bool hitTestVisible() const noexcept { return _hitTestVisible; }
+    void setHitTestVisible(bool visible) noexcept
+    {
+        _hitTestVisible = visible;
+    }
+    [[nodiscard]] bool hitTestVisible() const noexcept
+    {
+        return _hitTestVisible;
+    }
 
     /// @{
     /// Return true to consume the event and stop it bubbling to the parent.
-    virtual bool onPointerDown(const PointerEvent& event);
-    virtual bool onPointerUp(const PointerEvent& event);
-    virtual bool onPointerMove(const PointerEvent& event);
-    virtual bool onWheel(const WheelEvent& event);
-    virtual bool onKeyDown(const KeyEvent& event);
-    virtual bool onKeyUp(const KeyEvent& event);
-    virtual bool onTextInput(const TextEvent& event);
+    virtual bool onPointerDown(const PointerEvent &event);
+    virtual bool onPointerUp(const PointerEvent &event);
+    virtual bool onPointerMove(const PointerEvent &event);
+    virtual bool onWheel(const WheelEvent &event);
+    virtual bool onKeyDown(const KeyEvent &event);
+    virtual bool onKeyUp(const KeyEvent &event);
+    virtual bool onTextInput(const TextEvent &event);
     /// @}
 
     /// @{
@@ -258,7 +322,10 @@ public:
     /// @name Focus
     /// @{
 
-    void setFocusable(bool focusable) noexcept { _focusable = focusable; }
+    void setFocusable(bool focusable) noexcept
+    {
+        _focusable = focusable;
+    }
 
     /// True when this widget can take keyboard focus *right now*: focusable,
     /// visible and not disabled.
@@ -272,7 +339,10 @@ public:
     /// True when this widget wants the platform's text input active while it
     /// has focus. Drives IWindowManager::setTextInputEnabled(), and tells the
     /// application the UI owns the keyboard.
-    [[nodiscard]] virtual bool wantsTextInput() const noexcept { return false; }
+    [[nodiscard]] virtual bool wantsTextInput() const noexcept
+    {
+        return false;
+    }
 
     /// @{
     /// While captured, every pointer event goes to this widget wherever the
@@ -289,8 +359,14 @@ public:
      * ancestor and never affects layout. Inherited by descendants that set
      * none of their own, which is what lets a whole row explain itself.
      */
-    void setTooltip(std::string text) { _tooltip = std::move(text); }
-    [[nodiscard]] const std::string& tooltip() const noexcept { return _tooltip; }
+    void setTooltip(std::string text)
+    {
+        _tooltip = std::move(text);
+    }
+    [[nodiscard]] const std::string &tooltip() const noexcept
+    {
+        return _tooltip;
+    }
 
     /// @}
 
@@ -299,15 +375,21 @@ public:
 
     /// Per-widget overrides on top of the theme's entry for this widget's
     /// @ref Part. Marks the widget for repaint.
-    [[nodiscard]] Style& style() noexcept
+    [[nodiscard]] Style &style() noexcept
     {
         invalidateLayout();
         return _style;
     }
 
-    [[nodiscard]] const Style& style() const noexcept { return _style; }
+    [[nodiscard]] const Style &style() const noexcept
+    {
+        return _style;
+    }
 
-    [[nodiscard]] Part part() const noexcept { return _part; }
+    [[nodiscard]] Part part() const noexcept
+    {
+        return _part;
+    }
 
     /**
      * @brief Restyles this widget as a different component.
@@ -327,7 +409,7 @@ public:
     /// next frame without anyone having to invalidate the tree.
     [[nodiscard]] WidgetStyle resolvedStyle() const;
 
-    [[nodiscard]] const Theme& theme() const noexcept;
+    [[nodiscard]] const Theme &theme() const noexcept;
 
     /// @}
 
@@ -336,31 +418,37 @@ public:
 
     /// Fills @p out with what this widget exposes. Overrides should call the
     /// base first and then set what they know.
-    virtual void accessibility(AccessibilityInfo& out) const;
+    virtual void accessibility(AccessibilityInfo &out) const;
 
     /// Overrides the name a screen reader reads. Required for any control
     /// whose label is an icon.
-    void setAccessibleName(std::string name) { _accessibleName = std::move(name); }
-    void setAccessibleDescription(std::string text) { _accessibleDescription = std::move(text); }
+    void setAccessibleName(std::string name)
+    {
+        _accessibleName = std::move(name);
+    }
+    void setAccessibleDescription(std::string text)
+    {
+        _accessibleDescription = std::move(text);
+    }
 
     /// @}
 
-protected:
+  protected:
     /// @name For subclasses
     /// @{
 
     /// This widget's intrinsic content size within @p available, ignoring its
     /// own margin, padding and @ref Length -- the base class applies those.
     /// Containers measure their children here.
-    virtual glm::vec2 measureContent(const Constraints& available);
+    virtual glm::vec2 measureContent(const Constraints &available);
 
     /// Places children inside @p content, which is @ref bounds minus padding.
-    virtual void arrangeContent(const Rect& content);
+    virtual void arrangeContent(const Rect &content);
 
     /// Draws this widget itself. Children are drawn after, by paintChildren().
-    virtual void paint(DrawList& out);
+    virtual void paint(DrawList &out);
 
-    virtual void paintChildren(DrawList& out);
+    virtual void paintChildren(DrawList &out);
 
     /// Called once per frame while visible and animating(). Invalidate paint
     /// or layout when the tick changes the widget.
@@ -370,11 +458,14 @@ protected:
     /// Asks the root to call onTick() every frame. Cheap to toggle; a UI with
     /// nothing animating does no per-frame work.
     void setAnimating(bool animating);
-    [[nodiscard]] bool animating() const noexcept { return _animating; }
+    [[nodiscard]] bool animating() const noexcept
+    {
+        return _animating;
+    }
 
     /// @{
     /// Structural notifications, for a container keeping its own bookkeeping.
-    virtual void onChildAdded(Widget& child, usize index);
+    virtual void onChildAdded(Widget &child, usize index);
     virtual void onChildRemoved(usize index);
     virtual void onAttach();
     virtual void onDetach();
@@ -382,25 +473,25 @@ protected:
 
     /// The shaper this tree draws text with; null before the widget is
     /// attached to a root.
-    [[nodiscard]] ITextShaper* shaper() const noexcept;
+    [[nodiscard]] ITextShaper *shaper() const noexcept;
 
     /// The tree's floating layer, for a widget that opens a menu or a
     /// drop-down. Null before the widget is attached to a root.
-    [[nodiscard]] OverlayLayer* overlay() const noexcept;
+    [[nodiscard]] OverlayLayer *overlay() const noexcept;
 
     /// Which theme entry this widget reads. Set in a subclass' constructor.
     Part _part = Part::Container;
 
     /// @}
 
-private:
+  private:
     friend class UIRoot;
     friend class WidgetRef;
 
     std::shared_ptr<void> _alive;
 
     void _insert(usize index, std::unique_ptr<Widget> child);
-    void _setRoot(UIRoot* root);
+    void _setRoot(UIRoot *root);
 
     /// The size this widget settled on in measure(), margin excluded -- what
     /// arrange() places, and what tells stretch from an explicit size.
@@ -408,8 +499,8 @@ private:
     glm::vec2 _desired{0.0f};
     Rect _bounds{};
 
-    Widget* _parent = nullptr;
-    UIRoot* _root = nullptr;
+    Widget *_parent = nullptr;
+    UIRoot *_root = nullptr;
     std::vector<std::unique_ptr<Widget>> _children;
 
     LayoutSpec _layout{};

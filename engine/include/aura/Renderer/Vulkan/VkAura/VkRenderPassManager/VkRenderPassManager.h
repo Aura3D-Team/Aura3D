@@ -5,13 +5,15 @@
 
 #include <vulkan/vulkan.h>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 class VkRenderPassManager
 {
-public:
-    VkRenderPassManager(VkDevice* device);
+  public:
+    VkRenderPassManager(VkDevice *device);
     ~VkRenderPassManager();
 
     /**
@@ -24,8 +26,7 @@ public:
      *                     a resolve attachment, written by the fixed-function
      *                     resolve at the end of the subpass.
      */
-    void createRenderPass(VkFormat swapchainImageFormat,
-                          bool enableDepth = false,
+    void createRenderPass(VkFormat swapchainImageFormat, bool enableDepth = false,
                           VkFormat depthFormat = VK_FORMAT_D32_SFLOAT,
                           VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT);
 
@@ -38,28 +39,28 @@ public:
      *        draw directly into @p commandBuffer becomes invalid -- Vulkan
      *        offers no mixed mode within one subpass instance.
      */
-    void beginRenderPass(VkCommandBuffer commandBuffer,
-                         VkFramebuffer framebuffer,
-                         VkExtent2D swapChainExtent,
-                         const VkClearValue* clearColorValue = nullptr,
-                         bool useSecondaryCommandBuffers = false);
+    void beginRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer framebuffer, VkExtent2D swapChainExtent,
+                         const VkClearValue *clearColorValue = nullptr, bool useSecondaryCommandBuffers = false);
 
-    bool hasDepth() const { return _hasDepth; }
+    bool hasDepth() const
+    {
+        return _hasDepth;
+    }
 
     static void endRenderPass(VkCommandBuffer commandBuffer);
 
-    VkRenderPass* getRenderPass();
+    VkRenderPass *getRenderPass();
 
     void cleanup();
 
-private:
-    VkDevice* _device;
+  private:
+    VkDevice *_device;
 
     VkRenderPass _renderPass = VK_NULL_HANDLE;
     bool _hasDepth = false;
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKRENDERPASSMANAGER_H

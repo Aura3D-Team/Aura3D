@@ -3,6 +3,7 @@
 
 #pragma once
 
+// clang-format off
 /*
  * GENERATED FILE - do not edit by hand.
  * Regenerate with scripts/gen_embedded_spirv.sh after editing
@@ -38,5 +39,6 @@ static const unsigned int vk_frag_3d_len = 2428;
 
 } // namespace vk
 } // namespace aura3d
+// clang-format on
 
 #endif // EMBEDDED_SPIRV_SHADERS_H

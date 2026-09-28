@@ -10,7 +10,8 @@
 
 #include "aura/aura.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @brief A type-safe, opaque reference to an engine-owned resource.
@@ -30,10 +31,9 @@ namespace aura3d {
  *             from another (e.g. `struct TextureTag;`). Used only as a
  *             template parameter, so it need not be complete.
  */
-template <typename Tag>
-class Handle
+template <typename Tag> class Handle
 {
-public:
+  public:
     using ValueType = u32;
 
     //! Sentinel for "no resource". isValid() also rejects 0, matching every
@@ -43,20 +43,25 @@ public:
     constexpr Handle() noexcept = default;
 
     //! Explicit: constructing from a raw integer is always a deliberate act.
-    constexpr explicit Handle(ValueType value) noexcept : _value(value) {}
+    constexpr explicit Handle(ValueType value) noexcept : _value(value)
+    {
+    }
 
-    [[nodiscard]] constexpr ValueType value() const noexcept { return _value; }
+    [[nodiscard]] constexpr ValueType value() const noexcept
+    {
+        return _value;
+    }
 
     [[nodiscard]] constexpr bool isValid() const noexcept
     {
         return _value != kInvalidValue && _value != 0;
     }
 
-    friend constexpr bool operator==(const Handle&, const Handle&) noexcept = default;
+    friend constexpr bool operator==(const Handle &, const Handle &) noexcept = default;
 
     //! For issuing handles from a pool counter (`auto handle = _nextHandle++;`).
     //! No other arithmetic operator is exposed.
-    constexpr Handle& operator++() noexcept
+    constexpr Handle &operator++() noexcept
     {
         ++_value;
         return *this;
@@ -69,28 +74,26 @@ public:
         return previous;
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const Handle& handle)
+    friend std::ostream &operator<<(std::ostream &os, const Handle &handle)
     {
         return os << handle._value;
     }
 
-private:
+  private:
     ValueType _value = kInvalidValue;
 };
 
 /// True when @p handle refers to a resource rather than the sentinel.
-template <typename Tag>
-[[nodiscard]] constexpr bool isValidHandle(Handle<Tag> handle) noexcept
+template <typename Tag> [[nodiscard]] constexpr bool isValidHandle(Handle<Tag> handle) noexcept
 {
     return handle.isValid();
 }
 
 } // namespace aura3d
 
-template <typename Tag>
-struct std::hash<aura3d::Handle<Tag>>
+template <typename Tag> struct std::hash<aura3d::Handle<Tag>>
 {
-    [[nodiscard]] size_t operator()(const aura3d::Handle<Tag>& handle) const noexcept
+    [[nodiscard]] size_t operator()(const aura3d::Handle<Tag> &handle) const noexcept
     {
         return std::hash<typename aura3d::Handle<Tag>::ValueType>{}(handle.value());
     }

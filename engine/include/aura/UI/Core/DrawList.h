@@ -34,11 +34,18 @@
  * AuraUI knows how.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 class ShapedText;
 
-enum class DrawCommandType : u8 { Rect, Text, Image, Mask };
+enum class DrawCommandType : u8
+{
+    Rect,
+    Text,
+    Image,
+    Mask
+};
 
 /**
  * @brief One primitive, with everything needed to draw it.
@@ -47,7 +54,8 @@ enum class DrawCommandType : u8 { Rect, Text, Image, Mask };
  * frame in order, so there is nothing for virtual dispatch to buy, and a POD
  * command is what makes a golden-image test a plain comparison.
  */
-struct DrawCommand {
+struct DrawCommand
+{
     DrawCommandType type = DrawCommandType::Rect;
 
     /// The rectangle the primitive occupies. For Text, the block's box; the
@@ -74,7 +82,7 @@ struct DrawCommand {
 
     //! Text only. Borrowed from the widget, which keeps its shaped text
     //! between frames; valid until the list is cleared.
-    const ShapedText* text = nullptr;
+    const ShapedText *text = nullptr;
     glm::vec2 origin{0.0f};
 
     TextureHandle texture{}; //! Image only.
@@ -94,22 +102,23 @@ struct DrawCommand {
  * Storage is retained across frames, so a steady-state UI re-records without
  * allocating.
  */
-class DrawList {
-public:
+class DrawList
+{
+  public:
     /// Opens a frame: drops the previous list and makes @p surface the
     /// outermost clip.
-    void begin(const Rect& surface);
+    void begin(const Rect &surface);
 
-    void fillRect(const Rect& bounds, const glm::vec4& color, Corners radius = {});
+    void fillRect(const Rect &bounds, const glm::vec4 &color, Corners radius = {});
 
     /// An outline drawn *inside* @p bounds, so a bordered control occupies
     /// exactly the rectangle it was arranged into.
-    void strokeRect(const Rect& bounds, const glm::vec4& color, f32 width, Corners radius = {});
+    void strokeRect(const Rect &bounds, const glm::vec4 &color, f32 width, Corners radius = {});
 
     /// Fill and outline as one primitive -- the usual case, and one command
     /// rather than two.
-    void drawRect(const Rect& bounds, const glm::vec4& fill, const glm::vec4& border,
-                  f32 borderWidth, Corners radius = {});
+    void drawRect(const Rect &bounds, const glm::vec4 &fill, const glm::vec4 &border, f32 borderWidth,
+                  Corners radius = {});
 
     /**
      * @brief Draws already-shaped text with its block origin at @p origin.
@@ -117,10 +126,10 @@ public:
      * @param text Must outlive the frame; widgets keep theirs cached, which is
      *        also what stops a label re-shaping every frame.
      */
-    void drawText(const ShapedText& text, glm::vec2 origin, const glm::vec4& color);
+    void drawText(const ShapedText &text, glm::vec2 origin, const glm::vec4 &color);
 
-    void drawImage(const Rect& bounds, TextureHandle texture,
-                   const glm::vec4& tint = glm::vec4{1.0f}, Corners radius = {});
+    void drawImage(const Rect &bounds, TextureHandle texture, const glm::vec4 &tint = glm::vec4{1.0f},
+                   Corners radius = {});
 
     /**
      * @brief Draws one coverage cell from the glyph atlas, tinted.
@@ -133,25 +142,36 @@ public:
      *
      * @param page Glyph page the UVs address; see ITextShaper::page().
      */
-    void drawMask(const Rect& bounds, u32 page, glm::vec2 uvMin, glm::vec2 uvMax,
-                  const glm::vec4& color);
+    void drawMask(const Rect &bounds, u32 page, glm::vec2 uvMin, glm::vec2 uvMax, const glm::vec4 &color);
 
     /// @{
     /// Intersects @p bounds with the current clip and pushes it. Every push
     /// needs a pop; @ref ClipScope pairs them for you.
-    void pushClip(const Rect& bounds);
+    void pushClip(const Rect &bounds);
     void popClip() noexcept;
-    [[nodiscard]] const Rect& clip() const noexcept { return _clips.back(); }
+    [[nodiscard]] const Rect &clip() const noexcept
+    {
+        return _clips.back();
+    }
     /// @}
 
-    [[nodiscard]] std::span<const DrawCommand> commands() const noexcept { return _commands; }
-    [[nodiscard]] usize size() const noexcept { return _commands.size(); }
-    [[nodiscard]] bool empty() const noexcept { return _commands.empty(); }
+    [[nodiscard]] std::span<const DrawCommand> commands() const noexcept
+    {
+        return _commands;
+    }
+    [[nodiscard]] usize size() const noexcept
+    {
+        return _commands.size();
+    }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return _commands.empty();
+    }
 
-private:
+  private:
     /// False when @p bounds cannot contribute a pixel, which is how a
     /// scrolled-away subtree costs nothing but its layout.
-    [[nodiscard]] bool _visible(const Rect& bounds) const noexcept;
+    [[nodiscard]] bool _visible(const Rect &bounds) const noexcept;
 
     std::vector<DrawCommand> _commands;
 
@@ -171,16 +191,23 @@ private:
  * }
  * @endcode
  */
-class ClipScope {
-public:
-    ClipScope(DrawList& list, const Rect& bounds) : _list(list) { _list.pushClip(bounds); }
-    ~ClipScope() { _list.popClip(); }
+class ClipScope
+{
+  public:
+    ClipScope(DrawList &list, const Rect &bounds) : _list(list)
+    {
+        _list.pushClip(bounds);
+    }
+    ~ClipScope()
+    {
+        _list.popClip();
+    }
 
-    ClipScope(const ClipScope&) = delete;
-    ClipScope& operator=(const ClipScope&) = delete;
+    ClipScope(const ClipScope &) = delete;
+    ClipScope &operator=(const ClipScope &) = delete;
 
-private:
-    DrawList& _list;
+  private:
+    DrawList &_list;
 };
 
 } // namespace aura3d::ui

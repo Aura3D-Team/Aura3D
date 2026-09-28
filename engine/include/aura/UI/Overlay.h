@@ -30,15 +30,17 @@
  * the tree already uses. Only its placement is special.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /// Where an overlay sits relative to its anchor. Every option flips to its
 /// opposite when the surface has no room, which is what keeps a drop-down near
 /// the bottom of the window from opening off-screen.
-enum class Placement : u8 {
-    Below,  //! Under the anchor, left edges aligned. Drop-downs.
+enum class Placement : u8
+{
+    Below, //! Under the anchor, left edges aligned. Drop-downs.
     Above,
-    Right,  //! Beside the anchor, top edges aligned. Submenus.
+    Right, //! Beside the anchor, top edges aligned. Submenus.
     Left,
     Over,   //! Directly on the anchor. Popovers that replace their trigger.
     Cursor, //! At the anchor's top-left, nudged clear. Tooltips, context menus.
@@ -46,7 +48,8 @@ enum class Placement : u8 {
 };
 
 /// How one overlay is placed and dismissed.
-struct OverlayDesc {
+struct OverlayDesc
+{
     /// Rectangle to position against, in surface coordinates. A degenerate
     /// rectangle is a point, which is what @ref Placement::Cursor wants.
     Rect anchor{};
@@ -66,7 +69,7 @@ struct OverlayDesc {
     bool dismissOnOutsideClick = true;
     bool dismissOnEscape = true;
     bool takeFocus = true;
-    Widget* owner = nullptr;
+    Widget *owner = nullptr;
     /// @}
 
     /// Called once the overlay is gone, so an opener can forget its id. Runs
@@ -86,8 +89,9 @@ struct OverlayDesc {
  *       destroying the widget inside its own click handler would pull the
  *       ground out from under the dispatch that is still running.
  */
-class OverlayLayer final : public Widget {
-public:
+class OverlayLayer final : public Widget
+{
+  public:
     using Id = u64;
 
     /// Never returned by open(); a stored id of this value means "nothing".
@@ -99,10 +103,9 @@ public:
      * @brief Opens an overlay holding a fresh widget of type @p W.
      * @return The widget, for filling in. Valid until it is closed.
      */
-    template <class W, class... Args>
-    W& open(const OverlayDesc& desc, Args&&... args)
+    template <class W, class... Args> W &open(const OverlayDesc &desc, Args &&...args)
     {
-        W& widget = add<W>(std::forward<Args>(args)...);
+        W &widget = add<W>(std::forward<Args>(args)...);
         _register(desc);
         return widget;
     }
@@ -133,19 +136,30 @@ public:
     /// closes the menu and leaves the dialog.
     void closeLightDismissible();
 
+    /// Closes the overlay holding @p member and every overlay above it, and
+    /// nothing below: a chosen menu command takes its menu stack down and
+    /// leaves the panel the menu was opened from standing.
+    void closeFrom(const Widget &member);
+
+    /// The owner the overlay holding @p member was opened with, if any.
+    [[nodiscard]] Widget *ownerOf(const Widget &member) const noexcept;
+
     [[nodiscard]] bool isOpen(Id id) const noexcept;
-    [[nodiscard]] bool empty() const noexcept { return childCount() == 0; }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return childCount() == 0;
+    }
 
     /// True while any open overlay is modal.
     [[nodiscard]] bool hasModal() const noexcept;
 
-    [[nodiscard]] Widget* topmost() const noexcept;
-    [[nodiscard]] Widget* focusScope() const noexcept;
-    [[nodiscard]] Widget* widgetAt(glm::vec2 point) const;
-    [[nodiscard]] bool allowsFocus(const Widget* widget) const noexcept;
+    [[nodiscard]] Widget *topmost() const noexcept;
+    [[nodiscard]] Widget *focusScope() const noexcept;
+    [[nodiscard]] Widget *widgetAt(glm::vec2 point) const;
+    [[nodiscard]] bool allowsFocus(const Widget *widget) const noexcept;
     bool dismissOutside(glm::vec2 point);
     void syncFocus();
-    void forgetOwner(Widget& owner);
+    void forgetOwner(Widget &owner);
 
     /// True when @p point falls inside any open overlay.
     [[nodiscard]] bool contains(glm::vec2 point) const;
@@ -154,15 +168,19 @@ public:
     void collectClosed();
 
     /// Overlays place themselves; a parent never arranges one.
-    [[nodiscard]] bool clipsChildren() const noexcept override { return false; }
+    [[nodiscard]] bool clipsChildren() const noexcept override
+    {
+        return false;
+    }
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
     void onChildRemoved(usize index) override;
 
-private:
-    struct Entry {
+  private:
+    struct Entry
+    {
         Id id = kNone;
         OverlayDesc desc{};
         bool closing = false;
@@ -173,13 +191,12 @@ private:
 
     /// Top-left @p size should sit at, given @p desc, flipped and then clamped
     /// so the overlay is always wholly on screen when it can be.
-    [[nodiscard]] static glm::vec2 place(const OverlayDesc& desc, glm::vec2 size,
-                                         const Rect& surface);
+    [[nodiscard]] static glm::vec2 place(const OverlayDesc &desc, glm::vec2 size, const Rect &surface);
 
     //! Parallel to children(): entry i describes child i. Kept in step by
     //! open() appending to both and onChildRemoved() erasing from this one.
     std::vector<Entry> _entries;
-    void _register(const OverlayDesc& desc);
+    void _register(const OverlayDesc &desc);
 
     Id _nextId = 1;
     bool _pendingClose = false;

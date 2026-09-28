@@ -6,9 +6,11 @@
 #include "aura/Renderer/IRenderer.h"
 #include "aura/UI/Text/TextEngine.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 constexpr usize kVerticesPerQuad = 4;
 constexpr usize kIndicesPerQuad = 6;
@@ -19,8 +21,7 @@ constexpr f32 kMaxRadius = static_cast<f32>(FontAtlas::kMaxCornerRadius);
 
 } // namespace
 
-DrawListRenderer::DrawListRenderer(IRenderer& renderer, ITextShaper& shaper)
-    : _renderer(&renderer), _shaper(&shaper)
+DrawListRenderer::DrawListRenderer(IRenderer &renderer, ITextShaper &shaper) : _renderer(&renderer), _shaper(&shaper)
 {
 }
 
@@ -50,7 +51,7 @@ void DrawListRenderer::_syncPages()
 
     for (u32 i = 0; i < pages; ++i)
     {
-        FontAtlas* atlas = _shaper->page(i);
+        FontAtlas *atlas = _shaper->page(i);
         if (!atlas)
             continue;
 
@@ -67,8 +68,7 @@ void DrawListRenderer::_syncPages()
         //! carrying everything this frame will draw.
         if (const auto pending = atlas->takeDirtyUpload())
             _renderer->updateTextureRegion(_pageTextures[i], pending->region.x, pending->region.y,
-                                           pending->region.width, pending->region.height,
-                                           pending->rgba.data());
+                                           pending->region.width, pending->region.height, pending->rgba.data());
     }
 }
 
@@ -128,7 +128,7 @@ void DrawListRenderer::_reserveIndices(usize quads)
     for (usize quad = first; quad < quads; ++quad)
     {
         const auto base = static_cast<u32>(quad * kVerticesPerQuad);
-        u32* out = _indices.data() + quad * kIndicesPerQuad;
+        u32 *out = _indices.data() + quad * kIndicesPerQuad;
 
         out[0] = base + 0;
         out[1] = base + 1;
@@ -139,7 +139,7 @@ void DrawListRenderer::_reserveIndices(usize quads)
     }
 }
 
-gfx::Vertex2D* DrawListRenderer::_quadSlot()
+gfx::Vertex2D *DrawListRenderer::_quadSlot()
 {
     const usize needed = (_quads + 1) * kVerticesPerQuad;
 
@@ -152,7 +152,7 @@ gfx::Vertex2D* DrawListRenderer::_quadSlot()
 
     _reserveIndices(_quads + 1);
 
-    gfx::Vertex2D* slot = _vertices.data() + _quads * kVerticesPerQuad;
+    gfx::Vertex2D *slot = _vertices.data() + _quads * kVerticesPerQuad;
 
     ++_quads;
     if (!_batches.empty())
@@ -161,8 +161,8 @@ gfx::Vertex2D* DrawListRenderer::_quadSlot()
     return slot;
 }
 
-void DrawListRenderer::_quad(const Rect& bounds, const Rect& clip, glm::vec2 uvMin,
-                             glm::vec2 uvMax, const glm::vec4& color)
+void DrawListRenderer::_quad(const Rect &bounds, const Rect &clip, glm::vec2 uvMin, glm::vec2 uvMax,
+                             const glm::vec4 &color)
 {
     const glm::vec2 size = bounds.size();
     if (size.x <= 0.0f || size.y <= 0.0f || color.a <= 0.0f)
@@ -195,7 +195,7 @@ void DrawListRenderer::_quad(const Rect& bounds, const Rect& clip, glm::vec2 uvM
                lerp(uvMin.y, uvMax.y, (visible.max.y - bounds.min.y) * inverse.y)};
     }
 
-    gfx::Vertex2D* out = _quadSlot();
+    gfx::Vertex2D *out = _quadSlot();
 
     //! Top-left, top-right, bottom-right, bottom-left: the order the shared
     //! index pattern assumes.
@@ -205,23 +205,21 @@ void DrawListRenderer::_quad(const Rect& bounds, const Rect& clip, glm::vec2 uvM
     out[3] = {glm::vec2{visible.min.x, visible.max.y} * _scale, {uv0.x, uv1.y}, color};
 }
 
-void DrawListRenderer::_solid(const Rect& bounds, const Rect& clip, const glm::vec4& color)
+void DrawListRenderer::_solid(const Rect &bounds, const Rect &clip, const glm::vec4 &color)
 {
     //! Without a glyph page the bound texture is the 1x1 white one, whose
     //! every texel is opaque -- so any UV does.
-    const glm::vec2 uv =
-        _hasPages && _currentPage < _pageSolidUv.size() ? _pageSolidUv[_currentPage]
-                                                        : glm::vec2{0.0f};
+    const glm::vec2 uv = _hasPages && _currentPage < _pageSolidUv.size() ? _pageSolidUv[_currentPage] : glm::vec2{0.0f};
 
     _quad(bounds, clip, uv, uv, color);
 }
 
-void DrawListRenderer::_roundedRect(const Rect& bounds, const Rect& clip, Corners radius,
-                                    const glm::vec4& color)
+void DrawListRenderer::_roundedRect(const Rect &bounds, const Rect &clip, Corners radius, const glm::vec4 &color)
 {
     const f32 limit = std::min(bounds.width(), bounds.height()) * 0.5f;
 
-    const auto cap = [limit](f32 value) {
+    const auto cap = [limit](f32 value)
+    {
         return std::floor(std::clamp(value, 0.0f, std::min(limit, kMaxRadius)));
     };
 
@@ -236,7 +234,7 @@ void DrawListRenderer::_roundedRect(const Rect& bounds, const Rect& clip, Corner
         return;
     }
 
-    FontAtlas* atlas = _shaper->page(_currentPage);
+    FontAtlas *atlas = _shaper->page(_currentPage);
     if (!atlas)
     {
         _solid(bounds, clip, color);
@@ -255,11 +253,12 @@ void DrawListRenderer::_roundedRect(const Rect& bounds, const Rect& clip, Corner
      * constant in the radius either way -- which is the whole reason the
      * shape is described by a number rather than rasterized here.
      */
-    const auto corner = [&](f32 x, f32 y, f32 size, bool flipX, bool flipY) {
+    const auto corner = [&](f32 x, f32 y, f32 size, bool flipX, bool flipY)
+    {
         if (size < 1.0f)
             return;
 
-        const FontAtlas::UvRect* mask = atlas->cornerMask(static_cast<u32>(size));
+        const FontAtlas::UvRect *mask = atlas->cornerMask(static_cast<u32>(size));
         if (!mask)
         {
             _solid(Rect::fromSize({x, y}, {size, size}), clip, color);
@@ -294,11 +293,14 @@ void DrawListRenderer::_roundedRect(const Rect& bounds, const Rect& clip, Corner
     _solid({{right - br, bottom - bottomBand}, {right, bottom - br}}, clip, color);
 }
 
-void DrawListRenderer::_roundedBorder(const Rect& bounds, const Rect& clip, Corners radius,
-                                      f32 width, const glm::vec4& color)
+void DrawListRenderer::_roundedBorder(const Rect &bounds, const Rect &clip, Corners radius, f32 width,
+                                      const glm::vec4 &color)
 {
     const f32 limit = std::min({bounds.width() * .5f, bounds.height() * .5f, kMaxRadius});
-    const auto cap = [limit](f32 r) { return std::floor(std::clamp(r, 0.f, limit)); };
+    const auto cap = [limit](f32 r)
+    {
+        return std::floor(std::clamp(r, 0.f, limit));
+    };
     const f32 tl = cap(radius.topLeft), tr = cap(radius.topRight);
     const f32 bl = cap(radius.bottomLeft), br = cap(radius.bottomRight);
     const f32 l = bounds.min.x, r = bounds.max.x, t = bounds.min.y, b = bounds.max.y;
@@ -309,16 +311,23 @@ void DrawListRenderer::_roundedBorder(const Rect& bounds, const Rect& clip, Corn
     _solid({{l, t + ctl}, {l + width, b - cbl}}, clip, color);
     _solid({{r - width, t + ctr}, {r, b - cbr}}, clip, color);
 
-    FontAtlas* atlas = _shaper->page(_currentPage);
-    const auto corner = [&](f32 x, f32 y, f32 radius, f32 side, bool flipX, bool flipY) {
-        const auto rectangle = [&](f32 x0, f32 y0, f32 x1, f32 y1) {
+    FontAtlas *atlas = _shaper->page(_currentPage);
+    const auto corner = [&](f32 x, f32 y, f32 radius, f32 side, bool flipX, bool flipY)
+    {
+        const auto rectangle = [&](f32 x0, f32 y0, f32 x1, f32 y1)
+        {
             return Rect{{x + (flipX ? side - x1 : x0), y + (flipY ? side - y1 : y0)},
                         {x + (flipX ? side - x0 : x1), y + (flipY ? side - y0 : y1)}};
         };
-        if (radius < 1.f || !atlas) { _solid(Rect::fromSize({x, y}, {side, side}), clip, color); return; }
+        if (radius < 1.f || !atlas)
+        {
+            _solid(Rect::fromSize({x, y}, {side, side}), clip, color);
+            return;
+        }
         const u32 pixels = std::clamp(u32(std::ceil(radius * _scale)), 1u, FontAtlas::kMaxCornerRadius);
-        const auto* mask = atlas->cornerRingMask(pixels, width * pixels / radius);
-        if (mask) {
+        const auto *mask = atlas->cornerRingMask(pixels, width * static_cast<f32>(pixels) / radius);
+        if (mask)
+        {
             const glm::vec2 uv0{flipX ? mask->max.x : mask->min.x, flipY ? mask->max.y : mask->min.y};
             const glm::vec2 uv1{flipX ? mask->min.x : mask->max.x, flipY ? mask->min.y : mask->max.y};
             _quad(rectangle(0, 0, radius, radius), clip, uv0, uv1, color);
@@ -333,16 +342,16 @@ void DrawListRenderer::_roundedBorder(const Rect& bounds, const Rect& clip, Corn
     corner(r - cbr, b - cbr, br, cbr, true, true);
 }
 
-void DrawListRenderer::_text(const DrawCommand& command)
+void DrawListRenderer::_text(const DrawCommand &command)
 {
-    const ShapedText& text = *command.text;
+    const ShapedText &text = *command.text;
 
     if (!_hasPages || _shaper->page(text.page) == nullptr)
         return;
 
     _usePage(text.page);
 
-    for (const ShapedGlyph& glyph : text.glyphs)
+    for (const ShapedGlyph &glyph : text.glyphs)
     {
         const Rect quad = glyph.bounds.translated(command.origin);
 
@@ -360,7 +369,7 @@ void DrawListRenderer::_text(const DrawCommand& command)
 // Frame
 // -----------------------------------------------------------------------------
 
-void DrawListRenderer::build(const DrawList& list, f32 scale)
+void DrawListRenderer::build(const DrawList &list, f32 scale)
 {
     _syncPages();
 
@@ -372,7 +381,7 @@ void DrawListRenderer::build(const DrawList& list, f32 scale)
     _currentPage = 0;
     _usePage(0);
 
-    for (const DrawCommand& command : list.commands())
+    for (const DrawCommand &command : list.commands())
     {
         switch (command.type)
         {
@@ -383,7 +392,8 @@ void DrawListRenderer::build(const DrawList& list, f32 scale)
             if (outlined && command.color.a >= .999f)
                 _roundedRect(command.bounds, command.clip, command.radius, command.borderColor);
             else if (outlined)
-                _roundedBorder(command.bounds, command.clip, command.radius,
+                _roundedBorder(
+                    command.bounds, command.clip, command.radius,
                     std::min(command.borderWidth, std::min(command.bounds.width(), command.bounds.height()) * .5f),
                     command.borderColor);
 
@@ -397,10 +407,9 @@ void DrawListRenderer::build(const DrawList& list, f32 scale)
             }
 
             const f32 inset = command.borderWidth;
-            const Corners inner{std::max(0.0f, command.radius.topLeft - inset),
-                                std::max(0.0f, command.radius.topRight - inset),
-                                std::max(0.0f, command.radius.bottomRight - inset),
-                                std::max(0.0f, command.radius.bottomLeft - inset)};
+            const Corners inner{
+                std::max(0.0f, command.radius.topLeft - inset), std::max(0.0f, command.radius.topRight - inset),
+                std::max(0.0f, command.radius.bottomRight - inset), std::max(0.0f, command.radius.bottomLeft - inset)};
 
             _roundedRect(command.bounds.inset(inset), command.clip, inner, command.color);
             break;
@@ -451,7 +460,7 @@ void DrawListRenderer::submit()
     if (_batches.empty() || _quads == 0)
         return;
 
-    for (const Batch& batch : _batches)
+    for (const Batch &batch : _batches)
     {
         if (batch.quadCount == 0)
             continue;

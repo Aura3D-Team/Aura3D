@@ -2,13 +2,14 @@
 
 #include "aura/Core/AuraException/AuraException.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkRenderSyncManager::VkRenderSyncManager(VkDevice* device) :
-    _device(device),
-    _imageAvailableSemaphores(GetMaxFramesInFlight(), VK_NULL_HANDLE),
-    _inFlightFences(GetMaxFramesInFlight(), VK_NULL_HANDLE)
+VkRenderSyncManager::VkRenderSyncManager(VkDevice *device)
+    : _device(device), _imageAvailableSemaphores(GetMaxFramesInFlight(), VK_NULL_HANDLE),
+      _inFlightFences(GetMaxFramesInFlight(), VK_NULL_HANDLE)
 {
     // Empty
 }
@@ -50,27 +51,27 @@ VkRenderSyncManager::~VkRenderSyncManager()
     _device = nullptr;
 }
 
-void VkRenderSyncManager::waitForFences(const u32& fenceIndex)
+void VkRenderSyncManager::waitForFences(const u32 &fenceIndex)
 {
     vkWaitForFences(*_device, 1, &_inFlightFences[fenceIndex], VK_TRUE, UINT64_MAX);
 }
 
-void VkRenderSyncManager::resetFences(const u32& fenceIndex)
+void VkRenderSyncManager::resetFences(const u32 &fenceIndex)
 {
     vkResetFences(*_device, 1, &_inFlightFences[fenceIndex]);
 }
 
-VkFixedArray<VkSemaphore>& VkRenderSyncManager::getImageAvailableSemaphores()
+VkFixedArray<VkSemaphore> &VkRenderSyncManager::getImageAvailableSemaphores()
 {
     return _imageAvailableSemaphores;
 }
 
-std::vector<VkSemaphore>& VkRenderSyncManager::getRenderFinishedSemaphores()
+std::vector<VkSemaphore> &VkRenderSyncManager::getRenderFinishedSemaphores()
 {
     return _renderFinishedSemaphores;
 }
 
-VkFixedArray<VkFence>& VkRenderSyncManager::getInFlightFences()
+VkFixedArray<VkFence> &VkRenderSyncManager::getInFlightFences()
 {
     return _inFlightFences;
 }
@@ -90,7 +91,7 @@ void VkRenderSyncManager::cleanup()
         _inFlightFences[i] = VK_NULL_HANDLE;
     }
 
-    for (VkSemaphore& semaphore : _renderFinishedSemaphores)
+    for (VkSemaphore &semaphore : _renderFinishedSemaphores)
     {
         vkDestroySemaphore(*_device, semaphore, nullptr);
         semaphore = VK_NULL_HANDLE;
@@ -100,5 +101,5 @@ void VkRenderSyncManager::cleanup()
     _renderFinishedSemaphores.clear();
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

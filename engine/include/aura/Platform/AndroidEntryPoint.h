@@ -53,7 +53,7 @@
 //! above, included *before* this header).
 int AuraAppMain();
 
-extern "C" int SDL_main(int argc, char* argv[])
+extern "C" int SDL_main(int argc, char *argv[])
 {
     (void)argc;
     (void)argv;

@@ -3,16 +3,18 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <vector>
+#include <vulkan/vulkan.h>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 class VkFrameBuffersManager
 {
-public:
-    VkFrameBuffersManager(VkDevice* device);
+  public:
+    VkFrameBuffersManager(VkDevice *device);
     ~VkFrameBuffersManager();
 
     /**
@@ -24,22 +26,19 @@ public:
      *                       VkRenderPassManager::createRenderPass() built the
      *                       render pass with.
      */
-    void createFrameBuffers(const std::vector<VkImageView>& imageViews,
-                            VkRenderPass renderPass,
-                            VkExtent2D frameExtent,
-                            VkImageView depthImageView = VK_NULL_HANDLE,
-                            VkImageView colorMsaaView = VK_NULL_HANDLE);
+    void createFrameBuffers(const std::vector<VkImageView> &imageViews, VkRenderPass renderPass, VkExtent2D frameExtent,
+                            VkImageView depthImageView = VK_NULL_HANDLE, VkImageView colorMsaaView = VK_NULL_HANDLE);
 
-    const std::vector<VkFramebuffer>& getFrameBuffers();
+    const std::vector<VkFramebuffer> &getFrameBuffers();
 
     void cleanup();
 
-private:
-    VkDevice* _device;
+  private:
+    VkDevice *_device;
     std::vector<VkFramebuffer> _framebuffers;
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKFRAMEBUFFERSMANAGER_H

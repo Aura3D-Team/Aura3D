@@ -26,8 +26,10 @@
  * every device-memory tool, so a leak of it shows up in nothing but RSS.
  */
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @struct VkHostAllocationStats
@@ -35,10 +37,10 @@ namespace vk {
  */
 struct VkHostAllocationStats
 {
-    u64 liveBytes       = 0;
-    u64 peakBytes       = 0;
+    u64 liveBytes = 0;
+    u64 peakBytes = 0;
     u64 allocationCount = 0;
-    u64 freeCount       = 0;
+    u64 freeCount = 0;
 
     //! Memory the driver reports allocating outside these callbacks
     //! (pfnInternalAllocation), which it neither asks us for nor lets us own.
@@ -68,13 +70,13 @@ struct VkHostAllocationStats
  */
 class VkCountingAllocator
 {
-public:
+  public:
     constexpr VkCountingAllocator() noexcept = default;
 
-    VkCountingAllocator(const VkCountingAllocator&)            = delete;
-    VkCountingAllocator& operator=(const VkCountingAllocator&) = delete;
+    VkCountingAllocator(const VkCountingAllocator &) = delete;
+    VkCountingAllocator &operator=(const VkCountingAllocator &) = delete;
 
-    [[nodiscard]] static VkCountingAllocator& get() noexcept;
+    [[nodiscard]] static VkCountingAllocator &get() noexcept;
 
     /**
      * @brief The callbacks structure to pass as @c pAllocator.
@@ -82,7 +84,7 @@ public:
      * @return Points at storage with static lifetime, so it is safe to hand to
      *         any Vulkan create call. Never null.
      */
-    [[nodiscard]] static const VkAllocationCallbacks* callbacks() noexcept;
+    [[nodiscard]] static const VkAllocationCallbacks *callbacks() noexcept;
 
     [[nodiscard]] VkHostAllocationStats snapshot() const noexcept;
 
@@ -94,14 +96,14 @@ public:
     /// part of the interface a caller uses.
     /// @{
 
-    [[nodiscard]] void* allocate(usize size, usize alignment) noexcept;
-    void free(void* memory) noexcept;
+    [[nodiscard]] void *allocate(usize size, usize alignment) noexcept;
+    void free(void *memory) noexcept;
     void recordInternalAllocation(usize size) noexcept;
     void recordInternalFree(usize size) noexcept;
 
     /// @}
 
-private:
+  private:
     void recordPeak(u64 live) noexcept;
 
     std::atomic<u64> _liveBytes{0};
@@ -121,7 +123,7 @@ private:
  * the one invariant a custom Vulkan allocator can violate catastrophically, and
  * the one an `#ifdef` at each site would put at the mercy of an edit.
  */
-[[nodiscard]] inline const VkAllocationCallbacks* hostAllocationCallbacks() noexcept
+[[nodiscard]] inline const VkAllocationCallbacks *hostAllocationCallbacks() noexcept
 {
 #ifdef AURA_ENABLE_DEBUG_MODE
     return VkCountingAllocator::callbacks();

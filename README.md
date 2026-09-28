@@ -121,7 +121,7 @@ cmake --build . -j$(nproc)
 | `AURA_NATIVE_OPTIMIZE` | `ON` | `-march=native` on desktop builds |
 | `AURA_WASM_ASYNCIFY` | `OFF` | Emscripten Asyncify (only if the app ever blocks synchronously) |
 | `AURA_PROFILE_FRAME` | `OFF` | Per-phase frame timing, logged periodically |
-| `AURA_ENABLE_DEBUG_MODE` | `OFF` | CPU/GPU allocation tracking + JSON benchmark report ([docs](docs/15-debug-benchmark-mode.md)); implies `AURA_PROFILE_FRAME` |
+| `AURA_ENABLE_DEBUG_MODE` | `OFF` | CPU/GPU allocation tracking + JSON benchmark report ([docs](docs/13-debug-benchmark-mode.md)); implies `AURA_PROFILE_FRAME` |
 
 Build with only the CPU renderer (no GPU dependencies at all):
 
@@ -133,6 +133,10 @@ Windows (`cmake --preset windows-release`, needs vcpkg — see
 [docs/10-platform-builds.md#windows](docs/10-platform-builds.md#windows)),
 Android, and WebAssembly have their own presets and prerequisites — see
 [docs/10-platform-builds.md](docs/10-platform-builds.md).
+
+### Code Quality
+
+C++ formatting and static analysis: [local commands and CI scope](docs/code-quality.md).
 
 ### Using Aura3D as a library
 

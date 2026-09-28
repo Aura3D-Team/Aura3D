@@ -5,9 +5,11 @@
 #include "aura/Renderer/IRenderer.h"
 #include "aura/UI/Text/Utf8.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 [[nodiscard]] PointerButton toPointerButton(i32 button) noexcept
 {
@@ -26,18 +28,18 @@ namespace {
 
 } // namespace
 
-UIView::UIView(IRenderer& renderer, const UIViewDesc& desc)
+UIView::UIView(IRenderer &renderer, const UIViewDesc &desc)
     : _renderer(&renderer),
-      _shaper(TextShaperDesc{.fontPath = desc.fontPath,
-                             .pageSize = desc.glyphPageSize,
-                             .maxPages = desc.maxFontSizes}),
-      _root(_shaper, desc.theme),
-      _backend(renderer, _shaper)
+      _shaper(TextShaperDesc{.fontPath = desc.fontPath, .pageSize = desc.glyphPageSize, .maxPages = desc.maxFontSizes}),
+      _root(_shaper, desc.theme), _backend(renderer, _shaper)
 {
     _syncSurface();
 }
 
-UIView::~UIView() { detachInput(); }
+UIView::~UIView()
+{
+    detachInput();
+}
 
 void UIView::detachInput()
 {
@@ -55,7 +57,7 @@ void UIView::detachInput()
 // Input
 // -----------------------------------------------------------------------------
 
-void UIView::attachInput(wma::IWindowManager& window)
+void UIView::attachInput(wma::IWindowManager &window)
 {
     detachInput();
     _inputLifetime = std::make_shared<u8>(0);
@@ -63,83 +65,97 @@ void UIView::attachInput(wma::IWindowManager& window)
     _window = &window;
     _mouse = &window.getMouseListener();
 
-    for (const i32 button : {wma::MouseButton::WMALeft, wma::MouseButton::WMARight,
-                             wma::MouseButton::WMAMiddle})
+    for (const i32 button : {wma::MouseButton::WMALeft, wma::MouseButton::WMARight, wma::MouseButton::WMAMiddle})
     {
-        _mouse->addButtonAction(
-            button, wma::MouseAction{[this, button, alive]() {
-                                         if (alive.expired() || _touchActive)
-                                             return;
-                                         //! The cursor is read here rather than
-                                         //! trusted from the last frame: a
-                                         //! click is where the pointer is now.
-                                         _syncPointer();
-                                         _root.pointerDown(_pointer, toPointerButton(button), _window->getKeyboardListener().modifiers());
-                                     },
-                                     [this, button, alive]() {
-                                         if (alive.expired() || _touchActive)
-                                             return;
-                                         _syncPointer();
-                                         _root.pointerUp(_pointer, toPointerButton(button), _window->getKeyboardListener().modifiers());
-                                     }});
+        _mouse->addButtonAction(button,
+                                wma::MouseAction{[this, button, alive]()
+                                                 {
+                                                     if (alive.expired() || _touchActive)
+                                                         return;
+                                                     //! The cursor is read here rather than
+                                                     //! trusted from the last frame: a
+                                                     //! click is where the pointer is now.
+                                                     _syncPointer();
+                                                     _root.pointerDown(_pointer, toPointerButton(button),
+                                                                       _window->getKeyboardListener().modifiers());
+                                                 },
+                                                 [this, button, alive]()
+                                                 {
+                                                     if (alive.expired() || _touchActive)
+                                                         return;
+                                                     _syncPointer();
+                                                     _root.pointerUp(_pointer, toPointerButton(button),
+                                                                     _window->getKeyboardListener().modifiers());
+                                                 }});
     }
 
-    wma::KeyboardListener& keyboard = window.getKeyboardListener();
+    wma::KeyboardListener &keyboard = window.getKeyboardListener();
 
-    keyboard.setKeyEventAction(wma::KeyEventCallback::from([this, alive](const wma::WMAKeyEvent& event) {
-        if (alive.expired())
-            return;
-        if (event.isPressOrRepeat())
-            _root.keyDown(event.key, event.mods, event.state == wma::KeyState::Repeat);
-        else
-            _root.keyUp(event.key, event.mods);
-    }));
+    keyboard.setKeyEventAction(wma::KeyEventCallback::from(
+        [this, alive](const wma::WMAKeyEvent &event)
+        {
+            if (alive.expired())
+                return;
+            if (event.isPressOrRepeat())
+                _root.keyDown(event.key, event.mods, event.state == wma::KeyState::Repeat);
+            else
+                _root.keyUp(event.key, event.mods);
+        }));
 
-    keyboard.setTextInputAction(wma::TextInputCallback::from([this, alive](wma::Codepoint codepoint) {
-        if (alive.expired())
-            return;
-        //! One codepoint at a time, so no buffer has to survive between the
-        //! platform's callback and the next frame.
-        std::string encoded;
-        utf8::append(encoded, codepoint);
-        _root.textInput(encoded);
-    }));
+    keyboard.setTextInputAction(wma::TextInputCallback::from(
+        [this, alive](wma::Codepoint codepoint)
+        {
+            if (alive.expired())
+                return;
+            //! One codepoint at a time, so no buffer has to survive between the
+            //! platform's callback and the next frame.
+            std::string encoded;
+            utf8::append(encoded, codepoint);
+            _root.textInput(encoded);
+        }));
 
-    wma::TouchListener& touch = window.getTouchListener();
+    wma::TouchListener &touch = window.getTouchListener();
 
-    const auto trackFinger = [this](const wma::WMATouchPoint& point) {
+    const auto trackFinger = [this](const wma::WMATouchPoint &point)
+    {
         _pointer = {static_cast<f32>(point.x), static_cast<f32>(point.y)};
         _pointerKnown = true;
     };
 
-    touch.setDownAction(wma::TouchInputCallback::from([this, alive, trackFinger](const wma::WMATouchPoint& point) {
-        if (alive.expired() || _touchActive)
-            return;
-        _finger = point.fingerId;
-        trackFinger(point);
-        _touchActive = true;
+    touch.setDownAction(wma::TouchInputCallback::from(
+        [this, alive, trackFinger](const wma::WMATouchPoint &point)
+        {
+            if (alive.expired() || _touchActive)
+                return;
+            _finger = point.fingerId;
+            trackFinger(point);
+            _touchActive = true;
 
-        //! A finger arrives already on the widget, so hover has to be
-        //! established before the press or the press has nothing to land on.
-        _root.pointerMoved(_pointer);
-        _root.pointerDown(_pointer);
-    }));
+            //! A finger arrives already on the widget, so hover has to be
+            //! established before the press or the press has nothing to land on.
+            _root.pointerMoved(_pointer);
+            _root.pointerDown(_pointer);
+        }));
 
-    touch.setMoveAction(wma::TouchInputCallback::from([this, alive, trackFinger](const wma::WMATouchPoint& point) {
-        if (alive.expired() || !_touchActive || point.fingerId != _finger)
-            return;
-        trackFinger(point);
-        _root.pointerMoved(_pointer);
-    }));
+    touch.setMoveAction(wma::TouchInputCallback::from(
+        [this, alive, trackFinger](const wma::WMATouchPoint &point)
+        {
+            if (alive.expired() || !_touchActive || point.fingerId != _finger)
+                return;
+            trackFinger(point);
+            _root.pointerMoved(_pointer);
+        }));
 
-    touch.setUpAction(wma::TouchInputCallback::from([this, alive, trackFinger](const wma::WMATouchPoint& point) {
-        if (alive.expired() || !_touchActive || point.fingerId != _finger)
-            return;
-        trackFinger(point);
-        _root.pointerUp(_pointer);
-        _root.pointerLeft();
-        _touchActive = false;
-    }));
+    touch.setUpAction(wma::TouchInputCallback::from(
+        [this, alive, trackFinger](const wma::WMATouchPoint &point)
+        {
+            if (alive.expired() || !_touchActive || point.fingerId != _finger)
+                return;
+            trackFinger(point);
+            _root.pointerUp(_pointer);
+            _root.pointerLeft();
+            _touchActive = false;
+        }));
 }
 
 void UIView::_syncPointer()
@@ -164,16 +180,16 @@ void UIView::_syncPointer()
 
 void UIView::_syncSurface()
 {
-    const wma::WindowDetails& details = _renderer->getWindowDetails();
+    const wma::WindowDetails &details = _renderer->getWindowDetails();
 
     glm::vec2 logical{static_cast<f32>(details.width), static_cast<f32>(details.height)};
     f32 scale = 1.0f;
 
-    if (wma::IWindowManager* window = _renderer->getWindowManager())
+    if (wma::IWindowManager *window = _renderer->getWindowManager())
     {
         const wma::FramebufferSize framebuffer = window->getFramebufferSize();
 
-        if (const wma::WindowDetails* live = window->getWindowDetails())
+        if (const wma::WindowDetails *live = window->getWindowDetails())
             logical = {static_cast<f32>(live->width), static_cast<f32>(live->height)};
 
         if (framebuffer.valid() && logical.x > 0.0f)
@@ -186,7 +202,6 @@ void UIView::_syncSurface()
              */
             scale = static_cast<f32>(framebuffer.width) / logical.x;
         }
-
     }
 
     _root.setScale(scale);
@@ -194,6 +209,28 @@ void UIView::_syncSurface()
 }
 
 void UIView::render(f32 deltaSeconds)
+{
+    update(deltaSeconds);
+    draw();
+}
+
+bool UIView::needsDraw() const noexcept
+{
+    return !_drawn || _root.needsPaint() || _renderer->needsFrame();
+}
+
+void UIView::draw()
+{
+    //! Rebuilt only when the tree re-recorded. An idle UI goes straight to
+    //! submit() with the vertex buffers it already has.
+    if (_root.paint(_list))
+        _backend.build(_list, _root.scale());
+
+    _backend.submit();
+    _drawn = true;
+}
+
+void UIView::update(f32 deltaSeconds)
 {
     _syncSurface();
     if (_window)
@@ -214,18 +251,11 @@ void UIView::render(f32 deltaSeconds)
         const wma::WMAMouseScroll scroll = _mouse->consumeScrollDelta();
 
         if (scroll.xOffset != 0.0 || scroll.yOffset != 0.0)
-            _root.wheel({static_cast<f32>(scroll.xOffset), static_cast<f32>(scroll.yOffset)},
-                        _pointer, _window->getKeyboardListener().modifiers());
+            _root.wheel({static_cast<f32>(scroll.xOffset), static_cast<f32>(scroll.yOffset)}, _pointer,
+                        _window->getKeyboardListener().modifiers());
     }
 
     _root.update(deltaSeconds);
-
-    //! Rebuilt only when the tree re-recorded. An idle UI goes straight to
-    //! submit() with the vertex buffers it already has.
-    if (_root.paint(_list))
-        _backend.build(_list, _root.scale());
-
-    _backend.submit();
 
     if (_window && _window->isTextInputEnabled() != _root.capturesTextInput())
         _window->setTextInputEnabled(_root.capturesTextInput());

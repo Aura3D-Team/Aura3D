@@ -10,11 +10,15 @@
 #include "aura/aura.h"
 
 //! Forward-declared, not included: only the private member's type needs the
-//! name, and pulling ink/ThreadPool.h (<thread>, <mutex>, <queue>, <future>)
+//! name, and pulling ink/ParallelProcessor.h and its threading implementation
 //! into a header this widely included would cost every translation unit.
-namespace ink { class ThreadPool; }
+namespace ink
+{
+class ParallelProcessor;
+}
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @class JobSystem
@@ -29,12 +33,12 @@ namespace aura3d {
  * dispatch() directly and would otherwise pay for idle threads.
  *
  * @par Threading
- * dispatch() is synchronous and blocks until every band finishes. Do not call
- * it from inside another dispatch() -- nesting deadlocks against a pool with
- * no spare workers. Lazy pool construction is thread-safe.
+ * dispatch() joins all bands before returning or rethrowing an exception.
+ * Parallel calls serialize; nested dispatch runs inline on its caller.
  */
-class JobSystem {
-public:
+class JobSystem
+{
+  public:
     /// Body of one band, called as @c body(begin, end) over a half-open range.
     using BandBody = std::function<void(i32 begin, i32 end)>;
 
@@ -43,10 +47,10 @@ public:
     explicit JobSystem(i32 workerCount = 0);
     ~JobSystem();
 
-    JobSystem(const JobSystem&) = delete;
-    JobSystem& operator=(const JobSystem&) = delete;
-    JobSystem(JobSystem&&) = delete;
-    JobSystem& operator=(JobSystem&&) = delete;
+    JobSystem(const JobSystem &) = delete;
+    JobSystem &operator=(const JobSystem &) = delete;
+    JobSystem(JobSystem &&) = delete;
+    JobSystem &operator=(JobSystem &&) = delete;
 
     /**
      * @brief Splits [0, @p itemCount) into contiguous bands and runs @p body on
@@ -56,14 +60,17 @@ public:
      * needs no synchronisation of its own.
      *
      * @param itemCount Size of the range; zero or negative does nothing.
-     * @param body Must not throw. An exception escaping a band is discarded.
+     * @param body Exceptions propagate after all bands finish.
      */
-    void dispatch(i32 itemCount, const BandBody& body) const;
+    void dispatch(i32 itemCount, const BandBody &body) const;
 
     /// Bands dispatch() splits work into, after auto-detection.
-    [[nodiscard]] i32 workerCount() const noexcept { return _workerCount; }
+    [[nodiscard]] i32 workerCount() const noexcept
+    {
+        return _workerCount;
+    }
 
-private:
+  private:
     //! Builds _pool exactly once, from whichever thread's dispatch() gets
     //! there first. A no-op on every call after the first.
     void _ensurePool() const;
@@ -74,7 +81,7 @@ private:
     //! calling thread. Mutable because dispatch() is logically const but
     //! builds the pool lazily on its first call.
     mutable std::once_flag _poolOnce;
-    mutable std::unique_ptr<ink::ThreadPool> _pool;
+    mutable std::unique_ptr<ink::ParallelProcessor> _pool;
 };
 
 } // namespace aura3d

@@ -1,24 +1,24 @@
 #include "aura/Renderer/Vulkan/VkAura/VkGraphicsPipelineManager/VkGraphicsPipelineManager.h"
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkGraphicsPipelineManager::VkGraphicsPipelineManager(std::string shader_vert_spv,
-                                                     std::string shader_frag_spv,
-                                                     VkDevice* device)
+VkGraphicsPipelineManager::VkGraphicsPipelineManager(const std::string &shader_vert_spv,
+                                                     const std::string &shader_frag_spv, VkDevice *device)
     : VkPipelineManager(device), _shaderManager(VkShaderManager(device))
 {
     _shaderManager.createVertShaderModule(shader_vert_spv);
     _shaderManager.createFragShaderModule(shader_frag_spv);
-_init();
+    _init();
 }
 
-VkGraphicsPipelineManager::VkGraphicsPipelineManager(const unsigned char* vertData, u32 vertSize,
-                                                     const unsigned char* fragData, u32 fragSize,
-                                                     VkDevice* device)
+VkGraphicsPipelineManager::VkGraphicsPipelineManager(const unsigned char *vertData, u32 vertSize,
+                                                     const unsigned char *fragData, u32 fragSize, VkDevice *device)
     : VkPipelineManager(device), _shaderManager(VkShaderManager(device))
 {
     _shaderManager.createVertShaderModuleFromMemory(vertData, vertSize);
@@ -41,9 +41,9 @@ void VkGraphicsPipelineManager::_init()
     fragShaderStageInfo.module = _shaderManager.getFragShaderModule();
     fragShaderStageInfo.pName = "main";
 
-    _shaderStages = { vertShaderStageInfo, fragShaderStageInfo };
+    _shaderStages = {vertShaderStageInfo, fragShaderStageInfo};
 
-    _dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    _dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
     DescriptorBindingInfo uboBinding;
     uboBinding.binding = 0;
@@ -79,7 +79,8 @@ void VkGraphicsPipelineManager::_init()
 VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
 {
     // Clean up descriptor set layouts
-    for (auto& pair : _descriptorSetLayouts) {
+    for (auto &pair : _descriptorSetLayouts)
+    {
         vkDestroyDescriptorSetLayout(*_device, pair.second, nullptr);
     }
 
@@ -95,23 +96,20 @@ void VkGraphicsPipelineManager::setPushConstantRange(VkShaderStageFlags stageFla
     _hasPushConstants = size > 0;
 }
 
-void VkGraphicsPipelineManager::cmdPushConstants(VkCommandBuffer commandBuffer, const void* data)
+void VkGraphicsPipelineManager::cmdPushConstants(VkCommandBuffer commandBuffer, const void *data)
 {
     if (!_hasPushConstants || _pipelineLayout == VK_NULL_HANDLE || !data)
         return;
 
-    vkCmdPushConstants(commandBuffer,
-                       _pipelineLayout,
-                       _pushConstantRange.stageFlags,
-                       _pushConstantRange.offset,
-                       _pushConstantRange.size,
-                       data);
+    vkCmdPushConstants(commandBuffer, _pipelineLayout, _pushConstantRange.stageFlags, _pushConstantRange.offset,
+                       _pushConstantRange.size, data);
 }
 
-void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const DescriptorBindingInfo& bindingInfo)
+void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const DescriptorBindingInfo &bindingInfo)
 {
     // If this set doesn't exist yet, create it
-    if (_descriptorSetLayoutInfos.find(setIndex) == _descriptorSetLayoutInfos.end()) {
+    if (_descriptorSetLayoutInfos.find(setIndex) == _descriptorSetLayoutInfos.end())
+    {
         DescriptorSetLayoutInfo setInfo;
         setInfo.setIndex = setIndex;
         _descriptorSetLayoutInfos[setIndex] = setInfo;
@@ -123,7 +121,7 @@ void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const Descrip
 
 void VkGraphicsPipelineManager::resetInterface()
 {
-    for (auto& pair : _descriptorSetLayouts) 
+    for (auto &pair : _descriptorSetLayouts)
     {
         vkDestroyDescriptorSetLayout(*_device, pair.second, nullptr);
     }
@@ -142,15 +140,16 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         return;
 
     // Create a layout for each descriptor set
-    for (const auto& pair : _descriptorSetLayoutInfos)
+    for (const auto &pair : _descriptorSetLayoutInfos)
     {
-        const DescriptorSetLayoutInfo& setInfo = pair.second;
+        const DescriptorSetLayoutInfo &setInfo = pair.second;
 
         // Convert our bindings to VkDescriptorSetLayoutBinding
         std::vector<VkDescriptorSetLayoutBinding> layoutBindings;
         std::vector<VkDescriptorBindingFlags> bindingFlags;
         bool anyBindingFlags = false;
-        for (const auto& binding : setInfo.bindings) {
+        for (const auto &binding : setInfo.bindings)
+        {
             VkDescriptorSetLayoutBinding layoutBinding{};
             layoutBinding.binding = binding.binding;
             layoutBinding.descriptorType = binding.descriptorType;
@@ -173,7 +172,8 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         //! leave every flag at 0, so this chain -- and the pool-compatibility
         //! flag it requires on the layout -- is skipped for them entirely.
         VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
-        if (anyBindingFlags) {
+        if (anyBindingFlags)
+        {
             bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
             bindingFlagsInfo.bindingCount = static_cast<u32>(bindingFlags.size());
             bindingFlagsInfo.pBindingFlags = bindingFlags.data();
@@ -187,8 +187,8 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         // Store the layout
         _descriptorSetLayouts[setInfo.setIndex] = layout;
 
-        INK_DEBUG << "Created descriptor set layout for set " << setInfo.setIndex
-                   << " with " << layoutBindings.size() << " bindings";
+        INK_DEBUG << "Created descriptor set layout for set " << setInfo.setIndex << " with " << layoutBindings.size()
+                  << " bindings";
     }
 
     // Create pipeline layout with all descriptor set layouts
@@ -196,24 +196,24 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     u32 maxSetIndex = 0;
 
     // Find the maximum set index to ensure we create a properly sized array
-    for (const auto& pair : _descriptorSetLayouts) {
-        if (pair.first > maxSetIndex) {
+    for (const auto &pair : _descriptorSetLayouts)
+    {
+        if (pair.first > maxSetIndex)
+        {
             maxSetIndex = pair.first;
         }
     }
 
     // Create a properly ordered array of layouts
     layouts.resize(maxSetIndex + 1);
-    for (const auto& pair : _descriptorSetLayouts) {
+    for (const auto &pair : _descriptorSetLayouts)
+    {
         layouts[pair.first] = pair.second;
     }
 
     if (_pipelineLayout != VK_NULL_HANDLE)
     {
-        vkDestroyPipelineLayout(
-            *_device,
-            _pipelineLayout,
-            nullptr);
+        vkDestroyPipelineLayout(*_device, _pipelineLayout, nullptr);
 
         _pipelineLayout = VK_NULL_HANDLE;
     }
@@ -233,38 +233,35 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     // Create the pipeline layout
     VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout));
 
-    INK_DEBUG << "Created pipeline layout with " << layouts.size()
-              << " descriptor set layouts and "
+    INK_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts and "
               << (_hasPushConstants ? _pushConstantRange.size : 0u) << " push-constant bytes";
 }
 
 VkDescriptorSetLayout VkGraphicsPipelineManager::getDescriptorSetLayout(u32 setIndex) const
 {
     auto it = _descriptorSetLayouts.find(setIndex);
-    if (it != _descriptorSetLayouts.end()) {
+    if (it != _descriptorSetLayouts.end())
+    {
         return it->second;
     }
     return VK_NULL_HANDLE;
 }
 
-void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
-                                               VkExtent2D extent,
-                                               const std::vector<VkVertexInputBindingDescription>& vertexBindingDescArray,
-                                               const AttributeDescriptionArray<VkVertexInputAttributeDescription>& vertexAttributeDescArray,
-                                               u32 attributeDescriptionCount,
-                                               const PipelineOptions& options)
+void VkGraphicsPipelineManager::createPipeline(
+    VkRenderPass renderPass, VkExtent2D extent,
+    const std::vector<VkVertexInputBindingDescription> &vertexBindingDescArray,
+    const AttributeDescriptionArray<VkVertexInputAttributeDescription> &vertexAttributeDescArray,
+    u32 attributeDescriptionCount, const PipelineOptions &options)
 {
     if (_pipeline != VK_NULL_HANDLE)
     {
-        vkDestroyPipeline(
-            *_device,
-            _pipeline,
-            nullptr);
+        vkDestroyPipeline(*_device, _pipeline, nullptr);
 
         _pipeline = VK_NULL_HANDLE;
     }
 
-    if (_descriptorSetLayouts.empty()) {
+    if (_descriptorSetLayouts.empty())
+    {
         createDescriptorSetLayouts();
     }
 
@@ -347,17 +344,15 @@ void VkGraphicsPipelineManager::createPipeline(VkRenderPass renderPass,
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = options.sampleCount;
-    multisampling.minSampleShading = 1.0f; // Optional
-    multisampling.pSampleMask = nullptr; // Optional
+    multisampling.minSampleShading = 1.0f;          // Optional
+    multisampling.pSampleMask = nullptr;            // Optional
     multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-    multisampling.alphaToOneEnable = VK_FALSE; // Optional
+    multisampling.alphaToOneEnable = VK_FALSE;      // Optional
 
     // Color blend attachment
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-                                          VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT |
-                                          VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = options.alphaBlend ? VK_TRUE : VK_FALSE;
     colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
@@ -432,26 +427,16 @@ void VkGraphicsPipelineManager::cmdBindPipeline(VkCommandBuffer commandBuffer, V
     vkCmdBindPipeline(commandBuffer, bindPoint, _pipeline);
 }
 
-void VkGraphicsPipelineManager::cmdBindDescriptorSets(VkCommandBuffer commandBuffer,
-                                                      VkPipelineBindPoint bindPoint,
-                                                      u32 firstSet,
-                                                      u32 descriptorSetCount,
-                                                      const VkDescriptorSet* pDescriptorSets,
-                                                      u32 dynamicOffsetCount,
-                                                      const u32* pDynamicOffsets)
+void VkGraphicsPipelineManager::cmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint,
+                                                      u32 firstSet, u32 descriptorSetCount,
+                                                      const VkDescriptorSet *pDescriptorSets, u32 dynamicOffsetCount,
+                                                      const u32 *pDynamicOffsets)
 {
-    vkCmdBindDescriptorSets(commandBuffer,
-                            bindPoint,
-                            _pipelineLayout,
-                            firstSet,
-                            descriptorSetCount,
-                            pDescriptorSets,
-                            dynamicOffsetCount,
-                            pDynamicOffsets);
+    vkCmdBindDescriptorSets(commandBuffer, bindPoint, _pipelineLayout, firstSet, descriptorSetCount, pDescriptorSets,
+                            dynamicOffsetCount, pDynamicOffsets);
 }
 
-void VkGraphicsPipelineManager::cmdSetViewportAndScissor(VkCommandBuffer commandBuffer,
-                                                         VkExtent2D extent) noexcept
+void VkGraphicsPipelineManager::cmdSetViewportAndScissor(VkCommandBuffer commandBuffer, VkExtent2D extent) noexcept
 {
     VkViewport viewport = {};
     viewport.x = 0.0f;
@@ -480,28 +465,19 @@ void VkGraphicsPipelineManager::cmdSetViewportAndScissor(VkCommandBuffer command
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 }
 
-void VkGraphicsPipelineManager::cmdIndexedDraw(VkCommandBuffer commandBuffer,
-                                               VkExtent2D extent,
-                                               u32 indexCount,
-                                               u32 instanceCount,
-                                               u32 firstIndex,
-                                               i32 vertexOffset,
-                                               u32 firstInstance)
+void VkGraphicsPipelineManager::cmdIndexedDraw(VkCommandBuffer commandBuffer, VkExtent2D extent, u32 indexCount,
+                                               u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
 {
     cmdSetViewportAndScissor(commandBuffer, extent);
     vkCmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer,
-                                        VkExtent2D extent,
-                                        u32 vertexCount,
-                                        u32 instanceCount,
-                                        u32 firstVertex,
-                                        u32 firstInstance)
+void VkGraphicsPipelineManager::cmdDraw(VkCommandBuffer commandBuffer, VkExtent2D extent, u32 vertexCount,
+                                        u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
     cmdSetViewportAndScissor(commandBuffer, extent);
     vkCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

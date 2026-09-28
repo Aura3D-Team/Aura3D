@@ -2,14 +2,15 @@
 
 #include <ink/ink.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
-MtlDrawableManager::MtlDrawableManager(MTL::Device* device, MtlLayerManager* layers)
-    : _device(device), _layers(layers)
+MtlDrawableManager::MtlDrawableManager(MTL::Device *device, MtlLayerManager *layers) : _device(device), _layers(layers)
 {
     if (!_device)
         throw AuraException("MtlDrawableManager: device is null");
@@ -42,7 +43,7 @@ bool MtlDrawableManager::acquire()
     //! slot out of the pool, so the previous one is always dropped first.
     _drawable.reset();
 
-    CA::MetalDrawable* next = _layers->getLayer()->nextDrawable();
+    CA::MetalDrawable *next = _layers->getLayer()->nextDrawable();
     if (!next)
         return false;
 
@@ -55,22 +56,19 @@ void MtlDrawableManager::release() noexcept
     _drawable.reset();
 }
 
-MTL::RenderPassDescriptor* MtlDrawableManager::buildRenderPass(f32 clearR, f32 clearG,
-                                                              f32 clearB, f32 clearA)
+MTL::RenderPassDescriptor *MtlDrawableManager::buildRenderPass(f32 clearR, f32 clearG, f32 clearB, f32 clearA)
 {
     if (!_drawable)
         return nullptr;
 
-    MTL::RenderPassColorAttachmentDescriptor* color = _renderPass->colorAttachments()->object(0);
+    MTL::RenderPassColorAttachmentDescriptor *color = _renderPass->colorAttachments()->object(0);
     color->setTexture(_drawable->texture());
     color->setLoadAction(MTL::LoadActionClear);
     color->setStoreAction(MTL::StoreActionStore);
-    color->setClearColor(MTL::ClearColor(static_cast<double>(clearR),
-                                        static_cast<double>(clearG),
-                                        static_cast<double>(clearB),
-                                        static_cast<double>(clearA)));
+    color->setClearColor(MTL::ClearColor(static_cast<double>(clearR), static_cast<double>(clearG),
+                                         static_cast<double>(clearB), static_cast<double>(clearA)));
 
-    MTL::RenderPassDepthAttachmentDescriptor* depth = _renderPass->depthAttachment();
+    MTL::RenderPassDepthAttachmentDescriptor *depth = _renderPass->depthAttachment();
     depth->setTexture(_depthTexture.get());
     depth->setLoadAction(MTL::LoadActionClear);
     //! Discarded rather than stored: see buildRenderPass()'s doc comment.
@@ -99,8 +97,7 @@ void MtlDrawableManager::handleResize()
 
 void MtlDrawableManager::createDepthTexture(u32 width, u32 height)
 {
-    NS::SharedPtr<MTL::TextureDescriptor> descriptor =
-        adopt(MTL::TextureDescriptor::alloc()->init());
+    NS::SharedPtr<MTL::TextureDescriptor> descriptor = adopt(MTL::TextureDescriptor::alloc()->init());
 
     descriptor->setTextureType(MTL::TextureType2D);
     descriptor->setPixelFormat(kDepthFormat);
@@ -118,10 +115,10 @@ void MtlDrawableManager::createDepthTexture(u32 width, u32 height)
     descriptor->setStorageMode(MTL::StorageModePrivate);
 
     NS::SharedPtr<MTL::Texture> texture = adopt(_device->newTexture(descriptor.get()));
-    if (!texture) {
-        throw AuraException("MtlDrawableManager: failed to allocate a "
-                            + std::to_string(width) + "x" + std::to_string(height)
-                            + " depth texture");
+    if (!texture)
+    {
+        throw AuraException("MtlDrawableManager: failed to allocate a " + std::to_string(width) + "x" +
+                            std::to_string(height) + " depth texture");
     }
 
     _depthTexture = std::move(texture);

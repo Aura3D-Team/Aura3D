@@ -8,19 +8,22 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkCountingAllocator.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkDeviceManager::VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData)
-    : _vkInstance(vkInstance), _vkDeviceCreationData(std::move(vkDeviceData)), _deviceInfo(),
-    _device(VK_NULL_HANDLE), _physicalDevice(VK_NULL_HANDLE),
-    _physicaldeviceCount(0), _vkQueueManager(VkQueueManager())
+VkDeviceManager::VkDeviceManager(VkInstance *vkInstance, VkDeviceData vkDeviceData)
+    : _vkInstance(vkInstance), _vkDeviceCreationData(std::move(vkDeviceData)), _deviceInfo(), _device(VK_NULL_HANDLE),
+      _physicalDevice(VK_NULL_HANDLE), _physicaldeviceCount(0), _vkQueueManager(VkQueueManager())
 {
     _setBestDevice(*_vkInstance);
 }
 
-VkDeviceManager::~VkDeviceManager() {
-    if (_device != VK_NULL_HANDLE) {
+VkDeviceManager::~VkDeviceManager()
+{
+    if (_device != VK_NULL_HANDLE)
+    {
         vkDeviceWaitIdle(_device);
         vkDestroyDevice(_device, hostAllocationCallbacks());
         _device = VK_NULL_HANDLE;
@@ -32,7 +35,8 @@ VkDeviceManager::~VkDeviceManager() {
 void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 {
     VkResult result = vkEnumeratePhysicalDevices(vkInstance, &_physicaldeviceCount, nullptr);
-    if (result != VK_SUCCESS || _physicaldeviceCount == 0) {
+    if (result != VK_SUCCESS || _physicaldeviceCount == 0)
+    {
         throw AuraException(result != VK_SUCCESS ? result : VK_ERROR_INITIALIZATION_FAILED);
     }
 
@@ -44,7 +48,8 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 
     u32 bestScore = 0;
 
-    for (const VkPhysicalDevice& device : devices) {
+    for (const VkPhysicalDevice &device : devices)
+    {
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(device, &deviceProperties);
 
@@ -54,8 +59,8 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         INK_VERBOSE << "-------------------------------------------------------------------------------";
         INK_VERBOSE << "Device Name: " << deviceProperties.deviceName;
         INK_VERBOSE << "API Version: " << VK_VERSION_MAJOR(deviceProperties.apiVersion) << "."
-                  << VK_VERSION_MINOR(deviceProperties.apiVersion) << "."
-                  << VK_VERSION_PATCH(deviceProperties.apiVersion);
+                    << VK_VERSION_MINOR(deviceProperties.apiVersion) << "."
+                    << VK_VERSION_PATCH(deviceProperties.apiVersion);
         INK_VERBOSE << "Driver Version: " << deviceProperties.driverVersion;
         INK_VERBOSE << "Vendor ID: " << deviceProperties.vendorID;
         INK_VERBOSE << "Device ID: " << deviceProperties.deviceID;
@@ -68,18 +73,24 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         // bonus; "any" drops the type bonus entirely and lets capability alone
         // (API version, image limits, geometry shader) decide.
         const std::string gpuPreference = aura3d::AuraSettings::get()->getGpuPreference();
-        if (gpuPreference == "integrated") {
-            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+        if (gpuPreference == "integrated")
+        {
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+            {
                 score += 1000;
             }
-        } else if (gpuPreference != "any") {
+        }
+        else if (gpuPreference != "any")
+        {
             // Default: prefer discrete GPUs (dedicated graphics cards).
-            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+            {
                 score += 1000;
             }
         }
 
-        if (deviceFeatures.geometryShader) {
+        if (deviceFeatures.geometryShader)
+        {
             score += 1000;
         }
 
@@ -91,7 +102,8 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 
         INK_VERBOSE << "Score for this device: " << score;
 
-        if (score > bestScore) {
+        if (score > bestScore)
+        {
             bestScore = score;
             _physicalDevice = device;
             _deviceProperties = deviceProperties;
@@ -99,7 +111,8 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         }
     }
 
-    if (_physicalDevice == VK_NULL_HANDLE) {
+    if (_physicalDevice == VK_NULL_HANDLE)
+    {
         throw AuraException("No suitable physical device found.");
     }
 
@@ -110,12 +123,14 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     result = _checkDeviceExtensionSupport(_vkDeviceCreationData.vkDeviceExtensions);
     VK_RESULT_CHECK(result);
 
-    if (_vkDeviceCreationData.exclusiveQueueFlags != 0) {
+    if (_vkDeviceCreationData.exclusiveQueueFlags != 0)
+    {
         _vkQueueManager.pushQueueInfo(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags, 1.0f);
     }
 
     f32 priority = 0.95f;
-    for (const VkQueueFlags& f : _vkDeviceCreationData.concurrentQueueFlags) {
+    for (const VkQueueFlags &f : _vkDeviceCreationData.concurrentQueueFlags)
+    {
         _vkQueueManager.pushQueueInfo(_physicalDevice, f, priority);
         priority -= 0.05f;
     }
@@ -127,17 +142,15 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     // VMA (told to use VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT) then
     // asserts/aborts the first time it actually needs it. See
     // supportsBufferDeviceAddress()'s doc comment.
-    VkPhysicalDeviceVulkan12Features supportedVk12Features{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES
-    };
-    VkPhysicalDeviceFeatures2 supportedFeatures2{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &supportedVk12Features
-    };
+    VkPhysicalDeviceVulkan12Features supportedVk12Features{.sType =
+                                                               VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceFeatures2 supportedFeatures2{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                                 .pNext = &supportedVk12Features};
     vkGetPhysicalDeviceFeatures2(_physicalDevice, &supportedFeatures2);
     _bufferDeviceAddressSupported = supportedVk12Features.bufferDeviceAddress == VK_TRUE;
 
-    if (!_bufferDeviceAddressSupported) {
+    if (!_bufferDeviceAddressSupported)
+    {
         INK_WARN << "Physical device does not support bufferDeviceAddress; "
                     "VulkanMemoryManager will not request it either.";
     }
@@ -155,21 +168,20 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     //     constant baked into the shipped SPIR-V.
     // All three are core Vulkan 1.2 -- no extension enablement -- but support
     // is still per-device.
-    _bindlessTexturesSupported =
-        supportedVk12Features.descriptorBindingPartiallyBound == VK_TRUE &&
-        supportedVk12Features.descriptorBindingSampledImageUpdateAfterBind == VK_TRUE &&
-        supportedVk12Features.runtimeDescriptorArray == VK_TRUE;
+    _bindlessTexturesSupported = supportedVk12Features.descriptorBindingPartiallyBound == VK_TRUE &&
+                                 supportedVk12Features.descriptorBindingSampledImageUpdateAfterBind == VK_TRUE &&
+                                 supportedVk12Features.runtimeDescriptorArray == VK_TRUE;
 
     // Unlike bufferDeviceAddress, there is no fallback path: VulkanRenderer's
     // texture-binding scheme assumes a bindless array unconditionally. Fail
     // clearly here, at device-selection time, rather than limping into a
     // pipeline/descriptor-layout mismatch much later.
-    if (!_bindlessTexturesSupported) {
-        throw AuraException(
-            "Selected physical device does not support the core Vulkan 1.2 "
-            "descriptor-indexing features (descriptorBindingPartiallyBound, "
-            "descriptorBindingSampledImageUpdateAfterBind, runtimeDescriptorArray) "
-            "that VulkanRenderer's bindless texture array requires.");
+    if (!_bindlessTexturesSupported)
+    {
+        throw AuraException("Selected physical device does not support the core Vulkan 1.2 "
+                            "descriptor-indexing features (descriptorBindingPartiallyBound, "
+                            "descriptorBindingSampledImageUpdateAfterBind, runtimeDescriptorArray) "
+                            "that VulkanRenderer's bindless texture array requires.");
     }
 
     _maxBindlessTextures = _queryMaxBindlessTextures();
@@ -181,8 +193,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         .runtimeDescriptorArray = VK_TRUE,
         //! Resolves your VUID-VkMemoryAllocateInfo-flags-03331 error -- but
         //! only when the device actually supports it (see above).
-        .bufferDeviceAddress = _bufferDeviceAddressSupported ? VK_TRUE : VK_FALSE
-    };
+        .bufferDeviceAddress = _bufferDeviceAddressSupported ? VK_TRUE : VK_FALSE};
 
     const std::vector<VkDeviceQueueCreateInfo> vkDeviceQueueCreateInfos = _vkQueueManager.getDeviceQueueCreateInfos();
     _deviceInfo.pNext = &enabledVk12Features;
@@ -202,7 +213,8 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 
     u32 familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, _vkDeviceCreationData.exclusiveQueueFlags);
     _vkQueueManager.setupQueue(_device, familyIndex, _vkDeviceCreationData.exclusiveQueueFlags);
-    for (const VkQueueFlags& f : _vkDeviceCreationData.concurrentQueueFlags) {
+    for (const VkQueueFlags &f : _vkDeviceCreationData.concurrentQueueFlags)
+    {
         u32 familyIndex = _vkQueueManager.findQueueFamilyIndex(_physicalDevice, f);
         _vkQueueManager.setupQueue(_device, familyIndex, f);
     }
@@ -213,12 +225,9 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 u32 VkDeviceManager::_queryMaxBindlessTextures() const
 {
     VkPhysicalDeviceDescriptorIndexingProperties indexingProperties{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES
-    };
-    VkPhysicalDeviceProperties2 properties2{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-        .pNext = &indexingProperties
-    };
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES};
+    VkPhysicalDeviceProperties2 properties2{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                            .pNext = &indexingProperties};
     vkGetPhysicalDeviceProperties2(_physicalDevice, &properties2);
 
     /*
@@ -231,11 +240,11 @@ u32 VkDeviceManager::_queryMaxBindlessTextures() const
      * vkCreateDescriptorSetLayout rather than degrading.
      */
     u32 deviceBudget = std::numeric_limits<u32>::max();
-    for (const u32 deviceLimit : {
-             indexingProperties.maxPerStageDescriptorUpdateAfterBindSampledImages,
-             indexingProperties.maxPerStageDescriptorUpdateAfterBindSamplers,
-             indexingProperties.maxDescriptorSetUpdateAfterBindSampledImages,
-             indexingProperties.maxDescriptorSetUpdateAfterBindSamplers }) {
+    for (const u32 deviceLimit : {indexingProperties.maxPerStageDescriptorUpdateAfterBindSampledImages,
+                                  indexingProperties.maxPerStageDescriptorUpdateAfterBindSamplers,
+                                  indexingProperties.maxDescriptorSetUpdateAfterBindSampledImages,
+                                  indexingProperties.maxDescriptorSetUpdateAfterBindSamplers})
+    {
         deviceBudget = std::min(deviceBudget, deviceLimit);
     }
 
@@ -250,55 +259,56 @@ u32 VkDeviceManager::_queryMaxBindlessTextures() const
      * the request, with no clamp and no warning.
      */
     constexpr u32 kReservedForOtherBindings = 16;
-    deviceBudget = (deviceBudget > kReservedForOtherBindings)
-                       ? (deviceBudget - kReservedForOtherBindings)
-                       : 0;
+    deviceBudget = (deviceBudget > kReservedForOtherBindings) ? (deviceBudget - kReservedForOtherBindings) : 0;
 
     const u32 limit = std::min(kDesiredBindlessTextures, deviceBudget);
 
-    if (limit < kMinBindlessTextures) {
-        throw AuraException(
-            "Selected physical device advertises the descriptor-indexing features but "
-            "its update-after-bind limits are too small to host the bindless texture "
-            "table VulkanRenderer requires.");
+    if (limit < kMinBindlessTextures)
+    {
+        throw AuraException("Selected physical device advertises the descriptor-indexing features but "
+                            "its update-after-bind limits are too small to host the bindless texture "
+                            "table VulkanRenderer requires.");
     }
 
-    if (limit < kDesiredBindlessTextures) {
+    if (limit < kDesiredBindlessTextures)
+    {
         INK_WARN << "Bindless texture table clamped to " << limit
-                 << " slots by device descriptor-indexing limits (asked for "
-                 << kDesiredBindlessTextures << ").";
+                 << " slots by device descriptor-indexing limits (asked for " << kDesiredBindlessTextures << ").";
     }
 
     INK_VERBOSE << "Bindless texture table capacity: " << limit << " slots.";
     return limit;
 }
 
-VkDevice* VkDeviceManager::getDevice()
+VkDevice *VkDeviceManager::getDevice()
 {
     return &_device;
 }
 
-VkPhysicalDevice* VkDeviceManager::getPhysicalDevice()
+VkPhysicalDevice *VkDeviceManager::getPhysicalDevice()
 {
     return &_physicalDevice;
 }
 
-VkDeviceData* VkDeviceManager::getDeviceCreationData()
+VkDeviceData *VkDeviceManager::getDeviceCreationData()
 {
     return &_vkDeviceCreationData;
 }
 
-VkQueueManager* VkDeviceManager::getQueueManager()
+VkQueueManager *VkDeviceManager::getQueueManager()
 {
     return &_vkQueueManager;
 }
 
-VkBool32 VkDeviceManager::physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager vkSurfaceManager, const VkQueueFlags flags) {
+VkBool32 VkDeviceManager::physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager vkSurfaceManager,
+                                                               const VkQueueFlags flags)
+{
     return vkSurfaceManager.getQueuePhysicalDeviceSurfaceSupport(
         _physicalDevice, _vkQueueManager.getQueues(flags).front()->vkDeviceQueueCreateInfo.queueFamilyIndex);
 }
 
-VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> exts) const {
+VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char *> exts) const
+{
     u32 extensionCount = 0;
     vkEnumerateDeviceExtensionProperties(_physicalDevice, nullptr, &extensionCount, nullptr);
 
@@ -307,7 +317,8 @@ VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> 
 
     std::set<std::string> requiredExtensions(exts.begin(), exts.end());
 
-    for (const VkExtensionProperties& extension : availableExtensions) {
+    for (const VkExtensionProperties &extension : availableExtensions)
+    {
         requiredExtensions.erase(extension.extensionName);
     }
 
@@ -316,17 +327,23 @@ VkResult VkDeviceManager::_checkDeviceExtensionSupport(std::vector<const char*> 
 
 VkSampleCountFlagBits VkDeviceManager::getMaxUsableSampleCount() const
 {
-    const VkSampleCountFlags counts = _deviceProperties.limits.framebufferColorSampleCounts
-                                     & _deviceProperties.limits.framebufferDepthSampleCounts;
+    const VkSampleCountFlags counts =
+        _deviceProperties.limits.framebufferColorSampleCounts & _deviceProperties.limits.framebufferDepthSampleCounts;
 
-    if (counts & VK_SAMPLE_COUNT_64_BIT) return VK_SAMPLE_COUNT_64_BIT;
-    if (counts & VK_SAMPLE_COUNT_32_BIT) return VK_SAMPLE_COUNT_32_BIT;
-    if (counts & VK_SAMPLE_COUNT_16_BIT) return VK_SAMPLE_COUNT_16_BIT;
-    if (counts & VK_SAMPLE_COUNT_8_BIT)  return VK_SAMPLE_COUNT_8_BIT;
-    if (counts & VK_SAMPLE_COUNT_4_BIT)  return VK_SAMPLE_COUNT_4_BIT;
-    if (counts & VK_SAMPLE_COUNT_2_BIT)  return VK_SAMPLE_COUNT_2_BIT;
+    if (counts & VK_SAMPLE_COUNT_64_BIT)
+        return VK_SAMPLE_COUNT_64_BIT;
+    if (counts & VK_SAMPLE_COUNT_32_BIT)
+        return VK_SAMPLE_COUNT_32_BIT;
+    if (counts & VK_SAMPLE_COUNT_16_BIT)
+        return VK_SAMPLE_COUNT_16_BIT;
+    if (counts & VK_SAMPLE_COUNT_8_BIT)
+        return VK_SAMPLE_COUNT_8_BIT;
+    if (counts & VK_SAMPLE_COUNT_4_BIT)
+        return VK_SAMPLE_COUNT_4_BIT;
+    if (counts & VK_SAMPLE_COUNT_2_BIT)
+        return VK_SAMPLE_COUNT_2_BIT;
     return VK_SAMPLE_COUNT_1_BIT;
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

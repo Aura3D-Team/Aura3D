@@ -4,25 +4,33 @@
 
 #include "aura/aura.h"
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
 GlVertexBufferManager::GlVertexBufferManager() = default;
-GlVertexBufferManager::~GlVertexBufferManager() { cleanup(); }
+GlVertexBufferManager::~GlVertexBufferManager()
+{
+    cleanup();
+}
 
 static void setupVertexAttributes()
 {
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, pos));
+    // OpenGL interprets this pointer argument as a byte offset into the bound VBO.
+    // NOLINTBEGIN(performance-no-int-to-ptr)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void *)offsetof(gfx::Vertex3D, pos));
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, texCoord));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void *)offsetof(gfx::Vertex3D, texCoord));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, color));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void *)offsetof(gfx::Vertex3D, color));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void*)offsetof(gfx::Vertex3D, normal));
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void *)offsetof(gfx::Vertex3D, normal));
     glEnableVertexAttribArray(3);
+    // NOLINTEND(performance-no-int-to-ptr)
 }
 
-VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
+VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices)
 {
     auto handle = _nextHandle++;
     GlVertexBufferData data;
@@ -63,7 +71,7 @@ void GlVertexBufferManager::unbind()
     _boundVao = 0;
 }
 
-GlVertexBufferData* GlVertexBufferManager::get(VertexBufferHandle handle)
+GlVertexBufferData *GlVertexBufferManager::get(VertexBufferHandle handle)
 {
     auto it = _buffers.find(handle);
     return (it != _buffers.end()) ? &it->second : nullptr;
@@ -71,7 +79,8 @@ GlVertexBufferData* GlVertexBufferManager::get(VertexBufferHandle handle)
 
 void GlVertexBufferManager::cleanup()
 {
-    for (auto& [handle, data] : _buffers) {
+    for (auto &[handle, data] : _buffers)
+    {
         glDeleteVertexArrays(1, &data.vao);
         glDeleteBuffers(1, &data.vbo);
     }

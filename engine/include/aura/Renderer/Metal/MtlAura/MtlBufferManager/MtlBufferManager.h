@@ -7,8 +7,10 @@
 
 #include "aura/Renderer/Metal/MtlAura/MtlAuraCore.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @class MtlBufferManager
@@ -26,8 +28,9 @@ namespace mtl {
  * the overlay's per-frame buffers (owned directly by MetalRenderer, and resized
  * rather than pooled) can come from the same code path.
  */
-class MtlBufferManager {
-public:
+class MtlBufferManager
+{
+  public:
     /**
      * @brief Records the device and the allocation policy derived from it.
      *
@@ -39,12 +42,12 @@ public:
      *
      * @throws AuraException if @p device is null.
      */
-    MtlBufferManager(MTL::Device* device, bool unifiedMemory, NS::UInteger maxBufferLength);
+    MtlBufferManager(MTL::Device *device, bool unifiedMemory, NS::UInteger maxBufferLength);
 
     ~MtlBufferManager();
 
-    MtlBufferManager(const MtlBufferManager&) = delete;
-    MtlBufferManager& operator=(const MtlBufferManager&) = delete;
+    MtlBufferManager(const MtlBufferManager &) = delete;
+    MtlBufferManager &operator=(const MtlBufferManager &) = delete;
 
     /**
      * @brief Allocates a buffer holding a copy of @p bytes.
@@ -59,9 +62,8 @@ public:
      * @return The buffer, or an empty handle when @p byteSize is 0, exceeds the
      *         device's limit, or the allocation fails. Each case is logged.
      */
-    [[nodiscard]] NS::SharedPtr<MTL::Buffer> createFromBytes(const void* bytes,
-                                                           size_t byteSize,
-                                                           const char* label) const;
+    [[nodiscard]] NS::SharedPtr<MTL::Buffer> createFromBytes(const void *bytes, size_t byteSize,
+                                                             const char *label) const;
 
     /**
      * @brief Allocates an empty CPU-writable buffer of @p byteSize bytes.
@@ -77,8 +79,7 @@ public:
      * @return The buffer, or an empty handle on the same failures as
      *         createFromBytes().
      */
-    [[nodiscard]] NS::SharedPtr<MTL::Buffer> createDynamic(size_t byteSize,
-                                                          const char* label) const;
+    [[nodiscard]] NS::SharedPtr<MTL::Buffer> createDynamic(size_t byteSize, const char *label) const;
 
     /**
      * @brief Storage mode uploaded, GPU-read-only data is placed in.
@@ -91,14 +92,14 @@ public:
      */
     [[nodiscard]] MTL::ResourceOptions uploadResourceOptions() const noexcept;
 
-private:
+  private:
     /**
      * @brief Rejects a zero-sized or over-limit allocation, logging why.
      * @return true when @p byteSize may be handed to Metal.
      */
-    [[nodiscard]] bool validateSize(size_t byteSize, const char* label) const;
+    [[nodiscard]] bool validateSize(size_t byteSize, const char *label) const;
 
-    MTL::Device* _device = nullptr; //! Borrowed; owned by MtlDeviceManager.
+    MTL::Device *_device = nullptr; //! Borrowed; owned by MtlDeviceManager.
     bool _unifiedMemory = false;
     NS::UInteger _maxBufferLength = 0;
 };

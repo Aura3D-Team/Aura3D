@@ -3,19 +3,23 @@
 #include "aura/Core/ImageLoader/ImageLoader.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 void IRenderer::run(move_only_function<void()> onFrame)
 {
-    auto* windowMgr = getWindowManager();
-    if (!windowMgr) return;
+    auto *windowMgr = getWindowManager();
+    if (!windowMgr)
+        return;
 
     _running = true;
-    windowMgr->process([this, onFrame = std::make_shared<move_only_function<void()>>(std::move(onFrame))]() {
-        beginFrame();
-        (*onFrame)();
-        endFrame();
-    });
+    windowMgr->process(
+        [this, onFrame = std::make_shared<move_only_function<void()>>(std::move(onFrame))]()
+        {
+            beginFrame();
+            (*onFrame)();
+            endFrame();
+        });
     _running = false;
 }
 
@@ -28,14 +32,13 @@ void IRenderer::run(move_only_function<void()> onFrame)
  * override any of them where they can do better.
  */
 
-TextureHandle IRenderer::createTextureFromFile(const std::string& path)
+TextureHandle IRenderer::createTextureFromFile(const std::string &path)
 {
     ImageData image = ImageLoader::loadRGBA(path);
 
-    if (!image.valid()) 
+    if (!image.valid())
     {
-        INK_WARN << "createTextureFromFile: '" << path
-                 << "' unavailable; substituting the checkerboard fallback";
+        INK_WARN << "createTextureFromFile: '" << path << "' unavailable; substituting the checkerboard fallback";
         image = ImageLoader::makeCheckerboard();
     }
 
@@ -48,14 +51,14 @@ TextureHandle IRenderer::createCheckerboardTexture(u32 size)
     return createTextureFromPixels(image.pixels.data(), image.width, image.height);
 }
 
-MeshHandle IRenderer::createMesh(const gfx::Mesh3D& mesh)
+MeshHandle IRenderer::createMesh(const gfx::Mesh3D &mesh)
 {
     //! The caller keeps its mesh, so its arrays are copied here and the copies
     //! are what gets moved onward.
     return createMesh(gfx::Mesh3D{mesh.vertices, mesh.indices});
 }
 
-MeshHandle IRenderer::createMesh(gfx::Mesh3D&& mesh)
+MeshHandle IRenderer::createMesh(gfx::Mesh3D &&mesh)
 {
     if (mesh.empty())
     {
@@ -71,7 +74,7 @@ MeshHandle IRenderer::createMesh(gfx::Mesh3D&& mesh)
      * their arrays by rvalue reference
      */
     record.vertexBuffer = createVertexBuffer(std::move(mesh.vertices));
-    record.indexBuffer  = createIndexBuffer(std::move(mesh.indices));
+    record.indexBuffer = createIndexBuffer(std::move(mesh.indices));
 
     if (!isValidHandle(record.vertexBuffer) || !isValidHandle(record.indexBuffer))
     {
@@ -85,7 +88,7 @@ MeshHandle IRenderer::createMesh(gfx::Mesh3D&& mesh)
 
 void IRenderer::drawMesh(MeshHandle mesh, TextureHandle texture)
 {
-    const MeshRecord* record = getMesh(mesh);
+    const MeshRecord *record = getMesh(mesh);
     if (!record)
         return;
 
@@ -119,7 +122,7 @@ void IRenderer::drawMeshes(std::span<const DrawItem> items)
 
     gfx::TransformUBO transform = _currentTransform;
 
-    for (const DrawItem& item : items)
+    for (const DrawItem &item : items)
     {
         transform.model = item.model;
         setTransform(transform);
@@ -131,7 +134,7 @@ void IRenderer::drawMeshes(std::span<const DrawItem> items)
     }
 }
 
-MaterialHandle IRenderer::createMaterial(const Material& material)
+MaterialHandle IRenderer::createMaterial(const Material &material)
 {
     _materials.push_back(material);
     return static_cast<MaterialHandle>(_materials.size()); // 1-based
@@ -139,7 +142,7 @@ MaterialHandle IRenderer::createMaterial(const Material& material)
 
 void IRenderer::bindMaterial(MaterialHandle handle)
 {
-    const Material* material = getMaterial(handle);
+    const Material *material = getMaterial(handle);
     if (!material)
         return;
 
@@ -149,12 +152,12 @@ void IRenderer::bindMaterial(MaterialHandle handle)
         bindTexture(material->albedo);
 }
 
-void IRenderer::setLight(const gfx::LightUBO& light)
+void IRenderer::setLight(const gfx::LightUBO &light)
 {
     _light = light;
 }
 
-const IRenderer::MeshRecord* IRenderer::getMesh(MeshHandle handle) const
+const IRenderer::MeshRecord *IRenderer::getMesh(MeshHandle handle) const
 {
     if (!isValidHandle(handle) || handle.value() > _meshes.size())
         return nullptr;
@@ -162,7 +165,7 @@ const IRenderer::MeshRecord* IRenderer::getMesh(MeshHandle handle) const
     return &_meshes[handle.value() - 1];
 }
 
-const Material* IRenderer::getMaterial(MaterialHandle handle) const
+const Material *IRenderer::getMaterial(MaterialHandle handle) const
 {
     if (!isValidHandle(handle) || handle.value() > _materials.size())
         return nullptr;

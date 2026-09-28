@@ -17,80 +17,84 @@
 using namespace aura3d;
 using namespace aura3d::ui;
 
-namespace {
+namespace
+{
 
 [[nodiscard]] bool near(f32 a, f32 b, f32 tolerance = 0.51f)
 {
     return std::fabs(a - b) <= tolerance;
 }
 
-[[nodiscard]] bool sameRect(const Rect& rect, f32 x, f32 y, f32 width, f32 height)
+[[nodiscard]] bool sameRect(const Rect &rect, f32 x, f32 y, f32 width, f32 height)
 {
-    return near(rect.min.x, x) && near(rect.min.y, y) && near(rect.width(), width) &&
-           near(rect.height(), height);
+    return near(rect.min.x, x) && near(rect.min.y, y) && near(rect.width(), width) && near(rect.height(), height);
 }
 
 /// A root over the embedded bitmap font: no font file, no GPU, deterministic
 /// metrics on every platform the tests run on.
-struct Harness {
+struct Harness
+{
     AtlasTextShaper shaper{TextShaperDesc{}};
     UIRoot root{shaper};
 
-    explicit Harness(glm::vec2 size = {400.0f, 300.0f}) { root.resize(size); }
+    explicit Harness(glm::vec2 size = {400.0f, 300.0f})
+    {
+        root.resize(size);
+    }
 
-    void layout() { root.update(0.0f); }
+    void layout()
+    {
+        root.update(0.0f);
+    }
 };
 
 void testLengths()
 {
     Harness harness;
-    auto& page = harness.root.setContent<Column>();
+    auto &page = harness.root.setContent<Column>();
 
-    auto& fixed = page.add<Widget>();
+    auto &fixed = page.add<Widget>();
     fixed.layout().width = Length::px(120.0f);
     fixed.layout().height = Length::px(40.0f);
     fixed.layout().hAlign = Alignment::Start;
 
-    auto& percent = page.add<Widget>();
+    auto &percent = page.add<Widget>();
     percent.layout().width = Length::percent(50.0f);
     percent.layout().height = Length::px(10.0f);
     percent.layout().hAlign = Alignment::Start;
 
     harness.layout();
 
-    AURA_CHECK(sameRect(fixed.bounds(), 0.0f, 0.0f, 120.0f, 40.0f),
-               "Length::px pins both axes exactly");
-    AURA_CHECK(near(percent.bounds().width(), 200.0f),
-               "Length::percent resolves against the parent's content width");
+    AURA_CHECK(sameRect(fixed.bounds(), 0.0f, 0.0f, 120.0f, 40.0f), "Length::px pins both axes exactly");
+    AURA_CHECK(near(percent.bounds().width(), 200.0f), "Length::percent resolves against the parent's content width");
 }
 
 void testMarginAndPadding()
 {
     Harness harness;
-    auto& page = harness.root.setContent<Column>();
+    auto &page = harness.root.setContent<Column>();
     page.layout().padding = Thickness::all(10.0f);
 
-    auto& child = page.add<Widget>();
+    auto &child = page.add<Widget>();
     child.layout().margin = Thickness::all(5.0f);
     child.layout().height = Length::px(20.0f);
 
     harness.layout();
 
-    AURA_CHECK(sameRect(child.bounds(), 15.0f, 15.0f, 370.0f, 20.0f),
-               "padding and margin both inset, and stack");
+    AURA_CHECK(sameRect(child.bounds(), 15.0f, 15.0f, 370.0f, 20.0f), "padding and margin both inset, and stack");
 }
 
 void testAlignment()
 {
     Harness harness;
-    auto& page = harness.root.setContent<Column>();
+    auto &page = harness.root.setContent<Column>();
 
-    auto& centred = page.add<Widget>();
+    auto &centred = page.add<Widget>();
     centred.layout().width = Length::px(100.0f);
     centred.layout().height = Length::px(20.0f);
     centred.layout().hAlign = Alignment::Center;
 
-    auto& trailing = page.add<Widget>();
+    auto &trailing = page.add<Widget>();
     trailing.layout().width = Length::px(100.0f);
     trailing.layout().height = Length::px(20.0f);
     trailing.layout().hAlign = Alignment::End;
@@ -99,20 +103,19 @@ void testAlignment()
 
     AURA_CHECK(near(centred.bounds().min.x, 150.0f), "Alignment::Center centres within the slot");
     AURA_CHECK(near(trailing.bounds().min.x, 300.0f), "Alignment::End pushes to the far edge");
-    AURA_CHECK(near(centred.bounds().width(), 100.0f),
-               "an explicit Length survives a stretching parent");
+    AURA_CHECK(near(centred.bounds().width(), 100.0f), "an explicit Length survives a stretching parent");
 }
 
 void testFlexShares()
 {
     Harness harness;
-    auto& row = harness.root.setContent<Row>();
+    auto &row = harness.root.setContent<Row>();
     row.setSpacing(10.0f);
 
-    auto& left = row.add<Widget>();
+    auto &left = row.add<Widget>();
     left.layout().width = Length::fill();
 
-    auto& right = row.add<Widget>();
+    auto &right = row.add<Widget>();
     right.layout().width = Length::fill();
 
     harness.layout();
@@ -131,12 +134,12 @@ void testFlexShares()
 void testFixedAndFillMix()
 {
     Harness harness;
-    auto& row = harness.root.setContent<Row>();
+    auto &row = harness.root.setContent<Row>();
 
-    auto& sidebar = row.add<Widget>();
+    auto &sidebar = row.add<Widget>();
     sidebar.layout().width = Length::px(80.0f);
 
-    auto& body = row.add<Widget>();
+    auto &body = row.add<Widget>();
     body.layout().width = Length::fill();
 
     harness.layout();
@@ -148,9 +151,9 @@ void testFixedAndFillMix()
 void testMinMax()
 {
     Harness harness;
-    auto& row = harness.root.setContent<Row>();
+    auto &row = harness.root.setContent<Row>();
 
-    auto& capped = row.add<Widget>();
+    auto &capped = row.add<Widget>();
     capped.layout().width = Length::fill();
     capped.layout().maxWidth = 150.0f;
 
@@ -158,7 +161,7 @@ void testMinMax()
 
     AURA_CHECK(near(capped.bounds().width(), 150.0f), "maxWidth caps a Fill child");
 
-    auto& floored = row.add<Widget>();
+    auto &floored = row.add<Widget>();
     floored.layout().minWidth = 60.0f;
     harness.layout();
 
@@ -168,16 +171,16 @@ void testMinMax()
 void testCollapsedTakesNoSpace()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
+    auto &column = harness.root.setContent<Column>();
     column.setSpacing(4.0f);
 
-    auto& first = column.add<Widget>();
+    auto &first = column.add<Widget>();
     first.layout().height = Length::px(20.0f);
 
-    auto& hidden = column.add<Widget>();
+    auto &hidden = column.add<Widget>();
     hidden.layout().height = Length::px(20.0f);
 
-    auto& last = column.add<Widget>();
+    auto &last = column.add<Widget>();
     last.layout().height = Length::px(20.0f);
 
     harness.layout();
@@ -198,11 +201,11 @@ void testCollapsedTakesNoSpace()
 void testIntrinsicSizing()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
+    auto &column = harness.root.setContent<Column>();
     column.layout().hAlign = Alignment::Start;
     column.layout().width = Length::automatic();
 
-    auto& label = column.add<Label>("Hello");
+    auto &label = column.add<Label>("Hello");
     label.layout().hAlign = Alignment::Start;
 
     harness.layout();
@@ -216,9 +219,9 @@ void testIntrinsicSizing()
 void testWrappingHeightFollowsWidth()
 {
     Harness harness;
-    auto& page = harness.root.setContent<Column>();
+    auto &page = harness.root.setContent<Column>();
 
-    auto& label = page.add<Label>("the quick brown fox jumps over the lazy dog");
+    auto &label = page.add<Label>("the quick brown fox jumps over the lazy dog");
     label.setWrap(TextWrap::Word);
 
     harness.root.resize({400.0f, 300.0f});
@@ -236,20 +239,19 @@ void testWrappingHeightFollowsWidth()
 void testGrid()
 {
     Harness harness;
-    auto& grid = harness.root.setContent<Grid>();
+    auto &grid = harness.root.setContent<Grid>();
     grid.setColumns({Length::px(100.0f), Length::fill()});
     grid.setRows({Length::px(30.0f), Length::px(30.0f)});
     grid.setSpacing(10.0f);
 
-    auto& a = grid.addAt<Widget>(0, 0);
-    auto& b = grid.addAt<Widget>(0, 1);
-    auto& c = grid.addAt<Widget>(1, 0);
+    auto &a = grid.addAt<Widget>(0, 0);
+    auto &b = grid.addAt<Widget>(0, 1);
+    auto &c = grid.addAt<Widget>(1, 0);
 
     harness.layout();
 
     AURA_CHECK(sameRect(a.bounds(), 0.0f, 0.0f, 100.0f, 30.0f), "a fixed cell is exactly its track");
-    AURA_CHECK(sameRect(b.bounds(), 110.0f, 0.0f, 290.0f, 30.0f),
-               "a Fill column takes the rest of the row");
+    AURA_CHECK(sameRect(b.bounds(), 110.0f, 0.0f, 290.0f, 30.0f), "a Fill column takes the rest of the row");
     AURA_CHECK(near(c.bounds().min.y, 40.0f), "the second row clears the first plus the spacing");
 
     b.layout().cell.columnSpan = 2;
@@ -262,10 +264,10 @@ void testGrid()
 void testGridAutoColumn()
 {
     Harness harness;
-    auto& grid = harness.root.setContent<Grid>();
+    auto &grid = harness.root.setContent<Grid>();
     grid.setColumns({Length::automatic(), Length::fill()});
 
-    auto& label = grid.addAt<Label>(0, 0, "Name");
+    auto &label = grid.addAt<Label>(0, 0, "Name");
     grid.addAt<Widget>(0, 1);
 
     harness.layout();
@@ -278,8 +280,8 @@ void testScrollView()
 {
     Harness harness({200.0f, 100.0f});
 
-    auto& scroll = harness.root.setContent<ScrollView>();
-    auto& column = scroll.setContent<Column>();
+    auto &scroll = harness.root.setContent<ScrollView>();
+    auto &column = scroll.setContent<Column>();
 
     for (int i = 0; i < 10; ++i)
         column.add<Widget>().layout().height = Length::px(30.0f);
@@ -287,8 +289,7 @@ void testScrollView()
     harness.layout();
 
     AURA_CHECK(near(scroll.contentSize().y, 300.0f), "the content measures its full height");
-    AURA_CHECK(near(scroll.maxOffset().y, 200.0f),
-               "the scrollable range is content minus viewport");
+    AURA_CHECK(near(scroll.maxOffset().y, 200.0f), "the scrollable range is content minus viewport");
 
     scroll.scrollTo({0.0f, 50.0f});
     harness.layout();
@@ -300,21 +301,20 @@ void testScrollView()
 
     AURA_CHECK(near(scroll.offset().y, 200.0f), "the offset is clamped to the range");
 
-    AURA_CHECK(scroll.contentInsets().right > 0.0f,
-               "a vertical scroll view reserves its scrollbar gutter");
+    AURA_CHECK(scroll.contentInsets().right > 0.0f, "a vertical scroll view reserves its scrollbar gutter");
 }
 
 void testSpacerPushes()
 {
     Harness harness;
-    auto& row = harness.root.setContent<Row>();
+    auto &row = harness.root.setContent<Row>();
 
-    auto& first = row.add<Widget>();
+    auto &first = row.add<Widget>();
     first.layout().width = Length::px(50.0f);
 
     row.add<Spacer>();
 
-    auto& last = row.add<Widget>();
+    auto &last = row.add<Widget>();
     last.layout().width = Length::px(50.0f);
 
     harness.layout();
@@ -325,23 +325,22 @@ void testSpacerPushes()
 void testMainAlignment()
 {
     Harness harness;
-    auto& row = harness.root.setContent<Row>();
+    auto &row = harness.root.setContent<Row>();
     row.setMainAlignment(Alignment::Center);
 
-    auto& only = row.add<Widget>();
+    auto &only = row.add<Widget>();
     only.layout().width = Length::px(100.0f);
 
     harness.layout();
 
-    AURA_CHECK(near(only.bounds().min.x, 150.0f),
-               "mainAlignment centres a group that does not fill the axis");
+    AURA_CHECK(near(only.bounds().min.x, 150.0f), "mainAlignment centres a group that does not fill the axis");
 }
 
 void testLayoutRunsOnlyWhenDirty()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
-    auto& child = column.add<Widget>();
+    auto &column = harness.root.setContent<Column>();
+    auto &child = column.add<Widget>();
 
     harness.layout();
     AURA_CHECK(!column.layoutDirty(), "a clean pass clears the dirty flag");
@@ -353,15 +352,14 @@ void testLayoutRunsOnlyWhenDirty()
 void testDetachKeepsSubtree()
 {
     Harness harness;
-    auto& column = harness.root.setContent<Column>();
+    auto &column = harness.root.setContent<Column>();
 
-    auto& outer = column.add<Column>();
-    auto& inner = outer.add<Label>("kept");
+    auto &outer = column.add<Column>();
+    auto &inner = outer.add<Label>("kept");
 
     std::unique_ptr<Widget> taken = column.detach(outer);
 
-    AURA_CHECK(taken != nullptr && taken->childCount() == 1,
-               "a detached subtree comes back intact");
+    AURA_CHECK(taken != nullptr && taken->childCount() == 1, "a detached subtree comes back intact");
     AURA_CHECK(inner.root() == nullptr, "and is disconnected from the root");
 
     column.adopt(std::move(taken));

@@ -3,15 +3,17 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <vector>
+#include <vulkan/vulkan.h>
 
-#include "aura/aura.h"
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @class VkUniformBufferManager
@@ -21,9 +23,10 @@ namespace vk {
  * data for shaders. It works with VkBufferManager and supports per-swapchain
  * image buffers for triple buffering.
  */
-class VkUniformBufferManager {
-public:
-    VkUniformBufferManager(VulkanMemoryManager* memoryManager, VkDevice* vkDevice);
+class VkUniformBufferManager
+{
+  public:
+    VkUniformBufferManager(VulkanMemoryManager *memoryManager, VkDevice *vkDevice);
     ~VkUniformBufferManager();
 
     /**
@@ -34,10 +37,8 @@ public:
      * @param elementSize Bytes per buffer. Defaults to a TransformUBO, but any
      *        blob works, which lets the same manager back the light UBO.
      */
-    void createUniformBuffers(
-        VkSharingMode sharingMode,
-        u32 count,
-        VkDeviceSize elementSize = sizeof(gfx::TransformUBO));
+    void createUniformBuffers(VkSharingMode sharingMode, u32 count,
+                              VkDeviceSize elementSize = sizeof(gfx::TransformUBO));
 
     /**
      * @brief Updates a uniform buffer with new transform data
@@ -45,14 +46,14 @@ public:
      * @param currentImage Index of the current swapchain image
      * @param ubo Transform UBO data to upload
      */
-    void updateUniformBuffer(u32 currentImage, gfx::TransformUBO& ubo);
+    void updateUniformBuffer(u32 currentImage, gfx::TransformUBO &ubo);
 
     /**
      * @brief Uploads @p size bytes of @p data into buffer @p currentImage.
      *
      * Writes are rejected when they would overrun the configured element size.
      */
-    void updateUniformBufferRaw(u32 currentImage, const void* data, VkDeviceSize size);
+    void updateUniformBufferRaw(u32 currentImage, const void *data, VkDeviceSize size);
 
     /**
      * @brief Gets a uniform buffer handle
@@ -90,9 +91,9 @@ public:
      */
     void cleanup();
 
-private:
-    VulkanMemoryManager* _memoryManager;
-    VkDevice* _vkDevice;
+  private:
+    VulkanMemoryManager *_memoryManager;
+    VkDevice *_vkDevice;
     std::vector<AllocatedBuffer> _buffers;
     VkDeviceSize _elementSize = sizeof(gfx::TransformUBO);
 };

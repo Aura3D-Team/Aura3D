@@ -20,7 +20,8 @@
  * boundary walk, which needs no font.
  */
 
-namespace aura3d::ui::utf8 {
+namespace aura3d::ui::utf8
+{
 
 [[nodiscard]] constexpr bool isContinuation(char byte) noexcept
 {
@@ -87,7 +88,7 @@ namespace aura3d::ui::utf8 {
 
 /// Appends @p codepoint as UTF-8. Surrogates and out-of-range values are
 /// dropped rather than encoded, so @p out stays valid UTF-8 whatever it is fed.
-void append(std::string& out, char32_t codepoint);
+void append(std::string &out, char32_t codepoint);
 
 /// @p offset moved to the nearest character boundary at or below it. What a
 /// caret restored from outside (a saved position, a clamp) must pass through.

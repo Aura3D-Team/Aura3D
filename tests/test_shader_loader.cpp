@@ -25,20 +25,21 @@ using namespace aura3d;
 // Actual shader-module compilation (glCompileShader / vkCreateShaderModule)
 // needs a real context/device and is exercised manually via the Sandbox app.
 
-namespace {
+namespace
+{
 
-std::filesystem::path scratchPath(const std::string& name)
+std::filesystem::path scratchPath(const std::string &name)
 {
     return std::filesystem::temp_directory_path() / ("aura_test_shader_loader_" + name);
 }
 
-void writeFile(const std::filesystem::path& path, const std::string& content)
+void writeFile(const std::filesystem::path &path, const std::string &content)
 {
     std::ofstream file(path, std::ios::binary);
     file << content;
 }
 
-void writeFile(const std::filesystem::path& path, const std::vector<char>& bytes)
+void writeFile(const std::filesystem::path &path, const std::vector<char> &bytes)
 {
     std::ofstream file(path, std::ios::binary);
     file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
@@ -78,29 +79,25 @@ void test_vk_spirv_extractor()
 
     extractor.readVertFile(vertPath.string());
     AURA_CHECK(extractor.getVertByteCode() == fakeSpirv,
-              "ShaderSpirvExtractor::readVertFile: byte content round-trips exactly");
+               "ShaderSpirvExtractor::readVertFile: byte content round-trips exactly");
 
     extractor.readFragFile(fragPath.string());
     AURA_CHECK(extractor.getFragByteCode() == fakeSpirv,
-              "ShaderSpirvExtractor::readFragFile: byte content round-trips exactly");
+               "ShaderSpirvExtractor::readFragFile: byte content round-trips exactly");
 
     std::filesystem::remove(vertPath);
     std::filesystem::remove(fragPath);
 
     // Wrong extension is rejected before the file is even opened.
-    AURA_CHECK_THROWS(extractor.readVertFile(scratchPath("shader.txt").string()),
-                      std::invalid_argument,
+    AURA_CHECK_THROWS(extractor.readVertFile(scratchPath("shader.txt").string()), std::invalid_argument,
                       "ShaderSpirvExtractor::readVertFile: rejects a non-'vert.spv' filename");
-    AURA_CHECK_THROWS(extractor.readFragFile(scratchPath("shader.txt").string()),
-                      std::invalid_argument,
+    AURA_CHECK_THROWS(extractor.readFragFile(scratchPath("shader.txt").string()), std::invalid_argument,
                       "ShaderSpirvExtractor::readFragFile: rejects a non-'frag.spv' filename");
 
     // Right extension, but the file doesn't exist.
-    AURA_CHECK_THROWS(extractor.readVertFile(scratchPath("missing_vert.spv").string()),
-                      std::runtime_error,
+    AURA_CHECK_THROWS(extractor.readVertFile(scratchPath("missing_vert.spv").string()), std::runtime_error,
                       "ShaderSpirvExtractor::readVertFile: throws runtime_error for a missing file");
-    AURA_CHECK_THROWS(extractor.readFragFile(scratchPath("missing_frag.spv").string()),
-                      std::runtime_error,
+    AURA_CHECK_THROWS(extractor.readFragFile(scratchPath("missing_frag.spv").string()), std::runtime_error,
                       "ShaderSpirvExtractor::readFragFile: throws runtime_error for a missing file");
 }
 
@@ -113,12 +110,14 @@ void test_embedded_spirv_well_formed()
     // length that's a whole number of 32-bit words.
     constexpr std::uint32_t kSpirvMagic = 0x07230203u;
 
-    auto checkModule = [](const unsigned char* data, unsigned int len, const std::string& name) {
+    auto checkModule = [](const unsigned char *data, unsigned int len, const std::string &name)
+    {
         AURA_CHECK(len >= 20, name + ": embedded module is at least as long as a SPIR-V header");
         AURA_CHECK(len % 4 == 0, name + ": embedded module length is a whole number of 32-bit words");
 
         std::uint32_t magic = 0;
-        if (len >= 4) {
+        if (len >= 4)
+        {
             magic = static_cast<std::uint32_t>(data[0]) | (static_cast<std::uint32_t>(data[1]) << 8) |
                     (static_cast<std::uint32_t>(data[2]) << 16) | (static_cast<std::uint32_t>(data[3]) << 24);
         }

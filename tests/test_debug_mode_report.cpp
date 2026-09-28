@@ -19,7 +19,8 @@
 
 using namespace aura3d;
 
-namespace {
+namespace
+{
 
 constexpr f64 kEpsilon = 1e-9;
 
@@ -34,8 +35,7 @@ constexpr f64 kEpsilon = 1e-9;
     FrameSample sample;
 
     sample.frameNanos = static_cast<i64>(frameMillis * 1.0e6);
-    sample.phaseNanos[static_cast<u32>(FramePhase::RecordScene)] =
-        static_cast<i64>(sceneMillis * 1.0e6);
+    sample.phaseNanos[static_cast<u32>(FramePhase::RecordScene)] = static_cast<i64>(sceneMillis * 1.0e6);
 
     return sample;
 }
@@ -44,10 +44,10 @@ constexpr f64 kEpsilon = 1e-9;
 {
     DebugModeConfig config;
 
-    config.reportPath        = std::move(path);
-    config.label             = "unit-test";
-    config.warmupFrames      = 2;
-    config.sampleCapacity    = 8;
+    config.reportPath = std::move(path);
+    config.label = "unit-test";
+    config.warmupFrames = 2;
+    config.sampleCapacity = 8;
     config.frameBudgetMillis = 10.0;
 
     //! Left at zero deliberately: a target frame count would make update() end
@@ -94,23 +94,18 @@ void testSteadyRunReport()
 
     AURA_CHECK(report.getPath<std::string>("/schema", "") == "aura3d.benchmark/1",
                "steady run: schema version round-trips");
-    AURA_CHECK(report.getPath<std::string>("/label", "") == "unit-test",
-               "steady run: label round-trips");
-    AURA_CHECK(report.getPath<u64>("/run/frames_captured", 0) == 10,
-               "steady run: frames_captured is 10");
-    AURA_CHECK(report.getPath<u64>("/run/frames_warmup", 0) == 2,
-               "steady run: frames_warmup is 2");
+    AURA_CHECK(report.getPath<std::string>("/label", "") == "unit-test", "steady run: label round-trips");
+    AURA_CHECK(report.getPath<u64>("/run/frames_captured", 0) == 10, "steady run: frames_captured is 10");
+    AURA_CHECK(report.getPath<u64>("/run/frames_warmup", 0) == 2, "steady run: frames_warmup is 2");
 
     // 10 frames into an 8-frame ring: the window holds the last 8 and says so.
     AURA_CHECK(report.getPath<u64>("/run/sample_window", 0) == 8,
                "steady run: the window holds the ring's 8 most recent frames");
-    AURA_CHECK(report.getPath<bool>("/run/window_truncated", false),
-               "steady run: window_truncated flags the wrap");
+    AURA_CHECK(report.getPath<bool>("/run/window_truncated", false), "steady run: window_truncated flags the wrap");
 
     // The warm-up frames were 500 ms; if any had leaked into the distribution
     // the maximum would show it.
-    AURA_CHECK(near(report.getPath<f64>("/frame/cpu_ms/mean", 0.0), 5.0),
-               "steady run: mean frame time is 5 ms");
+    AURA_CHECK(near(report.getPath<f64>("/frame/cpu_ms/mean", 0.0), 5.0), "steady run: mean frame time is 5 ms");
     AURA_CHECK(near(report.getPath<f64>("/frame/cpu_ms/max", 0.0), 5.0),
                "steady run: warm-up frames are excluded from the maximum");
     AURA_CHECK(near(report.getPath<f64>("/frame/cpu_ms/stddev", 1.0), 0.0),
@@ -120,11 +115,9 @@ void testSteadyRunReport()
     // the ring -- which for a constant run means they agree with the window.
     AURA_CHECK(report.getPath<u64>("/frame/whole_run/frames", 0) == 10,
                "steady run: whole_run counts every captured frame");
-    AURA_CHECK(near(report.getPath<f64>("/frame/whole_run/mean_ms", 0.0), 5.0),
-               "steady run: whole_run mean is 5 ms");
+    AURA_CHECK(near(report.getPath<f64>("/frame/whole_run/mean_ms", 0.0), 5.0), "steady run: whole_run mean is 5 ms");
 
-    AURA_CHECK(near(report.getPath<f64>("/frame/fps/mean", 0.0), 200.0),
-               "steady run: 5 ms per frame is 200 FPS");
+    AURA_CHECK(near(report.getPath<f64>("/frame/fps/mean", 0.0), 200.0), "steady run: 5 ms per frame is 200 FPS");
     AURA_CHECK(near(report.getPath<f64>("/frame/fps/one_percent_low", 0.0), 200.0),
                "steady run: a constant run's 1% low equals its mean");
 
@@ -148,8 +141,7 @@ void testSteadyRunReport()
                "steady run: no frame exceeds the 10 ms budget");
     AURA_CHECK(near(report.getPath<f64>("/frame/budget/probability_empirical", 1.0), 0.0),
                "steady run: empirical exceedance is 0");
-    AURA_CHECK(report.getPath<std::string>("/verdict/status", "") == "pass",
-               "steady run: verdict passes");
+    AURA_CHECK(report.getPath<std::string>("/verdict/status", "") == "pass", "steady run: verdict passes");
 
     std::remove(path.c_str());
 }
@@ -163,9 +155,9 @@ void testOverBudgetVerdict()
 
     {
         DebugModeConfig config = baseConfig(path);
-        config.warmupFrames       = 0;
-        config.sampleCapacity     = 16;
-        config.frameBudgetMillis  = 10.0;
+        config.warmupFrames = 0;
+        config.sampleCapacity = 16;
+        config.frameBudgetMillis = 10.0;
         config.maxOverBudgetRatio = 0.10;
 
         DebugMode debug(config);
@@ -184,8 +176,7 @@ void testOverBudgetVerdict()
 
     AURA_CHECK(report.getPath<u64>("/frame/budget/over_budget_frames", 0) == 4,
                "over budget: 4 frames exceeded the budget");
-    AURA_CHECK(near(report.getPath<f64>("/frame/budget/over_budget_ratio", 0.0), 0.4),
-               "over budget: the ratio is 0.4");
+    AURA_CHECK(near(report.getPath<f64>("/frame/budget/over_budget_ratio", 0.0), 0.4), "over budget: the ratio is 0.4");
 
     // The four slow frames were consecutive, which is what turns a statistic
     // into a visible stutter.
@@ -193,8 +184,7 @@ void testOverBudgetVerdict()
                "over budget: the longest over-budget streak is 4 frames");
     AURA_CHECK(near(report.getPath<f64>("/frame/budget/probability_empirical", 0.0), 0.4),
                "over budget: empirical exceedance matches the ratio");
-    AURA_CHECK(report.getPath<std::string>("/verdict/status", "") == "fail",
-               "over budget: verdict fails");
+    AURA_CHECK(report.getPath<std::string>("/verdict/status", "") == "fail", "over budget: verdict fails");
 
     // The threshold it was judged against is in the artifact, so the verdict
     // can be reproduced from the file alone.
@@ -213,7 +203,7 @@ void testShortRunIsNotTruncated()
 
     {
         DebugModeConfig config = baseConfig(path);
-        config.warmupFrames   = 0;
+        config.warmupFrames = 0;
         config.sampleCapacity = 64;
 
         DebugMode debug(config);
@@ -226,12 +216,10 @@ void testShortRunIsNotTruncated()
 
     const ink::EnhancedJson report = ink::EnhancedJson::loadFromFile(path);
 
-    AURA_CHECK(report.getPath<u64>("/run/sample_window", 0) == 3,
-               "short run: the window holds all 3 frames");
+    AURA_CHECK(report.getPath<u64>("/run/sample_window", 0) == 3, "short run: the window holds all 3 frames");
     AURA_CHECK(!report.getPath<bool>("/run/window_truncated", true),
                "short run: window_truncated is false when the ring never wrapped");
-    AURA_CHECK(report.getPath<u64>("/frame/cpu_ms/count", 0) == 3,
-               "short run: the distribution covers all 3 frames");
+    AURA_CHECK(report.getPath<u64>("/frame/cpu_ms/count", 0) == 3, "short run: the distribution covers all 3 frames");
 
     std::remove(path.c_str());
 }
@@ -254,8 +242,7 @@ void testEmptyRunFailsRatherThanLies()
 
     const ink::EnhancedJson report = ink::EnhancedJson::loadFromFile(path);
 
-    AURA_CHECK(report.getPath<u64>("/run/frames_captured", 1) == 0,
-               "empty run: frames_captured is 0");
+    AURA_CHECK(report.getPath<u64>("/run/frames_captured", 1) == 0, "empty run: frames_captured is 0");
     AURA_CHECK(report.getPath<std::string>("/verdict/status", "") == "fail",
                "empty run: verdict fails rather than passing on no evidence");
 

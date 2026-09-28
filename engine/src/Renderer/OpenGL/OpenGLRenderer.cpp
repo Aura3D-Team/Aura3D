@@ -1,22 +1,26 @@
 #include "aura/Renderer/OpenGL/OpenGLRenderer.h"
 
-#include <glad/glad.h>
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <glad/glad.h>
 #include <stdexcept>
 #include <thread>
 
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
-OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails& windowDetails)
-    : IRenderer(windowDetails)
+static_assert(sizeof(GLintptr) == sizeof(void *) && sizeof(GLsizeiptr) == sizeof(void *),
+              "OpenGL buffer offsets and sizes must retain the platform's pointer width");
+
+OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails &windowDetails) : IRenderer(windowDetails)
 {
     INK_INFO << "Renderer - OPENGL";
 }
@@ -26,9 +30,10 @@ OpenGLRenderer::~OpenGLRenderer()
     cleanup();
 }
 
-void OpenGLRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
+void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
 {
-    if (_isInitialized) return;
+    if (_isInitialized)
+        return;
 
     //! Unused: this backend has no CPU-side worker pool of its own to share.
     (void)jobs;
@@ -37,8 +42,8 @@ void OpenGLRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
     loadOpenGLEntryPoints();
     compileBuiltInShaders();
 
-    _vertexMgr  = std::make_unique<GlVertexBufferManager>();
-    _indexMgr   = std::make_unique<GlIndexBufferManager>();
+    _vertexMgr = std::make_unique<GlVertexBufferManager>();
+    _indexMgr = std::make_unique<GlIndexBufferManager>();
     _uniformMgr = std::make_unique<GlUniformBufferManager>();
     _textureMgr = std::make_unique<GlTextureManager>();
 
@@ -53,12 +58,14 @@ void OpenGLRenderer::initialize(AuraSettings* settings, const JobSystem* jobs)
 
 void OpenGLRenderer::loadOpenGLEntryPoints()
 {
-    if (!_windowManagerApi) {
+    if (!_windowManagerApi)
+    {
         throw std::runtime_error("OpenGLRenderer: window manager not created before GLAD load");
     }
 
-    auto* window = static_cast<SDL_Window*>(_windowManagerApi->getWindowInstance());
-    if (!window) {
+    auto *window = static_cast<SDL_Window *>(_windowManagerApi->getWindowInstance());
+    if (!window)
+    {
         throw std::runtime_error("OpenGLRenderer: SDL window handle is null");
     }
 
@@ -69,32 +76,36 @@ void OpenGLRenderer::loadOpenGLEntryPoints()
     // call on an already-current context fails outright under Emscripten's
     // SDL3 port (SDL_GetError() comes back empty, unlike a real GL error).
     SDL_GLContext context = SDL_GL_GetCurrentContext();
-    if (!context) {
+    if (!context)
+    {
         context = SDL_GL_CreateContext(window);
-        if (!context) {
-            throw std::runtime_error(
-                std::string("OpenGLRenderer: failed to create GL context: ") + SDL_GetError());
+        if (!context)
+        {
+            throw std::runtime_error(std::string("OpenGLRenderer: failed to create GL context: ") + SDL_GetError());
         }
 
-        if (SDL_GL_MakeCurrent(window, context) != 0) {
-            throw std::runtime_error(
-                std::string("OpenGLRenderer: failed to make GL context current: ") + SDL_GetError());
+        if (SDL_GL_MakeCurrent(window, context) != 0)
+        {
+            throw std::runtime_error(std::string("OpenGLRenderer: failed to make GL context current: ") +
+                                     SDL_GetError());
         }
     }
 
-    if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress))) {
+    if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
+    {
         throw std::runtime_error("OpenGLRenderer: gladLoadGLLoader failed");
     }
 
-    INK_INFO << "OpenGL " << GLVersion.major << "." << GLVersion.minor
-             << " | " << reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+    INK_INFO << "OpenGL " << GLVersion.major << "." << GLVersion.minor << " | "
+             << reinterpret_cast<const char *>(glGetString(GL_RENDERER));
     handleWindowChanges();
 }
 
-namespace {
+namespace
+{
 
 //! Compiles one stage, logging and returning 0 on failure.
-GLuint compileShaderStage(GLenum type, const char* source)
+GLuint compileShaderStage(GLenum type, const char *source)
 {
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, nullptr);
@@ -102,7 +113,8 @@ GLuint compileShaderStage(GLenum type, const char* source)
 
     GLint ok = GL_FALSE;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
+    if (!ok)
+    {
         char log[512];
         glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
         INK_ERROR << "GL shader compile error: " << log;
@@ -111,7 +123,7 @@ GLuint compileShaderStage(GLenum type, const char* source)
 }
 
 //! Compiles and links a vertex/fragment pair into a program.
-GLuint linkShaderProgram(const char* vertexSource, const char* fragmentSource)
+GLuint linkShaderProgram(const char *vertexSource, const char *fragmentSource)
 {
     const GLuint vert = compileShaderStage(GL_VERTEX_SHADER, vertexSource);
     const GLuint frag = compileShaderStage(GL_FRAGMENT_SHADER, fragmentSource);
@@ -123,7 +135,8 @@ GLuint linkShaderProgram(const char* vertexSource, const char* fragmentSource)
 
     GLint ok = GL_FALSE;
     glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (!ok) {
+    if (!ok)
+    {
         char log[512];
         glGetProgramInfoLog(program, sizeof(log), nullptr, log);
         INK_ERROR << "GL shader link error: " << log;
@@ -180,15 +193,18 @@ void OpenGLRenderer::createOverlay2DBuffers()
     glBindBuffer(GL_ARRAY_BUFFER, _overlay2DVbo);
 
     //! Layout must match gfx::Vertex2D and the 2D shader's input locations.
+    // OpenGL requires byte offsets encoded as pointers when a VBO is bound.
+    // NOLINTBEGIN(performance-no-int-to-ptr)
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D),
-                          reinterpret_cast<void*>(offsetof(gfx::Vertex2D, pos)));
+                          reinterpret_cast<void *>(offsetof(gfx::Vertex2D, pos)));
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D),
-                          reinterpret_cast<void*>(offsetof(gfx::Vertex2D, texCoord)));
+                          reinterpret_cast<void *>(offsetof(gfx::Vertex2D, texCoord)));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D),
-                          reinterpret_cast<void*>(offsetof(gfx::Vertex2D, color)));
+                          reinterpret_cast<void *>(offsetof(gfx::Vertex2D, color)));
     glEnableVertexAttribArray(2);
+    // NOLINTEND(performance-no-int-to-ptr)
 
     //! The element buffer binding is VAO state, so bind it while the VAO is
     //! current and it is restored automatically on every later bind.
@@ -198,17 +214,15 @@ void OpenGLRenderer::createOverlay2DBuffers()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-void OpenGLRenderer::createWindow(const char* title, const wma::WindowBackend& wBackend)
+void OpenGLRenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)
 {
-    _windowManagerApi = makeWindow(
-        wBackend, _windowDetails, wma::GraphicsAPI::OpenGL
-    );
+    _windowManagerApi = makeWindow(wBackend, _windowDetails, wma::GraphicsAPI::OpenGL);
     _windowManagerApi->createWindow(title);
 }
 
 void OpenGLRenderer::handleWindowChanges()
 {
-    const wma::WindowDetails* wd = _windowManagerApi->getWindowDetails();
+    const wma::WindowDetails *wd = _windowManagerApi->getWindowDetails();
     glViewport(0, 0, wd->width, wd->height);
 }
 
@@ -216,13 +230,18 @@ void OpenGLRenderer::cleanup()
 {
     clearSharedResources();
 
-    if (_shaderProgram) glDeleteProgram(_shaderProgram);
+    if (_shaderProgram)
+        glDeleteProgram(_shaderProgram);
     _shaderProgram = 0;
 
-    if (_overlay2DProgram) glDeleteProgram(_overlay2DProgram);
-    if (_overlay2DVao) glDeleteVertexArrays(1, &_overlay2DVao);
-    if (_overlay2DVbo) glDeleteBuffers(1, &_overlay2DVbo);
-    if (_overlay2DEbo) glDeleteBuffers(1, &_overlay2DEbo);
+    if (_overlay2DProgram)
+        glDeleteProgram(_overlay2DProgram);
+    if (_overlay2DVao)
+        glDeleteVertexArrays(1, &_overlay2DVao);
+    if (_overlay2DVbo)
+        glDeleteBuffers(1, &_overlay2DVbo);
+    if (_overlay2DEbo)
+        glDeleteBuffers(1, &_overlay2DEbo);
     _overlay2DProgram = 0;
     _overlay2DVao = _overlay2DVbo = _overlay2DEbo = 0;
     _overlay2DVboBytes = _overlay2DEboBytes = 0;
@@ -238,17 +257,17 @@ void OpenGLRenderer::cleanup()
     _isInitialized = false;
 }
 
-VertexBufferHandle OpenGLRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices)
+VertexBufferHandle OpenGLRenderer::createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices)
 {
     return _vertexMgr->createVertexBuffer(std::move(vertices));
 }
 
-IndexBufferHandle OpenGLRenderer::createIndexBuffer(std::vector<u16>&& indices)
+IndexBufferHandle OpenGLRenderer::createIndexBuffer(std::vector<u16> &&indices)
 {
     return _indexMgr->createIndexBuffer(std::move(indices));
 }
 
-IndexBufferHandle OpenGLRenderer::createIndexBuffer(std::vector<u32>&& indices)
+IndexBufferHandle OpenGLRenderer::createIndexBuffer(std::vector<u32> &&indices)
 {
     return _indexMgr->createIndexBuffer(std::move(indices));
 }
@@ -258,32 +277,33 @@ TextureHandle OpenGLRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
     return _textureMgr->createSolidColorTexture(r, g, b, a);
 }
 
-TextureHandle OpenGLRenderer::createTextureFromPixels(const u8* rgbaPixels, u32 width, u32 height)
+TextureHandle OpenGLRenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height)
 {
     return _textureMgr->createTextureFromPixels(rgbaPixels, width, height);
 }
 
 TextureHandle OpenGLRenderer::createDynamicTexture(u32 width, u32 height)
 {
-    if (!_textureMgr) return {};
+    if (!_textureMgr)
+        return {};
     return _textureMgr->createDynamicTexture(width, height);
 }
 
-void OpenGLRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y,
-                                         u32 width, u32 height, const u8* rgbaPixels)
+void OpenGLRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                         const u8 *rgbaPixels)
 {
-    if (!_textureMgr) return;
+    if (!_textureMgr)
+        return;
     _textureMgr->updateRegion(handle, x, y, width, height, rgbaPixels);
 }
 
 void OpenGLRenderer::beginFrame()
 {
-    auto* wd = _windowManagerApi->getWindowDetails();
-    auto* flags = _windowManagerApi->getWindowFlags();
+    auto *flags = _windowManagerApi->getWindowFlags();
 
-    if (flags->resized) {
+    if (flags->resized)
+    {
         flags->resized = false;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         handleWindowChanges();
     }
 }
@@ -335,8 +355,9 @@ void OpenGLRenderer::endFrame()
     {
         AURA_FRAME_SCOPE(FramePhase::Present);
 
-        auto* window = static_cast<SDL_Window*>(_windowManagerApi->getWindowInstance());
-        if (window) {
+        auto *window = static_cast<SDL_Window *>(_windowManagerApi->getWindowInstance());
+        if (window)
+        {
             SDL_GL_SwapWindow(window);
         }
     }
@@ -348,7 +369,7 @@ void OpenGLRenderer::endFrame()
     AURA_FRAME_END();
 }
 
-void OpenGLRenderer::setTransform(const gfx::TransformUBO& ubo)
+void OpenGLRenderer::setTransform(const gfx::TransformUBO &ubo)
 {
     _currentTransform = ubo;
 
@@ -361,7 +382,7 @@ void OpenGLRenderer::setTransform(const gfx::TransformUBO& ubo)
         _uniformMgr->update(_currentTransform);
 }
 
-void OpenGLRenderer::setLight(const gfx::LightUBO& light)
+void OpenGLRenderer::setLight(const gfx::LightUBO &light)
 {
     IRenderer::setLight(light);
 
@@ -404,27 +425,33 @@ void OpenGLRenderer::bindTexture(TextureHandle handle)
 
 void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 {
-    auto* idxData = _indexMgr->get(_currentIndexBuffer);
-    if (!idxData) return;
+    auto *idxData = _indexMgr->get(_currentIndexBuffer);
+    if (!idxData)
+        return;
 
-    if (instanceCount > 1) {
+    if (instanceCount > 1)
+    {
         glDrawElementsInstanced(GL_TRIANGLES, indexCount, idxData->type, nullptr, instanceCount);
-    } else {
+    }
+    else
+    {
         glDrawElements(GL_TRIANGLES, indexCount, idxData->type, nullptr);
     }
 }
 
 void OpenGLRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
-    if (instanceCount > 1) {
+    if (instanceCount > 1)
+    {
         glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
-    } else {
+    }
+    else
+    {
         glDrawArrays(GL_TRIANGLES, 0, vertexCount);
     }
 }
 
-void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
-                                 std::span<const u32> indices,
+void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
                                  TextureHandle texture)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
@@ -435,13 +462,14 @@ void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
     //! An untextured batch still samples, so stand in an opaque white texel and
     //! let the vertex colour come through unchanged.
     TextureHandle sampled = texture;
-    if (!isValidHandle(sampled)) {
+    if (!isValidHandle(sampled))
+    {
         if (!isValidHandle(_white2DTexture))
             _white2DTexture = _textureMgr->createSolidColorTexture(255, 255, 255, 255);
         sampled = _white2DTexture;
     }
 
-    const wma::WindowDetails* wd = _windowManagerApi->getWindowDetails();
+    const wma::WindowDetails *wd = _windowManagerApi->getWindowDetails();
     const f32 width = static_cast<f32>(wd->width);
     const f32 height = static_cast<f32>(wd->height);
     if (width <= 0.0f || height <= 0.0f)
@@ -514,7 +542,10 @@ void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices,
 
 void OpenGLRenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
 {
-    _clearR = r; _clearG = g; _clearB = b; _clearA = a;
+    _clearR = r;
+    _clearG = g;
+    _clearB = b;
+    _clearA = a;
 }
 
 } // namespace gl

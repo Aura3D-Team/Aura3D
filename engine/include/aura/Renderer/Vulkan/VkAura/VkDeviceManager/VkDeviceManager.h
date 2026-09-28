@@ -3,14 +3,16 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkQueueManager/VkQueueManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkSurfaceManager/VkSurfaceManager.h"
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @class VkDeviceManager
@@ -24,13 +26,13 @@ namespace vk {
  */
 class VkDeviceManager
 {
-public:
+  public:
     /**
      * @brief Constructor that initializes the device manager with a Vulkan instance.
      *
      * @param vkInstance The Vulkan instance to use for device management.
      */
-    VkDeviceManager(VkInstance* vkInstance, VkDeviceData vkDeviceData);
+    VkDeviceManager(VkInstance *vkInstance, VkDeviceData vkDeviceData);
 
     /**
      * @brief Destructor that cleans up the logical device.
@@ -48,7 +50,7 @@ public:
      *
      * @return VkDevice The Vulkan logical device that has been created with specific queue configurations.
      */
-    VkDevice* getDevice();
+    VkDevice *getDevice();
 
     /**
      * @brief Retrieves a pointer to the Vulkan physical device.
@@ -57,11 +59,12 @@ public:
      * to create the logical device. The physical device represents the actual GPU or hardware
      * selected based on the criteria defined in the `setBestDevice` method.
      *
-     * @return VkPhysicalDevice The Vulkan physical device that was chosen to create the logical device with specific queues.
+     * @return VkPhysicalDevice The Vulkan physical device that was chosen to create the logical device with specific
+     * queues.
      */
-    VkPhysicalDevice* getPhysicalDevice();
+    VkPhysicalDevice *getPhysicalDevice();
 
-    VkDeviceData* getDeviceCreationData();
+    VkDeviceData *getDeviceCreationData();
 
     /**
      * @brief See if physical device supports Vulkan surface operations
@@ -71,7 +74,7 @@ public:
      */
     VkBool32 physicalDeviceHasQueueSurfaceSupport(VkSurfaceManager vkSurfaceManager, const VkQueueFlags flags);
 
-    VkQueueManager* getQueueManager();
+    VkQueueManager *getQueueManager();
 
     /**
      * @brief Largest MSAA sample count the selected device supports for both
@@ -98,7 +101,10 @@ public:
      *
      * @return true if bufferDeviceAddress was both supported and enabled.
      */
-    [[nodiscard]] bool supportsBufferDeviceAddress() const { return _bufferDeviceAddressSupported; }
+    [[nodiscard]] bool supportsBufferDeviceAddress() const
+    {
+        return _bufferDeviceAddressSupported;
+    }
 
     /**
      * @brief Whether the selected physical device supports the three Vulkan 1.2
@@ -115,7 +121,10 @@ public:
      *
      * @return true if all three features were supported and enabled.
      */
-    [[nodiscard]] bool supportsBindlessTextures() const { return _bindlessTexturesSupported; }
+    [[nodiscard]] bool supportsBindlessTextures() const
+    {
+        return _bindlessTexturesSupported;
+    }
 
     /**
      * @brief Number of texture slots the bindless table may actually declare
@@ -131,22 +140,25 @@ public:
      * Guaranteed >= kMinBindlessTextures: a device that cannot host even
      * that is rejected at selection time.
      */
-    [[nodiscard]] u32 maxBindlessTextures() const { return _maxBindlessTextures; }
+    [[nodiscard]] u32 maxBindlessTextures() const
+    {
+        return _maxBindlessTextures;
+    }
 
-private:
-    VkInstance* _vkInstance; ///< Vulkan instance pointer used bind the best device
+  private:
+    VkInstance *_vkInstance; ///< Vulkan instance pointer used bind the best device
 
     VkDeviceData _vkDeviceCreationData; ///< This struct represents Important data for VkDevice creation
-    VkDeviceCreateInfo _deviceInfo;  ///< Information required to create the logical device
-    VkDevice _device;  ///< Handle to the Vulkan logical device
+    VkDeviceCreateInfo _deviceInfo;     ///< Information required to create the logical device
+    VkDevice _device;                   ///< Handle to the Vulkan logical device
 
-    VkPhysicalDevice _physicalDevice;  ///< Handle to the selected Vulkan physical device
+    VkPhysicalDevice _physicalDevice;             ///< Handle to the selected Vulkan physical device
     VkPhysicalDeviceProperties _deviceProperties; ///< Store best physical device properties
-    VkPhysicalDeviceFeatures _deviceFeatures; ///< Store best physical device features
-    bool _bufferDeviceAddressSupported = false; ///< See supportsBufferDeviceAddress()
-    bool _bindlessTexturesSupported = false; ///< See supportsBindlessTextures()
-    u32 _maxBindlessTextures = 0; ///< See maxBindlessTextures()
-    u32 _physicaldeviceCount;  ///< Number of available physical devices
+    VkPhysicalDeviceFeatures _deviceFeatures;     ///< Store best physical device features
+    bool _bufferDeviceAddressSupported = false;   ///< See supportsBufferDeviceAddress()
+    bool _bindlessTexturesSupported = false;      ///< See supportsBindlessTextures()
+    u32 _maxBindlessTextures = 0;                 ///< See maxBindlessTextures()
+    u32 _physicaldeviceCount;                     ///< Number of available physical devices
 
     VkQueueManager _vkQueueManager; ///< Queue manager to create queues in a organized way.
 
@@ -169,7 +181,7 @@ private:
      * @param exts Extensions supposed to be used for the final logic device.
      * @return VkResult Result format for vulkan error code.
      */
-    VkResult _checkDeviceExtensionSupport(std::vector<const char*> exts) const;
+    VkResult _checkDeviceExtensionSupport(std::vector<const char *> exts) const;
 
     /**
      * @brief Resolves maxBindlessTextures() against the selected device's
@@ -184,7 +196,7 @@ private:
     [[nodiscard]] u32 _queryMaxBindlessTextures() const;
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKDEVICEMANAGER_H

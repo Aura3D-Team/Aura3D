@@ -3,13 +3,15 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @class VkDescriptorManager
@@ -28,7 +30,7 @@ namespace vk {
  */
 class VkDescriptorManager
 {
-public:
+  public:
     /**
      * Constructor - initializes the descriptor pool
      * @param vkDevice Pointer to the Vulkan logical device
@@ -42,7 +44,7 @@ public:
      *        reallocated on every resize -- see VulkanRenderer::destroySwapchainResources).
      *        Texture count does not scale this pool at all anymore.
      */
-    VkDescriptorManager(VkDevice* vkDevice, u32 bindlessTextureCapacity, i32 pool_size = 256);
+    VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTextureCapacity, i32 pool_size = 256);
 
     /**
      * Destructor - cleans up resources
@@ -64,13 +66,10 @@ public:
      * @param size Size of the data in the buffer
      * @param offset Offset into the buffer
      */
-    void updateDescriptorSet(VkDescriptorSet descriptorSet, u32 binding,
-                             VkBuffer buffer, VkDeviceSize size,
+    void updateDescriptorSet(VkDescriptorSet descriptorSet, u32 binding, VkBuffer buffer, VkDeviceSize size,
                              VkDeviceSize offset = 0);
 
-    void updateCombinedImageSamplerDescriptorSet(VkDescriptorSet descriptorSet,
-                                                 u32 binding,
-                                                 VkImageView imageView,
+    void updateCombinedImageSamplerDescriptorSet(VkDescriptorSet descriptorSet, u32 binding, VkImageView imageView,
                                                  VkSampler sampler);
 
     /**
@@ -82,8 +81,8 @@ public:
      * command buffer still references the set.
      * @param arrayElement Index into the array binding (a TextureHandle - 1).
      */
-    void updateTextureArrayElement(VkDescriptorSet descriptorSet, u32 binding, u32 arrayElement,
-                                   VkImageView imageView, VkSampler sampler);
+    void updateTextureArrayElement(VkDescriptorSet descriptorSet, u32 binding, u32 arrayElement, VkImageView imageView,
+                                   VkSampler sampler);
 
     /**
      * Frees every set in @p sets back to the pool (requires
@@ -92,7 +91,7 @@ public:
      * light sets, which are freed and reallocated on every swapchain resize
      * rather than accumulating in the pool across the renderer's lifetime.
      */
-    void freeDescriptorSets(std::vector<VkDescriptorSet>& sets);
+    void freeDescriptorSets(std::vector<VkDescriptorSet> &sets);
 
     /**
      * Binds a descriptor set to a command buffer
@@ -101,8 +100,7 @@ public:
      * @param descriptorSet The descriptor set to bind
      * @param bindPoint The pipeline bind point (graphics or compute)
      */
-    void bindDescriptorSet(VkCommandBuffer commandBuffer,
-                           VkPipelineLayout pipelineLayout,
+    void bindDescriptorSet(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
                            VkDescriptorSet descriptorSet,
                            VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS);
 
@@ -111,16 +109,16 @@ public:
      */
     void cleanup();
 
-private:
-    VkDevice* _vkDevice;                  // Pointer to the Vulkan device
+  private:
+    VkDevice *_vkDevice; // Pointer to the Vulkan device
 
-    VkDescriptorPool _descriptorPool;      // The descriptor pool handle
-    VkDescriptorPoolSize _poolSize;        // Size configuration for the pool
+    VkDescriptorPool _descriptorPool;           // The descriptor pool handle
+    VkDescriptorPoolSize _poolSize;             // Size configuration for the pool
     VkDescriptorPoolCreateInfo _poolCreateInfo; // Creation info for the pool
-    i32 _pool_size;                       // Number of sets in the pool
+    i32 _pool_size;                             // Number of sets in the pool
 };
 
-}
+} // namespace vk
 } // namespace aura3d
 
 #endif // VKDESCRIPTORMANAGER_H

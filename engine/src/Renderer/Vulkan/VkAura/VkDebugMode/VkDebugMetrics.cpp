@@ -2,10 +2,13 @@
 
 #include <array>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-namespace {
+namespace
+{
 
 /*
  * Constant-initialised at load time, and never destroyed. VMA calls the
@@ -15,30 +18,30 @@ namespace {
  */
 constinit VkDeviceMemoryCounters g_deviceMemory{};
 
-void VKAPI_PTR onVmaAllocate(VmaAllocator, u32, VkDeviceMemory, VkDeviceSize size, void*) noexcept
+void VKAPI_PTR onVmaAllocate(VmaAllocator, u32, VkDeviceMemory, VkDeviceSize size, void *) noexcept
 {
     VkDeviceMemoryCounters::get().recordAllocate(static_cast<u64>(size));
 }
 
-void VKAPI_PTR onVmaFree(VmaAllocator, u32, VkDeviceMemory, VkDeviceSize size, void*) noexcept
+void VKAPI_PTR onVmaFree(VmaAllocator, u32, VkDeviceMemory, VkDeviceSize size, void *) noexcept
 {
     VkDeviceMemoryCounters::get().recordFree(static_cast<u64>(size));
 }
 
 constinit VmaDeviceMemoryCallbacks g_vmaCallbacks{
     .pfnAllocate = &onVmaAllocate,
-    .pfnFree     = &onVmaFree,
-    .pUserData   = nullptr,
+    .pfnFree = &onVmaFree,
+    .pUserData = nullptr,
 };
 
 } // namespace
 
-VkDeviceMemoryCounters& VkDeviceMemoryCounters::get() noexcept
+VkDeviceMemoryCounters &VkDeviceMemoryCounters::get() noexcept
 {
     return g_deviceMemory;
 }
 
-const VmaDeviceMemoryCallbacks* VkDeviceMemoryCounters::vmaCallbacks() noexcept
+const VmaDeviceMemoryCallbacks *VkDeviceMemoryCounters::vmaCallbacks() noexcept
 {
     return &g_vmaCallbacks;
 }
@@ -52,9 +55,7 @@ void VkDeviceMemoryCounters::recordAllocate(u64 bytes) noexcept
 
     u64 peak = _peakBytes.load(std::memory_order_relaxed);
     while (peak < live &&
-           !_peakBytes.compare_exchange_weak(peak, live,
-                                             std::memory_order_relaxed,
-                                             std::memory_order_relaxed))
+           !_peakBytes.compare_exchange_weak(peak, live, std::memory_order_relaxed, std::memory_order_relaxed))
     {
         //! compare_exchange_weak refreshed `peak`; re-test against `live`.
     }
@@ -81,20 +82,20 @@ GpuMemoryStats VkDebugMetrics::gpuMemoryStats() const noexcept
     GpuMemoryStats stats;
     stats.available = true;
 
-    const VkDeviceMemoryCounters& device = VkDeviceMemoryCounters::get();
+    const VkDeviceMemoryCounters &device = VkDeviceMemoryCounters::get();
 
-    stats.deviceBytesLive       = device.liveBytes();
-    stats.deviceBytesPeak       = device.peakBytes();
+    stats.deviceBytesLive = device.liveBytes();
+    stats.deviceBytesPeak = device.peakBytes();
     stats.deviceAllocationCount = device.allocCount();
-    stats.deviceFreeCount       = device.freeCount();
-    stats.deviceBlocksLive      = device.liveBlocks();
+    stats.deviceFreeCount = device.freeCount();
+    stats.deviceBlocksLive = device.liveBlocks();
 
     const VkHostAllocationStats host = VkCountingAllocator::get().snapshot();
 
-    stats.hostBytesLive       = host.liveBytes;
-    stats.hostBytesPeak       = host.peakBytes;
+    stats.hostBytesLive = host.liveBytes;
+    stats.hostBytesPeak = host.peakBytes;
     stats.hostAllocationCount = host.allocationCount;
-    stats.hostFreeCount       = host.freeCount;
+    stats.hostFreeCount = host.freeCount;
 
     if (_allocator == VK_NULL_HANDLE)
         return stats;
@@ -116,7 +117,7 @@ GpuMemoryStats VkDebugMetrics::gpuMemoryStats() const noexcept
      * against; including the host-visible system-memory heaps would inflate it
      * by however much RAM the machine has.
      */
-    const VkPhysicalDeviceMemoryProperties* memoryProperties = nullptr;
+    const VkPhysicalDeviceMemoryProperties *memoryProperties = nullptr;
     vmaGetMemoryProperties(_allocator, &memoryProperties);
 
     if (memoryProperties == nullptr)
@@ -130,7 +131,7 @@ GpuMemoryStats VkDebugMetrics::gpuMemoryStats() const noexcept
         if ((memoryProperties->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) == 0)
             continue;
 
-        stats.budgetBytes      += static_cast<u64>(budgets[heap].budget);
+        stats.budgetBytes += static_cast<u64>(budgets[heap].budget);
         stats.budgetUsageBytes += static_cast<u64>(budgets[heap].usage);
     }
 

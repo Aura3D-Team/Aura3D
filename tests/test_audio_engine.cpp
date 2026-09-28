@@ -1,15 +1,18 @@
 #include "aura/Core/AudioEngine/AudioEngine.h"
 
+#include <array>
 #include <cmath>
 #include <memory>
 
 #include <wma/audio/backends/null/NullAudioDevice.hpp>
 
+#include "RuntimeAudioDevice.h"
 #include "TestUtils.h"
 
 using namespace aura3d;
 
-namespace {
+namespace
+{
 
 //! Deterministic device format for every case below.
 constexpr u32 kRate = 48000;
@@ -30,8 +33,9 @@ bool approx(f32 a, f32 b, f32 tolerance = 1e-4f)
  * That also means the suite runs unchanged in CI, where there is no sound
  * hardware to open.
  */
-struct TestRig {
-    wma::NullAudioDevice* device = nullptr;
+struct TestRig
+{
+    wma::NullAudioDevice *device = nullptr;
     std::unique_ptr<AudioEngine> engine;
 
     explicit TestRig(u32 maxVoices = 8)
@@ -40,8 +44,8 @@ struct TestRig {
         device = owned.get();
 
         wma::AudioDeviceConfig config;
-        config.sampleRate      = kRate;
-        config.channelCount    = kChannels;
+        config.sampleRate = kRate;
+        config.channelCount = kChannels;
         config.framesPerBuffer = kFramesPerBuffer;
         (void)owned->open(config);
 
@@ -115,19 +119,16 @@ void test_invalid_inputs_are_rejected()
 {
     TestRig rig;
 
-    AURA_CHECK(!isValidHandle(rig.engine->play(AudioClipHandle{})),
-              "play: an invalid clip handle yields no voice");
+    AURA_CHECK(!isValidHandle(rig.engine->play(AudioClipHandle{})), "play: an invalid clip handle yields no voice");
 
     // A handle in range but never issued: nothing should resolve it.
     AURA_CHECK(!isValidHandle(rig.engine->play(AudioClipHandle{12345u})),
-              "play: an unknown clip handle yields no voice");
+               "play: an unknown clip handle yields no voice");
 
     AudioClipData empty;
-    AURA_CHECK(!isValidHandle(rig.engine->createClip(empty)),
-              "createClip: invalid PCM yields no handle");
+    AURA_CHECK(!isValidHandle(rig.engine->createClip(empty)), "createClip: invalid PCM yields no handle");
 
-    AURA_CHECK(!rig.engine->isPlaying(AudioSourceHandle{}),
-              "isPlaying: the invalid sentinel is never playing");
+    AURA_CHECK(!rig.engine->isPlaying(AudioSourceHandle{}), "isPlaying: the invalid sentinel is never playing");
 }
 
 void test_missing_file_falls_back_to_silence()
@@ -218,16 +219,14 @@ void test_muted_one_shot_still_retires()
     (void)rig.render();
     rig.engine->update(0.016f);
 
-    AURA_CHECK(!rig.engine->isPlaying(oneShot),
-              "mix: a non-looping voice retires on schedule even while muted");
+    AURA_CHECK(!rig.engine->isPlaying(oneShot), "mix: a non-looping voice retires on schedule even while muted");
     AURA_CHECK(rig.engine->activeVoiceCount() == 0,
-              "update: a voice that finished while muted still releases its slot");
+               "update: a voice that finished while muted still releases its slot");
 
     // The failure mode this guards: a muted engine that never retires voices
     // silently exhausts a fixed-size pool. Confirm the slot just freed is
     // actually usable rather than merely reporting activeVoiceCount() == 0.
-    AURA_CHECK(isValidHandle(rig.engine->play(shortClip, 1.0f)),
-              "play: the slot freed while muted is reusable");
+    AURA_CHECK(isValidHandle(rig.engine->play(shortClip, 1.0f)), "play: the slot freed while muted is reusable");
 }
 
 void test_muted_playback_advances_cursor()
@@ -257,8 +256,7 @@ void test_muted_playback_advances_cursor()
     (void)rig.engine->play(desc);
 
     rig.engine->setMasterVolume(0.0f);
-    AURA_CHECK(approx(rig.peak(0, kFramesPerBuffer), 0.0f),
-              "muted: nothing is written to the output while silenced");
+    AURA_CHECK(approx(rig.peak(0, kFramesPerBuffer), 0.0f), "muted: nothing is written to the output while silenced");
 
     rig.engine->setMasterVolume(1.0f);
     const f32 peakAfterMutedBlock = rig.peak(0, kFramesPerBuffer);
@@ -269,12 +267,12 @@ void test_muted_playback_advances_cursor()
     // the end of the *first* window if the pre-fix bug left the cursor frozen
     // at 0 while muted, so unmuting replayed from the start.
     const f32 expectedIfAdvanced = ramp.samples[2 * kFramesPerBuffer - 1];
-    const f32 expectedIfFrozen   = ramp.samples[kFramesPerBuffer - 1];
+    const f32 expectedIfFrozen = ramp.samples[kFramesPerBuffer - 1];
 
     AURA_CHECK(approx(peakAfterMutedBlock, expectedIfAdvanced, 0.01f),
-              "mix: the cursor keeps advancing through a muted block");
+               "mix: the cursor keeps advancing through a muted block");
     AURA_CHECK(!approx(peakAfterMutedBlock, expectedIfFrozen, 0.05f),
-              "mix: unmuting does not resume playback from where it was muted");
+               "mix: unmuting does not resume playback from where it was muted");
 }
 
 void test_output_is_clamped()
@@ -290,8 +288,13 @@ void test_output_is_clamped()
 
     const std::span<const f32> block = rig.render();
     bool withinRange = true;
-    for (const f32 sample : block) {
-        if (sample < -1.0f || sample > 1.0f) { withinRange = false; break; }
+    for (const f32 sample : block)
+    {
+        if (sample < -1.0f || sample > 1.0f)
+        {
+            withinRange = false;
+            break;
+        }
     }
     AURA_CHECK(withinRange, "mix: summed output is clamped to [-1, 1] rather than wrapping");
 }
@@ -335,18 +338,16 @@ void test_voice_pool_exhaustion()
     const AudioClipHandle clip = rig.engine->createClip(constantClip(0.1f));
 
     for (int i = 0; i < 4; ++i)
-        AURA_CHECK(isValidHandle(rig.engine->play(clip, 0.1f)),
-                  "play: voices are handed out up to the pool size");
+        AURA_CHECK(isValidHandle(rig.engine->play(clip, 0.1f)), "play: voices are handed out up to the pool size");
 
     // Dropping the newest request is deliberate: cutting off something already
     // audible to make room would be more noticeable than one missing sound.
     AURA_CHECK(!isValidHandle(rig.engine->play(clip, 0.1f)),
-              "play: an exhausted pool drops the request rather than stealing a voice");
+               "play: an exhausted pool drops the request rather than stealing a voice");
 
     rig.engine->stopAll();
     AURA_CHECK(rig.engine->activeVoiceCount() == 0, "stopAll: releases every voice");
-    AURA_CHECK(isValidHandle(rig.engine->play(clip, 0.1f)),
-              "play: slots are reusable once freed");
+    AURA_CHECK(isValidHandle(rig.engine->play(clip, 0.1f)), "play: slots are reusable once freed");
 }
 
 void test_recycled_slot_invalidates_old_handle()
@@ -380,18 +381,17 @@ void test_spatial_panning()
     const AudioClipHandle clip = rig.engine->createClip(constantClip(1.0f));
 
     // Listener at the origin looking down -Z, which makes +X its right.
-    rig.engine->setListener({.position = glm::vec3(0.0f),
-                             .forward  = glm::vec3(0.0f, 0.0f, -1.0f),
-                             .up       = glm::vec3(0.0f, 1.0f, 0.0f)});
+    rig.engine->setListener(
+        {.position = glm::vec3(0.0f), .forward = glm::vec3(0.0f, 0.0f, -1.0f), .up = glm::vec3(0.0f, 1.0f, 0.0f)});
 
     AudioSourceDesc desc;
-    desc.clip        = clip;
-    desc.loop        = true;
-    desc.gain        = 1.0f;
-    desc.spatial     = true;
-    desc.minDistance = 100.0f;  // no distance attenuation, isolating the pan
+    desc.clip = clip;
+    desc.loop = true;
+    desc.gain = 1.0f;
+    desc.spatial = true;
+    desc.minDistance = 100.0f; // no distance attenuation, isolating the pan
     desc.maxDistance = 200.0f;
-    desc.position    = glm::vec3(10.0f, 0.0f, 0.0f); // hard right
+    desc.position = glm::vec3(10.0f, 0.0f, 0.0f); // hard right
 
     const AudioSourceHandle voice = rig.engine->play(desc);
     AURA_CHECK(isValidHandle(voice), "play: a spatial voice starts");
@@ -399,8 +399,9 @@ void test_spatial_panning()
     {
         const std::span<const f32> block = rig.render(64);
         f32 left = 0.0f, right = 0.0f;
-        for (usize i = 0; i + 1 < block.size(); i += 2) {
-            left  = std::max(left,  std::fabs(block[i]));
+        for (usize i = 0; i + 1 < block.size(); i += 2)
+        {
+            left = std::max(left, std::fabs(block[i]));
             right = std::max(right, std::fabs(block[i + 1]));
         }
         AURA_CHECK(right > left, "mix: a source to the listener's right is louder in the right channel");
@@ -411,8 +412,9 @@ void test_spatial_panning()
     {
         const std::span<const f32> block = rig.render(64);
         f32 left = 0.0f, right = 0.0f;
-        for (usize i = 0; i + 1 < block.size(); i += 2) {
-            left  = std::max(left,  std::fabs(block[i]));
+        for (usize i = 0; i + 1 < block.size(); i += 2)
+        {
+            left = std::max(left, std::fabs(block[i]));
             right = std::max(right, std::fabs(block[i + 1]));
         }
         AURA_CHECK(left > right, "setSourcePosition: moving a source left swaps the louder channel");
@@ -423,8 +425,9 @@ void test_spatial_panning()
     {
         const std::span<const f32> block = rig.render(64);
         f32 left = 0.0f, right = 0.0f;
-        for (usize i = 0; i + 1 < block.size(); i += 2) {
-            left  = std::max(left,  std::fabs(block[i]));
+        for (usize i = 0; i + 1 < block.size(); i += 2)
+        {
+            left = std::max(left, std::fabs(block[i]));
             right = std::max(right, std::fabs(block[i + 1]));
         }
         AURA_CHECK(approx(left, right, 0.02f), "mix: a source straight ahead is centred between the channels");
@@ -437,18 +440,17 @@ void test_spatial_distance_attenuation()
 
     const AudioClipHandle clip = rig.engine->createClip(constantClip(1.0f));
 
-    rig.engine->setListener({.position = glm::vec3(0.0f),
-                             .forward  = glm::vec3(0.0f, 0.0f, -1.0f),
-                             .up       = glm::vec3(0.0f, 1.0f, 0.0f)});
+    rig.engine->setListener(
+        {.position = glm::vec3(0.0f), .forward = glm::vec3(0.0f, 0.0f, -1.0f), .up = glm::vec3(0.0f, 1.0f, 0.0f)});
 
     AudioSourceDesc desc;
-    desc.clip        = clip;
-    desc.loop        = true;
-    desc.gain        = 1.0f;
-    desc.spatial     = true;
+    desc.clip = clip;
+    desc.loop = true;
+    desc.gain = 1.0f;
+    desc.spatial = true;
     desc.minDistance = 1.0f;
     desc.maxDistance = 10.0f;
-    desc.position    = glm::vec3(0.0f, 0.0f, -1.0f); // inside minDistance
+    desc.position = glm::vec3(0.0f, 0.0f, -1.0f); // inside minDistance
 
     const AudioSourceHandle voice = rig.engine->play(desc);
 
@@ -522,16 +524,74 @@ void test_resampling_preserves_duration()
     rig.engine->update(0.016f);
 
     AURA_CHECK(rig.engine->isPlaying(voice),
-              "createClip: a half-rate clip is resampled rather than playing at double speed");
-    AURA_CHECK(approx(rig.peak(0), 0.5f, 0.01f),
-              "createClip: resampling preserves the sample values");
+               "createClip: a half-rate clip is resampled rather than playing at double speed");
+    AURA_CHECK(approx(rig.peak(0), 0.5f, 0.01f), "createClip: resampling preserves the sample values");
 }
 
 } // namespace
 
+void test_unload_reclaims_without_callbacks()
+{
+    //! A device that never mixes -- the engine's own fallback for a null
+    //! pointer -- cannot acknowledge a retirement, so it must not be waited on.
+    AudioEngine fallback(nullptr, 4);
+    for (int i = 0; i < 8; ++i)
+        fallback.unloadClip(fallback.createClip(constantClip(0.5f, 0.01f)));
+    AURA_CHECK(fallback.clipCount() == 0, "unloadClip: frees at once when no callback can run");
+
+    AudioEngine supplied(wma::openAudioDevice(wma::AudioDeviceConfig{}, wma::AudioBackend::Null), 4);
+    for (int i = 0; i < 100; ++i)
+    {
+        const auto clip = supplied.createClip(constantClip(0.5f, 0.01f));
+        (void)supplied.play(clip);
+        supplied.unloadClip(clip);
+        supplied.update(0);
+    }
+    AURA_CHECK(supplied.isDeviceRunning() && supplied.clipCount() == 0,
+               "unloadClip: a supplied null device reclaims clips despite reporting running");
+    for (int i = 0; i < 8; ++i)
+        (void)supplied.createClip(constantClip(0.5f, 0.01f));
+    supplied.unloadAllClips();
+    AURA_CHECK(supplied.clipCount() == 0, "unloadAllClips: a supplied null device reclaims every clip");
+
+    TestRig passive;
+    const auto retired = passive.engine->createClip(constantClip(0.5f, 0.01f));
+    (void)passive.engine->play(retired);
+    (void)passive.render();
+    passive.engine->unloadClip(retired);
+    AURA_CHECK(passive.engine->clipCount() == 0 && approx(passive.peak(0), 0.0f),
+               "null device: manually mixing after immediate reclamation consumes the stop safely");
+
+    //! A live device holds the samples until two blocks have been mixed past
+    //! the stop, even if a custom device reports the Null backend enum.
+    auto owned = std::make_unique<RuntimeAudioDevice>();
+    auto *device = owned.get();
+    AudioEngine live(std::move(owned), 4);
+    std::array<f32, usize{kFramesPerBuffer} * kChannels> output{};
+    const AudioClipHandle clip = live.createClip(constantClip(0.5f, 0.01f));
+    (void)live.play(clip);
+    device->callback(output);
+    live.unloadClip(clip);
+    live.update(0.0f);
+    AURA_CHECK(live.clipCount() == 1, "unloadClip: a mixing device defers reclamation");
+    device->callback(output);
+    live.update(0.0f);
+    AURA_CHECK(live.clipCount() == 1, "update: one callback boundary is not enough to reclaim samples");
+    device->callback(output);
+    live.update(0.0f);
+    AURA_CHECK(live.clipCount() == 0, "update: reclaims once the audio thread has moved past the stop");
+
+    //! Stopping the device also proves no callback is running.
+    const AudioClipHandle later = live.createClip(constantClip(0.5f, 0.01f));
+    device->stop();
+    live.unloadClip(later);
+    AURA_CHECK(live.clipCount() == 0, "unloadClip: a stopped device frees at once");
+}
+
 int main()
 {
     test_device_format_reported();
+    test_unload_reclaims_without_callbacks();
     test_play_stop_lifecycle();
     test_invalid_inputs_are_rejected();
     test_missing_file_falls_back_to_silence();

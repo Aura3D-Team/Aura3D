@@ -2,16 +2,15 @@
 
 #include <bit>
 
-#include "aura/aura.h"
 #include "aura/Renderer/Vulkan/VkAura/VkCommandManager/VkCommandManager.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-void bindDrawState(VkCommandBuffer cmd,
-                   RecordedState& state,
-                   const SceneBindings& bindings,
-                   const ResolvedDraw& draw)
+void bindDrawState(VkCommandBuffer cmd, RecordedState &state, const SceneBindings &bindings, const ResolvedDraw &draw)
 {
     if (!bindings.pipeline)
         return;
@@ -51,20 +50,20 @@ void bindDrawState(VkCommandBuffer cmd,
     {
         if (bindings.transformSet != VK_NULL_HANDLE)
         {
-            bindings.pipeline->cmdBindDescriptorSets(
-                cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &bindings.transformSet, 0, nullptr);
+            bindings.pipeline->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &bindings.transformSet,
+                                                     0, nullptr);
         }
 
         if (bindings.textureTable != VK_NULL_HANDLE)
         {
-            bindings.pipeline->cmdBindDescriptorSets(
-                cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 1, 1, &bindings.textureTable, 0, nullptr);
+            bindings.pipeline->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 1, 1, &bindings.textureTable,
+                                                     0, nullptr);
         }
 
         if (bindings.lightSet != VK_NULL_HANDLE)
         {
-            bindings.pipeline->cmdBindDescriptorSets(
-                cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 2, 1, &bindings.lightSet, 0, nullptr);
+            bindings.pipeline->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 2, 1, &bindings.lightSet, 0,
+                                                     nullptr);
         }
 
         state.staticSetsBound = true;
@@ -108,11 +107,8 @@ void bindDrawState(VkCommandBuffer cmd,
     }
 }
 
-void VkCommandRecordingContext::recordChunk(VkCommandBuffer cmd,
-                                            VkRenderPass renderPass,
-                                            VkFramebuffer framebuffer,
-                                            const SceneBindings& bindings,
-                                            std::span<const ResolvedDraw> draws)
+void VkCommandRecordingContext::recordChunk(VkCommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer,
+                                            const SceneBindings &bindings, std::span<const ResolvedDraw> draws)
 {
     VkCommandManager::beginSecondaryCommandBuffer(cmd, renderPass, framebuffer);
 
@@ -121,7 +117,7 @@ void VkCommandRecordingContext::recordChunk(VkCommandBuffer cmd,
     //! regardless of what this context recorded on a previous frame or chunk.
     _recorded.reset();
 
-    for (const ResolvedDraw& draw : draws)
+    for (const ResolvedDraw &draw : draws)
     {
         if (draw.vertexBuffer == VK_NULL_HANDLE)
             continue;

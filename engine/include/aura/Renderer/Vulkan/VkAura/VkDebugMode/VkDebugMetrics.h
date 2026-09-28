@@ -5,8 +5,8 @@
 
 #include <atomic>
 
-#include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
+#include <vulkan/vulkan.h>
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/DebugMode/GpuDebugStats.h"
@@ -28,8 +28,10 @@
  *   - VkTimestampQuery -- GPU wall time per frame.
  */
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @class VkDeviceMemoryCounters
@@ -55,13 +57,13 @@ namespace vk {
  */
 class VkDeviceMemoryCounters
 {
-public:
+  public:
     constexpr VkDeviceMemoryCounters() noexcept = default;
 
-    VkDeviceMemoryCounters(const VkDeviceMemoryCounters&)            = delete;
-    VkDeviceMemoryCounters& operator=(const VkDeviceMemoryCounters&) = delete;
+    VkDeviceMemoryCounters(const VkDeviceMemoryCounters &) = delete;
+    VkDeviceMemoryCounters &operator=(const VkDeviceMemoryCounters &) = delete;
 
-    [[nodiscard]] static VkDeviceMemoryCounters& get() noexcept;
+    [[nodiscard]] static VkDeviceMemoryCounters &get() noexcept;
 
     /**
      * @brief The callbacks block to store in VmaAllocatorCreateInfo.
@@ -69,21 +71,36 @@ public:
      * @return Points at storage with static lifetime; safe to keep for the
      *         lifetime of any allocator.
      */
-    [[nodiscard]] static const VmaDeviceMemoryCallbacks* vmaCallbacks() noexcept;
+    [[nodiscard]] static const VmaDeviceMemoryCallbacks *vmaCallbacks() noexcept;
 
     void recordAllocate(u64 bytes) noexcept;
     void recordFree(u64 bytes) noexcept;
 
-    [[nodiscard]] u64 liveBytes()  const noexcept { return _liveBytes.load(std::memory_order_relaxed); }
-    [[nodiscard]] u64 peakBytes()  const noexcept { return _peakBytes.load(std::memory_order_relaxed); }
-    [[nodiscard]] u64 allocCount() const noexcept { return _allocCount.load(std::memory_order_relaxed); }
-    [[nodiscard]] u64 freeCount()  const noexcept { return _freeCount.load(std::memory_order_relaxed); }
-    [[nodiscard]] u64 liveBlocks() const noexcept { return _liveBlocks.load(std::memory_order_relaxed); }
+    [[nodiscard]] u64 liveBytes() const noexcept
+    {
+        return _liveBytes.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] u64 peakBytes() const noexcept
+    {
+        return _peakBytes.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] u64 allocCount() const noexcept
+    {
+        return _allocCount.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] u64 freeCount() const noexcept
+    {
+        return _freeCount.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] u64 liveBlocks() const noexcept
+    {
+        return _liveBlocks.load(std::memory_order_relaxed);
+    }
 
     //! For tests and for discarding load-time noise before a measured window.
     void reset() noexcept;
 
-private:
+  private:
     std::atomic<u64> _liveBytes{0};
     std::atomic<u64> _peakBytes{0};
     std::atomic<u64> _allocCount{0};
@@ -101,15 +118,18 @@ private:
  */
 class VkDebugMetrics final : public IGpuDebugSource
 {
-public:
+  public:
     VkDebugMetrics() noexcept = default;
     ~VkDebugMetrics() override = default;
 
-    VkDebugMetrics(const VkDebugMetrics&)            = delete;
-    VkDebugMetrics& operator=(const VkDebugMetrics&) = delete;
+    VkDebugMetrics(const VkDebugMetrics &) = delete;
+    VkDebugMetrics &operator=(const VkDebugMetrics &) = delete;
 
     //! The GPU frame timer. See VkTimestampQuery for the resolve protocol.
-    [[nodiscard]] VkTimestampQuery& timestamps() noexcept { return _timestamps; }
+    [[nodiscard]] VkTimestampQuery &timestamps() noexcept
+    {
+        return _timestamps;
+    }
 
     /**
      * @brief Points the memory section at @p allocator for detailed statistics.
@@ -119,13 +139,19 @@ public:
      * answer. Pass VK_NULL_HANDLE on teardown -- the handle must not outlive
      * vmaDestroyAllocator.
      */
-    void setAllocator(VmaAllocator allocator) noexcept { _allocator = allocator; }
+    void setAllocator(VmaAllocator allocator) noexcept
+    {
+        _allocator = allocator;
+    }
 
     [[nodiscard]] GpuMemoryStats gpuMemoryStats() const noexcept override;
     [[nodiscard]] GpuTimingStats gpuTimingStats() const noexcept override;
-    [[nodiscard]] const char* gpuDebugBackendName() const noexcept override { return "vulkan"; }
+    [[nodiscard]] const char *gpuDebugBackendName() const noexcept override
+    {
+        return "vulkan";
+    }
 
-private:
+  private:
     /*
      * Only the timestamp pool is owned here. The two allocation counters are
      * process-wide singletons (VkCountingAllocator, VkDeviceMemoryCounters):
@@ -134,7 +160,7 @@ private:
      * so that memory retained across one is still visible.
      */
     VkTimestampQuery _timestamps;
-    VmaAllocator     _allocator = VK_NULL_HANDLE;
+    VmaAllocator _allocator = VK_NULL_HANDLE;
 };
 
 } // namespace vk

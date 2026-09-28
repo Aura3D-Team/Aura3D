@@ -1,13 +1,16 @@
 #include "aura/Renderer/Vulkan/VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
 
+#include "aura/Core/AuraException/AuraException.h"
 #include <cstring>
 
 #include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkUniformBufferManager::VkUniformBufferManager(VulkanMemoryManager* memoryManager, VkDevice* vkDevice)
+VkUniformBufferManager::VkUniformBufferManager(VulkanMemoryManager *memoryManager, VkDevice *vkDevice)
     : _memoryManager(memoryManager), _vkDevice(vkDevice)
 {
 }
@@ -26,46 +29,47 @@ void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32
     _buffers.resize(count);
 
     VmaAllocationCreateFlags flags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-        VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    for (u32 i = 0; i < count; ++i) {
-        _buffers[i] = _memoryManager->createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            sharingMode,
-            VMA_MEMORY_USAGE_AUTO,
-            flags);
+    for (u32 i = 0; i < count; ++i)
+    {
+        _buffers[i] = _memoryManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sharingMode,
+                                                   VMA_MEMORY_USAGE_AUTO, flags);
 
-        if (!_buffers[i].mappedData) {
+        if (!_buffers[i].mappedData)
+        {
             _buffers[i].mappedData = _memoryManager->map(_buffers[i]);
         }
     }
 }
 
-void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, gfx::TransformUBO& ubo)
+void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, gfx::TransformUBO &ubo)
 {
     updateUniformBufferRaw(currentImage, &ubo, sizeof(gfx::TransformUBO));
 }
 
-void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void* data, VkDeviceSize size)
+void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void *data, VkDeviceSize size)
 {
     if (currentImage >= _buffers.size() || _buffers[currentImage].mappedData == nullptr || !data)
         return;
 
+    AllocatedBuffer &allocatedBuffer = _buffers[currentImage];
+
     if (size > _elementSize)
     {
-        INK_ERROR << "updateUniformBuffer: write of " << size
-                  << " bytes exceeds the " << _elementSize << "-byte buffer";
+        INK_ERROR << "updateUniformBuffer: write of " << size << " bytes exceeds the " << _elementSize
+                  << "-byte buffer";
         return;
     }
 
-    std::memcpy(_buffers[currentImage].mappedData, data, static_cast<size_t>(size));
+    std::memcpy(allocatedBuffer.mappedData, data, static_cast<size_t>(size));
+    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), allocatedBuffer.allocation, 0, size));
 }
 
 VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const
 {
-    if (index < _buffers.size()) {
+    if (index < _buffers.size())
+    {
         return _buffers[index].buffer;
     }
     return VK_NULL_HANDLE;
@@ -90,7 +94,8 @@ VkDescriptorSetLayoutBinding VkUniformBufferManager::getDescriptorSetLayoutBindi
 VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(u32 index) const
 {
     VkDescriptorBufferInfo bufferInfo{};
-    if (index < _buffers.size()) {
+    if (index < _buffers.size())
+    {
         bufferInfo.buffer = _buffers[index].buffer;
         // _buffers[index].offset is VMA's suballocation offset within a
         // shared VkDeviceMemory block, not an offset into this VkBuffer —
@@ -103,7 +108,8 @@ VkDescriptorBufferInfo VkUniformBufferManager::getDescriptorBufferInfo(u32 index
 
 void VkUniformBufferManager::cleanup()
 {
-    for (auto& buffer : _buffers) {
+    for (auto &buffer : _buffers)
+    {
         _memoryManager->destroyBuffer(buffer);
     }
     _buffers.clear();

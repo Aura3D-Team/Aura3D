@@ -14,7 +14,8 @@
  * @brief The widgets that only display: text, images, rules.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /**
  * @class Label
@@ -30,8 +31,9 @@ namespace aura3d::ui {
  * With TextWrap::Word the label wraps to the width it is given, so its height
  * depends on its width -- which is exactly why layout has a measure pass.
  */
-class Label : public Widget {
-public:
+class Label : public Widget
+{
+  public:
     explicit Label(std::string text = {});
 
     Property<std::string> text;
@@ -39,24 +41,33 @@ public:
     /// Em size in logical pixels. Zero (the default) takes
     /// Metrics::fontSize from the theme, so a whole UI rescales from one place.
     void setFontSize(f32 pixels);
-    [[nodiscard]] f32 fontSize() const noexcept { return _textStyle.pixelSize; }
+    [[nodiscard]] f32 fontSize() const noexcept
+    {
+        return _textStyle.pixelSize;
+    }
 
     void setWrap(TextWrap wrap);
     void setAlign(Align align);
     void setLineSpacing(f32 multiple);
 
-    void setTextStyle(const TextStyle& style);
-    [[nodiscard]] const TextStyle& textStyle() const noexcept { return _textStyle; }
+    void setTextStyle(const TextStyle &style);
+    [[nodiscard]] const TextStyle &textStyle() const noexcept
+    {
+        return _textStyle;
+    }
 
     /// The laid-out glyphs. Valid after the frame's measure pass; used by
     /// anything that needs to point at a character, and by tests.
-    [[nodiscard]] const ShapedText& shaped() const noexcept { return _shaped; }
+    [[nodiscard]] const ShapedText &shaped() const noexcept
+    {
+        return _shaped;
+    }
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void paint(DrawList &out) override;
 
     /// Re-shapes if the string, the style or the wrap width changed since the
     /// last call, and does nothing otherwise -- this runs every measure pass.
@@ -64,18 +75,21 @@ protected:
 
     /// Where the shaped block sits inside @p content, honouring the style's
     /// horizontal alignment and centring vertically.
-    [[nodiscard]] glm::vec2 textOrigin(const Rect& content) const noexcept;
+    [[nodiscard]] glm::vec2 textOrigin(const Rect &content) const noexcept;
 
     TextStyle _textStyle{};
     ShapedText _shaped;
 
-private:
+  private:
     /// What the cached shaping was produced from. A miss on any of the three
     /// is the only thing that re-runs the shaper.
     TextStyle _shapedStyle{};
     f32 _shapedWidth = -1.0f;
     bool _textDirty = true;
-    void onAttach() override { _textDirty = true; }
+    void onAttach() override
+    {
+        _textDirty = true;
+    }
 };
 
 /**
@@ -86,10 +100,12 @@ private:
  * IRenderer's job, and keeping it that way is what lets an Image be created
  * before a renderer exists.
  */
-class Image final : public Widget {
-public:
+class Image final : public Widget
+{
+  public:
     /// How the texture fills a rectangle that is not its own shape.
-    enum class Fit : u8 {
+    enum class Fit : u8
+    {
         Stretch, //! Fills the box, distorting.
         Contain, //! Fits inside, letterboxed.
         Cover,   //! Fills the box, cropping the overflow.
@@ -100,20 +116,20 @@ public:
 
     void setTexture(TextureHandle texture, glm::vec2 nativeSize);
     void setFit(Fit fit);
-    void setTint(const glm::vec4& tint);
+    void setTint(const glm::vec4 &tint);
 
     /// Rounds the image's corners. Applied to the quad, so it also crops.
     void setRadius(Corners radius);
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void paint(DrawList& out) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void paint(DrawList &out) override;
 
-private:
+  private:
     /// The destination rectangle @ref Fit puts the texture in.
-    [[nodiscard]] Rect _destination(const Rect& content) const noexcept;
+    [[nodiscard]] Rect _destination(const Rect &content) const noexcept;
 
     TextureHandle _texture{};
     glm::vec2 _native{0.0f};
@@ -123,16 +139,17 @@ private:
 };
 
 /// A hairline rule across the container it sits in.
-class Separator final : public Widget {
-public:
+class Separator final : public Widget
+{
+  public:
     explicit Separator(Axis axis = Axis::Horizontal);
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
 
-private:
+  private:
     Axis _axis = Axis::Horizontal;
 };
 

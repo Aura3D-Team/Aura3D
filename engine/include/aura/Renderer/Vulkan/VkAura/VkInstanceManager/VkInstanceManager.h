@@ -3,15 +3,17 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
-#include <vector>
 #include <memory>
+#include <vector>
+#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkDebugger/VkDebugger.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @class to manage Vulkan instance creation, configuration, and destruction.
@@ -27,7 +29,7 @@ namespace vk {
  */
 class VkInstanceManager
 {
-public:
+  public:
     /**
      * Constructor.
      *
@@ -35,8 +37,7 @@ public:
      * validation layers, and required instance extensions.
      * If the Vulkan instance cannot be created, it throws an exception.
      */
-    VkInstanceManager(VkInstanceData vkInstanceData,
-                      bool enableValidationLayers);
+    VkInstanceManager(VkInstanceData vkInstanceData, bool enableValidationLayers);
 
     /**
      * Destructor.
@@ -55,7 +56,7 @@ public:
      *
      * @param vkInstanceData Structure containing the application-specific information.
      */
-    void initializeAppInfo(const VkInstanceData& vkInstanceData);
+    void initializeAppInfo(const VkInstanceData &vkInstanceData);
 
     /**
      * @brief Initializes the Vulkan instance creation information.
@@ -116,8 +117,7 @@ public:
      * @param debugCreateInfo Pointer to the debug messenger creation info structure.
      * @throws AuraException if the debug messenger cannot be created.
      */
-    void createDebuggerInstance(VkDebugUtilsMessengerCreateInfoEXT* debugCreateInfo);
-
+    void createDebuggerInstance(VkDebugUtilsMessengerCreateInfoEXT *debugCreateInfo);
 
     /**
      * Returns a pointer to the Vulkan instance.
@@ -127,7 +127,7 @@ public:
      *
      * @return VkInstance* - Pointer to the Vulkan instance.
      */
-    VkInstance* getVkInstance();
+    VkInstance *getVkInstance();
 
     /**
      * Returns a pointer to the Vulkan instance creation info.
@@ -137,7 +137,7 @@ public:
      *
      * @return VkApplicationInfo* - Pointer to the Vulkan instance creation info.
      */
-    VkApplicationInfo* getAppInfo();
+    VkApplicationInfo *getAppInfo();
 
     /**
      * @brief Retrieves the VkDebugger instance.
@@ -151,9 +151,9 @@ public:
      *
      * @see VkDebugger for more details.
      */
-    std::unique_ptr<VkDebugger>* getVkDebugger();
+    std::unique_ptr<VkDebugger> *getVkDebugger();
 
-private:
+  private:
     /**
      * Vulkan instance handle.
      *
@@ -234,7 +234,7 @@ private:
      * development. This vector holds the names of the validation layers to be
      * enabled when creating the Vulkan instance.
      */
-    std::vector<const char*> _vkValidationLayers;
+    std::vector<const char *> _vkValidationLayers;
 
     /**
      * List of required instance extensions.
@@ -243,7 +243,7 @@ private:
      * This vector holds the names of the extensions that are needed by the
      * application, such as surface creation extensions for rendering windows.
      */
-    std::vector<const char*> _vkInstanceExtensions;
+    std::vector<const char *> _vkInstanceExtensions;
 
     /**
      * @brief Check extension support for the instance.
@@ -251,7 +251,7 @@ private:
      * @param exts Extensions supposed to be used for this app.
      * @return VkResult Result format for vulkan error code.
      */
-    VkResult _checkInstanceExtensionSupport(const std::vector<const char*>& exts) const;
+    VkResult _checkInstanceExtensionSupport(const std::vector<const char *> &exts) const;
 
     /**
      * @brief Check validation layer support for the instance.
@@ -259,10 +259,10 @@ private:
      * @param validationLayers Validation layers supposed to be used for this app.
      * @return VkResult Result format for vulkan error code.
      */
-    VkResult _checkValidationLayerSupport(const std::vector<const char*>& validationLayers) const;
+    VkResult _checkValidationLayerSupport(const std::vector<const char *> &validationLayers) const;
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKINSTANCEMANAGER_H

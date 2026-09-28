@@ -6,9 +6,11 @@
 #include "aura/UI/Text/Utf8.h"
 #include "aura/UI/UIRoot.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 /// How long hover and press take to settle. Short enough to feel immediate,
 /// long enough that the eye reads it as motion rather than a jump.
@@ -16,7 +18,7 @@ constexpr f32 kHoverSeconds = 0.11f;
 
 constexpr f32 kCaretBlinkSeconds = 0.53f;
 
-[[nodiscard]] glm::vec4 mix(const glm::vec4& a, const glm::vec4& b, f32 t) noexcept
+[[nodiscard]] glm::vec4 mix(const glm::vec4 &a, const glm::vec4 &b, f32 t) noexcept
 {
     return a + (b - a) * std::clamp(t, 0.0f, 1.0f);
 }
@@ -79,7 +81,7 @@ void Control::setPressed(bool pressed)
     invalidatePaint();
 }
 
-glm::vec4 Control::surfaceColor(const WidgetStyle& style) const
+glm::vec4 Control::surfaceColor(const WidgetStyle &style) const
 {
     if (_pressed)
         return style.surface.active;
@@ -87,16 +89,15 @@ glm::vec4 Control::surfaceColor(const WidgetStyle& style) const
     return mix(style.surface.normal, style.surface.hovered, _hover.value());
 }
 
-void Control::paintFocusRing(DrawList& out, const WidgetStyle& style, const Rect& bounds) const
+void Control::paintFocusRing(DrawList &out, const WidgetStyle &style, const Rect &bounds) const
 {
     if (!_focusRingVisible || !hasFocus())
         return;
 
-    out.strokeRect(bounds.grown(1.0f), style.accent, 1.0f,
-                   Corners::all(style.rounding + 1.0f));
+    out.strokeRect(bounds.grown(1.0f), style.accent, 1.0f, Corners::all(style.rounding + 1.0f));
 }
 
-bool Control::onPointerDown(const PointerEvent& event)
+bool Control::onPointerDown(const PointerEvent &event)
 {
     if (event.button != PointerButton::Left || !hitTest(event.position))
         return false;
@@ -110,7 +111,7 @@ bool Control::onPointerDown(const PointerEvent& event)
     return true;
 }
 
-bool Control::onPointerUp(const PointerEvent& event)
+bool Control::onPointerUp(const PointerEvent &event)
 {
     if (event.button != PointerButton::Left || !_pressed)
         return false;
@@ -129,7 +130,7 @@ bool Control::onPointerUp(const PointerEvent& event)
     return true;
 }
 
-bool Control::onKeyDown(const KeyEvent& event)
+bool Control::onKeyDown(const KeyEvent &event)
 {
     if (!hasFocus())
         return false;
@@ -141,7 +142,9 @@ bool Control::onKeyDown(const KeyEvent& event)
     return true;
 }
 
-void Control::activate() {}
+void Control::activate()
+{
+}
 
 // =============================================================================
 // Button
@@ -155,11 +158,17 @@ Button::Button(std::string text)
     _label->setAlign(Align::Center);
 }
 
-void Button::setText(std::string text) { _label->text = std::move(text); }
+void Button::setText(std::string text)
+{
+    _label->text = std::move(text);
+}
 
-const std::string& Button::text() const noexcept { return _label->text.get(); }
+const std::string &Button::text() const noexcept
+{
+    return _label->text.get();
+}
 
-glm::vec2 Button::measureContent(const Constraints& available)
+glm::vec2 Button::measureContent(const Constraints &available)
 {
     const glm::vec2 content = Widget::measureContent(available);
     const WidgetStyle style = resolvedStyle();
@@ -171,7 +180,7 @@ glm::vec2 Button::measureContent(const Constraints& available)
     return {content.x + style.padding * 2.0f, std::max(content.y, height)};
 }
 
-void Button::paint(DrawList& out)
+void Button::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
@@ -191,7 +200,7 @@ void Button::activate()
     clicked.emit();
 }
 
-void Button::accessibility(AccessibilityInfo& out) const
+void Button::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
@@ -211,25 +220,29 @@ CheckBox::CheckBox(std::string text, bool value) : checked(value)
     _label = &add<Label>(std::move(text));
     _check.reset(value ? 1.0f : 0.0f);
 
-    checked.changed().connect([this](bool on) {
-        _check.to(on ? 1.0f : 0.0f, kHoverSeconds);
-        setAnimating(true);
-    });
+    checked.changed().connect(
+        [this](bool on)
+        {
+            _check.to(on ? 1.0f : 0.0f, kHoverSeconds);
+            setAnimating(true);
+        });
 }
 
-void CheckBox::setText(std::string text) { _label->text = std::move(text); }
+void CheckBox::setText(std::string text)
+{
+    _label->text = std::move(text);
+}
 
-Rect CheckBox::markBox(const Rect& content) const
+Rect CheckBox::markBox(const Rect &content) const
 {
     const WidgetStyle style = resolvedStyle();
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
     const f32 side = row * style.markScale;
 
-    return Rect::fromSize({content.min.x, content.min.y + (content.height() - side) * 0.5f},
-                          {side, side});
+    return Rect::fromSize({content.min.x, content.min.y + (content.height() - side) * 0.5f}, {side, side});
 }
 
-glm::vec2 CheckBox::measureContent(const Constraints& available)
+glm::vec2 CheckBox::measureContent(const Constraints &available)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
@@ -246,7 +259,7 @@ glm::vec2 CheckBox::measureContent(const Constraints& available)
     return {side + style.padding + label.x, std::max({row, side, label.y})};
 }
 
-void CheckBox::arrangeContent(const Rect& content)
+void CheckBox::arrangeContent(const Rect &content)
 {
     const WidgetStyle style = resolvedStyle();
     const Rect box = markBox(content);
@@ -255,7 +268,7 @@ void CheckBox::arrangeContent(const Rect& content)
     _label->arrange(labelSlot);
 }
 
-void CheckBox::paintMark(DrawList& out, const Rect& box, const glm::vec4& color)
+void CheckBox::paintMark(DrawList &out, const Rect &box, const glm::vec4 &color)
 {
     const WidgetStyle style = resolvedStyle();
 
@@ -271,7 +284,7 @@ void CheckBox::paintMark(DrawList& out, const Rect& box, const glm::vec4& color)
                  Corners::all(std::max(0.0f, style.rounding - inset)));
 }
 
-void CheckBox::paint(DrawList& out)
+void CheckBox::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
@@ -279,8 +292,8 @@ void CheckBox::paint(DrawList& out)
     const Rect box = markBox(contentRect());
 
     out.drawRect(box, withAlpha(surfaceColor(style), alpha),
-                 withAlpha(style.border.pick(checked.get(), isHovered()), alpha),
-                 style.borderWidth, Corners::all(style.rounding));
+                 withAlpha(style.border.pick(checked.get(), isHovered()), alpha), style.borderWidth,
+                 Corners::all(style.rounding));
 
     if (_check.value() > 0.0f)
         paintMark(out, box, withAlpha(style.accent, alpha * _check.value()));
@@ -303,7 +316,7 @@ bool CheckBox::onTick(f32 deltaSeconds)
     return mark || hover;
 }
 
-void CheckBox::accessibility(AccessibilityInfo& out) const
+void CheckBox::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
@@ -323,12 +336,19 @@ RadioButton::RadioButton(std::string text)
 
     _label = &add<Label>(std::move(text));
 
-    checked.changed().connect([this](bool) { invalidatePaint(); });
+    checked.changed().connect(
+        [this](bool)
+        {
+            invalidatePaint();
+        });
 }
 
-void RadioButton::setText(std::string text) { _label->text = std::move(text); }
+void RadioButton::setText(std::string text)
+{
+    _label->text = std::move(text);
+}
 
-glm::vec2 RadioButton::measureContent(const Constraints& available)
+glm::vec2 RadioButton::measureContent(const Constraints &available)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
@@ -343,7 +363,7 @@ glm::vec2 RadioButton::measureContent(const Constraints& available)
     return {side + style.padding + label.x, std::max({row, side, label.y})};
 }
 
-void RadioButton::arrangeContent(const Rect& content)
+void RadioButton::arrangeContent(const Rect &content)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
@@ -352,7 +372,7 @@ void RadioButton::arrangeContent(const Rect& content)
     _label->arrange(Rect{{content.min.x + side + style.padding, content.min.y}, content.max});
 }
 
-void RadioButton::paint(DrawList& out)
+void RadioButton::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
@@ -361,16 +381,14 @@ void RadioButton::paint(DrawList& out)
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
     const f32 side = row * style.markScale;
 
-    const Rect box = Rect::fromSize(
-        {content.min.x, content.min.y + (content.height() - side) * 0.5f}, {side, side});
+    const Rect box = Rect::fromSize({content.min.x, content.min.y + (content.height() - side) * 0.5f}, {side, side});
 
     out.drawRect(box, withAlpha(surfaceColor(style), alpha),
-                 withAlpha(style.border.pick(checked.get(), isHovered()), alpha),
-                 style.borderWidth, Corners::all(style.rounding));
+                 withAlpha(style.border.pick(checked.get(), isHovered()), alpha), style.borderWidth,
+                 Corners::all(style.rounding));
 
     if (checked.get())
-        out.fillRect(box.inset(side * style.markInset), withAlpha(style.accent, alpha),
-                     Corners::all(style.rounding));
+        out.fillRect(box.inset(side * style.markInset), withAlpha(style.accent, alpha), Corners::all(style.rounding));
 
     paintFocusRing(out, style, box);
 }
@@ -383,7 +401,7 @@ void RadioButton::activate()
         checked = true;
 }
 
-void RadioButton::accessibility(AccessibilityInfo& out) const
+void RadioButton::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
@@ -397,19 +415,25 @@ void RadioButton::accessibility(AccessibilityInfo& out) const
 // RadioGroup
 // =============================================================================
 
-void RadioGroup::add(RadioButton& button)
+void RadioGroup::add(RadioButton &button)
 {
-    if (std::ranges::any_of(_buttons, [&button](const WidgetRef& entry) { return entry.get() == &button; }))
+    if (std::ranges::any_of(_buttons,
+                            [&button](const WidgetRef &entry)
+                            {
+                                return entry.get() == &button;
+                            }))
         return;
     const auto index = static_cast<int>(_buttons.size());
     _buttons.emplace_back(&button);
 
     //! Observing the property rather than the click: selecting a button in
     //! code has to clear the others too, and a click sets the property anyway.
-    _connections.emplace_back(button.checked.changed().connect([this, index](bool on) {
-        if (on)
-            select(index);
-    }));
+    _connections.emplace_back(button.checked.changed().connect(
+        [this, index](bool on)
+        {
+            if (on)
+                select(index);
+        }));
 
     if (button.checked.get())
         select(index);
@@ -426,7 +450,7 @@ void RadioGroup::select(int index)
     _selected = index;
 
     for (usize i = 0; i < _buttons.size(); ++i)
-        if (auto* button = static_cast<RadioButton*>(_buttons[i].get()))
+        if (auto *button = static_cast<RadioButton *>(_buttons[i].get()))
             button->checked.set(static_cast<int>(i) == index);
 
     if (changed)
@@ -448,12 +472,28 @@ Selectable::Selectable(std::string text)
 
     _label = &add<Label>(std::move(text));
 
-    selected.changed().connect([this](bool) { invalidatePaint(); });
+    selected.changed().connect(
+        [this](bool)
+        {
+            invalidatePaint();
+        });
 }
 
-void Selectable::setText(std::string text) { _label->text = std::move(text); }
+void Selectable::setText(std::string text)
+{
+    _label->text = std::move(text);
+}
 
-const std::string& Selectable::text() const noexcept { return _label->text.get(); }
+const std::string &Selectable::text() const noexcept
+{
+    return _label->text.get();
+}
+
+const std::string &Selectable::detail() const noexcept
+{
+    static const std::string none;
+    return _detail ? _detail->text.get() : none;
+}
 
 void Selectable::setDetail(std::string text)
 {
@@ -472,14 +512,14 @@ void Selectable::setDetail(std::string text)
     _detail->text = std::move(text);
 }
 
-glm::vec2 Selectable::measureContent(const Constraints& available)
+glm::vec2 Selectable::measureContent(const Constraints &available)
 {
     const WidgetStyle style = resolvedStyle();
 
     //! The same text inset a Button gives its label. Without it a tab strip
     //! renders as touching words and list rows sit flush against their edge.
-    const Constraints inner = Constraints::loose(
-        {std::max(0.0f, available.max.x - style.padding * 2.0f), available.max.y});
+    const Constraints inner =
+        Constraints::loose({std::max(0.0f, available.max.x - style.padding * 2.0f), available.max.y});
 
     const glm::vec2 label = _label->measure(inner);
     const glm::vec2 detail = _detail ? _detail->measure(inner) : glm::vec2{0.0f};
@@ -491,7 +531,7 @@ glm::vec2 Selectable::measureContent(const Constraints& available)
             std::max({label.y, detail.y, style.height.value_or(theme().metrics.rowHeight)})};
 }
 
-void Selectable::arrangeContent(const Rect& content)
+void Selectable::arrangeContent(const Rect &content)
 {
     const WidgetStyle style = resolvedStyle();
     const Rect inner = deflate(content, Thickness::symmetric(style.padding, 0.0f));
@@ -507,18 +547,16 @@ void Selectable::arrangeContent(const Rect& content)
     _detail->arrange(Rect{{inner.max.x - width, inner.min.y}, inner.max});
 }
 
-void Selectable::paint(DrawList& out)
+void Selectable::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
 
     //! Selection outranks hover: a highlighted row that is also pointed at
     //! must still read as the selected one.
-    const glm::vec4 fill =
-        selected.get() ? style.surface.active : surfaceColor(style);
+    const glm::vec4 fill = selected.get() ? style.surface.active : surfaceColor(style);
 
-    out.drawRect(bounds(), withAlpha(fill, alpha),
-                 withAlpha(style.border.pick(selected.get(), isHovered()), alpha),
+    out.drawRect(bounds(), withAlpha(fill, alpha), withAlpha(style.border.pick(selected.get(), isHovered()), alpha),
                  style.borderWidth, Corners::all(style.rounding));
 
     paintFocusRing(out, style, bounds());
@@ -530,7 +568,7 @@ void Selectable::activate()
         activated.emit();
 }
 
-void Selectable::accessibility(AccessibilityInfo& out) const
+void Selectable::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
@@ -549,7 +587,11 @@ Slider::Slider(f32 minimum, f32 maximum) : _minimum(minimum), _maximum(maximum)
 {
     _part = Part::Slider;
 
-    value.changed().connect([this](f32) { invalidatePaint(); });
+    value.changed().connect(
+        [this](f32)
+        {
+            invalidatePaint();
+        });
 }
 
 void Slider::setRange(f32 minimum, f32 maximum)
@@ -576,7 +618,7 @@ f32 Slider::_knobRadius() const noexcept
     return resolvedStyle().height.value_or(theme().metrics.rowHeight) * 0.5f;
 }
 
-Rect Slider::_track(const Rect& content) const
+Rect Slider::_track(const Rect &content) const
 {
     //! The track stops a knob's radius short of each end, so the knob's own
     //! edge -- not its centre -- reaches the extremes of the control.
@@ -605,7 +647,7 @@ void Slider::_commit(f32 raw)
     value.set(std::clamp(snapped, _minimum, _maximum));
 }
 
-glm::vec2 Slider::measureContent(const Constraints&)
+glm::vec2 Slider::measureContent(const Constraints &)
 {
     const f32 row = resolvedStyle().height.value_or(theme().metrics.rowHeight);
 
@@ -614,7 +656,7 @@ glm::vec2 Slider::measureContent(const Constraints&)
     return {0.0f, row};
 }
 
-void Slider::paint(DrawList& out)
+void Slider::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
@@ -638,14 +680,13 @@ void Slider::paint(DrawList& out)
 
     const Rect knob{centre - radius, centre + radius};
 
-    out.drawRect(knob, withAlpha(style.accent, alpha),
-                 withAlpha(style.border.pick(pressed(), isHovered()), alpha),
+    out.drawRect(knob, withAlpha(style.accent, alpha), withAlpha(style.border.pick(pressed(), isHovered()), alpha),
                  std::max(1.0f, style.borderWidth), Corners::all(radius));
 
     paintFocusRing(out, style, knob);
 }
 
-bool Slider::onPointerDown(const PointerEvent& event)
+bool Slider::onPointerDown(const PointerEvent &event)
 {
     const WidgetRef alive(this);
     if (!Control::onPointerDown(event))
@@ -657,7 +698,7 @@ bool Slider::onPointerDown(const PointerEvent& event)
     return true;
 }
 
-bool Slider::onPointerMove(const PointerEvent& event)
+bool Slider::onPointerMove(const PointerEvent &event)
 {
     if (!pressed())
         return false;
@@ -666,12 +707,12 @@ bool Slider::onPointerMove(const PointerEvent& event)
     return true;
 }
 
-bool Slider::onPointerUp(const PointerEvent& event)
+bool Slider::onPointerUp(const PointerEvent &event)
 {
     return Control::onPointerUp(event);
 }
 
-bool Slider::onKeyDown(const KeyEvent& event)
+bool Slider::onKeyDown(const KeyEvent &event)
 {
     const f32 step = _step > 0.0f ? _step : (_maximum - _minimum) / 50.0f;
 
@@ -703,7 +744,7 @@ bool Slider::onKeyDown(const KeyEvent& event)
     return false;
 }
 
-void Slider::accessibility(AccessibilityInfo& out) const
+void Slider::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
@@ -722,15 +763,19 @@ ProgressBar::ProgressBar(f32 initial) : value(std::clamp(initial, 0.0f, 1.0f))
     _part = Part::ProgressBar;
     setHitTestVisible(false);
 
-    value.changed().connect([this](f32) { invalidatePaint(); });
+    value.changed().connect(
+        [this](f32)
+        {
+            invalidatePaint();
+        });
 }
 
-glm::vec2 ProgressBar::measureContent(const Constraints&)
+glm::vec2 ProgressBar::measureContent(const Constraints &)
 {
     return {0.0f, std::max(4.0f, theme().metrics.rowHeight * 0.35f)};
 }
 
-void ProgressBar::paint(DrawList& out)
+void ProgressBar::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
@@ -748,7 +793,7 @@ void ProgressBar::paint(DrawList& out)
                  withAlpha(style.accent, alpha), rounded);
 }
 
-void ProgressBar::accessibility(AccessibilityInfo& out) const
+void ProgressBar::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
@@ -766,14 +811,16 @@ TextField::TextField(std::string value) : text(std::move(value))
 {
     _part = Part::TextField;
 
-    text.changed().connect([this](const std::string& updated) {
-        //! An assignment from outside can land anywhere relative to the caret,
-        //! so both ends are pulled back into the new string and onto a
-        //! character boundary.
-        _caret = utf8::clampToBoundary(updated, std::min(_caret, updated.size()));
-        _selection = _caret;
-        invalidateLayout();
-    });
+    text.changed().connect(
+        [this](const std::string &updated)
+        {
+            //! An assignment from outside can land anywhere relative to the caret,
+            //! so both ends are pulled back into the new string and onto a
+            //! character boundary.
+            _caret = utf8::clampToBoundary(updated, std::min(_caret, updated.size()));
+            _selection = _caret;
+            invalidateLayout();
+        });
 }
 
 void TextField::setPlaceholder(std::string placeholder)
@@ -803,22 +850,38 @@ TextStyle TextField::_style() const
 
 void TextField::_reshape()
 {
-    ITextShaper* shaper = this->shaper();
+    ITextShaper *shaper = this->shaper();
     if (!shaper)
         return;
 
     const TextStyle style = _style();
 
-    if (_shapedSource == text.get() && _shapedFontSize == style.pixelSize)
+    if (_shapedSource == text.get() && _shapedFontSize == style.pixelSize && _shapedObscured == _obscured)
         return;
 
-    shaper->shape(text.get(), style, kUnbounded, _shaped);
+    //! One asterisk per byte, not per character: every caret and selection
+    //! offset is a byte offset into the real text, and this keeps them valid
+    //! in the shaped stand-in without a second mapping.
+    if (_obscured)
+        shaper->shape(std::string(text.get().size(), '*'), style, kUnbounded, _shaped);
+    else
+        shaper->shape(text.get(), style, kUnbounded, _shaped);
 
     _shapedSource = text.get();
     _shapedFontSize = style.pixelSize;
+    _shapedObscured = _obscured;
 }
 
-glm::vec2 TextField::measureContent(const Constraints&)
+void TextField::setObscured(bool obscured)
+{
+    if (_obscured == obscured)
+        return;
+    _obscured = obscured;
+    invalidateLayout();
+    invalidatePaint();
+}
+
+glm::vec2 TextField::measureContent(const Constraints &)
 {
     _reshape();
 
@@ -847,7 +910,7 @@ void TextField::_revealCaret(f32 viewportWidth)
     _scrollX = std::clamp(_scrollX, 0.0f, std::max(0.0f, _shaped.size.x - viewportWidth));
 }
 
-void TextField::paint(DrawList& out)
+void TextField::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
@@ -862,17 +925,15 @@ void TextField::paint(DrawList& out)
 
     const ClipScope clipped(out, content);
 
-    const glm::vec2 origin{
-        content.min.x - _scrollX,
-        content.min.y + alignOffset(Alignment::Center, content.height(), _shaped.size.y)};
+    const glm::vec2 origin{content.min.x - _scrollX,
+                           content.min.y + alignOffset(Alignment::Center, content.height(), _shaped.size.y)};
 
     if (text.get().empty() && !_placeholder.empty())
     {
-        if (ITextShaper* shaper = this->shaper(); shaper && _placeholderShaped.empty())
+        if (ITextShaper *shaper = this->shaper(); shaper && _placeholderShaped.empty())
             shaper->shape(_placeholder, _style(), kUnbounded, _placeholderShaped);
 
-        out.drawText(_placeholderShaped, {content.min.x, origin.y},
-                     withAlpha(style.text, alpha * 0.45f));
+        out.drawText(_placeholderShaped, {content.min.x, origin.y}, withAlpha(style.text, alpha * 0.45f));
     }
 
     if (_hasSelection())
@@ -880,7 +941,7 @@ void TextField::paint(DrawList& out)
         _selectionRects.clear();
         _shaped.selectionRects(_selectionBegin(), _selectionEnd(), _selectionRects);
 
-        for (const Rect& rect : _selectionRects)
+        for (const Rect &rect : _selectionRects)
             out.fillRect(rect.translated(origin), withAlpha(style.accent, alpha * 0.35f));
     }
 
@@ -889,8 +950,7 @@ void TextField::paint(DrawList& out)
     //! Blink is a square wave on the tick clock, so the caret is solid while
     //! the field is being typed into -- _blink is reset on every edit.
     if (focused && !_readOnly && std::fmod(_blink, kCaretBlinkSeconds * 2.0f) < kCaretBlinkSeconds)
-        out.fillRect(_shaped.caretRect(_caret, 1.0f).translated(origin),
-                     withAlpha(style.accent, alpha));
+        out.fillRect(_shaped.caretRect(_caret, 1.0f).translated(origin), withAlpha(style.accent, alpha));
 
     paintFocusRing(out, style, bounds());
 }
@@ -964,7 +1024,7 @@ void TextField::_replaceSelection(std::string_view insertion)
     text.changed().emit(text.get());
 }
 
-bool TextField::onTextInput(const TextEvent& event)
+bool TextField::onTextInput(const TextEvent &event)
 {
     if (_readOnly || event.text.empty())
         return false;
@@ -973,23 +1033,19 @@ bool TextField::onTextInput(const TextEvent& event)
     return true;
 }
 
-bool TextField::onKeyDown(const KeyEvent& event)
+bool TextField::onKeyDown(const KeyEvent &event)
 {
-    const std::string& value = text.get();
+    const std::string &value = text.get();
     const bool shift = event.mods.shift;
 
     switch (event.key)
     {
     case wma::KEY_LEFT:
-        setCaret(event.mods.ctrl ? utf8::previousWord(value, _caret)
-                                 : utf8::previousBoundary(value, _caret),
-                 shift);
+        setCaret(event.mods.ctrl ? utf8::previousWord(value, _caret) : utf8::previousBoundary(value, _caret), shift);
         return true;
 
     case wma::KEY_RIGHT:
-        setCaret(event.mods.ctrl ? utf8::nextWord(value, _caret)
-                                 : utf8::nextBoundary(value, _caret),
-                 shift);
+        setCaret(event.mods.ctrl ? utf8::nextWord(value, _caret) : utf8::nextBoundary(value, _caret), shift);
         return true;
 
     case wma::KEY_HOME:
@@ -1032,7 +1088,7 @@ bool TextField::onKeyDown(const KeyEvent& event)
         return true;
 
     case wma::KEY_ESCAPE:
-        if (UIRoot* root = this->root())
+        if (UIRoot *root = this->root())
             root->clearFocus();
         return true;
 
@@ -1045,7 +1101,7 @@ bool TextField::onKeyDown(const KeyEvent& event)
     return false;
 }
 
-bool TextField::onPointerDown(const PointerEvent& event)
+bool TextField::onPointerDown(const PointerEvent &event)
 {
     if (event.button != PointerButton::Left)
         return false;
@@ -1068,7 +1124,7 @@ bool TextField::onPointerDown(const PointerEvent& event)
     }
     else if (event.clickCount == 2)
     {
-        const std::string& value = text.get();
+        const std::string &value = text.get();
         _selection = utf8::previousWord(value, utf8::nextBoundary(value, byte));
         _caret = utf8::nextWord(value, byte);
         invalidatePaint();
@@ -1082,7 +1138,7 @@ bool TextField::onPointerDown(const PointerEvent& event)
     return true;
 }
 
-bool TextField::onPointerMove(const PointerEvent& event)
+bool TextField::onPointerMove(const PointerEvent &event)
 {
     if (!_dragging || !hasPointerCapture())
         return false;
@@ -1092,7 +1148,7 @@ bool TextField::onPointerMove(const PointerEvent& event)
     return true;
 }
 
-bool TextField::onPointerUp(const PointerEvent& event)
+bool TextField::onPointerUp(const PointerEvent &event)
 {
     if (event.button != PointerButton::Left)
         return false;
@@ -1134,14 +1190,15 @@ bool TextField::onTick(f32 deltaSeconds)
     return hasFocus();
 }
 
-void TextField::accessibility(AccessibilityInfo& out) const
+void TextField::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
     out.role = Role::TextField;
     out.readOnly = _readOnly;
 
-    if (out.name.empty())
+    //! A passphrase is not read back to anyone.
+    if (out.name.empty() && !_obscured)
         out.name = text.get();
 
     if (out.description.empty())

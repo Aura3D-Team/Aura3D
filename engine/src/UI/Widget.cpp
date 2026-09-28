@@ -1,16 +1,20 @@
 #include "aura/UI/Widget.h"
 
+#include "aura/Utils/InlineScratch.h"
+
 #include <algorithm>
 
 #include "aura/UI/UIRoot.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 /// The theme every widget falls back to before it is attached to a root, so
 /// resolvedStyle() and theme() are safe to call from a constructor.
-[[nodiscard]] const Theme& detachedTheme()
+[[nodiscard]] const Theme &detachedTheme()
 {
     static const Theme fallback{};
     return fallback;
@@ -20,7 +24,7 @@ namespace {
 
 Widget::Widget() = default;
 
-WidgetRef::WidgetRef(Widget* widget) : _widget(widget)
+WidgetRef::WidgetRef(Widget *widget) : _widget(widget)
 {
     if (widget)
     {
@@ -53,7 +57,7 @@ void Widget::_insert(usize index, std::unique_ptr<Widget> child)
 
     index = std::min(index, _children.size());
 
-    Widget& reference = *child;
+    Widget &reference = *child;
     child->_parent = this;
 
     _children.insert(_children.begin() + static_cast<ptrdiff_t>(index), std::move(child));
@@ -65,17 +69,20 @@ void Widget::_insert(usize index, std::unique_ptr<Widget> child)
     invalidateLayout();
 }
 
-Widget& Widget::adopt(std::unique_ptr<Widget> child)
+Widget &Widget::adopt(std::unique_ptr<Widget> child)
 {
-    Widget& reference = *child;
+    Widget &reference = *child;
     _insert(_children.size(), std::move(child));
     return reference;
 }
 
-std::unique_ptr<Widget> Widget::detach(Widget& child)
+std::unique_ptr<Widget> Widget::detach(Widget &child)
 {
-    const auto it = std::ranges::find_if(
-        _children, [&child](const std::unique_ptr<Widget>& held) { return held.get() == &child; });
+    const auto it = std::ranges::find_if(_children,
+                                         [&child](const std::unique_ptr<Widget> &held)
+                                         {
+                                             return held.get() == &child;
+                                         });
 
     if (it == _children.end())
         return nullptr;
@@ -97,7 +104,7 @@ std::unique_ptr<Widget> Widget::detach(Widget& child)
     return owned;
 }
 
-void Widget::remove(Widget& child)
+void Widget::remove(Widget &child)
 {
     //! Keep the child alive until detachment and its callbacks have finished.
     const std::unique_ptr<Widget> owned = detach(child);
@@ -112,21 +119,21 @@ void Widget::clearChildren()
     }
 }
 
-Widget* Widget::find(std::string_view name) noexcept
+Widget *Widget::find(std::string_view name) noexcept
 {
     if (_name == name)
         return this;
 
-    for (const std::unique_ptr<Widget>& child : _children)
+    for (const std::unique_ptr<Widget> &child : _children)
     {
-        if (Widget* found = child->find(name))
+        if (Widget *found = child->find(name))
             return found;
     }
 
     return nullptr;
 }
 
-void Widget::_setRoot(UIRoot* root)
+void Widget::_setRoot(UIRoot *root)
 {
     if (_root == root)
         return;
@@ -150,13 +157,14 @@ void Widget::_setRoot(UIRoot* root)
 
     // Attach/detach callbacks may erase or reparent siblings. Never retain
     // vector iterators across those callbacks, or visit a removed child.
-    std::vector<WidgetRef> children;
+    InlineScratch<WidgetRef> childrenStorage;
+    auto &children = childrenStorage.values;
     children.reserve(_children.size());
-    for (const auto& child : _children)
+    for (const auto &child : _children)
         children.emplace_back(child.get());
-    for (const auto& reference : children)
+    for (const auto &reference : children)
     {
-        if (Widget* child = reference.get(); child && child->_parent == this)
+        if (Widget *child = reference.get(); child && child->_parent == this)
             child->_setRoot(root);
         if (!alive.get())
             return;
@@ -183,7 +191,7 @@ void Widget::invalidateLayout() noexcept
      * can widen the panel three levels up. The walk stops early at a node
      * already marked, so a burst of changes in one subtree costs one walk.
      */
-    for (Widget* node = this; node != nullptr; node = node->_parent)
+    for (Widget *node = this; node != nullptr; node = node->_parent)
     {
         if (node->_layoutDirty)
             break;
@@ -205,7 +213,7 @@ void Widget::invalidatePaint() noexcept
 // Layout
 // -----------------------------------------------------------------------------
 
-glm::vec2 Widget::measure(const Constraints& space)
+glm::vec2 Widget::measure(const Constraints &space)
 {
     if (_visibility == Visibility::Collapsed)
     {
@@ -230,9 +238,9 @@ glm::vec2 Widget::measure(const Constraints& space)
 
     const Thickness insets = contentInsets();
 
-    const Constraints inner = Constraints::loose(
-        {std::max(0.0f, std::min(outer.x, _layout.maxWidth) - insets.horizontal()),
-         std::max(0.0f, std::min(outer.y, _layout.maxHeight) - insets.vertical())});
+    const Constraints inner =
+        Constraints::loose({std::max(0.0f, std::min(outer.x, _layout.maxWidth) - insets.horizontal()),
+                            std::max(0.0f, std::min(outer.y, _layout.maxHeight) - insets.vertical())});
 
     const glm::vec2 content = measureContent(inner);
 
@@ -250,7 +258,7 @@ glm::vec2 Widget::measure(const Constraints& space)
     return _desired;
 }
 
-void Widget::arrange(const Rect& slot)
+void Widget::arrange(const Rect &slot)
 {
     if (_visibility == Visibility::Collapsed)
     {
@@ -272,30 +280,29 @@ void Widget::arrange(const Rect& slot)
     size = glm::max(size, _layout.minSize());
     size = glm::min(size, _layout.maxSize());
 
-    const glm::vec2 origin{
-        available.min.x + alignOffset(_layout.hAlign, available.width(), size.x),
-        available.min.y + alignOffset(_layout.vAlign, available.height(), size.y)};
+    const glm::vec2 origin{available.min.x + alignOffset(_layout.hAlign, available.width(), size.x),
+                           available.min.y + alignOffset(_layout.vAlign, available.height(), size.y)};
 
     _bounds = Rect::fromSize(origin, size);
 
     arrangeContent(contentRect());
 }
 
-glm::vec2 Widget::measureContent(const Constraints& available)
+glm::vec2 Widget::measureContent(const Constraints &available)
 {
     //! A plain Widget is a group: as big as the largest thing in it. Overlaid
     //! rather than stacked, which is what makes it the right base for a panel.
     glm::vec2 content{0.0f};
 
-    for (const std::unique_ptr<Widget>& child : _children)
+    for (const std::unique_ptr<Widget> &child : _children)
         content = glm::max(content, child->measure(available));
 
     return content;
 }
 
-void Widget::arrangeContent(const Rect& content)
+void Widget::arrangeContent(const Rect &content)
 {
-    for (const std::unique_ptr<Widget>& child : _children)
+    for (const std::unique_ptr<Widget> &child : _children)
         child->arrange(content);
 }
 
@@ -308,8 +315,7 @@ void Widget::setVisibility(Visibility visibility)
     if (_visibility == visibility)
         return;
 
-    const bool reflows = _visibility == Visibility::Collapsed ||
-                         visibility == Visibility::Collapsed;
+    const bool reflows = _visibility == Visibility::Collapsed || visibility == Visibility::Collapsed;
 
     _visibility = visibility;
 
@@ -345,7 +351,7 @@ void Widget::setEnabled(bool enabled)
 
 bool Widget::effectivelyEnabled() const noexcept
 {
-    for (const Widget* node = this; node != nullptr; node = node->_parent)
+    for (const Widget *node = this; node != nullptr; node = node->_parent)
     {
         if (!node->_enabled || node->_changingRoot)
             return false;
@@ -356,7 +362,7 @@ bool Widget::effectivelyEnabled() const noexcept
 
 bool Widget::effectivelyVisible() const noexcept
 {
-    for (const Widget* node = this; node; node = node->_parent)
+    for (const Widget *node = this; node; node = node->_parent)
         if (node->_visibility != Visibility::Visible)
             return false;
     return true;
@@ -366,7 +372,7 @@ bool Widget::effectivelyVisible() const noexcept
 // Painting
 // -----------------------------------------------------------------------------
 
-void Widget::paintTree(DrawList& out)
+void Widget::paintTree(DrawList &out)
 {
     if (_visibility != Visibility::Visible)
         return;
@@ -393,19 +399,18 @@ void Widget::paintTree(DrawList& out)
     paintChildren(out);
 }
 
-void Widget::paint(DrawList& out)
+void Widget::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
 
-    out.drawRect(_bounds, withAlpha(style.surface.normal, alpha),
-                 withAlpha(style.border.normal, alpha), style.borderWidth,
-                 Corners::all(style.rounding));
+    out.drawRect(_bounds, withAlpha(style.surface.normal, alpha), withAlpha(style.border.normal, alpha),
+                 style.borderWidth, Corners::all(style.rounding));
 }
 
-void Widget::paintChildren(DrawList& out)
+void Widget::paintChildren(DrawList &out)
 {
-    for (const std::unique_ptr<Widget>& child : _children)
+    for (const std::unique_ptr<Widget> &child : _children)
         child->paintTree(out);
 }
 
@@ -418,26 +423,68 @@ bool Widget::hitTest(glm::vec2 point) const
     return _hitTestVisible && _bounds.contains(point);
 }
 
-bool Widget::onPointerDown(const PointerEvent&) { return false; }
-bool Widget::onPointerUp(const PointerEvent&) { return false; }
-bool Widget::onPointerMove(const PointerEvent&) { return false; }
-bool Widget::onWheel(const WheelEvent&) { return false; }
-bool Widget::onKeyDown(const KeyEvent&) { return false; }
-bool Widget::onKeyUp(const KeyEvent&) { return false; }
-bool Widget::onTextInput(const TextEvent&) { return false; }
+bool Widget::onPointerDown(const PointerEvent &)
+{
+    return false;
+}
+bool Widget::onPointerUp(const PointerEvent &)
+{
+    return false;
+}
+bool Widget::onPointerMove(const PointerEvent &)
+{
+    return false;
+}
+bool Widget::onWheel(const WheelEvent &)
+{
+    return false;
+}
+bool Widget::onKeyDown(const KeyEvent &)
+{
+    return false;
+}
+bool Widget::onKeyUp(const KeyEvent &)
+{
+    return false;
+}
+bool Widget::onTextInput(const TextEvent &)
+{
+    return false;
+}
 
-void Widget::onPointerEnter() {}
-void Widget::onPointerLeave() {}
-void Widget::onPointerCancel() {}
-void Widget::onFocusIn(FocusReason) {}
-void Widget::onFocusOut() {}
+void Widget::onPointerEnter()
+{
+}
+void Widget::onPointerLeave()
+{
+}
+void Widget::onPointerCancel()
+{
+}
+void Widget::onFocusIn(FocusReason)
+{
+}
+void Widget::onFocusOut()
+{
+}
 
-void Widget::onChildAdded(Widget&, usize) {}
-void Widget::onChildRemoved(usize) {}
-void Widget::onAttach() {}
-void Widget::onDetach() {}
+void Widget::onChildAdded(Widget &, usize)
+{
+}
+void Widget::onChildRemoved(usize)
+{
+}
+void Widget::onAttach()
+{
+}
+void Widget::onDetach()
+{
+}
 
-bool Widget::onTick(f32) { return false; }
+bool Widget::onTick(f32)
+{
+    return false;
+}
 
 void Widget::setAnimating(bool animating)
 {
@@ -496,23 +543,23 @@ bool Widget::hasPointerCapture() const noexcept
 // Theming
 // -----------------------------------------------------------------------------
 
-const Theme& Widget::theme() const noexcept
+const Theme &Widget::theme() const noexcept
 {
     return _root ? std::as_const(*_root).theme() : detachedTheme();
 }
 
 WidgetStyle Widget::resolvedStyle() const
 {
-    const WidgetStyle& base = theme()[_part];
+    const WidgetStyle &base = theme()[_part];
     return _style.empty() ? base : _style.over(base);
 }
 
-ITextShaper* Widget::shaper() const noexcept
+ITextShaper *Widget::shaper() const noexcept
 {
     return _root ? &_root->shaper() : nullptr;
 }
 
-OverlayLayer* Widget::overlay() const noexcept
+OverlayLayer *Widget::overlay() const noexcept
 {
     return _root ? &_root->overlay() : nullptr;
 }
@@ -521,7 +568,7 @@ OverlayLayer* Widget::overlay() const noexcept
 // Accessibility
 // -----------------------------------------------------------------------------
 
-void Widget::accessibility(AccessibilityInfo& out) const
+void Widget::accessibility(AccessibilityInfo &out) const
 {
     out.role = _children.empty() ? Role::None : Role::Group;
     out.name = !_accessibleName.empty() ? _accessibleName : _name;

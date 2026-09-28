@@ -4,24 +4,25 @@
 
 #include "aura/aura.h"
 
-namespace aura3d {
-AuraSettings* AuraSettings::get()
+namespace aura3d
+{
+AuraSettings *AuraSettings::get()
 {
     static AuraSettings instance;
     return &instance;
 }
 
-ink::EnhancedJson* AuraSettings::getSettings()
+ink::EnhancedJson *AuraSettings::getSettings()
 {
     return &_settings;
 }
 
-void AuraSettings::setDefaults(const AuraConfig& defaults)
+void AuraSettings::setDefaults(const AuraConfig &defaults)
 {
     _defaults = defaults;
 }
 
-void AuraSettings::reload(const std::string& path)
+void AuraSettings::reload(const std::string &path)
 {
     _settings = ink::EnhancedJson::loadFromFile(path);
 
@@ -31,8 +32,7 @@ void AuraSettings::reload(const std::string& path)
     if (_settings.is_null())
     {
         _settings = ink::EnhancedJson::object();
-        INK_WARN << "AuraSettings: no readable configuration at '" << path
-                 << "'; running on the compiled-in defaults";
+        INK_WARN << "AuraSettings: no readable configuration at '" << path << "'; running on the compiled-in defaults";
         return;
     }
 
@@ -51,16 +51,14 @@ int AuraSettings::getWindowHeight() const
 
 std::string AuraSettings::getWindowTitle() const
 {
-    const std::string& fallback = _defaults.window.title;
+    const std::string &fallback = _defaults.window.title;
 
-    return _settings.getPath<std::string>(
-        "/window/title", fallback.empty() ? std::string{APPLICATION_NAME} : fallback);
+    return _settings.getPath<std::string>("/window/title", fallback.empty() ? std::string{APPLICATION_NAME} : fallback);
 }
 
 wma::WindowBackend AuraSettings::getWindowBackend() const
 {
-    const std::string backendStr =
-        _settings.getPath<std::string>("/window/backend", std::string());
+    const std::string backendStr = _settings.getPath<std::string>("/window/backend", std::string());
 
     if (backendStr.empty())
         return _defaults.window.backend;
@@ -69,8 +67,8 @@ wma::WindowBackend AuraSettings::getWindowBackend() const
     if (WindowBackendFromString(backendStr, backend))
         return backend;
 
-    INK_WARN << "AuraSettings: unsupported window backend '" << backendStr
-             << "'; falling back to " << WindowBackendToString(_defaults.window.backend);
+    INK_WARN << "AuraSettings: unsupported window backend '" << backendStr << "'; falling back to "
+             << WindowBackendToString(_defaults.window.backend);
     return _defaults.window.backend;
 }
 
@@ -94,7 +92,8 @@ VSyncMode AuraSettings::getVSyncMode() const
     const std::string modeStr = _settings.getPath<std::string>("/window/vsync_mode", std::string());
 
     VSyncMode mode;
-    if (!modeStr.empty() && VSyncModeFromString(modeStr, mode)) {
+    if (!modeStr.empty() && VSyncModeFromString(modeStr, mode))
+    {
         return mode;
     }
 
@@ -121,21 +120,18 @@ bool AuraSettings::getValidationLayers() const
 #else
     constexpr bool kBuildDefault = true;
 #endif
-    return _settings.getPath<bool>(
-        "/renderer/validation_layers",
-        _defaults.renderer.validationLayers.value_or(kBuildDefault));
+    return _settings.getPath<bool>("/renderer/validation_layers",
+                                   _defaults.renderer.validationLayers.value_or(kBuildDefault));
 }
 
 int AuraSettings::getMaxFramesInFlight() const
 {
-    return _settings.getPath<int>("/renderer/max_frames_in_flight",
-                                  _defaults.renderer.maxFramesInFlight);
+    return _settings.getPath<int>("/renderer/max_frames_in_flight", _defaults.renderer.maxFramesInFlight);
 }
 
 std::string AuraSettings::getGpuPreference() const
 {
-    return _settings.getPath<std::string>("/graphics/gpu_preference",
-                                          _defaults.graphics.gpuPreference);
+    return _settings.getPath<std::string>("/graphics/gpu_preference", _defaults.graphics.gpuPreference);
 }
 
 int AuraSettings::getMsaaSamples() const
@@ -150,15 +146,13 @@ int AuraSettings::getCpuThreads() const
 
 wma::AudioBackend AuraSettings::getAudioBackend() const
 {
-    const std::string backendStr =
-        _settings.getPath<std::string>("/audio/backend", std::string());
+    const std::string backendStr = _settings.getPath<std::string>("/audio/backend", std::string());
 
     //! An absent key defers to the compiled-in choice; an explicit "auto" asks
     //! for the platform's, which is what it has always meant.
     if (backendStr.empty())
     {
-        return _defaults.audio.backend ? *_defaults.audio.backend
-                                       : wma::getDefaultAudioBackend();
+        return _defaults.audio.backend ? *_defaults.audio.backend : wma::getDefaultAudioBackend();
     }
 
     if (backendStr == "auto")
@@ -176,8 +170,7 @@ wma::AudioBackend AuraSettings::getAudioBackend() const
         return backend;
     }
 
-    INK_WARN << "AuraSettings: unsupported audio backend '" << backendStr
-             << "'; falling back to the platform default";
+    INK_WARN << "AuraSettings: unsupported audio backend '" << backendStr << "'; falling back to the platform default";
     return wma::getDefaultAudioBackend();
 }
 

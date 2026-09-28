@@ -3,24 +3,26 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include <wma/wma.hpp>
 
+#include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkDeviceManager/VkDeviceManager.h"
-#include "aura/Renderer/Vulkan/VkAura/VkImageViewsManager/VkImageViewsManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkFrameBuffersManager/VkFrameBuffersManager.h"
-#include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Renderer/Vulkan/VkAura/VkImageViewsManager/VkImageViewsManager.h"
 #include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 class VkSwapChainManager
 {
-public:
+  public:
     /**
      * @brief Constructs the VkSwapChainManager with specified device and surface parameters.
      *
@@ -33,7 +35,7 @@ public:
      * @param device A pointer to the logical Vulkan device associated with the physical device.
      * @param vkSurface The Vulkan surface handle corresponding to the window or display surface.
      */
-    VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice* device, VkSurfaceKHR vkSurface);
+    VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice *device, VkSurfaceKHR vkSurface);
 
     /**
      * @brief Destructor for the VkSwapChainManager.
@@ -71,10 +73,12 @@ public:
      *
      * @param windowDetails The windowDetails associated with the rendering surface.
      * @param surface The Vulkan surface corresponding to the window where images will be presented.
-     * @param vkDeviceManager A pointer to the VkDeviceManager responsible for managing the logical device and queue families.
+     * @param vkDeviceManager A pointer to the VkDeviceManager responsible for managing the logical device and queue
+     * families.
      * @param layerCount Optional parameter specifying the number of image layers in the swap chain; defaults to 2.
      */
-    void createSwapChain(wma::WindowDetails* windowDetails, VkSurfaceKHR surface, VkDeviceManager* vkDeviceManager, u32 layerCount = 2, bool transparent = false);
+    void createSwapChain(wma::WindowDetails *windowDetails, VkSurfaceKHR surface, VkDeviceManager *vkDeviceManager,
+                         u32 layerCount = 2, bool transparent = false);
 
     /**
      * @brief Retrieves swap chain support details.
@@ -86,10 +90,9 @@ public:
      *
      * @return SwapChainSupportDetails* A pointer to the structure containing swap chain support details.
      */
-    SwapChainSupportDetails* getSwapChainSupportDetails();
+    SwapChainSupportDetails *getSwapChainSupportDetails();
 
-    VkSwapchainCreateInfoKHR* getSwapchainCreateInfoKHR();
-
+    VkSwapchainCreateInfoKHR *getSwapchainCreateInfoKHR();
 
     /**
      * @brief Chooses the best swap extent (resolution) for the swap chain.
@@ -104,21 +107,22 @@ public:
      *
      * @return VkExtent2D The chosen extent (resolution) for the swap chain images.
      */
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, wma::WindowDetails* windowDetails);
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, wma::WindowDetails *windowDetails);
 
-    VkExtent2D* getExtent2D();
+    VkExtent2D *getExtent2D();
 
-    VkSurfaceFormatKHR* getChoosedSurfaceFormat();
+    VkSurfaceFormatKHR *getChoosedSurfaceFormat();
 
-    VkPresentModeKHR* getChoosedPresentMode();
+    VkPresentModeKHR *getChoosedPresentMode();
 
-    VkSwapchainKHR* getSwapChain();
+    VkSwapchainKHR *getSwapChain();
 
-    const std::vector<VkImage>& getSwapChainImages();
+    const std::vector<VkImage> &getSwapChainImages();
 
-    u32 acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags* windowFlags);
+    u32 acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags *windowFlags);
 
-    void presentBackToSwapChain(VkQueue queue, VkSemaphore* renderFinishedSemaphore, const u32& imageIndex, wma::WindowFlags* windowFlags);
+    void presentBackToSwapChain(VkQueue queue, VkSemaphore *renderFinishedSemaphore, const u32 &imageIndex,
+                                wma::WindowFlags *windowFlags);
 
     /**
      * @brief src/dst pipeline-stage and access-mask pair for one barrier.
@@ -129,22 +133,20 @@ public:
      * moment MAX_FRAMES_IN_FLIGHT became a runtime setting instead of a
      * compile-time 2.
      */
-    void transitionImageLayout(
-        VkCommandBuffer commandBuffer,
-        const u32& imageIndex,
-        VkImageLayout oldLayout,
-        VkImageLayout newLayout,
-        std::array<VkPipelineStageFlags, 2> stages,
-        std::array<VkAccessFlags, 2> accessFlags);
+    void transitionImageLayout(VkCommandBuffer commandBuffer, const u32 &imageIndex, VkImageLayout oldLayout,
+                               VkImageLayout newLayout, std::array<VkPipelineStageFlags, 2> stages,
+                               std::array<VkAccessFlags, 2> accessFlags);
 
     void cleanup();
-private:
+
+  private:
     SwapChainSupportDetails _swapChainSupportDetails; ///< Holds details about swap chain support.
 
     VkSwapchainCreateInfoKHR _swapChainCreateInfo; ///< Stores configuration settings for creating a swap chain.
-    VkSwapchainKHR _swapChain; ///< Vulkan swap chain that is used to manage the presentation of rendered images to the screen.
+    VkSwapchainKHR
+        _swapChain; ///< Vulkan swap chain that is used to manage the presentation of rendered images to the screen.
 
-    VkDevice* _device; ///< A pointer to the logical Vulkan device, which is used for interfacing with the GPU.
+    VkDevice *_device; ///< A pointer to the logical Vulkan device, which is used for interfacing with the GPU.
 
     /**
      * @brief Swap chain surface format chosen for the Vulkan surface.
@@ -157,7 +159,8 @@ private:
      * @brief The presentation mode selected for the swap chain.
      *
      * Determines how images are presented to the surface, influencing vsync behavior and latency.
-     * Common options include VK_PRESENT_MODE_FIFO_KHR for vsync and VK_PRESENT_MODE_MAILBOX_KHR for low-latency, triple-buffering.
+     * Common options include VK_PRESENT_MODE_FIFO_KHR for vsync and VK_PRESENT_MODE_MAILBOX_KHR for low-latency,
+     * triple-buffering.
      */
     VkPresentModeKHR _choosedPresentMode;
 
@@ -189,8 +192,9 @@ private:
      *
      * @return VkSurfaceFormatKHR The chosen surface format for the swap chain.
      */
-    VkSurfaceFormatKHR _chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats,
-                                                const VkFormat vkFormat = VK_FORMAT_B8G8R8A8_SRGB, const VkColorSpaceKHR vkColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+    VkSurfaceFormatKHR _chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats,
+                                                const VkFormat vkFormat = VK_FORMAT_B8G8R8A8_SRGB,
+                                                const VkColorSpaceKHR vkColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
 
     /**
      * @brief Chooses the swap chain presentation mode for the requested VSyncMode.
@@ -206,10 +210,11 @@ private:
      *
      * @return VkPresentModeKHR The chosen presentation mode for the swap chain.
      */
-    VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, const VSyncMode mode);
+    VkPresentModeKHR _chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes,
+                                            const VSyncMode mode);
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKSWAPCHAINMANAGER_H

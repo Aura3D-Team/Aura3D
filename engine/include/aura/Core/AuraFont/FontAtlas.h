@@ -18,7 +18,8 @@
 
 #include "aura/aura.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @brief Placement and layout metrics of a single rasterized glyph.
@@ -27,17 +28,18 @@ namespace aura3d {
  * pair addresses the glyph's cell inside the atlas texture and can be fed to a
  * quad directly.
  */
-struct GlyphInfo {
-    glm::vec2 uvMin{0.0f};   //! Atlas UV of the cell's top-left texel.
-    glm::vec2 uvMax{0.0f};   //! Atlas UV of the cell's bottom-right texel.
-    glm::vec2 size{0.0f};    //! Rasterized bitmap size in pixels.
+struct GlyphInfo
+{
+    glm::vec2 uvMin{0.0f}; //! Atlas UV of the cell's top-left texel.
+    glm::vec2 uvMax{0.0f}; //! Atlas UV of the cell's bottom-right texel.
+    glm::vec2 size{0.0f};  //! Rasterized bitmap size in pixels.
     /**
      * Offset from the pen position to the glyph quad's top-left corner, with the
      * pen taken to sit on the *top* of the line box (y grows downwards). Already
      * folds in the font's ascent, so a caller never needs the baseline itself.
      */
     glm::vec2 bearing{0.0f};
-    float advance = 0.0f;    //! Horizontal pen movement after drawing, in pixels.
+    float advance = 0.0f; //! Horizontal pen movement after drawing, in pixels.
 };
 
 /**
@@ -46,11 +48,12 @@ struct GlyphInfo {
  * Advances @p offset past the consumed bytes. Malformed sequences consume a
  * single byte and yield U+FFFD, so a decode loop always terminates.
  */
-[[nodiscard]] char32_t decodeUtf8(std::string_view text, size_t& offset) noexcept;
+[[nodiscard]] char32_t decodeUtf8(std::string_view text, size_t &offset) noexcept;
 
 /// Construction parameters for a @ref FontAtlas. Namespace-scope (not nested)
 /// so it can be used as a defaulted parameter of FontAtlas' own methods.
-struct FontAtlasDesc {
+struct FontAtlasDesc
+{
     u32 width = 2048;          //! Atlas width in texels.
     u32 height = 2048;         //! Atlas height in texels.
     float pixelHeight = 32.0f; //! Rasterization size (cap height to descender).
@@ -73,13 +76,15 @@ struct FontAtlasDesc {
  *
  * @note Not thread-safe: @ref glyph mutates the cache and the dirty rectangle.
  */
-class FontAtlas {
-public:
+class FontAtlas
+{
+  public:
     /// Construction parameters; see @ref FontAtlasDesc.
     using Desc = FontAtlasDesc;
 
     /// A half-open rectangle of the atlas that changed since the last upload.
-    struct DirtyRegion {
+    struct DirtyRegion
+    {
         u32 x = 0;
         u32 y = 0;
         u32 width = 0;
@@ -87,23 +92,25 @@ public:
     };
 
     /// UV bounds of a reserved cell, top-left and bottom-right.
-    struct UvRect {
+    struct UvRect
+    {
         glm::vec2 min{0.0f};
         glm::vec2 max{0.0f};
     };
 
     /// A dirty rectangle expanded to RGBA8, ready for a sub-image upload.
-    struct PendingUpload {
-        DirtyRegion region;        //! Destination rectangle inside the atlas.
-        std::span<const u8> rgba;  //! region.width * region.height * 4 bytes.
+    struct PendingUpload
+    {
+        DirtyRegion region;       //! Destination rectangle inside the atlas.
+        std::span<const u8> rgba; //! region.width * region.height * 4 bytes.
     };
 
     /**
      * @brief Loads a .ttf/.otf file from disk.
      * @return The atlas, or a human-readable message on failure.
      */
-    [[nodiscard]] static std::expected<std::unique_ptr<FontAtlas>, std::string>
-    fromFile(const std::string& path, const Desc& desc = Desc{});
+    [[nodiscard]] static std::expected<std::unique_ptr<FontAtlas>, std::string> fromFile(const std::string &path,
+                                                                                         const Desc &desc = Desc{});
 
     /**
      * @brief Adopts an in-memory .ttf/.otf image.
@@ -111,8 +118,8 @@ public:
      * The bytes are moved into the atlas because stb_truetype keeps pointing at
      * them for the object's whole lifetime.
      */
-    [[nodiscard]] static std::expected<std::unique_ptr<FontAtlas>, std::string>
-    fromMemory(std::vector<u8> fontData, const Desc& desc = Desc{});
+    [[nodiscard]] static std::expected<std::unique_ptr<FontAtlas>, std::string> fromMemory(std::vector<u8> fontData,
+                                                                                           const Desc &desc = Desc{});
 
     /**
      * @brief Builds an atlas from the engine's embedded 5x8 bitmap font.
@@ -121,14 +128,14 @@ public:
      * where no font file is staged (WASM, Android) and when a load fails.
      * Never fails.
      */
-    [[nodiscard]] static std::unique_ptr<FontAtlas> builtinBitmap(const Desc& desc = Desc{});
+    [[nodiscard]] static std::unique_ptr<FontAtlas> builtinBitmap(const Desc &desc = Desc{});
 
     ~FontAtlas();
 
-    FontAtlas(const FontAtlas&) = delete;
-    FontAtlas& operator=(const FontAtlas&) = delete;
-    FontAtlas(FontAtlas&&) noexcept;
-    FontAtlas& operator=(FontAtlas&&) noexcept;
+    FontAtlas(const FontAtlas &) = delete;
+    FontAtlas &operator=(const FontAtlas &) = delete;
+    FontAtlas(FontAtlas &&) noexcept;
+    FontAtlas &operator=(FontAtlas &&) noexcept;
 
     /**
      * @brief Returns @p codepoint's cell, rasterizing it on first use.
@@ -136,7 +143,7 @@ public:
      * @return The glyph, or nullptr when the font has no such codepoint and no
      *         substitute could be placed (e.g. the atlas is full).
      */
-    [[nodiscard]] const GlyphInfo* glyph(char32_t codepoint);
+    [[nodiscard]] const GlyphInfo *glyph(char32_t codepoint);
 
     /// Kerning adjustment to apply between @p left and @p right, in pixels.
     [[nodiscard]] float kerning(char32_t left, char32_t right) const noexcept;
@@ -173,11 +180,11 @@ public:
      * @return The cell's UV bounds, or nullopt when @p radius is out of range
      *         or the atlas is too full to place it.
      */
-    [[nodiscard]] const UvRect* cornerMask(u32 radius) noexcept;
+    [[nodiscard]] const UvRect *cornerMask(u32 radius) noexcept;
 
     /// Quarter-annulus coverage for a rounded border. Width is in mask texels,
     /// quantized to 1/256 pixel for caching. Shares the regular glyph texture.
-    [[nodiscard]] const UvRect* cornerRingMask(u32 radius, f32 width) noexcept;
+    [[nodiscard]] const UvRect *cornerRingMask(u32 radius, f32 width) noexcept;
 
     /// Largest radius @ref cornerMask will place.
     static constexpr u32 kMaxCornerRadius = 64;
@@ -207,21 +214,41 @@ public:
      * @return The cell's UV bounds, or nullptr when @p polygon is not a
      *         polygon, @p size is out of range, or the atlas is too full.
      */
-    [[nodiscard]] const UvRect* convexMask(u32 id, u32 size,
-                                           std::span<const glm::vec2> polygon) noexcept;
+    [[nodiscard]] const UvRect *convexMask(u32 id, u32 size, std::span<const glm::vec2> polygon) noexcept;
 
     /// Largest cell edge @ref convexMask will place.
     static constexpr u32 kMaxMaskSize = 64;
 
-    [[nodiscard]] float lineHeight() const noexcept { return _lineHeight; }
-    [[nodiscard]] float ascent() const noexcept { return _ascent; }
-    [[nodiscard]] float descent() const noexcept { return _descent; }
-    [[nodiscard]] float pixelHeight() const noexcept { return _desc.pixelHeight; }
-    [[nodiscard]] u32 width() const noexcept { return _desc.width; }
-    [[nodiscard]] u32 height() const noexcept { return _desc.height; }
+    [[nodiscard]] float lineHeight() const noexcept
+    {
+        return _lineHeight;
+    }
+    [[nodiscard]] float ascent() const noexcept
+    {
+        return _ascent;
+    }
+    [[nodiscard]] float descent() const noexcept
+    {
+        return _descent;
+    }
+    [[nodiscard]] float pixelHeight() const noexcept
+    {
+        return _desc.pixelHeight;
+    }
+    [[nodiscard]] u32 width() const noexcept
+    {
+        return _desc.width;
+    }
+    [[nodiscard]] u32 height() const noexcept
+    {
+        return _desc.height;
+    }
 
     /// True when glyphs were rasterized since the last @ref takeDirtyUpload.
-    [[nodiscard]] bool dirty() const noexcept { return _dirty; }
+    [[nodiscard]] bool dirty() const noexcept
+    {
+        return _dirty;
+    }
 
     /**
      * @brief Hands over the pending sub-image upload and marks the atlas clean.
@@ -231,16 +258,16 @@ public:
      */
     [[nodiscard]] std::optional<PendingUpload> takeDirtyUpload();
 
-private:
+  private:
     struct FontImpl;
 
-    explicit FontAtlas(const Desc& desc);
+    explicit FontAtlas(const Desc &desc);
 
     /// Rasterizes @p codepoint through stb_truetype; false when absent.
-    [[nodiscard]] bool rasterizeTrueType(char32_t codepoint, GlyphInfo& out);
+    [[nodiscard]] bool rasterizeTrueType(char32_t codepoint, GlyphInfo &out);
 
     /// Rasterizes @p codepoint from the embedded bitmap font; false when absent.
-    [[nodiscard]] bool rasterizeBitmap(char32_t codepoint, GlyphInfo& out);
+    [[nodiscard]] bool rasterizeBitmap(char32_t codepoint, GlyphInfo &out);
 
     /**
      * @brief Reserves a @p w x @p h cell with the shelf allocator.
@@ -257,13 +284,13 @@ private:
     void markDirty(u32 x, u32 y, u32 w, u32 h) noexcept;
 
     /// Blits an 8-bit coverage bitmap into the atlas at @p origin.
-    void blitCoverage(const u8* src, u32 srcStride, glm::uvec2 origin, u32 w, u32 h) noexcept;
+    void blitCoverage(const u8 *src, u32 srcStride, glm::uvec2 origin, u32 w, u32 h) noexcept;
 
     Desc _desc{};
-    std::unique_ptr<FontImpl> _font;  //! Null for the bitmap-font fallback.
-    std::vector<u8> _fontData;        //! Backing .ttf bytes; stb points into these.
-    std::vector<u8> _coverage;        //! width * height single-channel master.
-    std::vector<u8> _scratch;         //! RGBA staging for the pending upload.
+    std::unique_ptr<FontImpl> _font; //! Null for the bitmap-font fallback.
+    std::vector<u8> _fontData;       //! Backing .ttf bytes; stb points into these.
+    std::vector<u8> _coverage;       //! width * height single-channel master.
+    std::vector<u8> _scratch;        //! RGBA staging for the pending upload.
 
     std::unordered_map<char32_t, GlyphInfo> _glyphs;
 
@@ -280,8 +307,9 @@ private:
      */
     static constexpr usize kKernCacheSlots = 512; //! Power of two; masked, not modulo.
 
-    struct KernEntry {
-        u64 pair = 0;       //! 0 is unreachable: walkGlyphs() stops at codepoint 0.
+    struct KernEntry
+    {
+        u64 pair = 0; //! 0 is unreachable: walkGlyphs() stops at codepoint 0.
         f32 value = 0.0f;
     };
 
@@ -312,7 +340,7 @@ private:
     u32 _dirtyX0 = 0, _dirtyY0 = 0, _dirtyX1 = 0, _dirtyY1 = 0;
     bool _dirty = false;
 
-    float _scale = 1.0f;      //! stb_truetype units -> pixels.
+    float _scale = 1.0f; //! stb_truetype units -> pixels.
     float _ascent = 0.0f;
     float _descent = 0.0f;
     float _lineHeight = 0.0f;

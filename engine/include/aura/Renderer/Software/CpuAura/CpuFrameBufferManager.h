@@ -3,57 +3,65 @@
 
 #include <cmath>
 #include <functional>
+#include <glm/glm.hpp>
 #include <memory>
 #include <span>
 #include <string>
 #include <vector>
-#include <glm/glm.hpp>
 
 static const float PI_FLOAT = std::acos(-1.0f);
 
 #include "aura/Core/AuraCore.h"
-#include "aura/Utils/AlignedVector.h"
 #include "aura/Core/AuraFont/AuraBitmapFont.h"
+#include "aura/Utils/AlignedVector.h"
 
 /// wma owns the platform window and exposes the CPU framebuffer through its
 /// lockFramebuffer()/presentFramebuffer() contract. The manager only needs a
 /// non-owning handle to it, so a forward declaration keeps the backend-specific
 /// wma/SDL headers out of this public header.
-namespace wma { class IWindowManager; }
+namespace wma
+{
+class IWindowManager;
+}
 
 //! Forward-declared for the same reason this class used to forward-declare
 //! ink::ThreadPool: keeps JobSystem.h out of every translation unit that
 //! merely includes this header to draw a triangle. See the constructor's
 //! comment for why a ThreadPool of its own is gone entirely now.
-namespace aura3d { class JobSystem; }
+namespace aura3d
+{
+class JobSystem;
+}
 
-namespace aura3d {
-namespace cpu {
+namespace aura3d
+{
+namespace cpu
+{
 
-struct Point {
-    Point(i32 _x, i32 _y) :
-        x(_x), y(_y) {};
+struct Point
+{
+    Point(i32 _x, i32 _y) : x(_x), y(_y) {};
 
     i32 x;
     i32 y;
 };
 
-struct Pixel {
-    constexpr Pixel(u32 rgb_ = 0, f32 z_ = 1.0f) noexcept
-        : rgb(rgb_), z(z_) {}
+struct Pixel
+{
+    constexpr Pixel(u32 rgb_ = 0, f32 z_ = 1.0f) noexcept : rgb(rgb_), z(z_)
+    {
+    }
 
     u32 rgb = 0;
     f32 z = 1.0f;
 };
 
-struct Rectangle {
-    constexpr Rectangle(
-        i32 x_ = 0,
-        i32 y_ = 0,
-        i32 width_ = 0,
-        i32 height_ = 0
-        ) noexcept
-        : x(x_), y(y_), width(width_), height(height_) {}
+struct Rectangle
+{
+    constexpr Rectangle(i32 x_ = 0, i32 y_ = 0, i32 width_ = 0, i32 height_ = 0) noexcept
+        : x(x_), y(y_), width(width_), height(height_)
+    {
+    }
 
     i32 x = 0;
     i32 y = 0;
@@ -61,20 +69,20 @@ struct Rectangle {
     i32 height = 0;
 
     [[nodiscard]]
-    constexpr bool isValid() const noexcept {
+    constexpr bool isValid() const noexcept
+    {
         return width > 0 && height > 0 && x >= 0 && y >= 0;
     }
 
     [[nodiscard]]
-    constexpr bool contains(i32 px, i32 py) const noexcept {
-        return px >= x &&
-               py >= y &&
-               px < x + width &&
-               py < y + height;
+    constexpr bool contains(i32 px, i32 py) const noexcept
+    {
+        return px >= x && py >= y && px < x + width && py < y + height;
     }
 };
 
-enum InterpolationMethod: u32 {
+enum InterpolationMethod : u32
+{
     Linear = 0,
     Smoothstep = 1,
     Accelerate = 2,
@@ -83,8 +91,11 @@ enum InterpolationMethod: u32 {
     Cosine = 5
 };
 
-struct Texture {
-    Texture(int w, int h) : data(w * h, 0), width(w), height(h) {}
+struct Texture
+{
+    Texture(i32 w, i32 h) : data(static_cast<size_t>(w) * static_cast<size_t>(h), 0), width(w), height(h)
+    {
+    }
 
     AlignedVector<u32> data;
     i32 width;
@@ -124,7 +135,7 @@ struct Texture {
          * GPU sampler this mirrors, rather than being offset half a texel
          * from them.
          */
-        const f32 fx = u * static_cast<f32>(width)  - 0.5f;
+        const f32 fx = u * static_cast<f32>(width) - 0.5f;
         const f32 fy = v * static_cast<f32>(height) - 0.5f;
 
         const f32 floorX = std::floor(fx);
@@ -135,19 +146,20 @@ struct Texture {
         const f32 tx = fx - floorX;
         const f32 ty = fy - floorY;
 
-        const u32 c00 = texelClamped(x0,     y0);
+        const u32 c00 = texelClamped(x0, y0);
         const u32 c10 = texelClamped(x0 + 1, y0);
-        const u32 c01 = texelClamped(x0,     y0 + 1);
+        const u32 c01 = texelClamped(x0, y0 + 1);
         const u32 c11 = texelClamped(x0 + 1, y0 + 1);
 
         return lerpArgb(lerpArgb(c00, c10, tx), lerpArgb(c01, c11, tx), ty);
     }
 
-private:
+  private:
     /// Per-channel linear interpolation between two ARGB8888 texels.
     [[nodiscard]] static u32 lerpArgb(u32 a, u32 b, f32 t) noexcept
     {
-        const auto lerpChannel = [a, b, t](u32 shift) noexcept -> u32 {
+        const auto lerpChannel = [a, b, t](u32 shift) noexcept -> u32
+        {
             const f32 ca = static_cast<f32>((a >> shift) & 0xFFu);
             const f32 cb = static_cast<f32>((b >> shift) & 0xFFu);
             //! +0.5f rounds to nearest rather than truncating, which otherwise
@@ -155,10 +167,7 @@ private:
             return static_cast<u32>(ca + (cb - ca) * t + 0.5f) & 0xFFu;
         };
 
-        return (lerpChannel(24) << 24)
-             | (lerpChannel(16) << 16)
-             | (lerpChannel( 8) <<  8)
-             |  lerpChannel( 0);
+        return (lerpChannel(24) << 24) | (lerpChannel(16) << 16) | (lerpChannel(8) << 8) | lerpChannel(0);
     }
 };
 
@@ -169,18 +178,20 @@ private:
  * Attributes (uv, color) are stored in their original form; perspective-
  * correct interpolation is applied inside drawTriangle().
  */
-struct ScreenVertex {
-    f32        x    = 0.0f;   ///< Pixel X (left = 0)
-    f32        y    = 0.0f;   ///< Pixel Y (top  = 0)
-    f32        z    = 1.0f;   ///< Depth in [0, 1]  (0 = near, 1 = far)
-    f32        invW = 1.0f;   ///< 1 / clip_w  (for perspective-correct interp)
-    glm::vec2  uv   = {};     ///< Texture coordinates
-    glm::vec4  color= {1,1,1,1}; ///< Vertex color  [0, 1] per channel
+struct ScreenVertex
+{
+    f32 x = 0.0f;                   ///< Pixel X (left = 0)
+    f32 y = 0.0f;                   ///< Pixel Y (top  = 0)
+    f32 z = 1.0f;                   ///< Depth in [0, 1]  (0 = near, 1 = far)
+    f32 invW = 1.0f;                ///< 1 / clip_w  (for perspective-correct interp)
+    glm::vec2 uv = {};              ///< Texture coordinates
+    glm::vec4 color = {1, 1, 1, 1}; ///< Vertex color  [0, 1] per channel
 };
 
 //! One triangle's worth of already-projected vertices, as consumed by the
-//! batched/parallel submitTriangles()/submitTriangles2D() entry points.
-struct ScreenTriangle {
+//! queued entry points queueTriangle(), submitTriangles() and submitTriangles2D().
+struct ScreenTriangle
+{
     ScreenVertex v0, v1, v2;
 };
 
@@ -192,11 +203,9 @@ struct ScreenTriangle {
  * definition rather than one per caller.
  */
 [[nodiscard]]
-constexpr f32 signedArea2(const ScreenVertex& v0, const ScreenVertex& v1,
-                          const ScreenVertex& v2) noexcept
+constexpr f32 signedArea2(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2) noexcept
 {
-    return (v1.x - v0.x) * (v2.y - v0.y)
-         - (v1.y - v0.y) * (v2.x - v0.x);
+    return (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x);
 }
 
 /**
@@ -214,16 +223,16 @@ constexpr f32 signedArea2(const ScreenVertex& v0, const ScreenVertex& v1,
  * against face normals on a cube.)
  */
 [[nodiscard]]
-constexpr bool isFrontFacing(const ScreenVertex& v0, const ScreenVertex& v1,
-                             const ScreenVertex& v2) noexcept
+constexpr bool isFrontFacing(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2) noexcept
 {
     return signedArea2(v0, v1, v2) < 0.0f;
 }
 
 class CpuFrameBufferManager
 {
-public:
-    struct Config {
+  public:
+    struct Config
+    {
         i32 width = 1280;
         i32 height = 720;
         bool useDepthBuffer = true;
@@ -239,7 +248,7 @@ public:
     ///                        Engine guarantees that: JobSystem is
     ///                        constructed before any renderer and survives
     ///                        every backend switch.
-    CpuFrameBufferManager(wma::IWindowManager& windowManager, Config config, const JobSystem& jobs);
+    CpuFrameBufferManager(wma::IWindowManager &windowManager, Config config, const JobSystem &jobs);
     ~CpuFrameBufferManager() = default;
 
     // Core rendering
@@ -248,7 +257,8 @@ public:
     /// Present the color plane by locking the backend's software framebuffer
     /// (wma::IWindowManager::lockFramebuffer()) and blitting into it in
     /// parallel across the same worker pool flush() rasterises with.
-    void renderFramebuffer();
+    /// @return `false` when the backend had no framebuffer to lock.
+    bool renderFramebuffer();
 
     // Memory management
     void resizeFramebuffer(int width, int height);
@@ -260,9 +270,9 @@ public:
 
     void drawLine(Point p0, Point p1, u32 color);
 
-    void drawPolygon(const std::vector<Point>& points, u32 color, bool closed = true);
-    void drawPolygon(const std::vector<Point>& points, const std::vector<u32>& colors, bool closed = true);
-    void drawFilledPolygon(const std::vector<Point>& points, u32 color);
+    void drawPolygon(const std::vector<Point> &points, u32 color, bool closed = true);
+    void drawPolygon(const std::vector<Point> &points, const std::vector<u32> &colors, bool closed = true);
+    void drawFilledPolygon(const std::vector<Point> &points, u32 color);
 
     /**
      * @brief Rasterise a single screen-space triangle.
@@ -276,8 +286,7 @@ public:
      * @param v0,v1,v2  Screen-space vertices from the vertex transform stage.
      * @param texture   Optional texture; pass nullptr for untextured geometry.
      */
-    void drawTriangle(const ScreenVertex& v0, const ScreenVertex& v1,
-                      const ScreenVertex& v2, const Texture* texture);
+    void drawTriangle(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2, const Texture *texture);
 
     /**
      * @brief Rasterise a screen-space triangle for the unlit 2D overlay pass.
@@ -296,8 +305,7 @@ public:
      * @param v0,v1,v2  Vertices already in pixel coordinates.
      * @param texture   Optional texture; nullptr draws vertex colour alone.
      */
-    void drawTriangle2D(const ScreenVertex& v0, const ScreenVertex& v1,
-                        const ScreenVertex& v2, const Texture* texture);
+    void drawTriangle2D(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2, const Texture *texture);
 
     /**
      * @brief Queues an already-projected triangle list for this frame.
@@ -316,12 +324,12 @@ public:
      * @param texture   Optional shared texture; pass nullptr for untextured.
      *                  Must stay alive until flush() returns.
      */
-    void submitTriangles(std::span<const ScreenTriangle> triangles, const Texture* texture);
+    void submitTriangles(std::span<const ScreenTriangle> triangles, const Texture *texture);
 
     /// The drawTriangle2D() analogue of submitTriangles(): unlit, alpha-blended,
     /// affine-interpolated. Queued into the same list, so an overlay submitted
     /// after the scene still composites on top of it.
-    void submitTriangles2D(std::span<const ScreenTriangle> triangles, const Texture* texture);
+    void submitTriangles2D(std::span<const ScreenTriangle> triangles, const Texture *texture);
 
     /**
      * @brief Rasterises everything queued this frame, then empties the queue.
@@ -346,29 +354,51 @@ public:
      */
     void flush();
 
+    /**
+     * @brief Queues one triangle, the per-triangle form of submitTriangles().
+     *
+     * Appends straight into the frame's queue, so a vertex stage that emits
+     * triangles one at a time (the clipper does) needs no intermediate list
+     * and no second copy. Consecutive calls with the same @p texture and
+     * @p overlay extend one batch, which keeps flush() replaying draw calls
+     * in submission order exactly as the span forms do.
+     *
+     * @param overlay  `true` for the unlit, alpha-blended 2D path of submitTriangles2D().
+     */
+    void queueTriangle(const ScreenTriangle &triangle, const Texture *texture, bool overlay = false);
+
     // Text rendering
-    void drawText(const std::string& text, Point p, u32 color, u32 fontSize = 2);
+    void drawText(const std::string &text, Point p, u32 color, u32 fontSize = 2);
 
     // Getters
-    i32 getWidth() const { return settings.width; }
-    i32 getHeight() const { return settings.height; }
+    i32 getWidth() const
+    {
+        return settings.width;
+    }
+    i32 getHeight() const
+    {
+        return settings.height;
+    }
     //! Worker count flush() and renderFramebuffer() dispatch across -- the
     //! engine's shared JobSystem::workerCount(), cached at construction. One
     //! row-band per worker (see updateBandRanges()), so this is also the band
     //! count.
-    i32 getWorkerCount() const noexcept { return _workerCount; }
-    i32 getTextWidth(const std::string& text, u32 fontSize = 2);
-    i32 getTextHeight(const std::string& text, u32 fontSize = 2);
+    i32 getWorkerCount() const noexcept
+    {
+        return _workerCount;
+    }
+    i32 getTextWidth(const std::string &text, u32 fontSize = 2);
+    i32 getTextHeight(const std::string &text, u32 fontSize = 2);
 
     // Helper methods
     void plotPixel(Point p, f32 intensity, u32 color);
     bool isInsideBounds(Point p) const;
     u32 blendColors(u32 c1, u32 c2, f32 alpha);
 
-    template<typename T>
-    T interpolate(const T& a, const T& b, float t_param, InterpolationMethod method = InterpolationMethod::Linear);
+    template <typename T>
+    T interpolate(const T &a, const T &b, float t_param, InterpolationMethod method = InterpolationMethod::Linear);
 
-private:
+  private:
     float get_eased_time(float t_param, InterpolationMethod method);
 
     /**
@@ -379,19 +409,17 @@ private:
      * are responsible for the bands being disjoint -- that disjointness is
      * the entire basis for this being safe to call concurrently.
      */
-    void rasterizeTriangleSpan(const ScreenVertex& v0, const ScreenVertex& v1,
-                               const ScreenVertex& v2, const Texture* texture,
-                               i32 yStart, i32 yEnd);
+    void rasterizeTriangleSpan(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2,
+                               const Texture *texture, i32 yStart, i32 yEnd);
 
     /// The drawTriangle2D() analogue of rasterizeTriangleSpan().
-    void rasterizeTriangle2DSpan(const ScreenVertex& v0, const ScreenVertex& v1,
-                                 const ScreenVertex& v2, const Texture* texture,
-                                 i32 yStart, i32 yEnd);
+    void rasterizeTriangle2DSpan(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2,
+                                 const Texture *texture, i32 yStart, i32 yEnd);
 
     //! Splits [0, settings.height) into row-bands and runs @p rasterizeBand(band,
     //! yStart, yEnd) on each, blocking until all complete. Band boundaries come
     //! from _bandRanges, so binning and rasterisation always agree on them.
-    void dispatchRowBands(const std::function<void(i32 band, i32 yStart, i32 yEnd)>& rasterizeBand);
+    void dispatchRowBands(const std::function<void(i32 band, i32 yStart, i32 yEnd)> &rasterizeBand);
 
     //! Recomputes _bandRanges for the current height and worker count. Cheap,
     //! and called once per flush() so a resize cannot leave stale boundaries.
@@ -407,8 +435,9 @@ private:
      * partition that array in submission order, which is what lets a band walk
      * its (ascending) bin and its batch list together in one linear pass.
      */
-    struct QueuedBatch {
-        const Texture* texture = nullptr;
+    struct QueuedBatch
+    {
+        const Texture *texture = nullptr;
         //! true -> rasterizeTriangle2DSpan (unlit, blended, no depth).
         bool overlay = false;
         u32 first = 0;
@@ -416,19 +445,19 @@ private:
     };
 
     //! Half-open row range [yStart, yEnd) owned by one band.
-    struct BandRange {
+    struct BandRange
+    {
         i32 yStart = 0;
         i32 yEnd = 0;
     };
 
-private:
-
+  private:
     Config settings;
     AlignedVector<Pixel> framebuffer;
 
     //! Non-owning handle to the presenting window; the CPURenderer owns it and
     //! guarantees it outlives this manager.
-    wma::IWindowManager* _windowManager;
+    wma::IWindowManager *_windowManager;
 
     /*
      * Non-owning handle to the engine's shared worker pool. Both flush()
@@ -444,7 +473,7 @@ private:
      * arguably the renderer's job in the first place, and the renderer here
      * is aura3d, not wma.
      */
-    const JobSystem* _jobs;
+    const JobSystem *_jobs;
 
     //! JobSystem::workerCount(), cached at construction so getWorkerCount()
     //! and updateBandRanges() don't re-derive it every frame.
@@ -477,10 +506,10 @@ private:
     std::vector<BandRange> _bandRanges;
 
     // Aura Font
-    const AuraBitmapFont& _font;
+    const AuraBitmapFont &_font;
 };
 
-}
+} // namespace cpu
 } // namespace aura3d
 
 #endif // CPUFRAMEBUFFERMANAGER_H

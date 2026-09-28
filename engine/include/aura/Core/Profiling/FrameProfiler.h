@@ -22,35 +22,45 @@
  * AURA_PROFILE_FRAME so a plain profiling build keeps its original cost.
  */
 
-namespace aura3d {
+namespace aura3d
+{
 
 /// Phases of one frame, in render-loop order.
 enum class FramePhase : u32
 {
-    WaitFence = 0,  ///< Blocking on the previous submission for this frame slot.
-    Acquire,        ///< vkAcquireNextImageKHR (swapchain/WSI).
-    BeginPass,      ///< Command buffer begin + render pass begin.
-    RecordScene,    ///< drawMeshes(): resolving and recording scene draws.
-    RecordOverlay,  ///< The 2D overlay batch (text, UI).
-    EndPass,        ///< Replaying secondaries + ending the pass/buffer.
-    Submit,         ///< vkQueueSubmit.
-    Present,        ///< vkQueuePresentKHR (hands the frame to the compositor).
+    WaitFence = 0, ///< Blocking on the previous submission for this frame slot.
+    Acquire,       ///< vkAcquireNextImageKHR (swapchain/WSI).
+    BeginPass,     ///< Command buffer begin + render pass begin.
+    RecordScene,   ///< drawMeshes(): resolving and recording scene draws.
+    RecordOverlay, ///< The 2D overlay batch (text, UI).
+    EndPass,       ///< Replaying secondaries + ending the pass/buffer.
+    Submit,        ///< vkQueueSubmit.
+    Present,       ///< vkQueuePresentKHR (hands the frame to the compositor).
     COUNT
 };
 
-[[nodiscard]] constexpr const char* toString(FramePhase phase) noexcept
+[[nodiscard]] constexpr const char *toString(FramePhase phase) noexcept
 {
     switch (phase)
     {
-        case FramePhase::WaitFence:     return "WaitFence";
-        case FramePhase::Acquire:       return "Acquire";
-        case FramePhase::BeginPass:     return "BeginPass";
-        case FramePhase::RecordScene:   return "RecordScene";
-        case FramePhase::RecordOverlay: return "RecordOverlay";
-        case FramePhase::EndPass:       return "EndPass";
-        case FramePhase::Submit:        return "Submit";
-        case FramePhase::Present:       return "Present";
-        case FramePhase::COUNT:         break;
+    case FramePhase::WaitFence:
+        return "WaitFence";
+    case FramePhase::Acquire:
+        return "Acquire";
+    case FramePhase::BeginPass:
+        return "BeginPass";
+    case FramePhase::RecordScene:
+        return "RecordScene";
+    case FramePhase::RecordOverlay:
+        return "RecordOverlay";
+    case FramePhase::EndPass:
+        return "EndPass";
+    case FramePhase::Submit:
+        return "Submit";
+    case FramePhase::Present:
+        return "Present";
+    case FramePhase::COUNT:
+        break;
     }
     return "?";
 }
@@ -85,10 +95,10 @@ struct FrameSample
  */
 class FrameObserver
 {
-public:
+  public:
     virtual ~FrameObserver() = default;
 
-    virtual void onFrameSample(const FrameSample& sample) noexcept = 0;
+    virtual void onFrameSample(const FrameSample &sample) noexcept = 0;
 };
 
 #ifdef AURA_PROFILE_FRAME
@@ -104,10 +114,10 @@ public:
  */
 class FrameProfiler
 {
-public:
+  public:
     using Clock = std::chrono::steady_clock;
 
-    [[nodiscard]] static FrameProfiler& get() noexcept
+    [[nodiscard]] static FrameProfiler &get() noexcept
     {
         static FrameProfiler instance;
         return instance;
@@ -131,35 +141,41 @@ public:
      * Non-owning: must outlive the render loop. One at a time -- a second
      * install replaces the first.
      */
-    void setObserver(FrameObserver* observer) noexcept { _observer = observer; }
+    void setObserver(FrameObserver *observer) noexcept
+    {
+        _observer = observer;
+    }
 
-    [[nodiscard]] FrameObserver* observer() const noexcept { return _observer; }
+    [[nodiscard]] FrameObserver *observer() const noexcept
+    {
+        return _observer;
+    }
 #endif
 
     /// RAII timer for one phase. Not nestable within the same phase: a phase
     /// is a span of the frame, and overlapping scopes would double-count.
     class Scope
     {
-    public:
-        explicit Scope(FramePhase phase) noexcept
-            : _phase(phase), _start(Clock::now()) {}
+      public:
+        explicit Scope(FramePhase phase) noexcept : _phase(phase), _start(Clock::now())
+        {
+        }
 
         ~Scope()
         {
             const auto elapsed = Clock::now() - _start;
-            FrameProfiler::get().add(
-                _phase, std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
+            FrameProfiler::get().add(_phase, std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
         }
 
-        Scope(const Scope&) = delete;
-        Scope& operator=(const Scope&) = delete;
+        Scope(const Scope &) = delete;
+        Scope &operator=(const Scope &) = delete;
 
-    private:
+      private:
         FramePhase _phase;
         Clock::time_point _start;
     };
 
-private:
+  private:
     FrameProfiler() = default;
 
     std::array<i64, kFramePhaseCount> _totals{};
@@ -170,7 +186,7 @@ private:
     //! This frame's phases alone; _totals accumulates across the report window.
     std::array<i64, kFramePhaseCount> _current{};
     Clock::time_point _lastFrameEnd = Clock::now();
-    FrameObserver* _observer = nullptr;
+    FrameObserver *_observer = nullptr;
 #endif
 };
 
@@ -180,8 +196,11 @@ private:
 #define AURA_FRAME_SCOPE_NAME_(line) AURA_FRAME_SCOPE_CAT_(_auraFrameScope, line)
 
 //! Times the enclosing block as @p phase. Zero cost when profiling is off.
-#define AURA_FRAME_SCOPE(phase) \
-    ::aura3d::FrameProfiler::Scope AURA_FRAME_SCOPE_NAME_(__LINE__) { phase }
+#define AURA_FRAME_SCOPE(phase)                                                                                        \
+    ::aura3d::FrameProfiler::Scope AURA_FRAME_SCOPE_NAME_(__LINE__)                                                    \
+    {                                                                                                                  \
+        phase                                                                                                          \
+    }
 
 //! Closes a frame for reporting purposes.
 #define AURA_FRAME_END() ::aura3d::FrameProfiler::get().endFrame()
@@ -189,7 +208,7 @@ private:
 #else // !AURA_PROFILE_FRAME
 
 #define AURA_FRAME_SCOPE(phase) ((void)0)
-#define AURA_FRAME_END()        ((void)0)
+#define AURA_FRAME_END() ((void)0)
 
 #endif // AURA_PROFILE_FRAME
 
@@ -199,7 +218,7 @@ private:
  * No-op when the profiler is compiled out. Pass nullptr to detach, which the
  * owner must do before destroying the observer -- this holds a raw pointer.
  */
-inline void installFrameObserver([[maybe_unused]] FrameObserver* observer) noexcept
+inline void installFrameObserver([[maybe_unused]] FrameObserver *observer) noexcept
 {
 #if defined(AURA_PROFILE_FRAME) && defined(AURA_ENABLE_DEBUG_MODE)
     FrameProfiler::get().setObserver(observer);

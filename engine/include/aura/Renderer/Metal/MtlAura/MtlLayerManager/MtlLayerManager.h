@@ -5,11 +5,13 @@
 
 #include <wma/wma.hpp>
 
-#include "aura/aura.h"
 #include "aura/Renderer/Metal/MtlAura/MtlAuraCore.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @class MtlLayerManager
@@ -35,8 +37,9 @@ namespace mtl {
  * (compare VkSurfaceManager, which likewise leaves the window to wma and only
  * builds the surface).
  */
-class MtlLayerManager {
-public:
+class MtlLayerManager
+{
+  public:
     /**
      * @brief Binds @p device and this backend's formats to @p windowManager's layer.
      *
@@ -53,17 +56,20 @@ public:
      *         API, since wma fails Metal window creation outright rather than
      *         handing back a layerless window.
      */
-    MtlLayerManager(MTL::Device* device, wma::IWindowManager* windowManager, bool vsync);
+    MtlLayerManager(MTL::Device *device, wma::IWindowManager *windowManager, bool vsync);
 
     ~MtlLayerManager();
 
-    MtlLayerManager(const MtlLayerManager&) = delete;
-    MtlLayerManager& operator=(const MtlLayerManager&) = delete;
+    MtlLayerManager(const MtlLayerManager &) = delete;
+    MtlLayerManager &operator=(const MtlLayerManager &) = delete;
 
     /**
      * @brief The layer frames are presented through. Never null after construction.
      */
-    [[nodiscard]] CA::MetalLayer* getLayer() const noexcept { return _layer.get(); }
+    [[nodiscard]] CA::MetalLayer *getLayer() const noexcept
+    {
+        return _layer.get();
+    }
 
     /**
      * @brief Re-reads the window's backing-store size and resizes the drawables
@@ -82,12 +88,18 @@ public:
 
     //! Drawable width in pixels (not points): what the depth attachment and the
     //! overlay's orthographic projection must both be sized from.
-    [[nodiscard]] u32 getWidth() const noexcept { return _width; }
+    [[nodiscard]] u32 getWidth() const noexcept
+    {
+        return _width;
+    }
 
     //! Drawable height in pixels. See getWidth().
-    [[nodiscard]] u32 getHeight() const noexcept { return _height; }
+    [[nodiscard]] u32 getHeight() const noexcept
+    {
+        return _height;
+    }
 
-private:
+  private:
     /**
      * @brief The window's backing-store size in pixels, clamped to at least 1x1.
      *
@@ -104,7 +116,7 @@ private:
     //! keeps it valid for this object's lifetime regardless.
     NS::SharedPtr<CA::MetalLayer> _layer;
 
-    wma::IWindowManager* _windowManager = nullptr; //! Borrowed; owned by MetalRenderer.
+    wma::IWindowManager *_windowManager = nullptr; //! Borrowed; owned by MetalRenderer.
 
     u32 _width = 1;
     u32 _height = 1;

@@ -1,28 +1,29 @@
 #include "aura/Core/AuraException/AuraException.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
-AuraException::AuraException() noexcept
-    : std::exception()
+AuraException::AuraException() noexcept : std::exception()
 {
 }
 
-AuraException::AuraException(const char* msg)
-    : _msg(msg)
+AuraException::AuraException(const char *msg) : _msg(msg)
 {
 }
 
-AuraException::AuraException(const std::string& msg)
-    : _msg(msg.c_str())
+AuraException::AuraException(const std::string &msg) : _msg(msg.c_str())
 {
 }
 
 #ifdef AURA_HAS_VULKAN
 AuraException::AuraException(const VkResult code)
 {
-    if (vkResultToString.find(code) != vkResultToString.end()) {
+    if (vkResultToString.find(code) != vkResultToString.end())
+    {
         _msg = vkResultToString.at(code);
-    } else {
+    }
+    else
+    {
         _msg = "VkResult not mapped.";
     }
 }
@@ -30,9 +31,9 @@ AuraException::AuraException(const VkResult code)
 
 AuraException::~AuraException() noexcept = default;
 
-const char* AuraException::what() const noexcept
+const char *AuraException::what() const noexcept
 {
     return _msg.c_str();
 }
 
-}
+} // namespace aura3d

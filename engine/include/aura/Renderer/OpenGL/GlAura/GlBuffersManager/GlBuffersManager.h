@@ -3,13 +3,16 @@
 
 #pragma once
 
-#include <vector>
 #include "aura/aura.h"
+#include <vector>
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
-struct GLBuffers {
+struct GLBuffers
+{
     u32 _VAO = 0; // Vertex Array Object
     u32 _VBO = 0; // Vertex Buffer Object
     u32 _EBO = 0; // Element Buffer Object
@@ -27,18 +30,18 @@ struct GLBuffers {
  */
 class GlBuffersManager
 {
-public:
+  public:
     GlBuffersManager();
     ~GlBuffersManager();
 
     /// Deletes every GL object held and empties the registry.
     void cleanup();
 
-private:
+  private:
     std::vector<GLBuffers> _glBuffers;
 };
 
-}
-}
+} // namespace gl
+} // namespace aura3d
 
 #endif // GLBUFFERSMANAGER_H

@@ -9,7 +9,8 @@
 #include "aura/Core/AudioEngine/AudioEngine.h"
 #include "aura/Renderer/IRenderer.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @class ResourceManager
@@ -22,17 +23,18 @@ namespace aura3d {
  *
  * @note Not thread-safe; call from the thread that owns the renderer.
  */
-class ResourceManager {
-public:
-    explicit ResourceManager(IRenderer* renderer, AudioEngine* audio = nullptr);
+class ResourceManager
+{
+  public:
+    explicit ResourceManager(IRenderer *renderer, AudioEngine *audio = nullptr);
 
     //! Loads (or returns the cached) texture for @p path. Falls back to the
     //! checkerboard when the file is unusable, exactly like the renderer does.
-    TextureHandle loadTexture(const std::string& path);
+    TextureHandle loadTexture(const std::string &path);
 
     //! Loads (or returns the cached) mesh for @p path. Falls back to a cube
     //! when the file is unusable.
-    MeshHandle loadMesh(const std::string& path);
+    MeshHandle loadMesh(const std::string &path);
 
     /**
      * @brief Loads (or returns the cached) audio clip for @p path.
@@ -45,8 +47,7 @@ public:
      *       call with a different mode returns the already-cached clip rather
      *       than decoding a second copy.
      */
-    AudioClipHandle loadSound(const std::string& path,
-                              AudioClipMode mode = AudioClipMode::Static);
+    AudioClipHandle loadSound(const std::string &path, AudioClipMode mode = AudioClipMode::Static);
 
     /// Drops the texture/mesh cache (not the GPU resources themselves, which
     /// the renderer releases on cleanup). Call after switching backends.
@@ -59,21 +60,30 @@ public:
     void unloadSounds();
 
     //! Repoints the cache at @p renderer and drops stale texture/mesh handles.
-    void setRenderer(IRenderer* renderer);
+    void setRenderer(IRenderer *renderer);
 
     //! Repoints the cache at @p audio and drops stale clip handles.
-    void setAudioEngine(AudioEngine* audio);
+    void setAudioEngine(AudioEngine *audio);
 
-    size_t cachedTextureCount() const { return _textureCache.size(); }
-    size_t cachedMeshCount()    const { return _meshCache.size(); }
-    size_t cachedSoundCount()   const { return _soundCache.size(); }
+    size_t cachedTextureCount() const
+    {
+        return _textureCache.size();
+    }
+    size_t cachedMeshCount() const
+    {
+        return _meshCache.size();
+    }
+    size_t cachedSoundCount() const
+    {
+        return _soundCache.size();
+    }
 
-private:
+  private:
     std::unordered_map<std::string, TextureHandle> _textureCache;
     std::unordered_map<std::string, MeshHandle> _meshCache;
     std::unordered_map<std::string, AudioClipHandle> _soundCache;
-    IRenderer* _renderer;
-    AudioEngine* _audio;
+    IRenderer *_renderer;
+    AudioEngine *_audio;
 };
 
 } // namespace aura3d

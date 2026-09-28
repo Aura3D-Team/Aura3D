@@ -9,8 +9,10 @@
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @class VkRenderSyncManager
@@ -33,8 +35,8 @@ namespace vk {
  */
 class VkRenderSyncManager
 {
-public:
-    VkRenderSyncManager(VkDevice* device);
+  public:
+    VkRenderSyncManager(VkDevice *device);
     ~VkRenderSyncManager();
 
     /**
@@ -45,20 +47,20 @@ public:
      */
     void create(u32 imageCount);
 
-    void waitForFences(const u32& fenceIndex);
-    void resetFences(const u32& fenceIndex);
+    void waitForFences(const u32 &fenceIndex);
+    void resetFences(const u32 &fenceIndex);
 
-    VkFixedArray<VkSemaphore>& getImageAvailableSemaphores();
+    VkFixedArray<VkSemaphore> &getImageAvailableSemaphores();
 
     //! Indexed by *swapchain image*, not frame in flight -- see the class note.
-    std::vector<VkSemaphore>& getRenderFinishedSemaphores();
+    std::vector<VkSemaphore> &getRenderFinishedSemaphores();
 
-    VkFixedArray<VkFence>& getInFlightFences();
+    VkFixedArray<VkFence> &getInFlightFences();
 
     void cleanup();
 
-private:
-    VkDevice* _device;
+  private:
+    VkDevice *_device;
 
     /*
      * Sized and value-initialized to VK_NULL_HANDLE right here in the
@@ -76,7 +78,7 @@ private:
     VkFixedArray<VkFence> _inFlightFences;
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKRENDERSYNCMANAGER_H

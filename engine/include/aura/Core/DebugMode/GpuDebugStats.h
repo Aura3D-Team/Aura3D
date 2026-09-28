@@ -18,15 +18,16 @@
  * return nullptr from IRenderer::gpuDebugSource().
  */
 
-namespace aura3d {
+namespace aura3d
+{
 
 /// GPU-side wall time for the most recently *retired* frame, not the one
 /// being recorded -- querying the current frame would stall the pipeline
 /// waiting for the GPU to reach it. Trails the CPU by the frames in flight.
 struct GpuTimingStats
 {
-    bool available = false;  ///< False when the device cannot timestamp at all.
-    f64  frameMillis = 0.0;  ///< GPU time from the frame's first to last command.
+    bool available = false; ///< False when the device cannot timestamp at all.
+    f64 frameMillis = 0.0;  ///< GPU time from the frame's first to last command.
 
     //! Frames whose queries came back unusable (slot never submitted, device
     //! reset, results not ready). A steadily rising count means the timing
@@ -46,25 +47,25 @@ struct GpuMemoryStats
 {
     bool available = false;
 
-    u64 deviceBytesLive       = 0;  ///< Device memory allocated and not yet freed.
-    u64 deviceBytesPeak       = 0;  ///< High-water mark of deviceBytesLive.
-    u64 deviceAllocationCount = 0;  ///< Cumulative vkAllocateMemory calls.
-    u64 deviceFreeCount       = 0;  ///< Cumulative vkFreeMemory calls.
-    u64 deviceBlocksLive      = 0;  ///< Live VkDeviceMemory objects.
+    u64 deviceBytesLive = 0;       ///< Device memory allocated and not yet freed.
+    u64 deviceBytesPeak = 0;       ///< High-water mark of deviceBytesLive.
+    u64 deviceAllocationCount = 0; ///< Cumulative vkAllocateMemory calls.
+    u64 deviceFreeCount = 0;       ///< Cumulative vkFreeMemory calls.
+    u64 deviceBlocksLive = 0;      ///< Live VkDeviceMemory objects.
 
     //! Bytes handed out of the live blocks. Below deviceBytesLive by whatever
     //! the suballocator holds in reserve (internal fragmentation).
     u64 deviceBytesInUse = 0;
 
-    u64 hostBytesLive       = 0;  ///< Driver host allocations, live.
-    u64 hostBytesPeak       = 0;
+    u64 hostBytesLive = 0; ///< Driver host allocations, live.
+    u64 hostBytesPeak = 0;
     u64 hostAllocationCount = 0;
-    u64 hostFreeCount       = 0;
+    u64 hostFreeCount = 0;
 
     //! Driver/OS view of the memory heaps, when the backend can query it.
     //! Zero when unavailable; @c budgetBytes is what the process is allowed,
     //! @c budgetUsageBytes what it (and its share of the system) is using.
-    u64 budgetBytes      = 0;
+    u64 budgetBytes = 0;
     u64 budgetUsageBytes = 0;
 };
 
@@ -73,7 +74,7 @@ struct GpuMemoryStats
 /// trip: memory stats are queried once per report, timing once per frame.
 class IGpuDebugSource
 {
-public:
+  public:
     virtual ~IGpuDebugSource() = default;
 
     [[nodiscard]] virtual GpuMemoryStats gpuMemoryStats() const noexcept = 0;
@@ -82,7 +83,7 @@ public:
     [[nodiscard]] virtual GpuTimingStats gpuTimingStats() const noexcept = 0;
 
     //! Backend name for the report, e.g. "vulkan".
-    [[nodiscard]] virtual const char* gpuDebugBackendName() const noexcept = 0;
+    [[nodiscard]] virtual const char *gpuDebugBackendName() const noexcept = 0;
 };
 
 } // namespace aura3d

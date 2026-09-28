@@ -14,21 +14,21 @@
  * @brief List of supported presentation modes, mirroring WebGPU's PresentMode.
  * Uses X-Macros for synchronized enum and string conversions (see RENDERER_LIST).
  */
-#define VSYNC_MODE_LIST \
-    X(AutoVsync)        \
-    X(AutoNoVsync)      \
-    X(Fifo)             \
-    X(FifoRelaxed)      \
-    X(Immediate)        \
+#define VSYNC_MODE_LIST                                                                                                \
+    X(AutoVsync)                                                                                                       \
+    X(AutoNoVsync)                                                                                                     \
+    X(Fifo)                                                                                                            \
+    X(FifoRelaxed)                                                                                                     \
+    X(Immediate)                                                                                                       \
     X(Mailbox)
 
 /// Windowing backends wma can create a window through. Mirrors
 /// wma::WindowBackend; keep in sync by hand, there's no cross-library way to
 /// generate one from the other.
-#define WINDOW_BACKEND_LIST \
-    X(GLFW)                 \
-    X(SDL3)                 \
-    X(X11)                  \
+#define WINDOW_BACKEND_LIST                                                                                            \
+    X(GLFW)                                                                                                            \
+    X(SDL3)                                                                                                            \
+    X(X11)                                                                                                             \
     X(WAYLAND)
 
 /**
@@ -39,24 +39,31 @@
  * PascalCase (Alsa, Sdl3, Null), so the second column carries the uppercase
  * form a case-folded config value is compared against.
  */
-#define AUDIO_BACKEND_LIST \
-    X(Alsa, "ALSA")        \
-    X(Sdl3, "SDL3")        \
+#define AUDIO_BACKEND_LIST                                                                                             \
+    X(Alsa, "ALSA")                                                                                                    \
+    X(Sdl3, "SDL3")                                                                                                    \
     X(Null, "NULL")
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @brief Converts a string representation to a wma::WindowBackend. Case-insensitive.
  * @return true if the string matches a known backend, false otherwise.
  */
-inline bool WindowBackendFromString(const std::string& s, wma::WindowBackend& out)
+inline bool WindowBackendFromString(const std::string &s, wma::WindowBackend &out)
 {
     std::string up;
     up.reserve(s.size());
-    for (const char c : s) up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (const char c : s)
+        up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-#define X(name) if (up == #name) { out = wma::WindowBackend::name; return true; }
+#define X(name)                                                                                                        \
+    if (up == #name)                                                                                                   \
+    {                                                                                                                  \
+        out = wma::WindowBackend::name;                                                                                \
+        return true;                                                                                                   \
+    }
     WINDOW_BACKEND_LIST
 #undef X
 
@@ -66,11 +73,13 @@ inline bool WindowBackendFromString(const std::string& s, wma::WindowBackend& ou
 /**
  * @brief Converts a wma::WindowBackend to its exact string representation.
  */
-inline const char* WindowBackendToString(wma::WindowBackend backend)
+inline const char *WindowBackendToString(wma::WindowBackend backend)
 {
     switch (backend)
     {
-#define X(name) case wma::WindowBackend::name: return #name;
+#define X(name)                                                                                                        \
+    case wma::WindowBackend::name:                                                                                     \
+        return #name;
         WINDOW_BACKEND_LIST
 #undef X
     }
@@ -81,20 +90,34 @@ inline const char* WindowBackendToString(wma::WindowBackend backend)
  * @brief Converts a string representation to a wma::AudioBackend. Case-insensitive.
  * @return true if the string matches a known backend, false otherwise.
  */
-inline bool AudioBackendFromString(const std::string& s, wma::AudioBackend& out)
+inline bool AudioBackendFromString(const std::string &s, wma::AudioBackend &out)
 {
     std::string up;
     up.reserve(s.size());
-    for (const char c : s) up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (const char c : s)
+        up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-#define X(name, upper) if (up == upper) { out = wma::AudioBackend::name; return true; }
+#define X(name, upper)                                                                                                 \
+    if (up == (upper))                                                                                                 \
+    {                                                                                                                  \
+        out = wma::AudioBackend::name;                                                                                 \
+        return true;                                                                                                   \
+    }
     AUDIO_BACKEND_LIST
 #undef X
 
     //! Spellings a config file is likely to use that the enumerators do not
     //! cover. "SDL" without the version number is the common one.
-    if (up == "SDL")                    { out = wma::AudioBackend::Sdl3; return true; }
-    if (up == "NONE" || up == "SILENT") { out = wma::AudioBackend::Null; return true; }
+    if (up == "SDL")
+    {
+        out = wma::AudioBackend::Sdl3;
+        return true;
+    }
+    if (up == "NONE" || up == "SILENT")
+    {
+        out = wma::AudioBackend::Null;
+        return true;
+    }
 
     return false;
 }
@@ -102,11 +125,13 @@ inline bool AudioBackendFromString(const std::string& s, wma::AudioBackend& out)
 /**
  * @brief Converts a wma::AudioBackend to its exact string representation.
  */
-inline const char* AudioBackendToString(wma::AudioBackend backend)
+inline const char *AudioBackendToString(wma::AudioBackend backend)
 {
     switch (backend)
     {
-#define X(name, upper) case wma::AudioBackend::name: return #name;
+#define X(name, upper)                                                                                                 \
+    case wma::AudioBackend::name:                                                                                      \
+        return #name;
         AUDIO_BACKEND_LIST
 #undef X
     }
@@ -131,13 +156,19 @@ enum class VSyncMode
  * @brief Converts a string representation to a VSyncMode enum. Case-insensitive.
  * @return true if the string matches a known mode, false otherwise.
  */
-inline bool VSyncModeFromString(const std::string& s, VSyncMode& out)
+inline bool VSyncModeFromString(const std::string &s, VSyncMode &out)
 {
     std::string up;
     up.reserve(s.size());
-    for (const char c : s) up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (const char c : s)
+        up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-#define X(name) if (up == #name) { out = VSyncMode::name; return true; }
+#define X(name)                                                                                                        \
+    if (up == #name)                                                                                                   \
+    {                                                                                                                  \
+        out = VSyncMode::name;                                                                                         \
+        return true;                                                                                                   \
+    }
     VSYNC_MODE_LIST
 #undef X
 
@@ -147,11 +178,13 @@ inline bool VSyncModeFromString(const std::string& s, VSyncMode& out)
 /**
  * @brief Converts a VSyncMode enum value to its exact string representation.
  */
-inline const char* VSyncModeToString(VSyncMode mode)
+inline const char *VSyncModeToString(VSyncMode mode)
 {
     switch (mode)
     {
-#define X(name) case VSyncMode::name: return #name;
+#define X(name)                                                                                                        \
+    case VSyncMode::name:                                                                                              \
+        return #name;
         VSYNC_MODE_LIST
 #undef X
     }
@@ -183,8 +216,10 @@ inline const char* VSyncModeToString(VSyncMode mode)
  * Engine tweakable(config, "settings.json"); // ... or one that may override
  * @endcode
  */
-struct AuraConfig {
-    struct Window {
+struct AuraConfig
+{
+    struct Window
+    {
         int width = 1280;
         int height = 720;
 
@@ -203,7 +238,8 @@ struct AuraConfig {
         int fpsLimit = 60;
     } window;
 
-    struct Renderer {
+    struct Renderer
+    {
         std::string backend = "vulkan";
 
         //! Unset follows the build: on in a debug build, off under NDEBUG.
@@ -212,13 +248,15 @@ struct AuraConfig {
         int maxFramesInFlight = 2;
     } renderer;
 
-    struct Graphics {
+    struct Graphics
+    {
         std::string gpuPreference = "discrete";
         int msaaSamples = 1;
         int cpuThreads = 0;
     } graphics;
 
-    struct Audio {
+    struct Audio
+    {
         //! Unset resolves through wma::getDefaultAudioBackend(), as the string
         //! "auto" does in the JSON.
         std::optional<wma::AudioBackend> backend;
@@ -230,7 +268,8 @@ struct AuraConfig {
         int maxVoices = 32;
     } audio;
 
-    struct Paths {
+    struct Paths
+    {
         std::string shaders = "./resources/shaders/";
         std::string textures = "./resources/textures/";
         std::string models = "./resources/models/";
@@ -238,7 +277,8 @@ struct AuraConfig {
         std::string logs = "./logs/";
     } paths;
 
-    struct Logging {
+    struct Logging
+    {
         //! Unset follows the build: TRACE in a debug build, INFO under NDEBUG.
         std::optional<ink::LogLevel> level;
 
@@ -255,11 +295,12 @@ struct AuraConfig {
  * the JSON layout or repeat literals. The raw document remains reachable via
  * getSettings() for subsystems with bespoke schemas (e.g. the VMA config).
  */
-class AuraSettings {
-public:
-    static AuraSettings* get();
+class AuraSettings
+{
+  public:
+    static AuraSettings *get();
 
-    ink::EnhancedJson* getSettings();
+    ink::EnhancedJson *getSettings();
 
     /**
      * @brief Installs the values every accessor falls back to.
@@ -268,10 +309,13 @@ public:
      * cannot drop them. Call before anything reads a setting -- Engine's
      * AuraConfig constructors do.
      */
-    void setDefaults(const AuraConfig& defaults);
+    void setDefaults(const AuraConfig &defaults);
 
     //! What an unset key currently reads as.
-    [[nodiscard]] const AuraConfig& defaults() const noexcept { return _defaults; }
+    [[nodiscard]] const AuraConfig &defaults() const noexcept
+    {
+        return _defaults;
+    }
 
     /**
      * @brief Replaces the in-memory configuration with the contents of @p path.
@@ -281,34 +325,34 @@ public:
      * Leaves setDefaults()' values standing, so a file that sets nothing -- or
      * is not there at all -- degrades to them rather than to nothing.
      */
-    void reload(const std::string& path);
+    void reload(const std::string &path);
 
     //! Window
-    int         getWindowWidth()     const;   //! default 1280
-    int         getWindowHeight()    const;   //! default 720
-    std::string getWindowTitle()     const;   //! default "Aura3D"
+    int getWindowWidth() const;         //! default 1280
+    int getWindowHeight() const;        //! default 720
+    std::string getWindowTitle() const; //! default "Aura3D"
     //! Windowing backend wma creates the window through. Default "SDL3";
     //! unrecognized values fall back to it with a warning.
     wma::WindowBackend getWindowBackend() const;
-    bool        getWindowResizable() const;   //! default true
-    bool        getFullscreen()      const;   //! default false
-    bool        getVSync()           const;   //! default false
-    VSyncMode   getVSyncMode()       const;   //! default: window/vsync_mode if set, else derived from getVSync()
-    int         getFPSLimit()        const;   //! default 60
+    bool getWindowResizable() const; //! default true
+    bool getFullscreen() const;      //! default false
+    bool getVSync() const;           //! default false
+    VSyncMode getVSyncMode() const;  //! default: window/vsync_mode if set, else derived from getVSync()
+    int getFPSLimit() const;         //! default 60
 
     //! Renderer
-    std::string getRendererBackend()  const;  //! default "vulkan"
-    bool        getValidationLayers() const;  //! default true in debug builds
+    std::string getRendererBackend() const; //! default "vulkan"
+    bool getValidationLayers() const;       //! default true in debug builds
     //! Frames the CPU may record ahead of the GPU (Vulkan only). Every
     //! per-frame GPU resource is sized to this at renderer init; see
     //! aura3d::vk::GetMaxFramesInFlight(). Raising it trades latency and
     //! memory for more CPU/GPU overlap -- check the WaitFence phase of an
     //! AURA_PROFILE_FRAME report before assuming it will help.
-    int         getMaxFramesInFlight() const; //! default 2
+    int getMaxFramesInFlight() const; //! default 2
 
     //! Graphics (device selection & visual quality; Vulkan-only)
-    std::string getGpuPreference()    const;  //! "discrete" | "integrated" | "any", default "discrete"
-    int         getMsaaSamples()      const;  //! default 1 (off); clamped to the device's max supported count
+    std::string getGpuPreference() const; //! "discrete" | "integrated" | "any", default "discrete"
+    int getMsaaSamples() const;           //! default 1 (off); clamped to the device's max supported count
 
     //! CPU (software) backend
     //! Worker threads the row-band rasteriser splits a frame across. 0 (the
@@ -322,28 +366,28 @@ public:
     //! wma::getDefaultAudioBackend(): ALSA on desktop Linux, SDL3 elsewhere).
     //! Independent of window.backend.
     wma::AudioBackend getAudioBackend() const;
-    f32  getMasterVolume()     const;         //! default 1.0, clamped to [0, 1]
-    int  getAudioSampleRate()  const;         //! default 48000
-    int  getAudioChannels()    const;         //! default 2 (stereo)
+    f32 getMasterVolume() const;    //! default 1.0, clamped to [0, 1]
+    int getAudioSampleRate() const; //! default 48000
+    int getAudioChannels() const;   //! default 2 (stereo)
     //! Frames the device buffers per callback: the latency dial. Default 1024
     //! (~21 ms at 48 kHz). Lower means tighter timing and more risk of dropouts.
-    int  getAudioBufferFrames() const;
+    int getAudioBufferFrames() const;
     //! Voices that can sound simultaneously. Default 32; further play() calls
     //! are dropped rather than stealing an audible voice.
-    int  getAudioMaxVoices()   const;
+    int getAudioMaxVoices() const;
 
     //! Paths
-    std::string getShadersPath()  const;      //! default "./resources/shaders/"
-    std::string getTexturesPath() const;      //! default "./resources/textures/"
-    std::string getModelsPath()   const;      //! default "./resources/models/"
-    std::string getAudioPath()    const;      //! default "./resources/audio/"
-    std::string getLogsPath()     const;      //! default "./logs/"
+    std::string getShadersPath() const;  //! default "./resources/shaders/"
+    std::string getTexturesPath() const; //! default "./resources/textures/"
+    std::string getModelsPath() const;   //! default "./resources/models/"
+    std::string getAudioPath() const;    //! default "./resources/audio/"
+    std::string getLogsPath() const;     //! default "./logs/"
 
     //! Logging
-    ink::LogLevel getLogLevel()  const;       //! default: TRACE in debug builds, INFO in release
-    bool          getLogToFile() const;       //! default false
+    ink::LogLevel getLogLevel() const; //! default: TRACE in debug builds, INFO in release
+    bool getLogToFile() const;         //! default false
 
-private:
+  private:
     //! An object rather than a null document, so a lookup made before any
     //! reload() is an ordinary miss instead of a thrown-and-caught type error.
     ink::EnhancedJson _settings = ink::EnhancedJson::object();

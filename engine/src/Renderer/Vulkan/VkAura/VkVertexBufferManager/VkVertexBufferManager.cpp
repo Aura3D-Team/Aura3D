@@ -7,12 +7,15 @@
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Renderer/Vulkan/VkAura/VkBufferManager/VkBufferManager.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-namespace {
+namespace
+{
 
-void destroyBufferInfo(VulkanMemoryManager* memory, VertexBufferInfo& info)
+void destroyBufferInfo(VulkanMemoryManager *memory, VertexBufferInfo &info)
 {
     AllocatedBuffer allocated{info.buffer, info.allocation, info.mappedPointer, info.memoryOffset};
 
@@ -20,7 +23,7 @@ void destroyBufferInfo(VulkanMemoryManager* memory, VertexBufferInfo& info)
     info = {};
 }
 
-void fillFromAllocated(VertexBufferInfo& info, const AllocatedBuffer& allocated)
+void fillFromAllocated(VertexBufferInfo &info, const AllocatedBuffer &allocated)
 {
     info.buffer = allocated.buffer;
     info.allocation = allocated.allocation;
@@ -30,7 +33,7 @@ void fillFromAllocated(VertexBufferInfo& info, const AllocatedBuffer& allocated)
 
 } // namespace
 
-VkVertexBufferManager::VkVertexBufferManager(VulkanMemoryManager* memoryManager, VkDevice* vkDevice)
+VkVertexBufferManager::VkVertexBufferManager(VulkanMemoryManager *memoryManager, VkDevice *vkDevice)
     : _memoryManager(memoryManager), _vkDevice(vkDevice)
 {
 }
@@ -40,85 +43,81 @@ VkVertexBufferManager::~VkVertexBufferManager()
     cleanup();
 }
 
-void VkVertexBufferManager::createVertexBuffer(const std::string& name,
-                                               VkCommandPool commandPool,
-                                               VkSharingMode sharingMode,
-                                               VkQueue graphicsQueue,
-                                               std::vector<gfx::Vertex3D>&& vertices3d,
-                                               bool persistentMapping)
+void VkVertexBufferManager::createVertexBuffer(const std::string &name, VkCommandPool commandPool,
+                                               VkSharingMode sharingMode, VkQueue graphicsQueue,
+                                               std::vector<gfx::Vertex3D> &&vertices3d, bool persistentMapping)
 {
     cleanup(name);
 
-    if (vertices3d.empty()) {
+    if (vertices3d.empty())
+    {
         INK_WARN << "createVertexBuffer: empty 3D vertex data for " << name;
         return;
     }
 
     const VkDeviceSize bufferSize = sizeof(gfx::Vertex3D) * vertices3d.size();
     VertexBufferInfo bufferInfo{};
+    bufferInfo.capacityBytes = bufferSize;
     bufferInfo.vertexCount = vertices3d.size();
 
     if (persistentMapping)
     {
         VmaAllocationCreateFlags flags =
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT;
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-        AllocatedBuffer allocated = _memoryManager->createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            sharingMode,
-            VMA_MEMORY_USAGE_AUTO,
-            flags);
+        AllocatedBuffer allocated = _memoryManager->createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                                 sharingMode, VMA_MEMORY_USAGE_AUTO, flags);
 
         fillFromAllocated(bufferInfo, allocated);
         bufferInfo.persistent = true;
 
-        if (bufferInfo.mappedPointer) {
-            std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D*>(bufferInfo.mappedPointer));
+        if (bufferInfo.mappedPointer)
+        {
+            std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D *>(bufferInfo.mappedPointer));
         }
 
-        INK_DEBUG << "Created persistently mapped vertex buffer: " << name
-                  << ", vertices: " << bufferInfo.vertexCount;
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0, bufferSize));
+
+        INK_DEBUG << "Created persistently mapped vertex buffer: " << name << ", vertices: " << bufferInfo.vertexCount;
     }
     else
     {
         AllocatedBuffer staging = _memoryManager->createUploadBuffer(bufferSize, sharingMode);
+        const bool manuallyMapped = staging.mappedData == nullptr;
 
         if (staging.mappedData)
         {
-            std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D*>(staging.mappedData));
+            std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D *>(staging.mappedData));
         }
         else
         {
-            auto* data = static_cast<gfx::Vertex3D*>(_memoryManager->map(staging));
+            auto *data = static_cast<gfx::Vertex3D *>(_memoryManager->map(staging));
             std::ranges::copy(vertices3d, data);
-            _memoryManager->unmap(staging);
         }
 
-        AllocatedBuffer gpu = _memoryManager->createDeviceLocalBuffer(
-            bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sharingMode);
+        const VkResult flushResult =
+            vmaFlushAllocation(_memoryManager->getAllocator(), staging.allocation, 0, bufferSize);
+        if (manuallyMapped)
+            _memoryManager->unmap(staging);
+        VK_RESULT_CHECK(flushResult);
+
+        AllocatedBuffer gpu =
+            _memoryManager->createDeviceLocalBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sharingMode);
         fillFromAllocated(bufferInfo, gpu);
         bufferInfo.persistent = false;
 
-        VkBufferManager::bufferCopy(*_vkDevice,
-                                    commandPool,
-                                    graphicsQueue,
-                                    staging.buffer,
-                                    bufferInfo.buffer,
-                                    VK_NULL_HANDLE,
-                                    bufferSize);
+        VkBufferManager::bufferCopy(*_vkDevice, commandPool, graphicsQueue, staging.buffer, bufferInfo.buffer,
+                                    VK_NULL_HANDLE, bufferSize);
 
         _memoryManager->destroyBuffer(staging);
 
-        INK_DEBUG << "Created device-local vertex buffer: " << name
-                  << ", vertices: " << bufferInfo.vertexCount;
+        INK_DEBUG << "Created device-local vertex buffer: " << name << ", vertices: " << bufferInfo.vertexCount;
     }
 
     _vertexBuffers[name] = bufferInfo;
 }
 
-void VkVertexBufferManager::updateVertexBuffer(const std::string& name, std::vector<gfx::Vertex3D>&& vertices3d)
+void VkVertexBufferManager::updateVertexBuffer(const std::string &name, std::vector<gfx::Vertex3D> &&vertices3d)
 {
     auto it = _vertexBuffers.find(name);
     if (it == _vertexBuffers.end())
@@ -127,11 +126,15 @@ void VkVertexBufferManager::updateVertexBuffer(const std::string& name, std::vec
         return;
     }
 
-    VertexBufferInfo& bufferInfo = it->second;
+    VertexBufferInfo &bufferInfo = it->second;
 
     if (bufferInfo.persistent && bufferInfo.mappedPointer)
     {
-        std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D*>(bufferInfo.mappedPointer));
+        if (vertices3d.size() > bufferInfo.capacityBytes / sizeof(gfx::Vertex3D))
+            throw AuraException("Vertex buffer update exceeds its capacity");
+        std::ranges::copy(vertices3d, static_cast<gfx::Vertex3D *>(bufferInfo.mappedPointer));
+        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0,
+                                           vertices3d.size() * sizeof(gfx::Vertex3D)));
         bufferInfo.vertexCount = vertices3d.size();
         return;
     }
@@ -139,7 +142,7 @@ void VkVertexBufferManager::updateVertexBuffer(const std::string& name, std::vec
     INK_WARN << "updateVertexBuffer: non-persistent buffer cannot be updated in place: " << name;
 }
 
-VertexBufferInfo VkVertexBufferManager::getVertexBuffer(const std::string& name)
+VertexBufferInfo VkVertexBufferManager::getVertexBuffer(const std::string &name)
 {
     auto it = _vertexBuffers.find(name);
     if (it != _vertexBuffers.end())
@@ -149,7 +152,7 @@ VertexBufferInfo VkVertexBufferManager::getVertexBuffer(const std::string& name)
     throw AuraException("Invalid VertexBuffer Name");
 }
 
-size_t VkVertexBufferManager::getVertexCount(const std::string& name)
+size_t VkVertexBufferManager::getVertexCount(const std::string &name)
 {
     auto it = _vertexBuffers.find(name);
 
@@ -159,7 +162,7 @@ size_t VkVertexBufferManager::getVertexCount(const std::string& name)
     return 0;
 }
 
-void VkVertexBufferManager::cleanup(const std::string& name)
+void VkVertexBufferManager::cleanup(const std::string &name)
 {
     auto it = _vertexBuffers.find(name);
 
@@ -174,7 +177,7 @@ void VkVertexBufferManager::cleanup(const std::string& name)
 
 void VkVertexBufferManager::cleanup()
 {
-    for (const auto& pair : _vertexBuffers)
+    for (const auto &pair : _vertexBuffers)
     {
         VertexBufferInfo info = pair.second;
         destroyBufferInfo(_memoryManager, info);

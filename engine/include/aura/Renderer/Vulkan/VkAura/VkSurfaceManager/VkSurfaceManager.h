@@ -3,15 +3,13 @@
 
 #pragma once
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #include <wma/wma.hpp>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
 /**
  * @brief Manages the creation and destruction of a Vulkan surface for rendering.
@@ -22,7 +20,7 @@ namespace vk {
  */
 class VkSurfaceManager
 {
-public:
+  public:
     /**
      * @brief Constructs a VkSurfaceManager with the specified Vulkan instance and window.
      *
@@ -39,7 +37,8 @@ public:
      *        by `IWindowManager::getNativeDisplayHandle()`). Required for X11
      *        (`Display*`) and Wayland (`wl_display*`); unused otherwise.
      */
-    VkSurfaceManager(VkInstance* vkInstance, wma::WindowBackend windowBackend, void* window, void* nativeDisplay = nullptr);
+    VkSurfaceManager(VkInstance *vkInstance, wma::WindowBackend windowBackend, void *window,
+                     void *nativeDisplay = nullptr);
 
     /**
      * @brief Destroys the Vulkan surface and cleans up resources.
@@ -58,7 +57,7 @@ public:
      *
      * @return VkSurfaceKHR* A pointer to the Vulkan surface.
      */
-    VkSurfaceKHR* getSurface();
+    VkSurfaceKHR *getSurface();
 
     /**
      * @brief Avaliate physical device support for a queue family that allows operations on a VkSurface
@@ -70,13 +69,13 @@ public:
      */
     VkBool32 getQueuePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, const int familyIndex);
 
-private:
-    VkInstance* _vkInstance; ///< Pointer to the Vulkan instance used to bind the surface.
+  private:
+    VkInstance *_vkInstance; ///< Pointer to the Vulkan instance used to bind the surface.
     VkSurfaceKHR _vkSurface; ///< Vulkan surface for rendering on cross-platform windowing systems (GLFW/SDL2).]
     wma::WindowBackend _windowBackend;
 };
 
-}
-}
+} // namespace vk
+} // namespace aura3d
 
 #endif // VKSURFACEMANAGER_H

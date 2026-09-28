@@ -8,7 +8,8 @@
 #include "aura/Core/Camera/Camera.h"
 #include "aura/Renderer/IRenderer.h"
 
-namespace aura3d {
+namespace aura3d
+{
 
 /**
  * @brief Factory that instantiates the appropriate IRenderer for the current platform.
@@ -19,8 +20,9 @@ namespace aura3d {
  *   Android     : VULKAN  (modern mobile GPU path)
  *   Desktop     : VULKAN → OPENGL → SOFTWARE
  */
-class RendererFactory {
-public:
+class RendererFactory
+{
+  public:
     /**
      * @brief Returns the best backend available at compile time.
      *
@@ -82,8 +84,7 @@ public:
      *
      * @throws std::runtime_error only if no backend at all was compiled in.
      */
-    static std::unique_ptr<IRenderer> create(RendererChoice choice,
-                                             const wma::WindowDetails& details);
+    static std::unique_ptr<IRenderer> create(RendererChoice choice, const wma::WindowDetails &details);
 };
 
 } // namespace aura3d

@@ -2,14 +2,15 @@
 
 #include <ink/ink.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
-MtlVertexBufferManager::MtlVertexBufferManager(MtlBufferManager* allocator)
-    : _allocator(allocator)
+MtlVertexBufferManager::MtlVertexBufferManager(MtlBufferManager *allocator) : _allocator(allocator)
 {
     if (!_allocator)
         throw AuraException("MtlVertexBufferManager: buffer allocator is null");
@@ -23,13 +24,14 @@ MtlVertexBufferManager::~MtlVertexBufferManager()
 
 VertexBufferHandle MtlVertexBufferManager::create(std::span<const gfx::Vertex3D> vertices)
 {
-    if (vertices.empty()) {
+    if (vertices.empty())
+    {
         INK_WARN << "MtlVertexBufferManager: refusing to upload an empty vertex span";
         return {};
     }
 
-    NS::SharedPtr<MTL::Buffer> buffer = _allocator->createFromBytes(
-        vertices.data(), vertices.size_bytes(), "Aura3D vertex buffer");
+    NS::SharedPtr<MTL::Buffer> buffer =
+        _allocator->createFromBytes(vertices.data(), vertices.size_bytes(), "Aura3D vertex buffer");
 
     if (!buffer)
         return {};
@@ -38,7 +40,7 @@ VertexBufferHandle MtlVertexBufferManager::create(std::span<const gfx::Vertex3D>
     return static_cast<VertexBufferHandle>(_buffers.size()); // 1-based
 }
 
-MTL::Buffer* MtlVertexBufferManager::resolve(VertexBufferHandle handle) const noexcept
+MTL::Buffer *MtlVertexBufferManager::resolve(VertexBufferHandle handle) const noexcept
 {
     if (!isValidHandle(handle))
         return nullptr;

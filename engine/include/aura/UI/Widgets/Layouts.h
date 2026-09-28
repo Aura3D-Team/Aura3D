@@ -22,7 +22,8 @@
  * @endcode
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /**
  * @class Box
@@ -39,29 +40,42 @@ namespace aura3d::ui {
  * row.add<Button>("Cancel").layout().width = Length::fill();  // an even split
  * @endcode
  */
-class Box : public Widget {
-public:
+class Box : public Widget
+{
+  public:
     explicit Box(Axis axis);
 
-    [[nodiscard]] Axis axis() const noexcept { return _axis; }
-    [[nodiscard]] Axis mainAxis() const noexcept override { return _axis; }
+    [[nodiscard]] Axis axis() const noexcept
+    {
+        return _axis;
+    }
+    [[nodiscard]] Axis mainAxis() const noexcept override
+    {
+        return _axis;
+    }
 
     /// Gap between adjacent children, in logical pixels.
     void setSpacing(f32 pixels);
-    [[nodiscard]] f32 spacing() const noexcept { return _spacing; }
+    [[nodiscard]] f32 spacing() const noexcept
+    {
+        return _spacing;
+    }
 
     /// Where the children sit as a group when they do not fill the main axis
     /// and nothing in them is a Fill. Start by default.
     void setMainAlignment(Alignment alignment);
-    [[nodiscard]] Alignment mainAlignment() const noexcept { return _mainAlignment; }
+    [[nodiscard]] Alignment mainAlignment() const noexcept
+    {
+        return _mainAlignment;
+    }
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
 
-private:
+  private:
     /// This child's sizing rule along the box's own axis.
-    [[nodiscard]] const Length& _mainLength(const Widget& child) const noexcept;
+    [[nodiscard]] const Length &_mainLength(const Widget &child) const noexcept;
 
     Axis _axis = Axis::Vertical;
     f32 _spacing = 0.0f;
@@ -73,15 +87,21 @@ private:
 };
 
 /// A vertical @ref Box.
-class Column final : public Box {
-public:
-    Column() : Box(Axis::Vertical) {}
+class Column final : public Box
+{
+  public:
+    Column() : Box(Axis::Vertical)
+    {
+    }
 };
 
 /// A horizontal @ref Box.
-class Row final : public Box {
-public:
-    Row() : Box(Axis::Horizontal) {}
+class Row final : public Box
+{
+  public:
+    Row() : Box(Axis::Horizontal)
+    {
+    }
 };
 
 /**
@@ -101,8 +121,9 @@ public:
  * form.addAt<TextField>(0, 1);
  * @endcode
  */
-class Grid final : public Widget {
-public:
+class Grid final : public Widget
+{
+  public:
     Grid();
 
     /// Track definitions. A child placed past the last track extends the grid
@@ -115,30 +136,28 @@ public:
     void setRowSpacing(f32 pixels);
 
     /// Constructs a child in the given cell and returns it.
-    template <class W, class... Args>
-    W& addAt(u16 row, u16 column, Args&&... args)
+    template <class W, class... Args> W &addAt(u16 row, u16 column, Args &&...args)
     {
-        W& child = add<W>(std::forward<Args>(args)...);
+        W &child = add<W>(std::forward<Args>(args)...);
         child.layout().cell = GridCell{.row = row, .column = column};
         return child;
     }
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
 
-private:
+  private:
     /// Resolves both track axes against @p available, measuring every child
     /// once. Auto tracks come out of the children's desired sizes, so this is
     /// the only place a child is measured.
-    void _resolveTracks(const Constraints& available);
+    void _resolveTracks(const Constraints &available);
 
     /// Hands the leftover extent to the Fill tracks and turns the track sizes
     /// into offsets.
-    void _distribute(std::vector<f32>& sizes, const std::vector<Length>& tracks, f32 available,
-                     f32 spacing) const;
+    void _distribute(std::vector<f32> &sizes, const std::vector<Length> &tracks, f32 available, f32 spacing) const;
 
-    [[nodiscard]] static usize _trackCount(const std::vector<Length>& tracks, usize used) noexcept;
+    [[nodiscard]] static usize _trackCount(const std::vector<Length> &tracks, usize used) noexcept;
 
     std::vector<Length> _columns;
     std::vector<Length> _rows;
@@ -154,8 +173,9 @@ private:
 
 /// Children overlaid in the same rectangle, each aligned within it. The base
 /// for a badge over an icon, or a dialog over a page.
-class Stack final : public Widget {
-public:
+class Stack final : public Widget
+{
+  public:
     Stack() = default;
 };
 
@@ -168,14 +188,15 @@ public:
  * column.add<Spacer>(24.0f);  // a 24px gap
  * @endcode
  */
-class Spacer final : public Widget {
-public:
+class Spacer final : public Widget
+{
+  public:
     explicit Spacer(f32 pixels = 0.0f);
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
 
-private:
+  private:
     //! Zero means "take the leftover"; anything else is a gap along whichever
     //! axis the parent stacks on.
     f32 _pixels = 0.0f;
@@ -195,26 +216,32 @@ private:
  * for (const auto& entry : entries) items.add<Label>(entry);
  * @endcode
  */
-class ScrollView final : public Widget {
-public:
+class ScrollView final : public Widget
+{
+  public:
     ScrollView();
 
     /// Replaces the scrolled child and returns it.
-    template <class W, class... Args>
-    W& setContent(Args&&... args)
+    template <class W, class... Args> W &setContent(Args &&...args)
     {
         clearChildren();
         return add<W>(std::forward<Args>(args)...);
     }
 
-    Widget& setContent(std::unique_ptr<Widget> content);
+    Widget &setContent(std::unique_ptr<Widget> content);
 
     /// @{
     /// Which axes scroll. A disabled axis reserves no gutter and passes the
     /// wheel to the parent.
     void setScrollable(bool horizontal, bool vertical);
-    [[nodiscard]] bool scrollsHorizontally() const noexcept { return _horizontal; }
-    [[nodiscard]] bool scrollsVertically() const noexcept { return _vertical; }
+    [[nodiscard]] bool scrollsHorizontally() const noexcept
+    {
+        return _horizontal;
+    }
+    [[nodiscard]] bool scrollsVertically() const noexcept
+    {
+        return _vertical;
+    }
     /// @}
 
     /// Wheel and bar drags ease to their target instead of jumping. On by
@@ -226,38 +253,48 @@ public:
 
     /// Scrolls the smallest distance that brings @p rect (in surface
     /// coordinates) into view. What focus traversal needs.
-    void scrollIntoView(const Rect& rect);
+    void scrollIntoView(const Rect &rect);
 
-    [[nodiscard]] glm::vec2 offset() const noexcept { return _offset.value(); }
-    [[nodiscard]] glm::vec2 contentSize() const noexcept { return _contentSize; }
+    [[nodiscard]] glm::vec2 offset() const noexcept
+    {
+        return _offset.value();
+    }
+    [[nodiscard]] glm::vec2 contentSize() const noexcept
+    {
+        return _contentSize;
+    }
 
     /// Largest offset the content allows; zero on an axis that fits.
     [[nodiscard]] glm::vec2 maxOffset() const noexcept;
 
     [[nodiscard]] Thickness contentInsets() const noexcept override;
 
-    void accessibility(AccessibilityInfo& out) const override;
+    void accessibility(AccessibilityInfo &out) const override;
 
-protected:
-    glm::vec2 measureContent(const Constraints& available) override;
-    void arrangeContent(const Rect& content) override;
+  protected:
+    glm::vec2 measureContent(const Constraints &available) override;
+    void arrangeContent(const Rect &content) override;
 
-    [[nodiscard]] bool clipsChildren() const noexcept override { return true; }
+    [[nodiscard]] bool clipsChildren() const noexcept override
+    {
+        return true;
+    }
 
-    void paintChildren(DrawList& out) override;
+    void paintChildren(DrawList &out) override;
 
-    bool onWheel(const WheelEvent& event) override;
-    bool onPointerDown(const PointerEvent& event) override;
-    bool onPointerMove(const PointerEvent& event) override;
-    bool onPointerUp(const PointerEvent& event) override;
+    bool onWheel(const WheelEvent &event) override;
+    bool onPointerDown(const PointerEvent &event) override;
+    bool onPointerMove(const PointerEvent &event) override;
+    bool onPointerUp(const PointerEvent &event) override;
     void onPointerCancel() override;
 
     bool onTick(f32 deltaSeconds) override;
 
-private:
+  private:
     /// Track and thumb rectangles for one axis, or an empty pair when that
     /// axis does not overflow.
-    struct Bar {
+    struct Bar
+    {
         Rect track{};
         Rect thumb{};
         bool active = false;
@@ -270,7 +307,7 @@ private:
     /// Gutter width, from the theme. Zero on an axis that does not scroll.
     [[nodiscard]] f32 _gutter() const noexcept;
 
-    [[nodiscard]] Widget* _content() const noexcept
+    [[nodiscard]] Widget *_content() const noexcept
     {
         return childCount() > 0 ? &childAt(0) : nullptr;
     }

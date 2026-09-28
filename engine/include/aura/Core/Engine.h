@@ -17,10 +17,10 @@
  */
 class Engine
 {
-public:
+  public:
     //! Configured entirely from @p configPath, on the engine's built-in
     //! defaults for anything it does not set.
-    explicit Engine(const std::string& configPath);
+    explicit Engine(const std::string &configPath);
 
     /**
      * @brief Configured entirely from code, with no settings.json involved.
@@ -28,7 +28,7 @@ public:
      * For an application that ships as one binary and has nothing to hand a
      * user to edit -- a viewer, a tool, an exported demo.
      */
-    explicit Engine(const aura3d::AuraConfig& config);
+    explicit Engine(const aura3d::AuraConfig &config);
 
     /**
      * @brief @p defaults in code, overridden key by key by @p configPath.
@@ -38,20 +38,29 @@ public:
      * application wants sensible built-in settings that a user may still
      * override without the application shipping a file of its own.
      */
-    Engine(const aura3d::AuraConfig& defaults, const std::string& configPath,
+    Engine(const aura3d::AuraConfig &defaults, const std::string &configPath,
            aura3d::IRenderer::WindowFactory windowFactory = {});
 
     ~Engine();
 
-    aura3d::IRenderer* getRenderer() const { return _renderer.get(); }
-    aura3d::RendererChoice getBackend() const { return _rendererChoice; }
+    aura3d::IRenderer *getRenderer() const
+    {
+        return _renderer.get();
+    }
+    aura3d::RendererChoice getBackend() const
+    {
+        return _rendererChoice;
+    }
 
     //! Engine-wide configuration. Use the typed accessors rather than reaching
     //! for the raw JSON.
-    const aura3d::AuraSettings* getSettings() const;
+    const aura3d::AuraSettings *getSettings() const;
 
     //! Path-keyed texture/mesh/sound cache bound to the current renderer.
-    aura3d::ResourceManager* resources() { return _resources.get(); }
+    aura3d::ResourceManager *resources()
+    {
+        return _resources.get();
+    }
 
     /**
      * @brief Clip playback, mixing and 3D positional audio.
@@ -60,7 +69,10 @@ public:
      * rather than nothing at all, so callers never need to null-check this.
      * Call AudioEngine::update() once per frame.
      */
-    aura3d::AudioEngine* audio() const { return _audio.get(); }
+    aura3d::AudioEngine *audio() const
+    {
+        return _audio.get();
+    }
 
     /**
      * @brief Benchmark/debug instrumentation, or nullptr outside an
@@ -71,7 +83,7 @@ public:
      * and have it compile and behave correctly in either build. The final
      * report is written by ~Engine() regardless of whether anything asked.
      */
-    [[nodiscard]] aura3d::DebugMode* debugMode() const noexcept
+    [[nodiscard]] aura3d::DebugMode *debugMode() const noexcept
     {
 #ifdef AURA_ENABLE_DEBUG_MODE
         return _debugMode.get();
@@ -83,14 +95,17 @@ public:
     /// Runs @p body over [0, @p itemCount) in parallel, returning once every
     /// band has finished. Shares the engine's thread pool rather than opening
     /// a new one. See aura3d::JobSystem::dispatch() for the band contract.
-    void dispatch(i32 itemCount, const aura3d::JobSystem::BandBody& body) const
+    void dispatch(i32 itemCount, const aura3d::JobSystem::BandBody &body) const
     {
         _jobs->dispatch(itemCount, body);
     }
 
     /// The same facility as a reference, for subsystems that take one without
     /// depending on the whole Engine.
-    [[nodiscard]] const aura3d::JobSystem& jobs() const noexcept { return *_jobs; }
+    [[nodiscard]] const aura3d::JobSystem &jobs() const noexcept
+    {
+        return *_jobs;
+    }
 
     /**
      * @brief Tears the current renderer down and brings up @p choice instead.
@@ -101,7 +116,7 @@ public:
      */
     void switchBackend(aura3d::RendererChoice choice);
 
-private:
+  private:
     void _configureWindow();
     void _createRenderer();
     void _createAudio();
@@ -116,7 +131,7 @@ private:
     /// switchBackend() so the two cannot drift apart.
     void _adoptRenderer(aura3d::RendererChoice choice);
 
-private:
+  private:
     aura3d::IRenderer::WindowFactory _windowFactory;
     std::unique_ptr<aura3d::JobSystem> _jobs;
     std::unique_ptr<aura3d::IRenderer> _renderer;

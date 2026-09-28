@@ -6,8 +6,10 @@
 
 #include "Palette.h"
 
-namespace orglogo {
-namespace {
+namespace orglogo
+{
+namespace
+{
 
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kTwoPi = 2.0f * kPi;
@@ -15,7 +17,7 @@ constexpr float kTwoPi = 2.0f * kPi;
 /// Stores one RGBA8 texel. Explicit rather than reinterpret_cast'ing a
 /// std::uint32_t over the buffer: the byte order is part of the interface
 /// contract with createTextureFromPixels(), not the host's endianness.
-inline void store(std::uint8_t* dst, const Rgba8& texel) noexcept
+inline void store(std::uint8_t *dst, const Rgba8 &texel) noexcept
 {
     dst[0] = texel.r;
     dst[1] = texel.g;
@@ -45,9 +47,12 @@ inline void store(std::uint8_t* dst, const Rgba8& texel) noexcept
 
     float angle = ((-0.0464964749f * sq + 0.15931422f) * sq - 0.327622764f) * sq * ratio + ratio;
 
-    if (ay > ax)     angle = kPi * 0.5f - angle;
-    if (x < 0.0f)    angle = kPi - angle;
-    if (y < 0.0f)    angle = -angle;
+    if (ay > ax)
+        angle = kPi * 0.5f - angle;
+    if (x < 0.0f)
+        angle = kPi - angle;
+    if (y < 0.0f)
+        angle = -angle;
 
     return angle;
 }
@@ -121,7 +126,7 @@ constexpr float kDustDensity = 0.5f;
 //// Backdrop
 ////////////////////////////////////
 
-Image bakeBackdrop(const BackdropDesc& desc, const aura3d::JobSystem& jobs)
+Image bakeBackdrop(const BackdropDesc &desc, const aura3d::JobSystem &jobs)
 {
     Image image;
     if (desc.width <= 0 || desc.height <= 0 || desc.unit <= 0.0f)
@@ -145,66 +150,68 @@ Image bakeBackdrop(const BackdropDesc& desc, const aura3d::JobSystem& jobs)
     //! near INT32_MAX would overflow that addition.
     const auto seed = static_cast<std::int32_t>(desc.seed % 8192u);
 
-    std::uint8_t* const pixels = image.pixels.data();
+    std::uint8_t *const pixels = image.pixels.data();
 
-    jobs.dispatch(desc.height, [&](int rowBegin, int rowEnd) noexcept {
-        for (int y = rowBegin; y < rowEnd; ++y)
-        {
-            const float py = static_cast<float>(y) + 0.5f;
-            const float cy = (py - halfH) * invUnit;
+    jobs.dispatch(desc.height,
+                  [&](int rowBegin, int rowEnd) noexcept
+                  {
+                      for (int y = rowBegin; y < rowEnd; ++y)
+                      {
+                          const float py = static_cast<float>(y) + 0.5f;
+                          const float cy = (py - halfH) * invUnit;
 
-            std::uint8_t* row = pixels + static_cast<std::size_t>(y) * desc.width * 4u;
+                          std::uint8_t *row = pixels + static_cast<std::size_t>(y) * desc.width * 4u;
 
-            for (int x = 0; x < desc.width; ++x)
-            {
-                const float px = static_cast<float>(x) + 0.5f;
-                const float cx = (px - halfW) * invUnit;
-                const float dist = std::sqrt(cx * cx + cy * cy);
+                          for (int x = 0; x < desc.width; ++x)
+                          {
+                              const float px = static_cast<float>(x) + 0.5f;
+                              const float cx = (px - halfW) * invUnit;
+                              const float dist = std::sqrt(cx * cx + cy * cy);
 
-                /*
-                 * Faint, unevenly distributed cool shine. Two fractal fields at
-                 * different scales, thresholded and squared: the threshold is
-                 * what keeps most of the sky genuinely black instead of a flat
-                 * grey haze.
-                 */
-                const float base = fbm2(cx * 3.0f + 2.0f, cy * 3.0f - 1.0f, 4);
-                const float broad = fbm2(cx * 1.3f + 5.0f, cy * 1.3f - 3.0f, 3);
-                const float shine = clamp01(base * 0.6f + broad * 0.5f - 0.35f);
-                const float glow = shine * shine;
+                              /*
+                               * Faint, unevenly distributed cool shine. Two fractal fields at
+                               * different scales, thresholded and squared: the threshold is
+                               * what keeps most of the sky genuinely black instead of a flat
+                               * grey haze.
+                               */
+                              const float base = fbm2(cx * 3.0f + 2.0f, cy * 3.0f - 1.0f, 4);
+                              const float broad = fbm2(cx * 1.3f + 5.0f, cy * 1.3f - 3.0f, 3);
+                              const float shine = clamp01(base * 0.6f + broad * 0.5f - 0.35f);
+                              const float glow = shine * shine;
 
-                //! A second, larger structure with a colder tint gives the
-                //! field some sense of depth behind the stars.
-                const float wispField = fbm2(cx * 1.9f - 7.0f, cy * 1.9f + 4.0f, 5);
-                const float wisp = clamp01(wispField * 1.18f - 0.46f);
+                              //! A second, larger structure with a colder tint gives the
+                              //! field some sense of depth behind the stars.
+                              const float wispField = fbm2(cx * 1.9f - 7.0f, cy * 1.9f + 4.0f, 5);
+                              const float wisp = clamp01(wispField * 1.18f - 0.46f);
 
-                Rgb color{glow * 0.075f, glow * 0.140f, glow * 0.275f};
-                color = color + Rgb{0.030f, 0.075f, 0.170f} * (wisp * wisp);
+                              Rgb color{glow * 0.075f, glow * 0.140f, glow * 0.275f};
+                              color = color + Rgb{0.030f, 0.075f, 0.170f} * (wisp * wisp);
 
-                //! Dust: baked, so it neither twinkles nor rotates. It reads as
-                //! sky texture rather than as stars, which is the point -- the
-                //! animated field above it is what the eye tracks.
-                const float dust = dustAt(px * dustScale, py * dustScale, seed);
-                color = color + Rgb{0.72f, 0.80f, 1.00f} * (dust * 0.55f);
+                              //! Dust: baked, so it neither twinkles nor rotates. It reads as
+                              //! sky texture rather than as stars, which is the point -- the
+                              //! animated field above it is what the eye tracks.
+                              const float dust = dustAt(px * dustScale, py * dustScale, seed);
+                              color = color + Rgb{0.72f, 0.80f, 1.00f} * (dust * 0.55f);
 
-                //! Vignette, applied before the halo so the corners darken
-                //! without dimming the core glow.
-                const float vignette = 1.0f - 0.45f * smoothstep(0.40f, 1.05f, dist);
-                color = color * vignette;
+                              //! Vignette, applied before the halo so the corners darken
+                              //! without dimming the core glow.
+                              const float vignette = 1.0f - 0.45f * smoothstep(0.40f, 1.05f, dist);
+                              color = color * vignette;
 
-                /*
-                 * Outer half of the orb's halo. The flame quad only covers the
-                 * middle of the screen; this carries its light the rest of the
-                 * way out, and because the flame's own contribution fades to
-                 * zero before that quad's edge, the two meet seamlessly.
-                 */
-                const float halo = std::exp(-dist * desc.unit / haloRadius);
-                color = color + Rgb{0.12f, 0.38f, 0.86f} * (halo * 0.62f)
-                              + Rgb{0.34f, 0.68f, 1.00f} * (halo * halo * 0.42f);
+                              /*
+                               * Outer half of the orb's halo. The flame quad only covers the
+                               * middle of the screen; this carries its light the rest of the
+                               * way out, and because the flame's own contribution fades to
+                               * zero before that quad's edge, the two meet seamlessly.
+                               */
+                              const float halo = std::exp(-dist * desc.unit / haloRadius);
+                              color = color + Rgb{0.12f, 0.38f, 0.86f} * (halo * 0.62f) +
+                                      Rgb{0.34f, 0.68f, 1.00f} * (halo * halo * 0.42f);
 
-                store(row + static_cast<std::size_t>(x) * 4u, encodeOpaque(color));
-            }
-        }
-    });
+                              store(row + static_cast<std::size_t>(x) * 4u, encodeOpaque(color));
+                          }
+                      }
+                  });
 
     return image;
 }
@@ -213,7 +220,8 @@ Image bakeBackdrop(const BackdropDesc& desc, const aura3d::JobSystem& jobs)
 //// Star sprites
 ////////////////////////////////////
 
-namespace {
+namespace
+{
 
 constexpr int kSpriteTile = 64;              //! Star tiles are square.
 constexpr int kCometWidth = kSpriteTile * 2; //! Meteors are twice as long.
@@ -272,10 +280,7 @@ constexpr int kAtlasHeight = kSpriteTile;
 
     const float halo = std::exp(-dist / 0.075f) * 0.34f;
 
-    return clamp01(core * 1.40f
-                 + (horizontal + vertical) * 0.80f
-                 + (diagonalA + diagonalB) * 0.34f
-                 + halo);
+    return clamp01(core * 1.40f + (horizontal + vertical) * 0.80f + (diagonalA + diagonalB) * 0.34f + halo);
 }
 
 /// Meteor: head near the +U edge, tail widening and fading toward -U.
@@ -286,8 +291,8 @@ constexpr int kAtlasHeight = kSpriteTile;
     const float dy = v - 0.5f;
     const float behind = headU - u; //! Positive along the tail.
 
-    const float head = std::exp(-((u - headU) * (u - headU) / (2.0f * 0.030f * 0.030f)
-                                + dy * dy / (2.0f * 0.050f * 0.050f)));
+    const float head =
+        std::exp(-((u - headU) * (u - headU) / (2.0f * 0.030f * 0.030f) + dy * dy / (2.0f * 0.050f * 0.050f)));
 
     float tail = 0.0f;
     if (behind > 0.0f)
@@ -313,12 +318,12 @@ StarAtlas bakeStarAtlas()
     atlas.spiked = tileUv(kSpriteTile, kSpriteTile);
     atlas.comet = tileUv(kSpriteTile * 2, kCometWidth);
 
-    std::uint8_t* const pixels = atlas.image.pixels.data();
+    std::uint8_t *const pixels = atlas.image.pixels.data();
 
     for (int y = 0; y < kAtlasHeight; ++y)
     {
         const float v = (static_cast<float>(y) + 0.5f) / static_cast<float>(kAtlasHeight);
-        std::uint8_t* row = pixels + static_cast<std::size_t>(y) * kAtlasWidth * 4u;
+        std::uint8_t *row = pixels + static_cast<std::size_t>(y) * kAtlasWidth * 4u;
 
         for (int x = 0; x < kAtlasWidth; ++x)
         {
@@ -331,14 +336,12 @@ StarAtlas bakeStarAtlas()
             }
             else if (x < kSpriteTile * 2)
             {
-                const float u = (static_cast<float>(x - kSpriteTile) + 0.5f)
-                              / static_cast<float>(kSpriteTile);
+                const float u = (static_cast<float>(x - kSpriteTile) + 0.5f) / static_cast<float>(kSpriteTile);
                 coverage = spikedStarCoverage(u - 0.5f, v - 0.5f);
             }
             else
             {
-                const float u = (static_cast<float>(x - kSpriteTile * 2) + 0.5f)
-                              / static_cast<float>(kCometWidth);
+                const float u = (static_cast<float>(x - kSpriteTile * 2) + 0.5f) / static_cast<float>(kCometWidth);
                 coverage = cometCoverage(u, v);
             }
 
@@ -353,7 +356,8 @@ StarAtlas bakeStarAtlas()
 //// Flame field
 ////////////////////////////////////
 
-namespace {
+namespace
+{
 
 //! Output texels per coarse sample, per axis. Two is the sweet spot: a 4x cut
 //! in fractal-noise cost, and the detail octave added back at full resolution
@@ -398,7 +402,8 @@ constexpr float kWarpStrength = 1.10f;
  * @struct FlameCoords
  * @brief A quad texel's position in the flame's noise space.
  */
-struct FlameCoords {
+struct FlameCoords
+{
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
@@ -409,9 +414,7 @@ struct FlameCoords {
 [[nodiscard]] inline FlameCoords flameCoords(float dx, float dy, float dist, float rise) noexcept
 {
     const float invDist = dist > 1e-5f ? 1.0f / dist : 0.0f;
-    return {dx * invDist * kRingRadius,
-            dy * invDist * kRingRadius,
-            dist * kRadialScale - rise};
+    return {dx * invDist * kRingRadius, dy * invDist * kRingRadius, dist * kRadialScale - rise};
 }
 
 //! How far past the disc the flames can reach, in UV units.
@@ -436,9 +439,8 @@ constexpr float kEdgeFadeStart = 0.455f;
 
 } // namespace
 
-FlameField::FlameField(int resolution, const aura3d::JobSystem& jobs)
-    : _resolution(std::max(kCoarseStep, (resolution + kCoarseStep - 1) / kCoarseStep * kCoarseStep)),
-      _coarseDim(0),
+FlameField::FlameField(int resolution, const aura3d::JobSystem &jobs)
+    : _resolution(std::max(kCoarseStep, (resolution + kCoarseStep - 1) / kCoarseStep * kCoarseStep)), _coarseDim(0),
       _jobs(jobs)
 {
     _coarseDim = _resolution / kCoarseStep + 1;
@@ -471,16 +473,20 @@ void FlameField::bake(float time)
     _buildRayTable(frame);
     _buildRadialTables(frame);
 
-    _jobs.dispatch(_coarseDim, [this, &frame](int begin, int end) noexcept {
-        _bakeCoarseBand(frame, begin, end);
-    });
+    _jobs.dispatch(_coarseDim,
+                   [this, &frame](int begin, int end) noexcept
+                   {
+                       _bakeCoarseBand(frame, begin, end);
+                   });
 
-    _jobs.dispatch(_resolution, [this, &frame](int begin, int end) noexcept {
-        _shadeBand(frame, begin, end);
-    });
+    _jobs.dispatch(_resolution,
+                   [this, &frame](int begin, int end) noexcept
+                   {
+                       _shadeBand(frame, begin, end);
+                   });
 }
 
-void FlameField::_buildRayTable(const Frame& frame) noexcept
+void FlameField::_buildRayTable(const Frame &frame) noexcept
 {
     //! Rays turn slowly, and the three harmonics drift against each other, so
     //! the starburst reshapes itself instead of spinning rigidly.
@@ -490,10 +496,9 @@ void FlameField::_buildRayTable(const Frame& frame) noexcept
     {
         const float angle = -kPi + (static_cast<float>(i) + 0.5f) * (kTwoPi / kRayTableSize);
 
-        const float pattern = 0.50f
-                            + 0.44f * std::sin(angle * 13.0f + spin)
-                            + 0.30f * std::sin(angle * 19.0f - spin * 1.7f + 1.3f)
-                            + 0.22f * std::sin(angle * 5.0f + spin * 0.55f - 0.7f);
+        const float pattern = 0.50f + 0.44f * std::sin(angle * 13.0f + spin) +
+                              0.30f * std::sin(angle * 19.0f - spin * 1.7f + 1.3f) +
+                              0.22f * std::sin(angle * 5.0f + spin * 0.55f - 0.7f);
 
         //! Fourth power turns a smooth wave into narrow, well-separated rays.
         const float shaped = clamp01(pattern * 0.55f);
@@ -502,7 +507,7 @@ void FlameField::_buildRayTable(const Frame& frame) noexcept
     }
 }
 
-void FlameField::_buildRadialTables(const Frame& frame) noexcept
+void FlameField::_buildRadialTables(const Frame &frame) noexcept
 {
     const float step = kMaxRadiusUv / static_cast<float>(kRadialTableSize - 1);
 
@@ -514,8 +519,7 @@ void FlameField::_buildRadialTables(const Frame& frame) noexcept
         //! shows against the backdrop.
         const float edge = 1.0f - smoothstep(kEdgeFadeStart, FlameField::kGlowLimitUv - 0.002f, dist);
 
-        _haloTable[static_cast<std::size_t>(i)] =
-            std::exp(-dist / 0.150f) * frame.haloGain * edge;
+        _haloTable[static_cast<std::size_t>(i)] = std::exp(-dist / 0.150f) * frame.haloGain * edge;
 
         //! Rays start just outside the disc -- inside it they would only wash
         //! out the solid core -- and decay outward.
@@ -525,7 +529,7 @@ void FlameField::_buildRadialTables(const Frame& frame) noexcept
     }
 }
 
-void FlameField::_bakeCoarseBand(const Frame& frame, int rowBegin, int rowEnd) noexcept
+void FlameField::_bakeCoarseBand(const Frame &frame, int rowBegin, int rowEnd) noexcept
 {
     const float invResolution = 1.0f / static_cast<float>(_resolution);
 
@@ -534,7 +538,7 @@ void FlameField::_bakeCoarseBand(const Frame& frame, int rowBegin, int rowEnd) n
         const float py = static_cast<float>(j * kCoarseStep) + 0.5f;
         const float dy = py * invResolution - 0.5f;
 
-        float* row = _coarse.data() + static_cast<std::size_t>(j) * _coarseDim * 2u;
+        float *row = _coarse.data() + static_cast<std::size_t>(j) * _coarseDim * 2u;
 
         for (int i = 0; i < _coarseDim; ++i)
         {
@@ -548,8 +552,7 @@ void FlameField::_bakeCoarseBand(const Frame& frame, int rowBegin, int rowEnd) n
             //! standard recipe for organic rather than blobby turbulence. Its
             //! own slow drift in time is what keeps the tongues reshaping
             //! themselves instead of merely streaming outward unchanged.
-            const float warp = fbm3(q.x * 0.70f + 11.3f, q.y * 0.70f - 4.7f,
-                                    q.z * 0.55f + frame.time * 0.30f, 3);
+            const float warp = fbm3(q.x * 0.70f + 11.3f, q.y * 0.70f - 4.7f, q.z * 0.55f + frame.time * 0.30f, 3);
             const float offset = (warp - 0.5f) * kWarpStrength;
             const float turbulence = fbm3(q.x + offset, q.y + offset, q.z + offset * 0.7f, 4);
 
@@ -559,7 +562,7 @@ void FlameField::_bakeCoarseBand(const Frame& frame, int rowBegin, int rowEnd) n
     }
 }
 
-void FlameField::_shadeBand(const Frame& frame, int rowBegin, int rowEnd) noexcept
+void FlameField::_shadeBand(const Frame &frame, int rowBegin, int rowEnd) noexcept
 {
     const float invResolution = 1.0f / static_cast<float>(_resolution);
     constexpr float invStep = 1.0f / static_cast<float>(kCoarseStep);
@@ -575,14 +578,14 @@ void FlameField::_shadeBand(const Frame& frame, int rowBegin, int rowEnd) noexce
         const float gy = static_cast<float>(y) * invStep;
         const auto j0 = static_cast<int>(gy);
         const float fy = gy - static_cast<float>(j0);
-        const float* coarseRow0 = _coarse.data() + static_cast<std::size_t>(j0) * _coarseDim * 2u;
-        const float* coarseRow1 = coarseRow0 + static_cast<std::size_t>(_coarseDim) * 2u;
+        const float *coarseRow0 = _coarse.data() + static_cast<std::size_t>(j0) * _coarseDim * 2u;
+        const float *coarseRow1 = coarseRow0 + static_cast<std::size_t>(_coarseDim) * 2u;
 
-        std::uint8_t* row = _pixels.data() + static_cast<std::size_t>(y) * _resolution * 4u;
+        std::uint8_t *row = _pixels.data() + static_cast<std::size_t>(y) * _resolution * 4u;
 
         for (int x = 0; x < _resolution; ++x)
         {
-            std::uint8_t* texel = row + static_cast<std::size_t>(x) * 4u;
+            std::uint8_t *texel = row + static_cast<std::size_t>(x) * 4u;
 
             const float dx = (static_cast<float>(x) + 0.5f) * invResolution - 0.5f;
             const float dist = std::sqrt(dx * dx + dy * dy);
@@ -601,25 +604,21 @@ void FlameField::_shadeBand(const Frame& frame, int rowBegin, int rowEnd) noexce
             const std::size_t hi = lo + 2u;
 
             const float turbCoarse =
-                lerp(lerp(coarseRow0[lo], coarseRow0[hi], fx),
-                     lerp(coarseRow1[lo], coarseRow1[hi], fx), fy);
-            const float ray =
-                lerp(lerp(coarseRow0[lo + 1u], coarseRow0[hi + 1u], fx),
-                     lerp(coarseRow1[lo + 1u], coarseRow1[hi + 1u], fx), fy);
+                lerp(lerp(coarseRow0[lo], coarseRow0[hi], fx), lerp(coarseRow1[lo], coarseRow1[hi], fx), fy);
+            const float ray = lerp(lerp(coarseRow0[lo + 1u], coarseRow0[hi + 1u], fx),
+                                   lerp(coarseRow1[lo + 1u], coarseRow1[hi + 1u], fx), fy);
 
             //! One full-resolution octave, restoring the filaments the
             //! half-resolution reconstruction smooths out.
             const FlameCoords q = flameCoords(dx, dy, dist, frame.rise);
-            const float detail = valueNoise3(q.x * 2.60f + 31.0f, q.y * 2.60f - 7.0f,
-                                             q.z * 2.60f + 5.0f);
+            const float detail = valueNoise3(q.x * 2.60f + 31.0f, q.y * 2.60f - 7.0f, q.z * 2.60f + 5.0f);
             const float turbulence = clamp01(turbCoarse + (detail - 0.5f) * 0.18f);
 
             //! Solid blue disc -- the "circle" -- deepening toward its rim.
             const float discMask = clamp01((discRadius - dist) / 0.016f);
             const float inner = clamp01(1.0f - dist / discRadius);
             const float innerShaped = inner * std::sqrt(inner); //! pow(inner, 1.5)
-            const Rgb discColor{lerp(0.06f, 0.32f, innerShaped),
-                                lerp(0.34f, 0.72f, innerShaped),
+            const Rgb discColor{lerp(0.06f, 0.32f, innerShaped), lerp(0.34f, 0.72f, innerShaped),
                                 lerp(0.88f, 1.00f, innerShaped)};
 
             //! Small white-blue hot spot at the very centre.
@@ -654,12 +653,9 @@ void FlameField::_shadeBand(const Frame& frame, int rowBegin, int rowEnd) noexce
             const float shine = ray * _rayFalloff[radial] * (1.0f - 0.75f * tongue);
 
             Rgb color;
-            color.r = discMask * discColor.r * 1.18f + hot * 0.70f
-                    + corona * flame.r + halo * 0.20f + shine * 0.30f;
-            color.g = discMask * discColor.g * 1.18f + hot * 0.85f
-                    + corona * flame.g + halo * 0.48f + shine * 0.66f;
-            color.b = discMask * discColor.b * 1.18f + hot * 0.95f
-                    + corona * flame.b + halo * 0.92f + shine * 1.00f;
+            color.r = discMask * discColor.r * 1.18f + hot * 0.70f + corona * flame.r + halo * 0.20f + shine * 0.30f;
+            color.g = discMask * discColor.g * 1.18f + hot * 0.85f + corona * flame.g + halo * 0.48f + shine * 0.66f;
+            color.b = discMask * discColor.b * 1.18f + hot * 0.95f + corona * flame.b + halo * 0.92f + shine * 1.00f;
 
             store(texel, encodeGlow(color));
         }

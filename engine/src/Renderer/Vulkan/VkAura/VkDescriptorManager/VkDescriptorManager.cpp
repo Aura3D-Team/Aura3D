@@ -3,11 +3,13 @@
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkDescriptorManager::VkDescriptorManager(VkDevice* vkDevice, u32 bindlessTextureCapacity, i32 pool_size) :
-    _vkDevice(vkDevice), _pool_size(pool_size)
+VkDescriptorManager::VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTextureCapacity, i32 pool_size)
+    : _vkDevice(vkDevice), _pool_size(pool_size)
 {
     /*
      * Uniform-buffer sets: the transform (set 0) and light (set 2) UBOs,
@@ -44,8 +46,8 @@ VkDescriptorManager::VkDescriptorManager(VkDevice* vkDevice, u32 bindlessTexture
     //! UPDATE_AFTER_BIND: the bindless texture-array sets are written to
     //! (new textures bound into array elements) even while a previously
     //! recorded, not-yet-executed command buffer still references them.
-    _poolCreateInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT
-                           | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+    _poolCreateInfo.flags =
+        VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 
     VK_RESULT_CHECK(vkCreateDescriptorPool(*_vkDevice, &_poolCreateInfo, nullptr, &_descriptorPool));
 
@@ -102,8 +104,8 @@ VkDescriptorSet VkDescriptorManager::allocateDescriptorSet(VkDescriptorSetLayout
  * This connects a specific buffer to a specific binding point in a descriptor set.
  * The shader can then access this buffer through the binding point.
  */
-void VkDescriptorManager::updateDescriptorSet(VkDescriptorSet descriptorSet, u32 binding,
-                                              VkBuffer buffer, VkDeviceSize size, VkDeviceSize offset)
+void VkDescriptorManager::updateDescriptorSet(VkDescriptorSet descriptorSet, u32 binding, VkBuffer buffer,
+                                              VkDeviceSize size, VkDeviceSize offset)
 {
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = buffer;
@@ -128,10 +130,8 @@ void VkDescriptorManager::updateDescriptorSet(VkDescriptorSet descriptorSet, u32
  * This connects a specific image and sampler to a specific binding point in a descriptor set.
  * The shader can then access this texture through the binding point.
  */
-void VkDescriptorManager::updateCombinedImageSamplerDescriptorSet(VkDescriptorSet descriptorSet,
-                                                                  u32 binding,
-                                                                  VkImageView imageView,
-                                                                  VkSampler sampler)
+void VkDescriptorManager::updateCombinedImageSamplerDescriptorSet(VkDescriptorSet descriptorSet, u32 binding,
+                                                                  VkImageView imageView, VkSampler sampler)
 {
     // Configure image info
     VkDescriptorImageInfo imageInfo = {};
@@ -156,8 +156,7 @@ void VkDescriptorManager::updateCombinedImageSamplerDescriptorSet(VkDescriptorSe
  * Identical to updateCombinedImageSamplerDescriptorSet() except the write
  * targets dstArrayElement instead of always element 0.
  */
-void VkDescriptorManager::updateTextureArrayElement(VkDescriptorSet descriptorSet,
-                                                    u32 binding, u32 arrayElement,
+void VkDescriptorManager::updateTextureArrayElement(VkDescriptorSet descriptorSet, u32 binding, u32 arrayElement,
                                                     VkImageView imageView, VkSampler sampler)
 {
     VkDescriptorImageInfo imageInfo = {};
@@ -180,11 +179,11 @@ void VkDescriptorManager::updateTextureArrayElement(VkDescriptorSet descriptorSe
 /**
  * Frees every set in @p sets back to the pool and clears the vector.
  */
-void VkDescriptorManager::freeDescriptorSets(std::vector<VkDescriptorSet>& sets)
+void VkDescriptorManager::freeDescriptorSets(std::vector<VkDescriptorSet> &sets)
 {
-    if (!sets.empty()) {
-        vkFreeDescriptorSets(*_vkDevice, _descriptorPool,
-                             static_cast<u32>(sets.size()), sets.data());
+    if (!sets.empty())
+    {
+        vkFreeDescriptorSets(*_vkDevice, _descriptorPool, static_cast<u32>(sets.size()), sets.data());
     }
     sets.clear();
 }
@@ -195,13 +194,11 @@ void VkDescriptorManager::freeDescriptorSets(std::vector<VkDescriptorSet>& sets)
  * This makes the descriptor set active for subsequent draw commands.
  * The pipeline layout must match the descriptor set layout.
  */
-void VkDescriptorManager::bindDescriptorSet(VkCommandBuffer commandBuffer,
-                                            VkPipelineLayout pipelineLayout,
-                                            VkDescriptorSet descriptorSet,
-                                            VkPipelineBindPoint bindPoint)
+void VkDescriptorManager::bindDescriptorSet(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
+                                            VkDescriptorSet descriptorSet, VkPipelineBindPoint bindPoint)
 {
     vkCmdBindDescriptorSets(commandBuffer, bindPoint, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 }
 
-}
+} // namespace vk
 } // namespace aura3d

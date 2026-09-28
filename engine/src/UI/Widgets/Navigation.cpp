@@ -5,9 +5,11 @@
 #include "aura/UI/Core/Icon.h"
 #include "aura/UI/UIRoot.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 /// The arrow's share of the header row's height.
 constexpr f32 kArrowScale = 0.42f;
@@ -21,8 +23,7 @@ constexpr f32 kIndicatorSeconds = 0.16f;
 // Disclosure
 // =============================================================================
 
-Disclosure::Disclosure(Part part, std::string title, bool startExpanded)
-    : expanded(startExpanded)
+Disclosure::Disclosure(Part part, std::string title, bool startExpanded) : expanded(startExpanded)
 {
     _part = part;
 
@@ -31,13 +32,18 @@ Disclosure::Disclosure(Part part, std::string title, bool startExpanded)
 
     _content->setVisibility(startExpanded ? Visibility::Visible : Visibility::Collapsed);
 
-    expanded.changed().connect([this](bool open) {
-        _content->setVisibility(open ? Visibility::Visible : Visibility::Collapsed);
-        invalidateLayout();
-    });
+    expanded.changed().connect(
+        [this](bool open)
+        {
+            _content->setVisibility(open ? Visibility::Visible : Visibility::Collapsed);
+            invalidateLayout();
+        });
 }
 
-void Disclosure::setTitle(std::string title) { _label->text = std::move(title); }
+void Disclosure::setTitle(std::string title)
+{
+    _label->text = std::move(title);
+}
 
 f32 Disclosure::headerHeight() const
 {
@@ -55,7 +61,7 @@ bool Disclosure::hitTest(glm::vec2 point) const
     return hitTestVisible() && headerRect().contains(point);
 }
 
-glm::vec2 Disclosure::measureContent(const Constraints& available)
+glm::vec2 Disclosure::measureContent(const Constraints &available)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
@@ -80,15 +86,14 @@ glm::vec2 Disclosure::measureContent(const Constraints& available)
     return {std::max(gutter + label.x, _indent + content.x), header + content.y};
 }
 
-void Disclosure::arrangeContent(const Rect& content)
+void Disclosure::arrangeContent(const Rect &content)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
     const f32 gutter = row * kArrowScale + style.padding;
     const f32 header = headerHeight();
 
-    _label->arrange(Rect{{content.min.x + gutter, content.min.y},
-                         {content.max.x, content.min.y + header}});
+    _label->arrange(Rect{{content.min.x + gutter, content.min.y}, {content.max.x, content.min.y + header}});
 
     if (!expanded.get())
     {
@@ -99,29 +104,27 @@ void Disclosure::arrangeContent(const Rect& content)
     _content->arrange(Rect{{content.min.x + _indent, content.min.y + header}, content.max});
 }
 
-void Disclosure::paint(DrawList& out)
+void Disclosure::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
     const Rect header = headerRect();
 
     out.drawRect(header, withAlpha(surfaceColor(style), alpha),
-                 withAlpha(style.border.pick(expanded.get(), isHovered()), alpha),
-                 style.borderWidth, Corners::all(style.rounding));
+                 withAlpha(style.border.pick(expanded.get(), isHovered()), alpha), style.borderWidth,
+                 Corners::all(style.rounding));
 
     if (_foldable)
     {
-        if (ITextShaper* shaper = this->shaper())
+        if (ITextShaper *shaper = this->shaper())
         {
             const f32 size = header.height() * kArrowScale;
             const Rect box =
-                Rect::fromSize({header.min.x + style.padding * 0.5f, header.center().y - size * 0.5f},
-                               {size, size});
+                Rect::fromSize({header.min.x + style.padding * 0.5f, header.center().y - size * 0.5f}, {size, size});
 
             //! The arrow is the state: pointing along the row when folded,
             //! down into the content when open.
-            icon::triangle(out, *shaper, box,
-                           expanded.get() ? icon::Direction::Down : icon::Direction::Right,
+            icon::triangle(out, *shaper, box, expanded.get() ? icon::Direction::Down : icon::Direction::Right,
                            withAlpha(style.text, alpha));
         }
     }
@@ -135,7 +138,7 @@ void Disclosure::activate()
         expanded = !expanded.get();
 }
 
-void Disclosure::accessibility(AccessibilityInfo& out) const
+void Disclosure::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 
@@ -159,8 +162,7 @@ CollapsingHeader::CollapsingHeader(std::string title, bool startExpanded)
 // TreeNode
 // =============================================================================
 
-TreeNode::TreeNode(std::string title, bool startExpanded)
-    : Disclosure(Part::TreeNode, std::move(title), startExpanded)
+TreeNode::TreeNode(std::string title, bool startExpanded) : Disclosure(Part::TreeNode, std::move(title), startExpanded)
 {
     _indent = theme().metrics.indent;
 
@@ -168,10 +170,14 @@ TreeNode::TreeNode(std::string title, bool startExpanded)
     //! selects rather than folds.
     _foldable = false;
 
-    selected.changed().connect([this](bool) { invalidatePaint(); });
+    selected.changed().connect(
+        [this](bool)
+        {
+            invalidatePaint();
+        });
 }
 
-TreeNode& TreeNode::addChild(std::string title, bool startExpanded)
+TreeNode &TreeNode::addChild(std::string title, bool startExpanded)
 {
     //! The first child is what turns a leaf into a branch.
     _foldable = true;
@@ -180,15 +186,14 @@ TreeNode& TreeNode::addChild(std::string title, bool startExpanded)
     return content().add<TreeNode>(std::move(title), startExpanded);
 }
 
-void TreeNode::paint(DrawList& out)
+void TreeNode::paint(DrawList &out)
 {
     if (selected.get())
     {
         const WidgetStyle style = resolvedStyle();
         const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
 
-        out.fillRect(headerRect(), withAlpha(style.surface.active, alpha),
-                     Corners::all(style.rounding));
+        out.fillRect(headerRect(), withAlpha(style.surface.active, alpha), Corners::all(style.rounding));
     }
 
     Disclosure::paint(out);
@@ -207,7 +212,7 @@ void TreeNode::activate()
         Disclosure::activate();
 }
 
-void TreeNode::accessibility(AccessibilityInfo& out) const
+void TreeNode::accessibility(AccessibilityInfo &out) const
 {
     Disclosure::accessibility(out);
 
@@ -226,7 +231,11 @@ TabView::TabView() : current(0)
 
     _pages = &add<Widget>();
 
-    current.changed().connect([this](int) { _apply(); });
+    current.changed().connect(
+        [this](int)
+        {
+            _apply();
+        });
 }
 
 usize TabView::tabCount() const noexcept
@@ -234,15 +243,19 @@ usize TabView::tabCount() const noexcept
     return _pages ? _pages->childCount() : 0;
 }
 
-Column& TabView::addTab(std::string title)
+Column &TabView::addTab(std::string title)
 {
     const auto index = static_cast<int>(tabCount());
 
-    auto& tab = _bar->add<Selectable>(std::move(title));
+    auto &tab = _bar->add<Selectable>(std::move(title));
     tab.setPart(Part::Tab);
-    tab.activated.connect([this, index] { current = index; });
+    tab.activated.connect(
+        [this, index]
+        {
+            current = index;
+        });
 
-    auto& page = _pages->add<Column>();
+    auto &page = _pages->add<Column>();
 
     _apply();
     return page;
@@ -266,10 +279,9 @@ void TabView::_apply()
 
     for (int i = 0; i < count; ++i)
     {
-        static_cast<Selectable&>(_bar->childAt(static_cast<usize>(i))).selected = i == active;
+        static_cast<Selectable &>(_bar->childAt(static_cast<usize>(i))).selected = i == active;
 
-        _pages->childAt(static_cast<usize>(i))
-            .setVisibility(i == active ? Visibility::Visible : Visibility::Collapsed);
+        _pages->childAt(static_cast<usize>(i)).setVisibility(i == active ? Visibility::Visible : Visibility::Collapsed);
     }
 
     const Rect tab = _bar->childAt(static_cast<usize>(active)).bounds();
@@ -284,7 +296,7 @@ void TabView::_apply()
     invalidateLayout();
 }
 
-glm::vec2 TabView::measureContent(const Constraints& available)
+glm::vec2 TabView::measureContent(const Constraints &available)
 {
     const glm::vec2 bar = _bar->measure(available);
 
@@ -296,7 +308,7 @@ glm::vec2 TabView::measureContent(const Constraints& available)
     return {std::max(bar.x, pages.x), bar.y + pages.y};
 }
 
-void TabView::arrangeContent(const Rect& content)
+void TabView::arrangeContent(const Rect &content)
 {
     const f32 barHeight = _bar->desiredSize().y;
 
@@ -307,16 +319,15 @@ void TabView::arrangeContent(const Rect& content)
     //! animate the underline in from zero.
     if (_indicatorWidth.target() == 0.0f && tabCount() > 0)
     {
-        const Rect tab = _bar->childAt(static_cast<usize>(std::clamp(
-                                           current.get(), 0, static_cast<int>(tabCount()) - 1)))
-                             .bounds();
+        const Rect tab =
+            _bar->childAt(static_cast<usize>(std::clamp(current.get(), 0, static_cast<int>(tabCount()) - 1))).bounds();
 
         _indicatorX.reset(tab.min.x);
         _indicatorWidth.reset(tab.width());
     }
 }
 
-void TabView::paint(DrawList& out)
+void TabView::paint(DrawList &out)
 {
     Widget::paint(out);
 
@@ -342,9 +353,9 @@ bool TabView::onTick(f32 deltaSeconds)
     return x || width;
 }
 
-bool TabView::onKeyDown(const KeyEvent& event)
+bool TabView::onKeyDown(const KeyEvent &event)
 {
-    Widget* focus = root() ? root()->focused() : nullptr;
+    Widget *focus = root() ? root()->focused() : nullptr;
     while (focus && focus != _bar)
         focus = focus->parent();
     if (!focus)
@@ -370,7 +381,7 @@ bool TabView::onKeyDown(const KeyEvent& event)
     return false;
 }
 
-void TabView::accessibility(AccessibilityInfo& out) const
+void TabView::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
     out.role = Role::Group;

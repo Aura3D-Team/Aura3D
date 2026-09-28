@@ -22,19 +22,30 @@
  * @endcode
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /// A curve, as a plain function pointer -- callable without an allocation or
 /// an indirect object, which matters when every hovered control has one.
 using EasingFn = f32 (*)(f32) noexcept;
 
-namespace easing {
+namespace easing
+{
 
-[[nodiscard]] inline f32 linear(f32 t) noexcept { return t; }
+[[nodiscard]] inline f32 linear(f32 t) noexcept
+{
+    return t;
+}
 
-[[nodiscard]] inline f32 inQuad(f32 t) noexcept { return t * t; }
+[[nodiscard]] inline f32 inQuad(f32 t) noexcept
+{
+    return t * t;
+}
 
-[[nodiscard]] inline f32 outQuad(f32 t) noexcept { return t * (2.0f - t); }
+[[nodiscard]] inline f32 outQuad(f32 t) noexcept
+{
+    return t * (2.0f - t);
+}
 
 [[nodiscard]] inline f32 inOutQuad(f32 t) noexcept
 {
@@ -70,11 +81,13 @@ namespace easing {
  * Retargeting mid-flight restarts the curve from wherever the value currently
  * is, so a control hovered and unhovered quickly never jumps.
  */
-template <class T>
-class Transition {
-public:
+template <class T> class Transition
+{
+  public:
     Transition() = default;
-    explicit Transition(T value) noexcept : _value(value), _target(value), _from(value) {}
+    explicit Transition(T value) noexcept : _value(value), _target(value), _from(value)
+    {
+    }
 
     /// Jumps to @p value, cancelling any animation.
     void reset(T value) noexcept
@@ -125,11 +138,20 @@ public:
         return true;
     }
 
-    [[nodiscard]] const T& value() const noexcept { return _value; }
-    [[nodiscard]] const T& target() const noexcept { return _target; }
-    [[nodiscard]] bool running() const noexcept { return _duration > 0.0f; }
+    [[nodiscard]] const T &value() const noexcept
+    {
+        return _value;
+    }
+    [[nodiscard]] const T &target() const noexcept
+    {
+        return _target;
+    }
+    [[nodiscard]] bool running() const noexcept
+    {
+        return _duration > 0.0f;
+    }
 
-private:
+  private:
     T _value{};
     T _target{};
     T _from{};

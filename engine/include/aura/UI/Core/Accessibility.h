@@ -24,11 +24,13 @@
  * data.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 /// What kind of thing a widget is, semantically. Not what it looks like: a
 /// clickable card is a Button.
-enum class Role : u8 {
+enum class Role : u8
+{
     None, //! A visual detail with no meaning of its own -- skipped by a bridge.
     Group,
     Window,
@@ -47,7 +49,8 @@ enum class Role : u8 {
 };
 
 /// Everything one widget exposes. Filled by Widget::accessibility().
-struct AccessibilityInfo {
+struct AccessibilityInfo
+{
     Role role = Role::None;
 
     /// What a screen reader reads out. Defaults to the widget's own text; set
@@ -77,7 +80,8 @@ struct AccessibilityInfo {
 
 /// One widget's info plus where it is, as a tree. What UIRoot hands a bridge
 /// or a test.
-struct AccessibilityNode {
+struct AccessibilityNode
+{
     AccessibilityInfo info{};
     Rect bounds{};
     std::vector<AccessibilityNode> children;

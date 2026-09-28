@@ -2,14 +2,15 @@
 
 #include <ink/ink.hpp>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
-MtlBufferManager::MtlBufferManager(MTL::Device* device, bool unifiedMemory,
-                                  NS::UInteger maxBufferLength)
+MtlBufferManager::MtlBufferManager(MTL::Device *device, bool unifiedMemory, NS::UInteger maxBufferLength)
     : _device(device), _unifiedMemory(unifiedMemory), _maxBufferLength(maxBufferLength)
 {
     if (!_device)
@@ -26,9 +27,10 @@ MTL::ResourceOptions MtlBufferManager::uploadResourceOptions() const noexcept
     return _unifiedMemory ? MTL::ResourceStorageModeShared : MTL::ResourceStorageModeManaged;
 }
 
-bool MtlBufferManager::validateSize(size_t byteSize, const char* label) const
+bool MtlBufferManager::validateSize(size_t byteSize, const char *label) const
 {
-    if (byteSize == 0) {
+    if (byteSize == 0)
+    {
         INK_WARN << "MtlBufferManager: refusing a zero-sized allocation for '" << label << "'";
         return false;
     }
@@ -38,7 +40,8 @@ bool MtlBufferManager::validateSize(size_t byteSize, const char* label) const
      * which surfaces much later as an unexplained missing mesh. Checking here
      * turns that into one actionable line at the point of upload.
      */
-    if (_maxBufferLength != 0 && static_cast<NS::UInteger>(byteSize) > _maxBufferLength) {
+    if (_maxBufferLength != 0 && static_cast<NS::UInteger>(byteSize) > _maxBufferLength)
+    {
         INK_ERROR << "MtlBufferManager: '" << label << "' needs " << byteSize
                   << " bytes but the device caps a single buffer at " << _maxBufferLength;
         return false;
@@ -47,24 +50,24 @@ bool MtlBufferManager::validateSize(size_t byteSize, const char* label) const
     return true;
 }
 
-NS::SharedPtr<MTL::Buffer> MtlBufferManager::createFromBytes(const void* bytes,
-                                                            size_t byteSize,
-                                                            const char* label) const
+NS::SharedPtr<MTL::Buffer> MtlBufferManager::createFromBytes(const void *bytes, size_t byteSize,
+                                                             const char *label) const
 {
     if (!validateSize(byteSize, label))
         return nullptr;
 
-    if (!bytes) {
+    if (!bytes)
+    {
         INK_ERROR << "MtlBufferManager: '" << label << "' was given a null source pointer";
         return nullptr;
     }
 
-    NS::SharedPtr<MTL::Buffer> buffer = adopt(_device->newBuffer(
-        bytes, static_cast<NS::UInteger>(byteSize), uploadResourceOptions()));
+    NS::SharedPtr<MTL::Buffer> buffer =
+        adopt(_device->newBuffer(bytes, static_cast<NS::UInteger>(byteSize), uploadResourceOptions()));
 
-    if (!buffer) {
-        INK_ERROR << "MtlBufferManager: the device refused a " << byteSize
-                  << "-byte allocation for '" << label << "'";
+    if (!buffer)
+    {
+        INK_ERROR << "MtlBufferManager: the device refused a " << byteSize << "-byte allocation for '" << label << "'";
         return nullptr;
     }
 
@@ -84,18 +87,18 @@ NS::SharedPtr<MTL::Buffer> MtlBufferManager::createFromBytes(const void* bytes,
     return buffer;
 }
 
-NS::SharedPtr<MTL::Buffer> MtlBufferManager::createDynamic(size_t byteSize,
-                                                          const char* label) const
+NS::SharedPtr<MTL::Buffer> MtlBufferManager::createDynamic(size_t byteSize, const char *label) const
 {
     if (!validateSize(byteSize, label))
         return nullptr;
 
-    NS::SharedPtr<MTL::Buffer> buffer = adopt(_device->newBuffer(
-        static_cast<NS::UInteger>(byteSize), MTL::ResourceStorageModeShared));
+    NS::SharedPtr<MTL::Buffer> buffer =
+        adopt(_device->newBuffer(static_cast<NS::UInteger>(byteSize), MTL::ResourceStorageModeShared));
 
-    if (!buffer) {
-        INK_ERROR << "MtlBufferManager: the device refused a " << byteSize
-                  << "-byte dynamic allocation for '" << label << "'";
+    if (!buffer)
+    {
+        INK_ERROR << "MtlBufferManager: the device refused a " << byteSize << "-byte dynamic allocation for '" << label
+                  << "'";
         return nullptr;
     }
 

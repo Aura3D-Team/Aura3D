@@ -1,12 +1,14 @@
 #include "aura/UI/Core/Theme.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 //! @p color with its alpha scaled, for the tints a palette derives from the
 //! colours it was given rather than carrying separately.
-[[nodiscard]] glm::vec4 fade(const glm::vec4& color, float alpha)
+[[nodiscard]] glm::vec4 fade(const glm::vec4 &color, float alpha)
 {
     return {color.r, color.g, color.b, color.a * alpha};
 }
@@ -21,24 +23,35 @@ constexpr float kPill = 1000.0f;
 
 } // namespace
 
-WidgetStyle Style::over(const WidgetStyle& base) const
+WidgetStyle Style::over(const WidgetStyle &base) const
 {
     WidgetStyle result = base;
 
     //! Field by field rather than anything clever: eleven optionals, and the
     //! only thing that could go wrong is forgetting one, which reads plainly
     //! here and would not in a loop over pointers-to-member.
-    if (surface)     result.surface = *surface;
-    if (border)      result.border = *border;
-    if (text)        result.text = *text;
-    if (accent)      result.accent = *accent;
-    if (rounding)    result.rounding = *rounding;
-    if (borderWidth) result.borderWidth = *borderWidth;
-    if (padding)     result.padding = *padding;
-    if (align)       result.align = *align;
-    if (height)      result.height = *height;
-    if (markScale)   result.markScale = *markScale;
-    if (markInset)   result.markInset = *markInset;
+    if (surface)
+        result.surface = *surface;
+    if (border)
+        result.border = *border;
+    if (text)
+        result.text = *text;
+    if (accent)
+        result.accent = *accent;
+    if (rounding)
+        result.rounding = *rounding;
+    if (borderWidth)
+        result.borderWidth = *borderWidth;
+    if (padding)
+        result.padding = *padding;
+    if (align)
+        result.align = *align;
+    if (height)
+        result.height = height;
+    if (markScale)
+        result.markScale = *markScale;
+    if (markInset)
+        result.markInset = *markInset;
 
     return result;
 }
@@ -63,9 +76,11 @@ Palette Palette::light()
     return palette;
 }
 
-Theme::Theme() : Theme(Palette::dark()) {}
+Theme::Theme() : Theme(Palette::dark())
+{
+}
 
-Theme::Theme(const Palette& palette)
+Theme::Theme(const Palette &palette)
 {
     applyPalette(palette);
 }
@@ -77,7 +92,7 @@ Theme::Theme(const Palette& palette)
  * thought about still looks like it belongs, and the lines below are exactly
  * the decisions that make a slider not a button.
  */
-Theme& Theme::applyPalette(const Palette& palette)
+Theme &Theme::applyPalette(const Palette &palette)
 {
     _palette = palette;
 
@@ -92,7 +107,10 @@ Theme& Theme::applyPalette(const Palette& palette)
 
     _parts.fill(control);
 
-    const auto part = [this](Part which) -> WidgetStyle& { return (*this)[which]; };
+    const auto part = [this](Part which) -> WidgetStyle &
+    {
+        return (*this)[which];
+    };
 
     //! A layout node has no appearance of its own. Filled from `control` like
     //! everything else above, it would put a grey rectangle behind every row
@@ -122,8 +140,7 @@ Theme& Theme::applyPalette(const Palette& palette)
 
     //! The row itself is bare: what a checkbox draws is the tick box, sized
     //! from markScale, and the label beside it.
-    part(Part::Checkbox).surface = {palette.surface, palette.surfaceHovered,
-                                    palette.surfaceHovered};
+    part(Part::Checkbox).surface = {palette.surface, palette.surfaceHovered, palette.surfaceHovered};
     part(Part::Checkbox).padding = 8.0f;
 
     part(Part::Radio) = part(Part::Checkbox);
@@ -143,22 +160,18 @@ Theme& Theme::applyPalette(const Palette& palette)
 
     part(Part::Dropdown).padding = 4.0f;
 
-    part(Part::DropdownItem).surface = {glm::vec4{0.0f}, palette.surfaceHovered,
-                                        palette.surfaceActive};
+    part(Part::DropdownItem).surface = {glm::vec4{0.0f}, palette.surfaceHovered, palette.surfaceActive};
     part(Part::DropdownItem).rounding = 0.0f;
     part(Part::DropdownItem).padding = 4.0f;
 
-    part(Part::Header).surface = {palette.titleBar, palette.surfaceHovered,
-                                 palette.surfaceHovered};
+    part(Part::Header).surface = {palette.titleBar, palette.surfaceHovered, palette.surfaceHovered};
 
     //! Rows in a list: transparent until pointed at, or they turn a scrolling
     //! list into a wall of rectangles.
-    part(Part::TreeNode).surface = {glm::vec4{0.0f}, palette.surfaceHovered,
-                                    palette.surfaceHovered};
+    part(Part::TreeNode).surface = {glm::vec4{0.0f}, palette.surfaceHovered, palette.surfaceHovered};
     part(Part::TreeNode).padding = 2.0f;
 
-    part(Part::Selectable).surface = {glm::vec4{0.0f}, palette.surfaceHovered,
-                                      palette.surfaceActive};
+    part(Part::Selectable).surface = {glm::vec4{0.0f}, palette.surfaceHovered, palette.surfaceActive};
     part(Part::Selectable).padding = 4.0f;
 
     part(Part::Tab).align = Align::Center;

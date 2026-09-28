@@ -3,14 +3,15 @@
 #include <array>
 #include <vector>
 
-#include "aura/aura.h"
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/aura.h"
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-VkRenderPassManager::VkRenderPassManager(VkDevice* device) :
-    _device(device)
+VkRenderPassManager::VkRenderPassManager(VkDevice *device) : _device(device)
 {
     // Empty
 }
@@ -24,14 +25,12 @@ VkRenderPassManager::~VkRenderPassManager()
     INK_DEBUG << "RenderPass Destroyed.";
 }
 
-VkRenderPass* VkRenderPassManager::getRenderPass()
+VkRenderPass *VkRenderPassManager::getRenderPass()
 {
     return &_renderPass;
 }
 
-void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
-                                           bool enableDepth,
-                                           VkFormat depthFormat,
+void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat, bool enableDepth, VkFormat depthFormat,
                                            VkSampleCountFlagBits sampleCount)
 {
     _hasDepth = enableDepth;
@@ -55,13 +54,14 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    std::vector<VkAttachmentDescription> attachments = { colorAttachment };
+    std::vector<VkAttachmentDescription> attachments = {colorAttachment};
 
     // Depth Attachment (optional)
     VkAttachmentDescription depthAttachment = {};
     VkAttachmentReference depthAttachmentRef = {};
 
-    if (enableDepth) {
+    if (enableDepth)
+    {
         depthAttachment.format = depthFormat;
         // Must match the color attachment's sample count: Vulkan requires every
         // attachment referenced by a subpass to share one sample count.
@@ -85,7 +85,7 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
     VkAttachmentDescription resolveAttachment = {};
     VkAttachmentReference resolveAttachmentRef = {};
 
-    if (useMsaa) 
+    if (useMsaa)
     {
         resolveAttachment.format = swapchainImageFormat;
         resolveAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -140,13 +140,13 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
     {
         //! Both fragment-test stages on the source side: EARLY is where a
         //! depth clear/attachment load writes, LATE where the store does.
-        attachmentDependencyBegin.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
-                                                | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        attachmentDependencyBegin.srcStageMask |=
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         attachmentDependencyBegin.srcAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        attachmentDependencyBegin.dstStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
-                                                | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        attachmentDependencyBegin.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
-                                                 | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        attachmentDependencyBegin.dstStageMask |=
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        attachmentDependencyBegin.dstAccessMask |=
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
     }
 
     VkSubpassDependency attachmentDependencyEnd = {};
@@ -162,12 +162,12 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
         //! LATE_FRAGMENT_TESTS, not EARLY: the depth storeOp at the end of the
         //! subpass writes there, and that is the write the next frame's pass
         //! must be ordered against.
-        attachmentDependencyEnd.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
-                                              | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        attachmentDependencyEnd.srcStageMask |=
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         attachmentDependencyEnd.srcAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     }
 
-    std::vector<VkSubpassDependency> dependencies = { attachmentDependencyBegin, attachmentDependencyEnd };
+    std::vector<VkSubpassDependency> dependencies = {attachmentDependencyBegin, attachmentDependencyEnd};
 
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -181,11 +181,8 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat,
     VK_RESULT_CHECK(vkCreateRenderPass(*_device, &renderPassInfo, nullptr, &_renderPass));
 }
 
-
-void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer,
-                                          VkFramebuffer framebuffer,
-                                          VkExtent2D swapChainExtent,
-                                          const VkClearValue* clearColorValue,
+void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer framebuffer,
+                                          VkExtent2D swapChainExtent, const VkClearValue *clearColorValue,
                                           bool useSecondaryCommandBuffers)
 {
     VkRenderPassBeginInfo renderPassBeginInfo = {};
@@ -208,9 +205,8 @@ void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer,
      * every command in the subpass must arrive via vkCmdExecuteCommands and a
      * direct vkCmdDraw* on the primary is invalid -- there is no mixed mode.
      */
-    const VkSubpassContents contents = useSecondaryCommandBuffers
-                                           ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS
-                                           : VK_SUBPASS_CONTENTS_INLINE;
+    const VkSubpassContents contents =
+        useSecondaryCommandBuffers ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE;
 
     if (_hasDepth)
     {
@@ -229,13 +225,14 @@ void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer,
     }
 }
 
-void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer) {
+void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer)
+{
     vkCmdEndRenderPass(commandBuffer);
 }
 
 void VkRenderPassManager::cleanup()
 {
-    if (_renderPass != VK_NULL_HANDLE) 
+    if (_renderPass != VK_NULL_HANDLE)
     {
         vkDestroyRenderPass(*_device, _renderPass, nullptr);
         // See VkSwapChainManager::cleanup() without nulling this, a
@@ -245,5 +242,5 @@ void VkRenderPassManager::cleanup()
     }
 }
 
-}
-}
+} // namespace vk
+} // namespace aura3d

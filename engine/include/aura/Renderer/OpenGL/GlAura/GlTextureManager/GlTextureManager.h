@@ -3,24 +3,28 @@
 
 #pragma once
 
-#include <glad/glad.h>
 #include <array>
+#include <glad/glad.h>
 #include <string>
 #include <unordered_map>
 
 #include "aura/Renderer/RenderHandles.h"
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
-struct GlTextureData {
+struct GlTextureData
+{
     GLuint texture = 0;
     u32 width = 0;
     u32 height = 0;
 };
 
-class GlTextureManager {
-public:
+class GlTextureManager
+{
+  public:
     GlTextureManager();
     ~GlTextureManager();
 
@@ -33,7 +37,7 @@ public:
      * @param smooth Linear filtering when true, nearest when false. Nearest
      *               keeps 1x1 and checkerboard patterns crisp.
      */
-    TextureHandle createTextureFromPixels(const u8* rgba, u32 width, u32 height, bool smooth = true);
+    TextureHandle createTextureFromPixels(const u8 *rgba, u32 width, u32 height, bool smooth = true);
 
     /**
      * @brief Allocates an uninitialised RGBA8 texture meant to be refreshed in
@@ -54,7 +58,7 @@ public:
      * Rejects (rather than clamps) a rectangle that would reach outside the
      * texture, since a partial upload would silently corrupt the atlas.
      */
-    void updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8* rgba);
+    void updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgba);
 
     /**
      * @brief Binds @p handle to texture @p unit, skipping the pair of GL calls
@@ -66,10 +70,10 @@ public:
      */
     void bind(TextureHandle handle, GLuint unit = 0);
 
-    GlTextureData* get(TextureHandle handle);
+    GlTextureData *get(TextureHandle handle);
     void cleanup();
 
-private:
+  private:
     //! Texture units this manager tracks bindings for. The renderer samples
     //! from unit 0 only; the spare slots cost nothing and keep the cache
     //! correct if a second sampler is ever added.

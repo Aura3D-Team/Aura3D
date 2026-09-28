@@ -19,7 +19,8 @@
 
 using namespace aura3d;
 
-namespace {
+namespace
+{
 
 void testClipSpaceMapping()
 {
@@ -42,8 +43,8 @@ void testResolveLandsOnSomethingAvailable()
     // actually contains -- that promise is what lets create() degrade instead
     // of throwing, and what lets a settings.json written for one platform run
     // on another.
-    constexpr RendererChoice kAll[] = {RendererChoice::VULKAN, RendererChoice::METAL,
-                                       RendererChoice::OPENGL, RendererChoice::SOFTWARE};
+    constexpr RendererChoice kAll[] = {RendererChoice::VULKAN, RendererChoice::METAL, RendererChoice::OPENGL,
+                                       RendererChoice::SOFTWARE};
 
     for (const RendererChoice choice : kAll)
     {
@@ -73,10 +74,8 @@ void testDefaultChoiceIsUsable()
 {
     const RendererChoice fallback = RendererFactory::defaultChoice();
 
-    AURA_CHECK(RendererFactory::isAvailable(fallback),
-               "the default backend is one this build compiled in");
-    AURA_CHECK(RendererFactory::resolve(fallback) == fallback,
-               "the default backend resolves to itself");
+    AURA_CHECK(RendererFactory::isAvailable(fallback), "the default backend is one this build compiled in");
+    AURA_CHECK(RendererFactory::resolve(fallback) == fallback, "the default backend resolves to itself");
 }
 
 } // namespace

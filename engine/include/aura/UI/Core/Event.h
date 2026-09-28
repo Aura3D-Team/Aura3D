@@ -24,15 +24,26 @@
  * to forget to set.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
 using Modifiers = wma::KeyModifiers;
 
-enum class PointerButton : u8 { Left, Right, Middle };
+enum class PointerButton : u8
+{
+    Left,
+    Right,
+    Middle
+};
 
 /// Why a widget gained focus. A field selects all its text when tabbed into
 /// but not when clicked, which is the whole reason this is carried.
-enum class FocusReason : u8 { Pointer, Keyboard, Programmatic };
+enum class FocusReason : u8
+{
+    Pointer,
+    Keyboard,
+    Programmatic
+};
 
 /**
  * @brief A mouse or touch event, in both coordinate systems a handler needs.
@@ -41,7 +52,8 @@ enum class FocusReason : u8 { Pointer, Keyboard, Programmatic };
  * @c local is relative to the receiving widget's top-left, refilled at each
  * step of the bubble so a parent sees it in *its* own space.
  */
-struct PointerEvent {
+struct PointerEvent
+{
     glm::vec2 position{0.0f};
     glm::vec2 local{0.0f};
     glm::vec2 delta{0.0f}; //! Movement since the previous pointer event.
@@ -54,7 +66,8 @@ struct PointerEvent {
     u32 clickCount = 1;
 };
 
-struct WheelEvent {
+struct WheelEvent
+{
     glm::vec2 position{0.0f};
     glm::vec2 local{0.0f};
 
@@ -64,7 +77,8 @@ struct WheelEvent {
     Modifiers mods{};
 };
 
-struct KeyEvent {
+struct KeyEvent
+{
     wma::Key key = wma::KEY_UNKNOWN;
     Modifiers mods{};
 
@@ -75,7 +89,8 @@ struct KeyEvent {
 
 /// Committed text, UTF-8. Comes from the platform's text input, so it is
 /// already correct through dead keys, IME and keyboard layout.
-struct TextEvent {
+struct TextEvent
+{
     std::string_view text;
 };
 
@@ -86,7 +101,8 @@ struct TextEvent {
  * widget, so Ctrl+S saves while a text field has focus. One without is checked
  * only after the widget declines, so a bare Delete still edits text.
  */
-struct Shortcut {
+struct Shortcut
+{
     wma::Key key = wma::KEY_UNKNOWN;
     bool ctrl = false;
     bool shift = false;
@@ -98,10 +114,10 @@ struct Shortcut {
         return {key, true, shift, false, false};
     }
 
-    [[nodiscard]] constexpr bool matches(const KeyEvent& event) const noexcept
+    [[nodiscard]] constexpr bool matches(const KeyEvent &event) const noexcept
     {
-        return event.key == key && event.mods.ctrl == ctrl && event.mods.shift == shift &&
-               event.mods.alt == alt && event.mods.super == super;
+        return event.key == key && event.mods.ctrl == ctrl && event.mods.shift == shift && event.mods.alt == alt &&
+               event.mods.super == super;
     }
 };
 

@@ -5,15 +5,17 @@
 #include "aura/UI/Core/Icon.h"
 #include "aura/UI/UIRoot.h"
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace {
+namespace
+{
 
 /// Styles a floating column as a surface: the look every popup in the toolkit
 /// shares, taken from the theme rather than restated per call site.
-void styleAsPopup(Widget& popup, const Theme& theme)
+void styleAsPopup(Widget &popup, const Theme &theme)
 {
-    const WidgetStyle& style = theme[Part::Tooltip];
+    const WidgetStyle &style = theme[Part::Tooltip];
 
     popup.style().fill(style.surface.normal).rounded(style.rounding);
     popup.layout().padding = Thickness::all(style.padding);
@@ -38,9 +40,9 @@ void Menu::onAttach()
     styleAsPopup(*this, theme());
 }
 
-Selectable& Menu::addItem(std::string text, std::string shortcut)
+Selectable &Menu::addItem(std::string text, std::string shortcut)
 {
-    auto& item = add<Selectable>(std::move(text));
+    auto &item = add<Selectable>(std::move(text));
     item.setPart(Part::DropdownItem);
 
     if (!shortcut.empty())
@@ -50,33 +52,41 @@ Selectable& Menu::addItem(std::string text, std::string shortcut)
     //! caller's own handler, so the menu is already on its way out by the time
     //! the command runs -- and a command that opens another menu still works,
     //! because closing is deferred to the frame boundary.
-    item.activated.connect([this] { dismiss(); });
+    item.activated.connect(
+        [this]
+        {
+            dismiss();
+        });
 
     return item;
 }
 
 void Menu::addSeparator()
 {
-    auto& rule = add<Separator>();
+    auto &rule = add<Separator>();
     rule.layout().margin = Thickness::symmetric(0.0f, 3.0f);
 }
 
-Selectable& Menu::addSubmenu(std::string text, std::function<void(Menu&)> build)
+Selectable &Menu::addSubmenu(std::string text, std::function<void(Menu &)> build)
 {
-    auto& item = add<Selectable>(std::move(text));
+    auto &item = add<Selectable>(std::move(text));
     item.setPart(Part::DropdownItem);
     item.setDetail(">");
 
     //! Anchored to the row, so the child opens beside its parent and flips to
     //! the other side when there is no room -- Placement::Right's own job.
-    item.activated.connect([this, &item, build = std::move(build)] {
-        OverlayLayer* layer = overlay();
-        if (!layer || !build)
-            return;
+    item.activated.connect(
+        [this, &item, build = std::move(build)]
+        {
+            OverlayLayer *layer = overlay();
+            if (!layer || !build)
+                return;
 
-        build(layer->open<Menu>(OverlayDesc{.anchor = item.bounds(),
-                                            .placement = Placement::Right}));
-    });
+            //! Owned by the row: that is how a command in the submenu finds the
+            //! parent menu to close, and how the submenu goes with a torn-down parent.
+            build(
+                layer->open<Menu>(OverlayDesc{.anchor = item.bounds(), .placement = Placement::Right, .owner = &item}));
+        });
 
     return item;
 }
@@ -85,27 +95,44 @@ void Menu::dismiss()
 {
     //! Closes this menu and anything opened over it, which for a chain of
     //! submenus is the whole stack -- picking a command should not leave its
-    //! parent menus standing.
-    if (OverlayLayer* layer = overlay())
-        layer->closeLightDismissible();
+    //! parent menus standing. Nothing below it: a context menu inside a
+    //! light-dismissible panel must not take the panel with it.
+    OverlayLayer *layer = overlay();
+    if (!layer)
+        return;
+    const Menu *base = this;
+    for (Widget *owner = layer->ownerOf(*base); owner; owner = layer->ownerOf(*base))
+    {
+        Menu *parent = nullptr;
+        for (Widget *node = owner; node && !parent; node = node->parent())
+            parent = dynamic_cast<Menu *>(node);
+        if (!parent)
+            break;
+        base = parent;
+    }
+    layer->closeFrom(*base);
 }
 
 // =============================================================================
 // Dropdown
 // =============================================================================
 
-Dropdown::Dropdown(std::vector<std::string> items)
-    : selected(-1), _items(std::move(items))
+Dropdown::Dropdown(std::vector<std::string> items) : selected(-1), _items(std::move(items))
 {
     _part = Part::Dropdown;
 
-    selected.changed().connect([this](int) {
-        _shapedSource.clear(); // force a re-shape of the caption
-        invalidateLayout();
-    });
+    selected.changed().connect(
+        [this](int)
+        {
+            _shapedSource.clear(); // force a re-shape of the caption
+            invalidateLayout();
+        });
 }
 
-Dropdown::~Dropdown() { close(); }
+Dropdown::~Dropdown()
+{
+    close();
+}
 
 bool Dropdown::isOpen() const noexcept
 {
@@ -130,17 +157,16 @@ void Dropdown::setPlaceholder(std::string text)
     invalidateLayout();
 }
 
-const std::string& Dropdown::text() const noexcept
+const std::string &Dropdown::text() const noexcept
 {
     const int index = selected.get();
 
-    return index >= 0 && index < static_cast<int>(_items.size()) ? _items[static_cast<usize>(index)]
-                                                                 : _placeholder;
+    return index >= 0 && index < static_cast<int>(_items.size()) ? _items[static_cast<usize>(index)] : _placeholder;
 }
 
 void Dropdown::_reshape()
 {
-    ITextShaper* shaper = this->shaper();
+    ITextShaper *shaper = this->shaper();
     if (!shaper)
         return;
 
@@ -156,7 +182,7 @@ void Dropdown::_reshape()
     _shapedFontSize = style.pixelSize;
 }
 
-glm::vec2 Dropdown::measureContent(const Constraints& available)
+glm::vec2 Dropdown::measureContent(const Constraints &available)
 {
     _reshape();
 
@@ -168,13 +194,13 @@ glm::vec2 Dropdown::measureContent(const Constraints& available)
     //! resize the control and reflow the form around it.
     f32 widest = _shaped.size.x;
 
-    if (ITextShaper* shaper = this->shaper())
+    if (ITextShaper *shaper = this->shaper())
     {
         TextStyle textStyle{};
         textStyle.pixelSize = theme().metrics.fontSize;
 
         ShapedText probe;
-        for (const std::string& item : _items)
+        for (const std::string &item : _items)
         {
             shaper->shape(item, textStyle, kUnbounded, probe);
             widest = std::max(widest, probe.size.x);
@@ -185,7 +211,7 @@ glm::vec2 Dropdown::measureContent(const Constraints& available)
     return {widest + style.padding * 2.0f + row, row};
 }
 
-void Dropdown::paint(DrawList& out)
+void Dropdown::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
@@ -208,10 +234,10 @@ void Dropdown::paint(DrawList& out)
         out.drawText(_shaped, {content.min.x, content.center().y - _shaped.size.y * 0.5f}, text);
     }
 
-    if (ITextShaper* shaper = this->shaper())
+    if (ITextShaper *shaper = this->shaper())
     {
-        const Rect box = Rect::fromSize(
-            {content.max.x - chevron, content.center().y - chevron * 0.5f}, {chevron, chevron});
+        const Rect box =
+            Rect::fromSize({content.max.x - chevron, content.center().y - chevron * 0.5f}, {chevron, chevron});
 
         icon::triangle(out, *shaper, box, icon::Direction::Down, withAlpha(style.text, alpha));
     }
@@ -221,11 +247,11 @@ void Dropdown::paint(DrawList& out)
 
 void Dropdown::open()
 {
-    OverlayLayer* layer = overlay();
+    OverlayLayer *layer = overlay();
     if (!layer || isOpen() || _items.empty() || !effectivelyEnabled())
         return;
 
-    auto& list = layer->open<Column>(OverlayDesc{
+    auto &list = layer->open<Column>(OverlayDesc{
         .anchor = bounds(),
         .placement = Placement::Below,
         .takeFocus = false,
@@ -243,14 +269,16 @@ void Dropdown::open()
 
     for (usize i = 0; i < _items.size(); ++i)
     {
-        auto& row = list.add<Selectable>(_items[i]);
+        auto &row = list.add<Selectable>(_items[i]);
         row.setPart(Part::DropdownItem);
         row.selected = static_cast<int>(i) == selected.get();
 
-        row.activated.connect([owner = WidgetRef(this), i] {
-            if (auto* widget = owner.get())
-                static_cast<Dropdown*>(widget)->_commit(static_cast<int>(i));
-        });
+        row.activated.connect(
+            [owner = WidgetRef(this), i]
+            {
+                if (auto *widget = owner.get())
+                    static_cast<Dropdown *>(widget)->_commit(static_cast<int>(i));
+            });
     }
 
     _highlight(selected.get());
@@ -259,7 +287,7 @@ void Dropdown::open()
 
 void Dropdown::close()
 {
-    if (OverlayLayer* layer = overlay(); layer && isOpen())
+    if (OverlayLayer *layer = overlay(); layer && isOpen())
         layer->close(_popup);
     _popup = OverlayLayer::kNone;
     _list = nullptr;
@@ -291,7 +319,7 @@ void Dropdown::_highlight(int index)
 
     for (usize i = 0; i < _list->childCount(); ++i)
     {
-        auto& row = static_cast<Selectable&>(_list->childAt(i));
+        auto &row = static_cast<Selectable &>(_list->childAt(i));
         row.selected = static_cast<int>(i) == index;
     }
 }
@@ -317,7 +345,7 @@ void Dropdown::_step(int delta)
         _commit(next);
 }
 
-bool Dropdown::onKeyDown(const KeyEvent& event)
+bool Dropdown::onKeyDown(const KeyEvent &event)
 {
     switch (event.key)
     {
@@ -346,7 +374,7 @@ bool Dropdown::onKeyDown(const KeyEvent& event)
     return false;
 }
 
-void Dropdown::accessibility(AccessibilityInfo& out) const
+void Dropdown::accessibility(AccessibilityInfo &out) const
 {
     Widget::accessibility(out);
 

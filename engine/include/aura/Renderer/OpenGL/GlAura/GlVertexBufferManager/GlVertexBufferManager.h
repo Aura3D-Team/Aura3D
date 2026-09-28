@@ -9,21 +9,25 @@
 #include "aura/Core/AuraCore.h"
 #include "aura/Renderer/RenderHandles.h"
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
-struct GlVertexBufferData {
+struct GlVertexBufferData
+{
     u32 vao = 0;
     u32 vbo = 0;
     u32 vertexCount = 0;
 };
 
-class GlVertexBufferManager {
-public:
+class GlVertexBufferManager
+{
+  public:
     GlVertexBufferManager();
     ~GlVertexBufferManager();
 
-    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D>&& vertices);
+    VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices);
 
     /**
      * @brief Makes @p handle's vertex array current, skipping the call when it
@@ -45,12 +49,15 @@ public:
      * keeps its own -- so the next bind() re-issues rather than assuming its
      * last VAO survived.
      */
-    void invalidateBinding() noexcept { _boundVao = 0; }
+    void invalidateBinding() noexcept
+    {
+        _boundVao = 0;
+    }
 
-    GlVertexBufferData* get(VertexBufferHandle handle);
+    GlVertexBufferData *get(VertexBufferHandle handle);
     void cleanup();
 
-private:
+  private:
     std::unordered_map<VertexBufferHandle, GlVertexBufferData> _buffers;
     VertexBufferHandle _nextHandle{1};
 

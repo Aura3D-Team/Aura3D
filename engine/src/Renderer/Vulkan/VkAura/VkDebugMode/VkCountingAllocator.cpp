@@ -5,10 +5,13 @@
 #include <limits>
 #include <new>
 
-namespace aura3d {
-namespace vk {
+namespace aura3d
+{
+namespace vk
+{
 
-namespace {
+namespace
+{
 
 /**
  * @brief Bookkeeping stored in front of every block this allocator hands out.
@@ -21,9 +24,9 @@ namespace {
  */
 struct BlockHeader
 {
-    usize bytes;    ///< Size the driver asked for.
-    u32   offset;   ///< Distance from the std::malloc base to the payload.
-    u32   reserved; ///< Unused; keeps the two 32-bit fields a matched pair.
+    usize bytes;  ///< Size the driver asked for.
+    u32 offset;   ///< Distance from the std::malloc base to the payload.
+    u32 reserved; ///< Unused; keeps the two 32-bit fields a matched pair.
 };
 
 //! See AllocationHooks.cpp: guards the 32-bit offset field against a header
@@ -40,9 +43,9 @@ constexpr usize kMinAlign = alignof(BlockHeader);
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
-[[nodiscard]] BlockHeader* headerOf(void* payload) noexcept
+[[nodiscard]] BlockHeader *headerOf(void *payload) noexcept
 {
-    return reinterpret_cast<BlockHeader*>(static_cast<std::byte*>(payload) - sizeof(BlockHeader));
+    return reinterpret_cast<BlockHeader *>(static_cast<std::byte *>(payload) - sizeof(BlockHeader));
 }
 
 /*
@@ -57,7 +60,7 @@ constinit VkCountingAllocator g_hostAllocator{};
  * one fewer pointer that can be stale in a driver's copy of the callbacks.
  */
 
-void* VKAPI_PTR onAllocation(void*, usize size, usize alignment, VkSystemAllocationScope) noexcept
+void *VKAPI_PTR onAllocation(void *, usize size, usize alignment, VkSystemAllocationScope) noexcept
 {
     //! Vulkan permits a zero-size allocation and requires nullptr back for it,
     //! which is the one case where nullptr is not an out-of-memory report.
@@ -67,15 +70,15 @@ void* VKAPI_PTR onAllocation(void*, usize size, usize alignment, VkSystemAllocat
     return VkCountingAllocator::get().allocate(size, alignment);
 }
 
-void VKAPI_PTR onFree(void*, void* memory) noexcept
+void VKAPI_PTR onFree(void *, void *memory) noexcept
 {
     VkCountingAllocator::get().free(memory);
 }
 
-void* VKAPI_PTR onReallocation(void* userData, void* original, usize size, usize alignment,
+void *VKAPI_PTR onReallocation(void *userData, void *original, usize size, usize alignment,
                                VkSystemAllocationScope scope) noexcept
 {
-    VkCountingAllocator& allocator = VkCountingAllocator::get();
+    VkCountingAllocator &allocator = VkCountingAllocator::get();
 
     //! The two degenerate cases the spec defines in terms of the other
     //! callbacks, handled first so the copy below always has both blocks.
@@ -88,7 +91,7 @@ void* VKAPI_PTR onReallocation(void* userData, void* original, usize size, usize
         return nullptr;
     }
 
-    void* replacement = allocator.allocate(size, alignment);
+    void *replacement = allocator.allocate(size, alignment);
     if (replacement == nullptr)
     {
         //! Contract: on failure the original block must survive untouched.
@@ -103,35 +106,33 @@ void* VKAPI_PTR onReallocation(void* userData, void* original, usize size, usize
     return replacement;
 }
 
-void VKAPI_PTR onInternalAllocation(void*, usize size, VkInternalAllocationType,
-                                    VkSystemAllocationScope) noexcept
+void VKAPI_PTR onInternalAllocation(void *, usize size, VkInternalAllocationType, VkSystemAllocationScope) noexcept
 {
     VkCountingAllocator::get().recordInternalAllocation(size);
 }
 
-void VKAPI_PTR onInternalFree(void*, usize size, VkInternalAllocationType,
-                              VkSystemAllocationScope) noexcept
+void VKAPI_PTR onInternalFree(void *, usize size, VkInternalAllocationType, VkSystemAllocationScope) noexcept
 {
     VkCountingAllocator::get().recordInternalFree(size);
 }
 
 constinit VkAllocationCallbacks g_callbacks{
-    .pUserData             = nullptr,
-    .pfnAllocation         = &onAllocation,
-    .pfnReallocation       = &onReallocation,
-    .pfnFree               = &onFree,
+    .pUserData = nullptr,
+    .pfnAllocation = &onAllocation,
+    .pfnReallocation = &onReallocation,
+    .pfnFree = &onFree,
     .pfnInternalAllocation = &onInternalAllocation,
-    .pfnInternalFree       = &onInternalFree,
+    .pfnInternalFree = &onInternalFree,
 };
 
 } // namespace
 
-VkCountingAllocator& VkCountingAllocator::get() noexcept
+VkCountingAllocator &VkCountingAllocator::get() noexcept
 {
     return g_hostAllocator;
 }
 
-const VkAllocationCallbacks* VkCountingAllocator::callbacks() noexcept
+const VkAllocationCallbacks *VkCountingAllocator::callbacks() noexcept
 {
     return &g_callbacks;
 }
@@ -140,10 +141,10 @@ VkHostAllocationStats VkCountingAllocator::snapshot() const noexcept
 {
     VkHostAllocationStats stats;
 
-    stats.liveBytes         = _liveBytes.load(std::memory_order_relaxed);
-    stats.peakBytes         = _peakBytes.load(std::memory_order_relaxed);
-    stats.allocationCount   = _allocationCount.load(std::memory_order_relaxed);
-    stats.freeCount         = _freeCount.load(std::memory_order_relaxed);
+    stats.liveBytes = _liveBytes.load(std::memory_order_relaxed);
+    stats.peakBytes = _peakBytes.load(std::memory_order_relaxed);
+    stats.allocationCount = _allocationCount.load(std::memory_order_relaxed);
+    stats.freeCount = _freeCount.load(std::memory_order_relaxed);
     stats.internalBytesLive = _internalBytesLive.load(std::memory_order_relaxed);
 
     return stats;
@@ -162,15 +163,13 @@ void VkCountingAllocator::recordPeak(u64 live) noexcept
 {
     u64 peak = _peakBytes.load(std::memory_order_relaxed);
     while (peak < live &&
-           !_peakBytes.compare_exchange_weak(peak, live,
-                                             std::memory_order_relaxed,
-                                             std::memory_order_relaxed))
+           !_peakBytes.compare_exchange_weak(peak, live, std::memory_order_relaxed, std::memory_order_relaxed))
     {
         //! compare_exchange_weak refreshed `peak`; re-test against `live`.
     }
 }
 
-void* VkCountingAllocator::allocate(usize size, usize alignment) noexcept
+void *VkCountingAllocator::allocate(usize size, usize alignment) noexcept
 {
     const usize align = alignment < kMinAlign ? kMinAlign : alignment;
 
@@ -180,12 +179,13 @@ void* VkCountingAllocator::allocate(usize size, usize alignment) noexcept
     if (size > std::numeric_limits<usize>::max() - overhead)
         return nullptr;
 
-    auto* base = static_cast<std::byte*>(std::malloc(size + overhead));
+    auto *base = static_cast<std::byte *>(std::malloc(size + overhead));
     if (base == nullptr)
         return nullptr;
 
-    auto* payload = reinterpret_cast<std::byte*>(
-        roundUp(reinterpret_cast<usize>(base) + sizeof(BlockHeader), align));
+    auto *payload = base + sizeof(BlockHeader);
+    const usize address = reinterpret_cast<usize>(payload);
+    payload += roundUp(address, align) - address;
 
     const auto offset = static_cast<usize>(payload - base);
     if (offset > std::numeric_limits<u32>::max())
@@ -194,9 +194,9 @@ void* VkCountingAllocator::allocate(usize size, usize alignment) noexcept
         return nullptr;
     }
 
-    BlockHeader* header = headerOf(payload);
-    header->bytes    = size;
-    header->offset   = static_cast<u32>(offset);
+    BlockHeader *header = headerOf(payload);
+    header->bytes = size;
+    header->offset = static_cast<u32>(offset);
     header->reserved = 0;
 
     _allocationCount.fetch_add(1, std::memory_order_relaxed);
@@ -205,17 +205,17 @@ void* VkCountingAllocator::allocate(usize size, usize alignment) noexcept
     return payload;
 }
 
-void VkCountingAllocator::free(void* memory) noexcept
+void VkCountingAllocator::free(void *memory) noexcept
 {
     if (memory == nullptr)
         return;
 
-    BlockHeader* header = headerOf(memory);
+    BlockHeader *header = headerOf(memory);
 
     _freeCount.fetch_add(1, std::memory_order_relaxed);
     _liveBytes.fetch_sub(header->bytes, std::memory_order_relaxed);
 
-    std::free(static_cast<std::byte*>(memory) - header->offset);
+    std::free(static_cast<std::byte *>(memory) - header->offset);
 }
 
 void VkCountingAllocator::recordInternalAllocation(usize size) noexcept

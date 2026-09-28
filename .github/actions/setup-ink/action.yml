@@ -1,0 +1,57 @@
+name: Build required Ink
+description: Install the pinned Ink dependency for the container job's target ABI.
+inputs:
+  platform:
+    description: Target platform (linux, android, or wasm).
+    default: linux
+outputs:
+  prefix:
+    description: Installation prefix to put first in CMAKE_PREFIX_PATH.
+    value: ${{ steps.install.outputs.prefix }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: Arthu-RL/libink
+        ref: 8dafff4f575a9f33d3aaf8a173815b443ca4e14f # 0.5.0
+        path: .ci/ink
+        persist-credentials: false
+
+    - id: install
+      shell: bash
+      env:
+        INK_PLATFORM: ${{ inputs.platform }}
+      run: |
+        set -eo pipefail
+        prefix="$RUNNER_TEMP/aura-deps"
+        build="$RUNNER_TEMP/ink-$INK_PLATFORM"
+        args=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+              -DINK_BUILD_TESTS=OFF -DINK_NATIVE_OPTIMIZE=OFF -DINK_ENABLE_LTO=OFF)
+        case "$INK_PLATFORM" in
+          linux) ;;
+          android)
+            args+=(-DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+                   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared
+                   '-DCMAKE_PREFIX_PATH=/usr/local/android;/usr/local'
+                   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH)
+            ;;
+          wasm)
+            source /opt/emsdk/emsdk_env.sh
+            # The image's SDK cache is owned by root; both Ink's configure
+            # probes and Aura3D's final link need to create cache entries.
+            export EM_CACHE="$RUNNER_TEMP/emscripten-cache"
+            mkdir -p "$EM_CACHE"
+            cp -R "$EMSDK/upstream/emscripten/cache/." "$EM_CACHE/"
+            chmod -R u+rwX "$EM_CACHE"
+            echo "EM_CACHE=$EM_CACHE" >> "$GITHUB_ENV"
+            args+=(-DCMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+                   '-DCMAKE_PREFIX_PATH=/usr/local/wasm;/usr/local'
+                   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH)
+            ;;
+          *) echo "Unsupported Ink platform: $INK_PLATFORM" >&2; exit 1 ;;
+        esac
+        cmake -S "$GITHUB_WORKSPACE/.ci/ink" -B "$build" -G Ninja "${args[@]}"
+        cmake --build "$build" --parallel
+        cmake --install "$build" --prefix "$prefix"
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"

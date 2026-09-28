@@ -56,8 +56,10 @@ r->run([&]() {
 ```
 
 The mixing itself runs on the audio thread, driven by the device. `update()`
-is bookkeeping — it reclaims voices that finished. Skip it and playback still
-works, but finished voices stop being recycled and the pool eventually fills.
+reclaims unloaded clip storage after two completed callbacks. Finished voices
+are reusable by `play()` without waiting for `update()`. A device that is not
+running (stopped, failed to start, or the null fallback) cannot be mid-callback,
+so its unloaded clips are freed at once.
 
 ## Looping music
 
@@ -76,9 +78,8 @@ const AudioSourceHandle musicVoice = audio->play(desc);
 ```
 
 `AudioClipMode::Streaming` marks a clip as long-form. **It currently still
-decodes the whole file at load time** — it differs in the playback path, not
-in the load, and exists as the seam incremental decoding slots into. Marking
-your music `Streaming` today means it picks that up for free later.
+decodes the whole file at load time** and uses the same mixer as `Static`.
+It is a mode marker for future incremental decoding.
 
 ## 3D positional audio
 
@@ -266,10 +267,18 @@ python3 scripts/gen_sandbox_audio.py
 
 ## Threading
 
-`AudioEngine`'s public API is safe to call from the game thread while the
-audio thread mixes; the shared state sits behind short locks. Drive it from
-the thread that owns the `Engine` — two threads calling the API concurrently
-is not supported.
+Voice/clip controls serialize on a control mutex. The callback owns playback
+cursors and consumes at most one state snapshot per voice plus one listener
+snapshot per block, with no locks, allocation, or deallocation. Clip samples
+remain immutable until deferred reclamation on the control thread.
+
+Each preallocated mailbox keeps the latest desired state: intermediate updates
+coalesce under load. A stop followed by play before the next callback starts
+only the latest voice; repeated gain/position changes do not restart playback.
+Queries reflect published control state and completed-voice acknowledgements.
+
+Keep device lifecycle calls (`resumeDevice()`, destruction) on the owning thread.
+The device must stop and join its callback before releasing the engine.
 
 Audio outlives a renderer backend switch. `Engine::switchBackend()` leaves it
 alone, so music keeps playing and clip handles stay valid — which graphics API

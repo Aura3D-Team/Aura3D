@@ -5,19 +5,21 @@
 
 #include <string>
 
-namespace aura3d {
-namespace gl {
+namespace aura3d
+{
+namespace gl
+{
 
 class GlShaderManager
 {
-public:
+  public:
     GlShaderManager();
     ~GlShaderManager();
 
-    static std::string readShaderSource_GL(const std::string& filename);
+    static std::string readShaderSource_GL(const std::string &filename);
 };
 
-}
-}
+} // namespace gl
+} // namespace aura3d
 
 #endif // GLBUFFERSMANAGER_H

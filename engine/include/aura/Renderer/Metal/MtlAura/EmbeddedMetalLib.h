@@ -3,6 +3,7 @@
 
 #pragma once
 
+// clang-format off
 /*
  * GENERATED FILE - do not edit by hand.
  * Regenerate with scripts/gen_embedded_metallib.sh after editing
@@ -192,5 +193,6 @@ fragment float4 aura_fragment_2d(Overlay2DVertexOut in [[stage_in]],
 
 } // namespace mtl
 } // namespace aura3d
+// clang-format on
 
 #endif // EMBEDDED_METAL_LIB_H

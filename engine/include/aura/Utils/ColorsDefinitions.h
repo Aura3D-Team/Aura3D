@@ -6,55 +6,64 @@
 #include <array>
 #include <ink/ink_base.hpp>
 
-namespace aura3d {
-namespace colors {
+namespace aura3d
+{
+namespace colors
+{
 
 // Integer-based color structure (0-255)
-struct RGB {
+struct RGB
+{
     u8 r;
     u8 g;
     u8 b;
 
     // Constructor for easy initialization
-    constexpr RGB(u8 red, u8 green, u8 blue) : r(red), g(green), b(blue) {}
+    constexpr RGB(u8 red, u8 green, u8 blue) : r(red), g(green), b(blue)
+    {
+    }
 
     // Convert to u32 (ARGB format)
-    u32 toUint32() const {
+    u32 toUint32() const
+    {
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 };
 
 // Float-based color structure for Vulkan/OpenGL (0.0f-1.0f)
-struct RGBf {
+struct RGBf
+{
     float r;
     float g;
     float b;
 
     // Constructor for easy initialization
-    constexpr RGBf(float red, float green, float blue) : r(red), g(green), b(blue) {}
+    constexpr RGBf(float red, float green, float blue) : r(red), g(green), b(blue)
+    {
+    }
 
     // Convert from RGB to RGBf
-    static RGBf fromRGB(const RGB& rgb) {
+    static RGBf fromRGB(const RGB &rgb)
+    {
         return RGBf(rgb.r / 255.0f, rgb.g / 255.0f, rgb.b / 255.0f);
     }
 
     // Convert from RGBf to RGB
-    RGB toRGB() const {
-        return RGB(
-            static_cast<u8>(r * 255.0f),
-            static_cast<u8>(g * 255.0f),
-            static_cast<u8>(b * 255.0f)
-            );
+    RGB toRGB() const
+    {
+        return RGB(static_cast<u8>(r * 255.0f), static_cast<u8>(g * 255.0f), static_cast<u8>(b * 255.0f));
     }
 };
 
 // Helper function to convert RGB to u32 (ARGB format with full alpha)
-constexpr u32 RGB_TO_UINT32(u8 r, u8 g, u8 b) {
+constexpr u32 RGB_TO_UINT32(u8 r, u8 g, u8 b)
+{
     return 0xFF000000 | (r << 16) | (g << 8) | b;
 }
 
 // Helper function to convert RGB values to float for Vulkan/OpenGL
-constexpr RGBf RGB_TO_FLOAT(u8 r, u8 g, u8 b) {
+constexpr RGBf RGB_TO_FLOAT(u8 r, u8 g, u8 b)
+{
     return RGBf(r / 255.0f, g / 255.0f, b / 255.0f);
 }
 
@@ -633,7 +642,6 @@ const RGB YELLOW_GREEN(154, 205, 50);
 const u32 YELLOW_GREEN_UINT32 = RGB_TO_UINT32(154, 205, 50);
 const RGBf YELLOW_GREEN_F(0.604f, 0.804f, 0.196f);
 
-
 // ===============================================
 // Material Design Colors
 // ===============================================
@@ -718,11 +726,13 @@ const RGBf MAT_BLUE_GREY_500_F(0.376f, 0.490f, 0.545f);
 // ===============================================
 
 // Helper function to convert RGB to vec3-style array for shader uniforms
-inline std::array<f32, 3> toVec3(const RGBf& color) {
+inline std::array<f32, 3> toVec3(const RGBf &color)
+{
     return {color.r, color.g, color.b};
 }
 
-inline float* toVec3(const RGBf& color, f32* outArray) {
+inline float *toVec3(const RGBf &color, f32 *outArray)
+{
     outArray[0] = color.r;
     outArray[1] = color.g;
     outArray[2] = color.b;
@@ -730,11 +740,13 @@ inline float* toVec3(const RGBf& color, f32* outArray) {
 }
 
 // Helper function to convert RGB to vec4-style array (with alpha) for shader uniforms
-inline std::array<f32, 4> toVec4(const RGBf& color, f32 alpha) {
+inline std::array<f32, 4> toVec4(const RGBf &color, f32 alpha)
+{
     return {color.r, color.g, color.b, alpha};
 }
 
-inline float* toVec4(const RGBf& color, f32 alpha, f32* outArray) {
+inline float *toVec4(const RGBf &color, f32 alpha, f32 *outArray)
+{
     outArray[0] = color.r;
     outArray[1] = color.g;
     outArray[2] = color.b;
@@ -743,14 +755,16 @@ inline float* toVec4(const RGBf& color, f32 alpha, f32* outArray) {
 }
 
 // Convert RGB to float array [r, g, b]
-inline void RGBtoFloatArray(const RGB& color, f32* outArray) {
+inline void RGBtoFloatArray(const RGB &color, f32 *outArray)
+{
     outArray[0] = color.r / 255.0f;
     outArray[1] = color.g / 255.0f;
     outArray[2] = color.b / 255.0f;
 }
 
 // Convert RGB to float array [r, g, b, a]
-inline void RGBtoFloatArrayWithAlpha(const RGB& color, float alpha, f32* outArray) {
+inline void RGBtoFloatArrayWithAlpha(const RGB &color, float alpha, f32 *outArray)
+{
     outArray[0] = color.r / 255.0f;
     outArray[1] = color.g / 255.0f;
     outArray[2] = color.b / 255.0f;

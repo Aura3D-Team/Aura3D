@@ -5,8 +5,10 @@
 
 #include "aura/Renderer/Metal/MtlAura/MtlAuraCore.h"
 
-namespace aura3d {
-namespace mtl {
+namespace aura3d
+{
+namespace mtl
+{
 
 /**
  * @class MtlShaderLibraryManager
@@ -31,8 +33,9 @@ namespace mtl {
  * Both paths yield the same four entry points, so nothing downstream can tell
  * them apart.
  */
-class MtlShaderLibraryManager {
-public:
+class MtlShaderLibraryManager
+{
+  public:
     /**
      * @brief Builds the built-in library on @p device.
      *
@@ -41,12 +44,12 @@ public:
      *         MSL itself is broken, so the compiler's diagnostic is included in
      *         the message rather than summarised.
      */
-    explicit MtlShaderLibraryManager(MTL::Device* device);
+    explicit MtlShaderLibraryManager(MTL::Device *device);
 
     ~MtlShaderLibraryManager();
 
-    MtlShaderLibraryManager(const MtlShaderLibraryManager&) = delete;
-    MtlShaderLibraryManager& operator=(const MtlShaderLibraryManager&) = delete;
+    MtlShaderLibraryManager(const MtlShaderLibraryManager &) = delete;
+    MtlShaderLibraryManager &operator=(const MtlShaderLibraryManager &) = delete;
 
     /**
      * @brief Looks up one shader entry point by its MSL function name.
@@ -57,7 +60,7 @@ public:
      * @throws AuraException if the library holds no function by that name,
      *         which means the MSL and the C++ constants have drifted apart.
      */
-    [[nodiscard]] NS::SharedPtr<MTL::Function> newFunction(const char* functionName) const;
+    [[nodiscard]] NS::SharedPtr<MTL::Function> newFunction(const char *functionName) const;
 
     /**
      * @brief Whether the library came from a precompiled .metallib rather than
@@ -66,15 +69,18 @@ public:
      * Reported once at initialize() time, so a slow start on a machine whose
      * EmbeddedMetalLib.h was regenerated off-Apple is self-explanatory in the log.
      */
-    [[nodiscard]] bool isPrecompiled() const noexcept { return _precompiled; }
+    [[nodiscard]] bool isPrecompiled() const noexcept
+    {
+        return _precompiled;
+    }
 
-private:
+  private:
     //! Loads the embedded .metallib bytes. Only compiled in when the generated
     //! header actually carries them.
-    void loadPrecompiledLibrary(MTL::Device* device);
+    void loadPrecompiledLibrary(MTL::Device *device);
 
     //! Compiles the embedded MSL source.
-    void compileSourceLibrary(MTL::Device* device);
+    void compileSourceLibrary(MTL::Device *device);
 
     NS::SharedPtr<MTL::Library> _library;
     bool _precompiled = false;

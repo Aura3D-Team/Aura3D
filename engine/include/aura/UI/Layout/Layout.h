@@ -29,13 +29,24 @@
  * desired size.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-enum class Axis : u8 { Horizontal, Vertical };
+enum class Axis : u8
+{
+    Horizontal,
+    Vertical
+};
 
 /// Where a widget sits inside the slot its parent gave it, on one axis.
 /// Stretch fills the slot, unless an explicit @ref Length says otherwise.
-enum class Alignment : u8 { Start, Center, End, Stretch };
+enum class Alignment : u8
+{
+    Start,
+    Center,
+    End,
+    Stretch
+};
 
 /**
  * @brief One axis' sizing rule.
@@ -47,8 +58,10 @@ enum class Alignment : u8 { Start, Center, End, Stretch };
  * w.layout().width = Length::automatic();     // as big as its content needs
  * @endcode
  */
-struct Length {
-    enum class Unit : u8 {
+struct Length
+{
+    enum class Unit : u8
+    {
         Auto,    //! Sized by content.
         Pixels,  //! Exactly @c value logical pixels.
         Percent, //! @c value percent of the parent's content extent.
@@ -58,7 +71,10 @@ struct Length {
     Unit unit = Unit::Auto;
     f32 value = 0.0f;
 
-    [[nodiscard]] static constexpr Length automatic() noexcept { return {}; }
+    [[nodiscard]] static constexpr Length automatic() noexcept
+    {
+        return {};
+    }
     [[nodiscard]] static constexpr Length px(f32 pixels) noexcept
     {
         return {Unit::Pixels, pixels};
@@ -72,10 +88,16 @@ struct Length {
         return {Unit::Fill, std::max(weight, 0.0f)};
     }
 
-    [[nodiscard]] constexpr bool isAuto() const noexcept { return unit == Unit::Auto; }
-    [[nodiscard]] constexpr bool isFill() const noexcept { return unit == Unit::Fill; }
+    [[nodiscard]] constexpr bool isAuto() const noexcept
+    {
+        return unit == Unit::Auto;
+    }
+    [[nodiscard]] constexpr bool isFill() const noexcept
+    {
+        return unit == Unit::Fill;
+    }
 
-    [[nodiscard]] constexpr bool operator==(const Length&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const Length &) const noexcept = default;
 };
 
 /**
@@ -85,8 +107,7 @@ struct Length {
  *         against an unbounded parent, where "a share of what is left" has no
  *         meaning and content size is the only sensible base.
  */
-[[nodiscard]] constexpr std::optional<f32> resolveLength(const Length& length,
-                                                         f32 available) noexcept
+[[nodiscard]] constexpr std::optional<f32> resolveLength(const Length &length, f32 available) noexcept
 {
     switch (length.unit)
     {
@@ -94,9 +115,7 @@ struct Length {
         return std::max(length.value, 0.0f);
 
     case Length::Unit::Percent:
-        return isUnbounded(available) ? std::nullopt
-                                      : std::optional{std::max(available, 0.0f) * length.value *
-                                                      0.01f};
+        return isUnbounded(available) ? std::nullopt : std::optional{std::max(available, 0.0f) * length.value * 0.01f};
 
     case Length::Unit::Fill:
         return isUnbounded(available) ? std::nullopt : std::optional{std::max(available, 0.0f)};
@@ -110,7 +129,8 @@ struct Length {
 
 /// The size range a parent offers a child. @c max is @ref kUnbounded on an
 /// axis the parent is itself sized by (a scroll view's content, an auto panel).
-struct Constraints {
+struct Constraints
+{
     glm::vec2 min{0.0f};
     glm::vec2 max{kUnbounded};
 
@@ -124,16 +144,18 @@ struct Constraints {
         return {size, size};
     }
 
-    [[nodiscard]] static constexpr Constraints unbounded() noexcept { return {}; }
+    [[nodiscard]] static constexpr Constraints unbounded() noexcept
+    {
+        return {};
+    }
 
     [[nodiscard]] constexpr glm::vec2 clamp(glm::vec2 size) const noexcept
     {
-        return {std::clamp(size.x, min.x, std::max(min.x, max.x)),
-                std::clamp(size.y, min.y, std::max(min.y, max.y))};
+        return {std::clamp(size.x, min.x, std::max(min.x, max.x)), std::clamp(size.y, min.y, std::max(min.y, max.y))};
     }
 
     /// The space left for a child once @p by is taken out of all four sides.
-    [[nodiscard]] constexpr Constraints deflate(const Thickness& by) const noexcept
+    [[nodiscard]] constexpr Constraints deflate(const Thickness &by) const noexcept
     {
         const glm::vec2 lost = by.collapsed();
         return {{std::max(0.0f, min.x - lost.x), std::max(0.0f, min.y - lost.y)},
@@ -155,13 +177,14 @@ struct Constraints {
 
 /// Which grid cell a child occupies. Lives on the child (like WPF's
 /// Grid.Row) so a Grid needs no side table to keep in sync with its children.
-struct GridCell {
+struct GridCell
+{
     u16 row = 0;
     u16 column = 0;
     u16 rowSpan = 1;
     u16 columnSpan = 1;
 
-    [[nodiscard]] constexpr bool operator==(const GridCell&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const GridCell &) const noexcept = default;
 };
 
 /**
@@ -175,7 +198,8 @@ struct GridCell {
  * label.layout().hAlign = Alignment::Center;
  * @endcode
  */
-struct LayoutSpec {
+struct LayoutSpec
+{
     Length width{};
     Length height{};
 
@@ -192,8 +216,14 @@ struct LayoutSpec {
 
     GridCell cell{};
 
-    [[nodiscard]] constexpr glm::vec2 minSize() const noexcept { return {minWidth, minHeight}; }
-    [[nodiscard]] constexpr glm::vec2 maxSize() const noexcept { return {maxWidth, maxHeight}; }
+    [[nodiscard]] constexpr glm::vec2 minSize() const noexcept
+    {
+        return {minWidth, minHeight};
+    }
+    [[nodiscard]] constexpr glm::vec2 maxSize() const noexcept
+    {
+        return {maxWidth, maxHeight};
+    }
 };
 
 /// Offset of an aligned box of @p extent within a slot of @p available.

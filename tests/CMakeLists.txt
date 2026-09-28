@@ -16,6 +16,7 @@ set(AURA_TEST_SUITES
     test_allocation_tracker
     test_audio_clip_loader
     test_audio_engine
+    test_audio_realtime
     test_benchmark_stats
     test_cpu_raster
     test_debug_mode_report
@@ -23,6 +24,7 @@ set(AURA_TEST_SUITES
     test_image_loader
     test_mesh_loader
     test_renderer_factory
+    test_runtime_safety
     test_settings
     test_shader_loader
     test_texture_sampling
@@ -54,3 +56,9 @@ foreach(_aura_test_name IN LISTS AURA_TEST_SUITES)
 
     add_test(NAME ${_aura_test_name} COMMAND ${_aura_test_name})
 endforeach()
+
+# Explicit benchmark executable; requires a display only when a backend is passed.
+if(AURA_ENABLE_UI AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(benchmark_runtime benchmark_runtime.cpp)
+    target_link_libraries(benchmark_runtime PRIVATE Aura3D::Aura3D)
+endif()

@@ -2,6 +2,64 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `UIView::update()` / `needsDraw()` / `draw()`: the two halves of `render()`,
+  for a loop that skips presenting an unchanged frame. `render()` is unchanged
+  and is exactly `update()` then `draw()`.
+- `IRenderer::frameBegun()`: whether the last `beginFrame()` acquired a target.
+  Vulkan and Metal skip the frame when they rebuild the swapchain or have no
+  surface; a loop that draws only on change must know, or what it drew into
+  that frame is lost until the next change.
+- `IRenderer::needsFrame()`: the backend needs a frame although nothing changed
+  -- a pending or just-finished swapchain rebuild on Vulkan, a dropped present
+  on the CPU backend. `UIView::needsDraw()` includes it; before, a failed
+  present or a lost surface under an idle tree left the window stale.
+
+### Fixed
+
+- `EmbeddedSpirv.h` and `EmbeddedMetalLib.h` match their generators again, which
+  now emit `// clang-format off`. Regenerating no longer fails the format check.
+- Look up ink before wma, so Aura3D's own lookup selects ink rather than wma's.
+- Order the audio retire handshake with seq_cst fences. Under acquire/release
+  alone the C++ model let a clip be freed while a block that had not yet seen
+  its stop still read it.
+- Check changed C++ lines with clang-format and clang-tidy 21 in Linux Debug CI; export its compilation database and document local checks.
+
+## [0.3.0]
+
+### Fixed
+
+- Flush Vulkan mapped writes at allocation-relative offsets, reject overflowing
+  texture regions across CPU/OpenGL/Vulkan, and bound mapped buffer updates.
+- Join all Vulkan recording tasks on failure and preserve serial/threaded scene
+  call order while compositing overlays last.
+- Clip CPU triangles against the homogeneous frustum before perspective division.
+- Resolve soft-wrap caret ambiguity with `CaretAffinity`; keep selection endpoints
+  on their own lines.
+- `Selectable::detail()`, the missing counterpart to `setDetail()`, so a list
+  row's trailing text can be read back as its main text already could.
+
+### Changed
+
+- Audio callbacks consume bounded, preallocated voice/listener mailboxes without
+  locks or heap operations. Control updates coalesce; `update()` reclaims unloaded
+  clips after callback acknowledgement.
+- Batch Vulkan texture uploads into three fenced staging slots; grow overlay
+  buffers geometrically and retire old buffers after frame completion.
+- Remove deliberate 100 ms Vulkan/OpenGL resize sleeps.
+- Cache transformed/lit indexed CPU vertices and append directly to raster queues.
+- Use Ink 0.5.0 `ArenaResource` for OBJ deduplication and `ParallelProcessor` for
+  synchronous jobs; use inline storage for small, reentrant UI snapshots.
+
+### Portability
+
+- Keep Vulkan surface backend SDK includes in the implementation and guard them
+  by the enabled window backend. Android Vulkan builds no longer require unused
+  host GLAD or GLFW headers.
+
 ## [0.2.2]
 
 ### Added

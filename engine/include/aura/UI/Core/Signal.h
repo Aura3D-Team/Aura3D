@@ -27,18 +27,21 @@
  * outlives the Signal it came from.
  */
 
-namespace aura3d::ui {
+namespace aura3d::ui
+{
 
-namespace detail {
+namespace detail
+{
 
 /// The indirection a @ref Connection actually holds. Type-erased so
 /// Connection can be a plain class while Signal is a template, and shared so a
 /// Connection outliving its Signal sees @c owner nulled rather than a dangling
 /// pointer.
-struct SignalHub {
-    void* owner = nullptr;
-    void (*drop)(void* owner, u64 id) noexcept = nullptr;
-    bool (*contains)(void* owner, u64 id) noexcept = nullptr;
+struct SignalHub
+{
+    void *owner = nullptr;
+    void (*drop)(void *owner, u64 id) noexcept = nullptr;
+    bool (*contains)(void *owner, u64 id) noexcept = nullptr;
 };
 
 } // namespace detail
@@ -50,8 +53,9 @@ struct SignalHub {
  * Disconnecting through a Connection whose Signal is already gone does
  * nothing, so an owner does not have to outlive-check by hand.
  */
-class Connection {
-public:
+class Connection
+{
+  public:
     Connection() noexcept = default;
 
     void disconnect() const noexcept
@@ -67,12 +71,10 @@ public:
         return hub && hub->owner && hub->contains(hub->owner, _id);
     }
 
-private:
-    template <class...>
-    friend class Signal;
+  private:
+    template <class...> friend class Signal;
 
-    Connection(std::weak_ptr<detail::SignalHub> hub, u64 id) noexcept
-        : _hub(std::move(hub)), _id(id)
+    Connection(std::weak_ptr<detail::SignalHub> hub, u64 id) noexcept : _hub(std::move(hub)), _id(id)
     {
     }
 
@@ -87,22 +89,27 @@ private:
  * What an observer that does not own the signal should hold: a lambda
  * capturing @c this stops being called the moment the capturing object dies.
  */
-class ScopedConnection {
-public:
+class ScopedConnection
+{
+  public:
     ScopedConnection() noexcept = default;
-    ScopedConnection(Connection connection) noexcept : _connection(std::move(connection)) {}
-
-    ~ScopedConnection() { _connection.disconnect(); }
-
-    ScopedConnection(const ScopedConnection&) = delete;
-    ScopedConnection& operator=(const ScopedConnection&) = delete;
-
-    ScopedConnection(ScopedConnection&& other) noexcept
-        : _connection(std::exchange(other._connection, Connection{}))
+    ScopedConnection(Connection connection) noexcept : _connection(std::move(connection))
     {
     }
 
-    ScopedConnection& operator=(ScopedConnection&& other) noexcept
+    ~ScopedConnection()
+    {
+        _connection.disconnect();
+    }
+
+    ScopedConnection(const ScopedConnection &) = delete;
+    ScopedConnection &operator=(const ScopedConnection &) = delete;
+
+    ScopedConnection(ScopedConnection &&other) noexcept : _connection(std::exchange(other._connection, Connection{}))
+    {
+    }
+
+    ScopedConnection &operator=(ScopedConnection &&other) noexcept
     {
         if (this != &other)
         {
@@ -118,7 +125,7 @@ public:
         _connection = Connection{};
     }
 
-private:
+  private:
     Connection _connection;
 };
 
@@ -133,18 +140,23 @@ private:
  *       widget holding signals stays movable. Not copyable: two objects
  *       cannot share one slot list without ambiguity about which owns it.
  */
-template <class... Args>
-class Signal {
-public:
+template <class... Args> class Signal
+{
+  public:
     using Slot = std::function<void(Args...)>;
 
     Signal() = default;
-    ~Signal() { _invalidate(); }
+    ~Signal()
+    {
+        _invalidate();
+    }
 
-    Signal(const Signal&) = delete;
-    Signal& operator=(const Signal&) = delete;
-    Signal(Signal&& other) noexcept : _state(std::move(other._state)) {}
-    Signal& operator=(Signal&& other) noexcept
+    Signal(const Signal &) = delete;
+    Signal &operator=(const Signal &) = delete;
+    Signal(Signal &&other) noexcept : _state(std::move(other._state))
+    {
+    }
+    Signal &operator=(Signal &&other) noexcept
     {
         if (this != &other)
         {
@@ -165,13 +177,16 @@ public:
         return Connection{_state->hub, id};
     }
 
-    void disconnect(const Connection& connection) noexcept { connection.disconnect(); }
+    void disconnect(const Connection &connection) noexcept
+    {
+        connection.disconnect();
+    }
 
     void clear() noexcept
     {
         if (!_state)
             return;
-        for (const auto& entry : _state->slots)
+        for (const auto &entry : _state->slots)
             entry->connected = false;
         if (_state->emitting == 0)
             _state->slots.clear();
@@ -184,13 +199,21 @@ public:
         const auto state = _state;
         if (!state)
             return;
-        struct Emission {
-            State& state;
-            explicit Emission(State& value) : state(value) { ++state.emitting; }
+        struct Emission
+        {
+            State &state;
+            explicit Emission(State &value) : state(value)
+            {
+                ++state.emitting;
+            }
             ~Emission()
             {
                 if (--state.emitting == 0)
-                    std::erase_if(state.slots, [](const auto& entry) { return !entry->connected; });
+                    std::erase_if(state.slots,
+                                  [](const auto &entry)
+                                  {
+                                      return !entry->connected;
+                                  });
             }
         } emission(*state);
 
@@ -203,21 +226,29 @@ public:
         }
     }
 
-    void operator()(Args... args) { emit(args...); }
+    void operator()(Args... args)
+    {
+        emit(args...);
+    }
     [[nodiscard]] bool empty() const noexcept
     {
         return !_state || std::ranges::none_of(_state->slots,
-            [](const auto& entry) { return entry->connected; });
+                                               [](const auto &entry)
+                                               {
+                                                   return entry->connected;
+                                               });
     }
 
-private:
-    struct Entry {
+  private:
+    struct Entry
+    {
         u64 id;
         Slot slot;
         bool connected;
     };
 
-    struct State {
+    struct State
+    {
         std::vector<std::shared_ptr<Entry>> slots;
         u64 nextId = 1;
         u32 emitting = 0;
@@ -225,21 +256,28 @@ private:
             std::make_shared<detail::SignalHub>(this, &Signal::_drop, &Signal::_contains);
     };
 
-    static bool _contains(void* owner, u64 id) noexcept
+    static bool _contains(void *owner, u64 id) noexcept
     {
-        const auto& state = *static_cast<State*>(owner);
+        const auto &state = *static_cast<State *>(owner);
         return std::ranges::any_of(state.slots,
-            [id](const auto& entry) { return entry->id == id && entry->connected; });
+                                   [id](const auto &entry)
+                                   {
+                                       return entry->id == id && entry->connected;
+                                   });
     }
 
-    static void _drop(void* owner, u64 id) noexcept
+    static void _drop(void *owner, u64 id) noexcept
     {
-        auto& state = *static_cast<State*>(owner);
-        for (const auto& entry : state.slots)
+        auto &state = *static_cast<State *>(owner);
+        for (const auto &entry : state.slots)
             if (entry->id == id)
                 entry->connected = false;
         if (state.emitting == 0)
-            std::erase_if(state.slots, [](const auto& entry) { return !entry->connected; });
+            std::erase_if(state.slots,
+                          [](const auto &entry)
+                          {
+                              return !entry->connected;
+                          });
     }
 
     void _invalidate() noexcept
