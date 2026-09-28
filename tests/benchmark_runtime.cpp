@@ -100,6 +100,29 @@ int main(int argc, char **argv)
         config.logging.level = ink::LogLevel::ERROR;
         Engine engine(config);
         auto &renderer = *engine.getRenderer();
+        if (argc > 2 && std::string_view(argv[2]) == "cache")
+        {
+            // Sparse indexed draws alternate buffer sizes without raster work.
+            // Run with: SDL_VIDEODRIVER=dummy benchmark_runtime software cache
+            std::vector<gfx::Vertex3D> small(3);
+            for (auto &vertex : small)
+                vertex.pos = {3, 3, 0};
+            std::vector<gfx::Vertex3D> large(100000, small.front());
+            const auto smallBuffer = renderer.createVertexBuffer(std::move(small));
+            const auto largeBuffer = renderer.createVertexBuffer(std::move(large));
+            renderer.bindIndexBuffer(renderer.createIndexBuffer(std::vector<u32>{0, 1, 2}));
+            renderer.setTransform({glm::mat4{1}, glm::mat4{1}, glm::mat4{1}});
+            for (const bool alternate : {false, true})
+                measure(alternate ? "cpu_cache_alternating" : "cpu_cache_same", 2000,
+                        [&]
+                        {
+                            renderer.bindVertexBuffer(alternate ? smallBuffer : largeBuffer);
+                            renderer.drawIndexed(3);
+                            renderer.bindVertexBuffer(largeBuffer);
+                            renderer.drawIndexed(3);
+                        });
+            return 0;
+        }
         gfx::Mesh3D mesh;
         mesh.vertices = {{{-.8f, -.8f, .5f}, {0, 0}, {1, 1, 1, 1}, {0, 0, 1}},
                          {{.8f, -.8f, .5f}, {1, 0}, {1, 1, 1, 1}, {0, 0, 1}},
@@ -113,7 +136,8 @@ int main(int argc, char **argv)
             constexpr u32 side = 100;
             for (u32 y = 0; y < side; ++y)
                 for (u32 x = 0; x < side; ++x)
-                    mesh.vertices.push_back({{-0.9f + 1.8f * x / (side - 1), -0.9f + 1.8f * y / (side - 1), .5f},
+                    mesh.vertices.push_back({{-0.9f + 1.8f * static_cast<f32>(x) / (side - 1),
+                                              -0.9f + 1.8f * static_cast<f32>(y) / (side - 1), .5f},
                                              {f32(x) / (side - 1), f32(y) / (side - 1)},
                                              {1, 1, 1, 1},
                                              {0, 0, 1}});
@@ -143,7 +167,7 @@ int main(int argc, char **argv)
         std::array<TextureHandle, 8> textures{};
         for (auto &texture : textures)
             texture = renderer.createDynamicTexture(64, 64);
-        std::vector<u8> pixels(64 * 64 * 4, 255);
+        std::vector<u8> pixels(usize{64} * 64 * 4, 255);
         const std::array<u32, 6> indices{0, 1, 2, 2, 3, 0};
         const bool check = std::getenv("AURA_BENCH_VALIDATE_IMAGE") != nullptr;
         TextureHandle large;
@@ -151,7 +175,7 @@ int main(int argc, char **argv)
         if (check)
         {
             large = renderer.createDynamicTexture(1024, 1024);
-            largePixels.assign(1024 * 1024 * 4, 255);
+            largePixels.assign(usize{1024} * 1024 * 4, 255);
         }
         measure(indexed ? "cpu_indexed" : argv[1], check ? 4 : 120,
                 [&]
@@ -164,7 +188,7 @@ int main(int argc, char **argv)
                         renderer.updateTextureRegion(texture, 0, 0, 64, 64, pixels.data());
                     if (check)
                     {
-                        std::array<u8, 32 * 32 * 4> patch{};
+                        std::array<u8, usize{32} * 32 * 4> patch{};
                         for (usize i = 0; i < patch.size(); i += 4)
                         {
                             patch[i] = patch[i + 1] = patch[i + 3] = 255;
@@ -188,6 +212,8 @@ int main(int argc, char **argv)
                     for (int i = 0; i < (check ? 1200 : 400); ++i)
                     {
                         const f32 x = static_cast<f32>(i % 80) * 4;
+                        // Integer division selects the overlay's grid row.
+                        // NOLINTNEXTLINE(bugprone-integer-division)
                         const f32 y = static_cast<f32>(i / 80) * 4;
                         std::array<gfx::Vertex2D, 4> quad{{{{x, y}, {0, 0}, {0, 0, 1, 1}},
                                                            {{x + 3, y}, {1, 0}, {0, 0, 1, 1}},

@@ -100,6 +100,8 @@ class AudioEngine
      *
      * @p device must already be open (wma::openAudioDevice()). A device that
      * fails to start is not fatal -- the engine stays usable, just silent.
+     * A NullAudioDevice has no audio thread; any manual renderFrames() calls
+     * must be serialized with this engine's control calls.
      *
      * @param maxVoices Size of the voice pool, fixed for the engine's
      *                  lifetime so the mixer never allocates. At least 1.
@@ -295,7 +297,7 @@ class AudioEngine
     AudioMailbox<AudioListener3D> _listenerCommands;
     //! Incremented at the end of every mix(); the clock reclaimClips() waits on.
     std::atomic<u32> _mixEpoch{0};
-    //! False while the device is the engine's own null fallback or failed to
+    //! False while the device is a concrete null device or failed to
     //! start: no callback advances _mixEpoch, so retirement cannot wait on it.
     bool _mixerLive = true;
     std::unordered_map<AudioClipHandle, std::unique_ptr<Clip>> _clips;

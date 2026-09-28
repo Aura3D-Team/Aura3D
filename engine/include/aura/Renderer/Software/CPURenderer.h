@@ -33,6 +33,10 @@ class CPURenderer : public IRenderer
     void updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels) override;
 
     void beginFrame() override;
+    [[nodiscard]] bool needsFrame() const noexcept override
+    {
+        return _presentDropped;
+    }
     void beginRenderPass() override;
     void endRenderPass() override;
     void endFrame() override;
@@ -95,6 +99,8 @@ class CPURenderer : public IRenderer
     std::vector<CachedVertex> _transformed;
     /// Incremented per drawIndexed(); a wrap resets every stamp first.
     u64 _drawStamp = 0;
+    /// The last endFrame() found no framebuffer to present into.
+    bool _presentDropped = false;
 
     VertexBufferHandle _boundVertexBuffer;
     IndexBufferHandle _boundIndexBuffer;

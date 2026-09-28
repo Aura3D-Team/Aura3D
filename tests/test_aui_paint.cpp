@@ -154,6 +154,13 @@ class RecordingRenderer final : public IRenderer
     usize uploads = 0;
     bool indicesInRange = true;
 
+    /// Set to act as a backend whose swapchain was rebuilt under a clean tree.
+    bool frameLost = false;
+    [[nodiscard]] bool needsFrame() const noexcept override
+    {
+        return frameLost;
+    }
+
     // Everything below is inert: the UI never calls it.
     void beginFrame() override
     {
@@ -388,6 +395,28 @@ void testIdleFrameRebuildsNothing()
     AURA_CHECK(harness.renderer.batches.size() == 1, "and still costs one draw call");
 }
 
+void testLostFrameIsRedrawnWhileIdle()
+{
+    RecordingRenderer renderer;
+    UIView view(renderer);
+    view.root().setContent<Column>().add<Label>("idle");
+
+    view.update(0.0f);
+    AURA_CHECK(view.needsDraw(), "a view draws its first frame");
+    view.draw();
+    view.update(0.0f);
+    AURA_CHECK(!view.needsDraw(), "an idle view skips its frame");
+
+    renderer.frameLost = true;
+    view.update(0.0f);
+    AURA_CHECK(view.needsDraw(), "a frame the renderer lost is drawn again under a clean tree");
+    view.draw();
+
+    renderer.frameLost = false;
+    view.update(0.0f);
+    AURA_CHECK(!view.needsDraw(), "and the view idles once the frame reaches the screen");
+}
+
 void testInvalidationTriggersRepaint()
 {
     Harness harness;
@@ -612,6 +641,7 @@ int main()
     testSecondFontSizeCostsOneMoreBatch();
     testRoundedCornersAreConstantGeometry();
     testIdleFrameRebuildsNothing();
+    testLostFrameIsRedrawnWhileIdle();
     testInvalidationTriggersRepaint();
     testScrolledContentIsClipped();
     testDisabledIsDrawnFaded();

@@ -216,7 +216,7 @@ void UIView::render(f32 deltaSeconds)
 
 bool UIView::needsDraw() const noexcept
 {
-    return _drawn ? _root.needsPaint() : true;
+    return !_drawn || _root.needsPaint() || _renderer->needsFrame();
 }
 
 void UIView::draw()

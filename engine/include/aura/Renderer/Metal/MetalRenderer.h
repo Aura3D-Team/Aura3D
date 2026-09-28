@@ -98,6 +98,12 @@ class MetalRenderer : public IRenderer
     {
         return _frameBegun;
     }
+    //! A resize is applied, and drawn, inside the next beginFrame(); nothing
+    //! else here loses a presented frame.
+    [[nodiscard]] bool needsFrame() const noexcept override
+    {
+        return _windowManagerApi && _windowManagerApi->getWindowFlags()->resized;
+    }
     void beginRenderPass() override;
     void endRenderPass() override;
     void endFrame() override;

@@ -47,7 +47,7 @@ WidgetStyle Style::over(const WidgetStyle &base) const
     if (align)
         result.align = *align;
     if (height)
-        result.height = *height;
+        result.height = height;
     if (markScale)
         result.markScale = *markScale;
     if (markInset)

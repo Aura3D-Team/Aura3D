@@ -30,6 +30,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Trust checkout for Git commands
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Install C++ quality tools
         run: |
           apt-get update
@@ -39,6 +42,10 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python3 ci/check-cpp.py format --base "$BASE_SHA"
+
+      - name: Build required Ink
+        id: ink
+        uses: ./.github/actions/setup-ink
 
       - name: Configure
         # Mirrors CMakePresets.json's "linux-debug" preset rather than using
@@ -53,6 +60,8 @@ jobs:
           cmake -S . -B build/linux/debug -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+          -DCMAKE_PREFIX_PATH="${{ steps.ink.outputs.prefix }}"
           -DAURA_BUILD_SANDBOX=ON
           -DAURA_BUILD_TESTS=ON
 
@@ -82,12 +91,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Build required Ink
+        id: ink
+        uses: ./.github/actions/setup-ink
+
       - name: Configure
         # See linux-debug-build's Configure step for why this mirrors the
         # "linux-release" preset instead of using it directly.
         run: >
           cmake -S . -B build/linux/release -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="${{ steps.ink.outputs.prefix }}"
           -DAURA_BUILD_SANDBOX=ON
           -DAURA_BUILD_TESTS=ON
 
@@ -112,6 +126,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Build required Ink
+        id: ink
+        uses: ./.github/actions/setup-ink
+
       - name: Configure
         # AURA_ENABLE_DEBUG_MODE implies AURA_PROFILE_FRAME (see the root
         # CMakeLists.txt), which is what fills the report's phase breakdown.
@@ -120,6 +138,7 @@ jobs:
         run: >
           cmake -S . -B build/benchmark -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="${{ steps.ink.outputs.prefix }}"
           -DAURA_BUILD_SANDBOX=ON
           -DAURA_BUILD_TESTS=ON
           -DAURA_ENABLE_DEBUG_MODE=ON
@@ -223,6 +242,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Build required Ink
+        id: ink
+        uses: ./.github/actions/setup-ink
+        with:
+          platform: wasm
+
       - name: Configure
         # nlohmann_json is only installed under the native /usr/local prefix
         # in this image, not /usr/local/wasm -- but it's header-only, so the
@@ -235,7 +260,7 @@ jobs:
           emcmake cmake -S . -B build-wasm \
             -DCMAKE_BUILD_TYPE=Release \
             -DAURA_BUILD_TESTS=OFF \
-            -DCMAKE_PREFIX_PATH="/usr/local/wasm;/usr/local" \
+            -DCMAKE_PREFIX_PATH="${{ steps.ink.outputs.prefix }};/usr/local/wasm;/usr/local" \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 
       - name: Build
@@ -257,6 +282,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Build required Ink
+        id: ink
+        uses: ./.github/actions/setup-ink
+        with:
+          platform: android
+
       - name: Configure
         # Mirrors CMakePresets.json's "android" preset (ABI, platform level,
         # STL) rather than using it directly, since that preset's
@@ -272,7 +303,7 @@ jobs:
           -DANDROID_STL=c++_shared
           -DCMAKE_BUILD_TYPE=Release
           -DAURA_BUILD_TESTS=OFF
-          -DCMAKE_PREFIX_PATH="/usr/local/android;/usr/local"
+          -DCMAKE_PREFIX_PATH="${{ steps.ink.outputs.prefix }};/usr/local/android;/usr/local"
           -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 
       - name: Build

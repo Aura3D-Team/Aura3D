@@ -75,7 +75,7 @@ inline bool RendererChoiceFromString(const std::string &s, RendererChoice &out)
     std::string up;
     up.reserve(s.size());
     for (const char c : s)
-        up += std::toupper(c);
+        up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
 #define X(name)                                                                                                        \
     if (up == #name)                                                                                                   \
@@ -389,6 +389,19 @@ class IRenderer
     [[nodiscard]] virtual bool frameBegun() const noexcept
     {
         return true;
+    }
+
+    /**
+     * @brief Whether the backend needs a frame even though nothing changed.
+     *
+     * True while a swapchain rebuild is pending, and from a rebuild or a
+     * dropped present until the next frame reaches the screen. A loop that
+     * only draws on change must draw anyway while this holds: the rebuild
+     * runs inside beginFrame(), and the image it replaces is gone.
+     */
+    [[nodiscard]] virtual bool needsFrame() const noexcept
+    {
+        return false;
     }
 
     /**

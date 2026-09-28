@@ -945,6 +945,7 @@ void VulkanRenderer::beginFrame()
     if (windowFlags->surfaceLost)
     {
         windowFlags->surfaceLost = false;
+        _targetStale = true;
 
         if (!_windowManagerApi->isSurfaceAvailable())
         {
@@ -978,6 +979,7 @@ void VulkanRenderer::beginFrame()
     if (windowFlags->resized)
     {
         windowFlags->resized = false;
+        _targetStale = true;
 
         try
         {
@@ -1205,9 +1207,17 @@ void VulkanRenderer::endFrame()
 
     AURA_FRAME_END();
 
+    //! A present that fails raises resized or surfaceLost, which needsFrame() reports.
+    _targetStale = false;
     _frameBegun = false;
     _renderPassActive = false;
     advanceFrame();
+}
+
+bool VulkanRenderer::needsFrame() const noexcept
+{
+    const wma::WindowFlags *flags = _windowManagerApi->getWindowFlags();
+    return _targetStale || (flags && (flags->resized || flags->surfaceLost));
 }
 
 void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)

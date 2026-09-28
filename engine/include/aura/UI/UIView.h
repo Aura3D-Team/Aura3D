@@ -111,7 +111,8 @@ class UIView
     void update(f32 deltaSeconds);
 
     /// True when update() left something that has not been drawn yet. Also true
-    /// before the first draw, which is what gets the first frame on screen.
+    /// before the first draw, and while IRenderer::needsFrame() holds: a
+    /// rebuilt swapchain discards the last frame even when the tree is clean.
     [[nodiscard]] bool needsDraw() const noexcept;
 
     /// The drawing half of render(). Call inside a render pass, after update().

@@ -89,7 +89,7 @@ static const std::unordered_map<i64, const char *> vkResultToString = {
     {VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT, "Incompatible shader binary"}};
 
 #define VK_RESULT_CHECK(result)                                                                                        \
-    if (result != VK_SUCCESS)                                                                                          \
+    if ((result) != VK_SUCCESS)                                                                                        \
         throw AuraException(result);
 
 #endif // AURA_HAS_VULKAN

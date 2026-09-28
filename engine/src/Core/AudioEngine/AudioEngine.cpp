@@ -1,5 +1,7 @@
 #include "aura/Core/AudioEngine/AudioEngine.h"
 
+#include <wma/audio/backends/null/NullAudioDevice.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -54,8 +56,12 @@ AudioEngine::AudioEngine(std::unique_ptr<wma::IAudioDevice> device, u32 maxVoice
         INK_WARN << "[Aura3D] AudioEngine constructed without a device; falling back to a null device";
         _device = wma::createAudioDevice(wma::AudioBackend::Null);
         (void)_device->open(wma::AudioDeviceConfig{});
-        _mixerLive = false;
     }
+
+    // The concrete null device never starts a callback thread, including when
+    // openAudioDevice() supplied it after failing to open hardware. Custom
+    // devices can report Backend::Null and still drive callbacks themselves.
+    _mixerLive = dynamic_cast<wma::NullAudioDevice *>(_device.get()) == nullptr;
 
     const wma::AudioDeviceConfig &config = _device->getConfig();
     _sampleRate = config.sampleRate;
@@ -142,14 +148,17 @@ void AudioEngine::retireClip(AudioClipHandle handle) noexcept
         publishVoice(i);
     }
     entry->second->retired = true;
+    // Pairs with the fence opening mix(): either this load sees the block that
+    // missed the stop, or the next block's consume sees the stop.
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     // A callback may have consumed the previous state before this publication.
     entry->second->retireAfter = _mixEpoch.load(std::memory_order_acquire) + 2;
 }
 
 void AudioEngine::reclaimClips() noexcept
 {
-    //! A device that is stopped, never started, or is the engine's own null
-    //! fallback runs no callback, so nothing can still be reading the samples.
+    //! A stopped device or the concrete null backend has no callback thread,
+    //! so nothing can still be reading the samples.
     const bool live = _mixerLive && _device->isRunning();
     const u32 epoch = _mixEpoch.load(std::memory_order_acquire);
     std::erase_if(_clips,
@@ -465,6 +474,9 @@ void AudioEngine::computeSpatialGains(const Voice &voice, f32 &leftGain, f32 &ri
 
 void AudioEngine::mix(std::span<f32> output)
 {
+    //! Orders the previous block's _mixEpoch increment before this block's
+    //! consumes; see retireClip().
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     std::fill(output.begin(), output.end(), 0.0f);
 
     const f32 master = _masterVolume.load(std::memory_order_relaxed);

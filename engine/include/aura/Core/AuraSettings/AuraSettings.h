@@ -98,7 +98,7 @@ inline bool AudioBackendFromString(const std::string &s, wma::AudioBackend &out)
         up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
 #define X(name, upper)                                                                                                 \
-    if (up == upper)                                                                                                   \
+    if (up == (upper))                                                                                                 \
     {                                                                                                                  \
         out = wma::AudioBackend::name;                                                                                 \
         return true;                                                                                                   \

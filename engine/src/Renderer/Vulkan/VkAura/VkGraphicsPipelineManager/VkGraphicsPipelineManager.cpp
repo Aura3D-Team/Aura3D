@@ -8,8 +8,8 @@ namespace aura3d
 namespace vk
 {
 
-VkGraphicsPipelineManager::VkGraphicsPipelineManager(std::string shader_vert_spv, std::string shader_frag_spv,
-                                                     VkDevice *device)
+VkGraphicsPipelineManager::VkGraphicsPipelineManager(const std::string &shader_vert_spv,
+                                                     const std::string &shader_frag_spv, VkDevice *device)
     : VkPipelineManager(device), _shaderManager(VkShaderManager(device))
 {
     _shaderManager.createVertShaderModule(shader_vert_spv);

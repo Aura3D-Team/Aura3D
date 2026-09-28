@@ -69,7 +69,7 @@ void JobSystem::dispatch(i32 itemCount, const BandBody &body) const
                [&work](std::size_t band)
                {
                    work.body(bandEdge(static_cast<i64>(band), work.items, work.bands),
-                             bandEdge(static_cast<i64>(band + 1), work.items, work.bands));
+                             bandEdge(static_cast<i64>(band) + 1, work.items, work.bands));
                });
 }
 

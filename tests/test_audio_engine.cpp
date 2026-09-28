@@ -1,10 +1,12 @@
 #include "aura/Core/AudioEngine/AudioEngine.h"
 
+#include <array>
 #include <cmath>
 #include <memory>
 
 #include <wma/audio/backends/null/NullAudioDevice.hpp>
 
+#include "RuntimeAudioDevice.h"
 #include "TestUtils.h"
 
 using namespace aura3d;
@@ -537,24 +539,53 @@ void test_unload_reclaims_without_callbacks()
         fallback.unloadClip(fallback.createClip(constantClip(0.5f, 0.01f)));
     AURA_CHECK(fallback.clipCount() == 0, "unloadClip: frees at once when no callback can run");
 
+    AudioEngine supplied(wma::openAudioDevice(wma::AudioDeviceConfig{}, wma::AudioBackend::Null), 4);
+    for (int i = 0; i < 100; ++i)
+    {
+        const auto clip = supplied.createClip(constantClip(0.5f, 0.01f));
+        (void)supplied.play(clip);
+        supplied.unloadClip(clip);
+        supplied.update(0);
+    }
+    AURA_CHECK(supplied.isDeviceRunning() && supplied.clipCount() == 0,
+               "unloadClip: a supplied null device reclaims clips despite reporting running");
+    for (int i = 0; i < 8; ++i)
+        (void)supplied.createClip(constantClip(0.5f, 0.01f));
+    supplied.unloadAllClips();
+    AURA_CHECK(supplied.clipCount() == 0, "unloadAllClips: a supplied null device reclaims every clip");
+
+    TestRig passive;
+    const auto retired = passive.engine->createClip(constantClip(0.5f, 0.01f));
+    (void)passive.engine->play(retired);
+    (void)passive.render();
+    passive.engine->unloadClip(retired);
+    AURA_CHECK(passive.engine->clipCount() == 0 && approx(passive.peak(0), 0.0f),
+               "null device: manually mixing after immediate reclamation consumes the stop safely");
+
     //! A live device holds the samples until two blocks have been mixed past
-    //! the stop, since a block may already be reading them.
-    TestRig rig;
-    const AudioClipHandle clip = rig.engine->createClip(constantClip(0.5f, 0.01f));
-    (void)rig.engine->play(clip);
-    rig.engine->unloadClip(clip);
-    rig.engine->update(0.0f);
-    AURA_CHECK(rig.engine->clipCount() == 1, "unloadClip: a mixing device defers reclamation");
-    (void)rig.render();
-    (void)rig.render();
-    rig.engine->update(0.0f);
-    AURA_CHECK(rig.engine->clipCount() == 0, "update: reclaims once the audio thread has moved past the stop");
+    //! the stop, even if a custom device reports the Null backend enum.
+    auto owned = std::make_unique<RuntimeAudioDevice>();
+    auto *device = owned.get();
+    AudioEngine live(std::move(owned), 4);
+    std::array<f32, usize{kFramesPerBuffer} * kChannels> output{};
+    const AudioClipHandle clip = live.createClip(constantClip(0.5f, 0.01f));
+    (void)live.play(clip);
+    device->callback(output);
+    live.unloadClip(clip);
+    live.update(0.0f);
+    AURA_CHECK(live.clipCount() == 1, "unloadClip: a mixing device defers reclamation");
+    device->callback(output);
+    live.update(0.0f);
+    AURA_CHECK(live.clipCount() == 1, "update: one callback boundary is not enough to reclaim samples");
+    device->callback(output);
+    live.update(0.0f);
+    AURA_CHECK(live.clipCount() == 0, "update: reclaims once the audio thread has moved past the stop");
 
     //! Stopping the device also proves no callback is running.
-    const AudioClipHandle later = rig.engine->createClip(constantClip(0.5f, 0.01f));
-    rig.device->stop();
-    rig.engine->unloadClip(later);
-    AURA_CHECK(rig.engine->clipCount() == 0, "unloadClip: a stopped device frees at once");
+    const AudioClipHandle later = live.createClip(constantClip(0.5f, 0.01f));
+    device->stop();
+    live.unloadClip(later);
+    AURA_CHECK(live.clipCount() == 0, "unloadClip: a stopped device frees at once");
 }
 
 int main()

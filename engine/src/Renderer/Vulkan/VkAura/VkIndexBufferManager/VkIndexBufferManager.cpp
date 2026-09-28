@@ -92,6 +92,7 @@ void VkIndexBufferManager::createIndexBufferImpl(const std::string &name, VkComm
     else
     {
         AllocatedBuffer staging = _memoryManager->createUploadBuffer(bufferSize, sharingMode);
+        const bool manuallyMapped = staging.mappedData == nullptr;
         if (staging.mappedData)
         {
             std::ranges::copy(indices, static_cast<IndexT *>(staging.mappedData));
@@ -100,10 +101,13 @@ void VkIndexBufferManager::createIndexBufferImpl(const std::string &name, VkComm
         {
             auto *data = static_cast<IndexT *>(_memoryManager->map(staging));
             std::ranges::copy(indices, data);
-            _memoryManager->unmap(staging);
         }
 
-        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), staging.allocation, 0, bufferSize));
+        const VkResult flushResult =
+            vmaFlushAllocation(_memoryManager->getAllocator(), staging.allocation, 0, bufferSize);
+        if (manuallyMapped)
+            _memoryManager->unmap(staging);
+        VK_RESULT_CHECK(flushResult);
 
         AllocatedBuffer gpu =
             _memoryManager->createDeviceLocalBuffer(bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, sharingMode);

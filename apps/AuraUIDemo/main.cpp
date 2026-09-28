@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdio>
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -546,6 +547,7 @@ void buildTree(Column &into, const Theme &theme, GalleryState &gallery)
 } // namespace
 
 int main(int argc, char **argv)
+try
 {
     GalleryState gallery;
     Engine engine("settings.json");
@@ -624,4 +626,10 @@ int main(int argc, char **argv)
         });
 
     return 0;
+}
+catch (const std::exception &error)
+{
+    //! An engine that fails to start throws; report it rather than terminate.
+    INK_ERROR << "AuraUIDemo: " << error.what();
+    return 1;
 }

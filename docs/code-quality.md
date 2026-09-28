@@ -1,8 +1,9 @@
 # C++ checks
 
 LLVM 21: `clang-format-21` and `clang-tidy-21`. Configure with
-`-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` and build once so generated headers exist.
-The Linux Debug preset already exports the database.
+`-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_SCAN_FOR_MODULES=OFF` and build once
+so generated headers exist. Module scanning adds GCC flags that clang-tidy
+cannot parse. The Linux Debug preset already sets both options.
 
 Inside `vulkan-dev`, from this repository:
 
@@ -24,6 +25,10 @@ fail the job. Header changes analyze all owned translation units in the Linux
 compilation database; diagnostics remain limited to changed lines. Platform
 sources outside that database are reported separately. Vendor, generated and
 build directories are excluded. No repository-wide reformat is required.
+
+The container jobs build pinned Ink 0.5.0 sources for their target ABI with
+[setup-ink](../.github/actions/setup-ink/action.yml); the image's older Ink is
+insufficient. Put the action's installation prefix first in `CMAKE_PREFIX_PATH`.
 
 The [format configuration](../.clang-format) uses the requested LLVM/Allman style,
 four-space indentation and 120 columns. The [lint configuration](../.clang-tidy)

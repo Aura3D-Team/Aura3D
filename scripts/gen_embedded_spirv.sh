@@ -42,6 +42,8 @@ SHADERS=(
   echo ''
   echo '#pragma once'
   echo ''
+  # Keeps clang-format from rewriting output this script must reproduce.
+  echo '// clang-format off'
   echo '/*'
   echo ' * GENERATED FILE - do not edit by hand.'
   echo ' * Regenerate with scripts/gen_embedded_spirv.sh after editing'
@@ -79,6 +81,7 @@ done
 {
   echo '} // namespace vk'
   echo '} // namespace aura3d'
+  echo '// clang-format on'
   echo ''
   echo '#endif // EMBEDDED_SPIRV_SHADERS_H'
 } >> "$TMP/EmbeddedSpirv.h"

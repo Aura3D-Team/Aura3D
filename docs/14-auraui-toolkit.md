@@ -36,19 +36,24 @@ A loop that would rather not present an unchanged frame at all splits it:
 
 ```cpp
 ui.update(deltaSeconds);          // input, focus, animation -- always
-if (ui.needsDraw()) {             // false for an idle tree after its first draw
+bool drew = false;
+if (ui.needsDraw()) {             // the tree changed, or the renderer lost its frame
     renderer->beginFrame();
-    if (renderer->frameBegun()) { // false while a resize rebuilds the swapchain
+    if (renderer->frameBegun()) { // false while the swapchain is rebuilt
         renderer->beginRenderPass();
-        ui.draw();                // not reached: the tree stays dirty for next pass
+        ui.draw();
         renderer->endRenderPass();
+        drew = true;
     }
     renderer->endFrame();
 }
+if (!drew)
+    renderer->getWindowManager()->waitEvents(16);
 ```
 
-A skipped frame has nothing to block on, so wait for events
-(`IWindowManager::waitEvents`) before the next pass or the loop spins.
+A pass that draws nothing has nothing to block on, so it waits for events. Keep
+the timeout finite: a frame that could not begin is retried only when the wait
+returns.
 
 ## Building a tree
 

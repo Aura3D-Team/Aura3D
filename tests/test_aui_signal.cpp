@@ -57,6 +57,8 @@ int main()
     AURA_CHECK(calls == 3, "destroying the signal during emit cancels remaining callbacks safely");
 
     Signal<> moved(std::move(signal));
+    // Deliberately exercise Signal's documented reusable moved-from state.
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     signal.connect(
         [&]
         {

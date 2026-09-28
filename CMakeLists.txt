@@ -213,8 +213,8 @@ set_source_files_properties(
 
 target_link_libraries(Aura3D
     PUBLIC
-    wma::wma
     ink::ink
+    wma::wma
     Threads::Threads
     glm::glm
 )

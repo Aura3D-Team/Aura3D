@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <exception>
 
 #include "aura/Core/AuraException/AuraException.h"
 
@@ -18,7 +19,14 @@ VkTextureManager::VkTextureManager(VulkanMemoryManager *memoryManager, VkDevice 
 
 VkTextureManager::~VkTextureManager()
 {
-    cleanup();
+    try
+    {
+        cleanup();
+    }
+    catch (const std::exception &error)
+    {
+        INK_ERROR << "Fail to clean texture up: " << error.what();
+    }
 }
 
 void VkTextureManager::destroyTextureData(TextureData &texture)
@@ -235,7 +243,7 @@ void *VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
     if (bytes > slot.capacity)
     {
         releaseStagingBuffer();
-        const VkDeviceSize capacity = std::max<VkDeviceSize>(bytes, 4 * 1024 * 1024);
+        const VkDeviceSize capacity = std::max(bytes, VkDeviceSize{4} * 1024 * 1024);
         slot.staging = _memoryManager->createUploadBuffer(capacity, VK_SHARING_MODE_EXCLUSIVE);
         if (slot.staging.buffer == VK_NULL_HANDLE)
         {

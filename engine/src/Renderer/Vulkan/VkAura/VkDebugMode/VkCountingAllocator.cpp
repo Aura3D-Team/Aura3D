@@ -183,7 +183,9 @@ void *VkCountingAllocator::allocate(usize size, usize alignment) noexcept
     if (base == nullptr)
         return nullptr;
 
-    auto *payload = reinterpret_cast<std::byte *>(roundUp(reinterpret_cast<usize>(base) + sizeof(BlockHeader), align));
+    auto *payload = base + sizeof(BlockHeader);
+    const usize address = reinterpret_cast<usize>(payload);
+    payload += roundUp(address, align) - address;
 
     const auto offset = static_cast<usize>(payload - base);
     if (offset > std::numeric_limits<u32>::max())

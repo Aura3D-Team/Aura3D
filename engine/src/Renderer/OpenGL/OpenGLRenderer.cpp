@@ -17,6 +17,9 @@ namespace aura3d
 namespace gl
 {
 
+static_assert(sizeof(GLintptr) == sizeof(void *) && sizeof(GLsizeiptr) == sizeof(void *),
+              "OpenGL buffer offsets and sizes must retain the platform's pointer width");
+
 OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails &windowDetails) : IRenderer(windowDetails)
 {
     INK_INFO << "Renderer - OPENGL";
@@ -190,6 +193,8 @@ void OpenGLRenderer::createOverlay2DBuffers()
     glBindBuffer(GL_ARRAY_BUFFER, _overlay2DVbo);
 
     //! Layout must match gfx::Vertex2D and the 2D shader's input locations.
+    // OpenGL requires byte offsets encoded as pointers when a VBO is bound.
+    // NOLINTBEGIN(performance-no-int-to-ptr)
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D),
                           reinterpret_cast<void *>(offsetof(gfx::Vertex2D, pos)));
     glEnableVertexAttribArray(0);
@@ -199,6 +204,7 @@ void OpenGLRenderer::createOverlay2DBuffers()
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D),
                           reinterpret_cast<void *>(offsetof(gfx::Vertex2D, color)));
     glEnableVertexAttribArray(2);
+    // NOLINTEND(performance-no-int-to-ptr)
 
     //! The element buffer binding is VAO state, so bind it while the VAO is
     //! current and it is restored automatically on every later bind.
@@ -293,7 +299,6 @@ void OpenGLRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32
 
 void OpenGLRenderer::beginFrame()
 {
-    auto *wd = _windowManagerApi->getWindowDetails();
     auto *flags = _windowManagerApi->getWindowFlags();
 
     if (flags->resized)

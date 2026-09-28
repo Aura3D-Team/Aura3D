@@ -222,7 +222,7 @@ void CPURenderer::endFrame()
         AURA_FRAME_SCOPE(FramePhase::Present);
 
         if (_frameBufferManager)
-            _frameBufferManager->renderFramebuffer();
+            _presentDropped = !_frameBufferManager->renderFramebuffer();
     }
 
     //! Braced above so the present scope has closed before the frame does.
@@ -318,7 +318,10 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
             vertex.stamp = 0;
         ++_drawStamp;
     }
-    _transformed.resize(verts.size());
+    // Keep constructed entries across smaller draws; the stamp invalidates
+    // their contents without reinitializing an entire vertex buffer.
+    if (_transformed.size() < verts.size())
+        _transformed.resize(verts.size());
     const glm::vec3 toLight = safeNormal(-_light.direction);
     const auto vertex = [&](u32 index) -> const ClipVertex &
     {
@@ -330,7 +333,7 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
         }
         return cached.vertex;
     };
-    for (u32 t = 0; t < triCount; ++t)
+    for (usize t = 0; t < triCount; ++t)
     {
         const u32 i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
         if (i0 >= verts.size() || i1 >= verts.size() || i2 >= verts.size())
@@ -366,7 +369,7 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     const u32 triCount = safeCount / 3;
 
     const glm::vec3 toLight = safeNormal(-_light.direction);
-    for (u32 t = 0; t < triCount; ++t)
+    for (usize t = 0; t < triCount; ++t)
     {
         const auto a = transformVertex(verts[t * 3], MVP, normalMatrix, _light, toLight);
         const auto b = transformVertex(verts[t * 3 + 1], MVP, normalMatrix, _light, toLight);

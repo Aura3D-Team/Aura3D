@@ -20,7 +20,7 @@ namespace vk
 class VkGraphicsPipelineManager : public VkPipelineManager
 {
   public:
-    VkGraphicsPipelineManager(std::string shader_vert_spv, std::string shader_frag_spv, VkDevice *device);
+    VkGraphicsPipelineManager(const std::string &shader_vert_spv, const std::string &shader_frag_spv, VkDevice *device);
 
     VkGraphicsPipelineManager(const unsigned char *vertData, u32 vertSize, const unsigned char *fragData, u32 fragSize,
                               VkDevice *device);

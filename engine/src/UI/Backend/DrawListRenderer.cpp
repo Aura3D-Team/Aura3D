@@ -325,7 +325,7 @@ void DrawListRenderer::_roundedBorder(const Rect &bounds, const Rect &clip, Corn
             return;
         }
         const u32 pixels = std::clamp(u32(std::ceil(radius * _scale)), 1u, FontAtlas::kMaxCornerRadius);
-        const auto *mask = atlas->cornerRingMask(pixels, width * pixels / radius);
+        const auto *mask = atlas->cornerRingMask(pixels, width * static_cast<f32>(pixels) / radius);
         if (mask)
         {
             const glm::vec2 uv0{flipX ? mask->max.x : mask->min.x, flipY ? mask->max.y : mask->min.y};

@@ -17,6 +17,8 @@ GlVertexBufferManager::~GlVertexBufferManager()
 
 static void setupVertexAttributes()
 {
+    // OpenGL interprets this pointer argument as a byte offset into the bound VBO.
+    // NOLINTBEGIN(performance-no-int-to-ptr)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void *)offsetof(gfx::Vertex3D, pos));
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void *)offsetof(gfx::Vertex3D, texCoord));
@@ -25,6 +27,7 @@ static void setupVertexAttributes()
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex3D), (void *)offsetof(gfx::Vertex3D, normal));
     glEnableVertexAttribArray(3);
+    // NOLINTEND(performance-no-int-to-ptr)
 }
 
 VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices)

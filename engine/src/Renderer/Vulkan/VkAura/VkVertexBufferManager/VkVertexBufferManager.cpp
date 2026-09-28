@@ -83,6 +83,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string &name, VkComman
     else
     {
         AllocatedBuffer staging = _memoryManager->createUploadBuffer(bufferSize, sharingMode);
+        const bool manuallyMapped = staging.mappedData == nullptr;
 
         if (staging.mappedData)
         {
@@ -92,10 +93,13 @@ void VkVertexBufferManager::createVertexBuffer(const std::string &name, VkComman
         {
             auto *data = static_cast<gfx::Vertex3D *>(_memoryManager->map(staging));
             std::ranges::copy(vertices3d, data);
-            _memoryManager->unmap(staging);
         }
 
-        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), staging.allocation, 0, bufferSize));
+        const VkResult flushResult =
+            vmaFlushAllocation(_memoryManager->getAllocator(), staging.allocation, 0, bufferSize);
+        if (manuallyMapped)
+            _memoryManager->unmap(staging);
+        VK_RESULT_CHECK(flushResult);
 
         AllocatedBuffer gpu =
             _memoryManager->createDeviceLocalBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sharingMode);

@@ -22,6 +22,7 @@ int main()
     for (bool submissionFailure : {false, true})
     {
         std::atomic<bool> finished{false};
+        bool caught = false;
         ink::ThreadPool pool(2); // Unlike std::async, these futures do not join on destruction.
         try
         {
@@ -44,7 +45,9 @@ int main()
         }
         catch (const std::runtime_error &)
         {
+            caught = true;
         }
+        AURA_CHECK(caught, "submission and worker exceptions reach the caller");
         AURA_CHECK(finished, "workers complete before submission/recording exceptions escape");
     }
     ink::ParallelProcessor executor(4);

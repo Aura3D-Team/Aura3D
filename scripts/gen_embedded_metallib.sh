@@ -81,6 +81,8 @@ fi
   echo ''
   echo '#pragma once'
   echo ''
+  # Keeps clang-format from rewriting output this script must reproduce.
+  echo '// clang-format off'
   echo '/*'
   echo ' * GENERATED FILE - do not edit by hand.'
   echo ' * Regenerate with scripts/gen_embedded_metallib.sh after editing'
@@ -137,6 +139,7 @@ fi
 {
   echo '} // namespace mtl'
   echo '} // namespace aura3d'
+  echo '// clang-format on'
   echo ''
   echo '#endif // EMBEDDED_METAL_LIB_H'
 } >> "$TMP/EmbeddedMetalLib.h"

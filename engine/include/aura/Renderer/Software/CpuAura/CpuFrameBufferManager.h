@@ -93,7 +93,7 @@ enum InterpolationMethod : u32
 
 struct Texture
 {
-    Texture(int w, int h) : data(w * h, 0), width(w), height(h)
+    Texture(i32 w, i32 h) : data(static_cast<size_t>(w) * static_cast<size_t>(h), 0), width(w), height(h)
     {
     }
 
@@ -257,7 +257,8 @@ class CpuFrameBufferManager
     /// Present the color plane by locking the backend's software framebuffer
     /// (wma::IWindowManager::lockFramebuffer()) and blitting into it in
     /// parallel across the same worker pool flush() rasterises with.
-    void renderFramebuffer();
+    /// @return `false` when the backend had no framebuffer to lock.
+    bool renderFramebuffer();
 
     // Memory management
     void resizeFramebuffer(int width, int height);

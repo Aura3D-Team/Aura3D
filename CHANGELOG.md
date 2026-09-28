@@ -13,6 +13,19 @@ All notable changes to Aura3D are documented in this file.
   Vulkan and Metal skip the frame when they rebuild the swapchain or have no
   surface; a loop that draws only on change must know, or what it drew into
   that frame is lost until the next change.
+- `IRenderer::needsFrame()`: the backend needs a frame although nothing changed
+  -- a pending or just-finished swapchain rebuild on Vulkan, a dropped present
+  on the CPU backend. `UIView::needsDraw()` includes it; before, a failed
+  present or a lost surface under an idle tree left the window stale.
+
+### Fixed
+
+- `EmbeddedSpirv.h` and `EmbeddedMetalLib.h` match their generators again, which
+  now emit `// clang-format off`. Regenerating no longer fails the format check.
+- Look up ink before wma, so Aura3D's own lookup selects ink rather than wma's.
+- Order the audio retire handshake with seq_cst fences. Under acquire/release
+  alone the C++ model let a clip be freed while a block that had not yet seen
+  its stop still read it.
 - Check changed C++ lines with clang-format and clang-tidy 21 in Linux Debug CI; export its compilation database and document local checks.
 
 ## [0.3.0]

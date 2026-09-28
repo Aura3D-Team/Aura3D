@@ -90,14 +90,14 @@ void CpuFrameBufferManager::clear(u32 color)
  * parallelFill() and the pool behind it are gone from wma entirely now --
  * this class was its only real consumer.
  */
-void CpuFrameBufferManager::renderFramebuffer()
+bool CpuFrameBufferManager::renderFramebuffer()
 {
     if (_windowManager == nullptr)
-        return;
+        return false;
 
     const wma::SoftwareFramebuffer target = _windowManager->lockFramebuffer();
     if (!target.valid())
-        return;
+        return false;
 
     // Our plane and the locked surface can momentarily disagree on size (a
     // resize event not yet propagated through handleWindowChanges), so bound
@@ -131,6 +131,7 @@ void CpuFrameBufferManager::renderFramebuffer()
         });
 
     _windowManager->presentFramebuffer();
+    return true;
 }
 
 /**

@@ -131,11 +131,11 @@ void VulkanMemoryManager::initialize(VkInstance instance, VkPhysicalDevice physi
          */
         .pDeviceMemoryCallbacks = VkDeviceMemoryCounters::vmaCallbacks(),
 #endif
-        .instance = instance,
-        .vulkanApiVersion = config.vulkanApiVersion,
 #ifdef ANDROID
         .pVulkanFunctions = &vulkanFunctions,
 #endif
+        .instance = instance,
+        .vulkanApiVersion = config.vulkanApiVersion,
     };
 
     VK_RESULT_CHECK(vmaCreateAllocator(&allocatorInfo, &_allocator));

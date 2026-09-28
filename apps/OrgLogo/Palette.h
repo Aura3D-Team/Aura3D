@@ -174,7 +174,7 @@ inline const std::array<Rgb, kTableSize> kFlameRamp = []
 {
     const auto quantise = [](float v) noexcept
     {
-        return static_cast<std::uint8_t>(detail::tone(v) * 255.0f + 0.5f);
+        return static_cast<std::uint8_t>(std::lround(detail::tone(v) * 255.0f));
     };
 
     return {quantise(c.r), quantise(c.g), quantise(c.b), 255};
@@ -203,9 +203,10 @@ inline const std::array<Rgb, kTableSize> kFlameRamp = []
         return {};
 
     const float normalise = 255.0f / peak;
-    return {static_cast<std::uint8_t>(toned.r * normalise + 0.5f),
-            static_cast<std::uint8_t>(toned.g * normalise + 0.5f),
-            static_cast<std::uint8_t>(toned.b * normalise + 0.5f), static_cast<std::uint8_t>(peak * 255.0f + 0.5f)};
+    return {static_cast<std::uint8_t>(std::lround(toned.r * normalise)),
+            static_cast<std::uint8_t>(std::lround(toned.g * normalise)),
+            static_cast<std::uint8_t>(std::lround(toned.b * normalise)),
+            static_cast<std::uint8_t>(std::lround(peak * 255.0f))};
 }
 
 /**
@@ -218,7 +219,7 @@ inline const std::array<Rgb, kTableSize> kFlameRamp = []
  */
 [[nodiscard]] inline Rgba8 encodeWhiteMask(float coverage) noexcept
 {
-    return {255, 255, 255, static_cast<std::uint8_t>(clamp01(coverage) * 255.0f + 0.5f)};
+    return {255, 255, 255, static_cast<std::uint8_t>(std::lround(clamp01(coverage) * 255.0f))};
 }
 
 } // namespace orglogo

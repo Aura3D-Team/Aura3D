@@ -68,6 +68,7 @@ class VulkanRenderer : public IRenderer
     {
         return _frameBegun;
     }
+    [[nodiscard]] bool needsFrame() const noexcept override;
     void beginRenderPass() override;
     void endRenderPass() override;
     void endFrame() override;
@@ -339,6 +340,9 @@ class VulkanRenderer : public IRenderer
     u32 _imagesCount = 0;
     bool _isInitialized = false;
     bool _frameBegun = false;
+    //! The swapchain holds no presented frame: nothing yet, or it was rebuilt
+    //! since. Cleared by the next present.
+    bool _targetStale = true;
     bool _renderPassActive = false;
     bool _pipelineReady = false;
 

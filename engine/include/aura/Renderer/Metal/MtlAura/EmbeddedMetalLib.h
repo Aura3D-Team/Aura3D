@@ -3,6 +3,7 @@
 
 #pragma once
 
+// clang-format off
 /*
  * GENERATED FILE - do not edit by hand.
  * Regenerate with scripts/gen_embedded_metallib.sh after editing
@@ -19,10 +20,8 @@
  */
 #define AURA_METAL_HAS_EMBEDDED_METALLIB 0
 
-namespace aura3d
-{
-namespace mtl
-{
+namespace aura3d {
+namespace mtl {
 
 //! Every MSL source under resources/shaders/metal, concatenated in the
 //! order gen_embedded_metallib.sh lists them. Compiled at runtime by
@@ -194,5 +193,6 @@ fragment float4 aura_fragment_2d(Overlay2DVertexOut in [[stage_in]],
 
 } // namespace mtl
 } // namespace aura3d
+// clang-format on
 
 #endif // EMBEDDED_METAL_LIB_H

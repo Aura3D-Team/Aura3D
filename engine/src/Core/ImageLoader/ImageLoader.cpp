@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -37,7 +38,7 @@ ImageData ImageLoader::loadRGBA(const std::string &path)
 ImageData ImageLoader::makeCheckerboard(u32 size, u32 cells, u8 r0, u8 g0, u8 b0, u8 r1, u8 g1, u8 b1)
 {
     ImageData image;
-    image.width = std::max(size, 2u);
+    image.width = static_cast<i32>(std::clamp(size, 2u, static_cast<u32>(std::numeric_limits<i32>::max())));
     image.height = image.width;
     image.channels = 4;
 
