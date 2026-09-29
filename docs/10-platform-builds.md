@@ -39,8 +39,8 @@ Prerequisites: a C++23 MSVC toolchain (Visual Studio 2022 17.10+, or the
 Build Tools equivalent) on `PATH` — open a "Developer Command Prompt"/"Developer
 PowerShell", or run `vcvarsall.bat x64` yourself first — plus
 [vcpkg](https://vcpkg.io) for `libink`/`libwma`'s own dependencies
-(`nlohmann_json`, SDL3, GLFW) and Aura3D's own glm and Vulkan
-headers/loader. `windows-latest` GitHub runners ship vcpkg preinstalled at
+(`nlohmann_json`, SDL3, GLFW) and Aura3D's own glm, Vulkan
+headers/loader and Vulkan Memory Allocator. `windows-latest` GitHub runners ship vcpkg preinstalled at
 `%VCPKG_INSTALLATION_ROOT%`; locally,
 [clone and bootstrap it](https://learn.microsoft.com/vcpkg/get_started/get-started)
 if you don't have it yet.
@@ -48,7 +48,8 @@ if you don't have it yet.
 ```powershell
 vcpkg install nlohmann-json:x64-windows-static sdl3:x64-windows-static `
     glfw3:x64-windows-static glm:x64-windows-static `
-    vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static
+    vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static `
+    vulkan-memory-allocator:x64-windows-static
 
 # windows-release below, or windows-debug for a Debug build
 cmake --preset windows-release `

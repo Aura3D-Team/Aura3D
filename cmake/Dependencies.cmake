@@ -23,6 +23,9 @@ endif()
 
 if(AURA_ENABLE_VULKAN)
     find_package(Vulkan REQUIRED)
+    # VMA is header-only and not part of Vulkan::Vulkan. The Vulkan SDK and
+    # vcpkg on Windows install it under include/vma; Linux installs it flat.
+    find_path(AURA_VMA_INCLUDE_DIR vk_mem_alloc.h HINTS ${Vulkan_INCLUDE_DIRS} PATH_SUFFIXES vma NO_CMAKE_FIND_ROOT_PATH REQUIRED)
     set(AURA_FIND_VULKAN ON)
 else()
     set(AURA_FIND_VULKAN OFF)
