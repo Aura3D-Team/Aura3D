@@ -13,7 +13,8 @@
 #     Both install into $ANDROID_DEPS_PREFIX (default: /usr/local), telling
 #     platforms apart by ABI tag rather than by directory. Third-party deps
 #     that are still per-platform (SDL3) stay under $ANDROID_DEPS_PREFIX/android,
-#     which is appended to CMAKE_PREFIX_PATH below.
+#     which goes first in CMAKE_PREFIX_PATH below: the shared prefix also
+#     holds a host SDL3, and the first config found is the one linked.
 #
 # Usage
 #   ./scripts/build_android.sh [--abi arm64-v8a|x86_64] [--apk] [--debug]
@@ -69,7 +70,7 @@ cmake -S "$ROOT" -B "$BUILD_DIR" \
   -DANDROID_PLATFORM="android-29" \
   -DANDROID_STL="c++_shared" \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DCMAKE_PREFIX_PATH="$ANDROID_DEPS_PREFIX;$ANDROID_DEPS_PREFIX/android" \
+  -DCMAKE_PREFIX_PATH="$ANDROID_DEPS_PREFIX/android;$ANDROID_DEPS_PREFIX" \
   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 

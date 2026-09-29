@@ -249,6 +249,7 @@ endif()
 if(AURA_ENABLE_VULKAN)
     target_compile_definitions(Aura3D PUBLIC AURA_HAS_VULKAN)
     target_link_libraries(Aura3D PUBLIC Vulkan::Vulkan)
+    target_include_directories(Aura3D PUBLIC $<BUILD_INTERFACE:${AURA_VMA_INCLUDE_DIR}>)
 endif()
 
 if(AURA_ENABLE_OPENGL)
