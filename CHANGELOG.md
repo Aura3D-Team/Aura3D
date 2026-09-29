@@ -39,6 +39,9 @@ All notable changes to Aura3D are documented in this file.
 - `vendor/KHR/khrplatform.h` was a partial copy missing the real header's
   `_WIN64` branch: `GLintptr`/`GLsizeiptr` silently truncated to 32 bits on
   Win64 (LLP64), where `long` and pointers differ in width.
+- Windows release: `MSYS_NO_PATHCONV=1` on the `lib.exe /NOLOGO` merge step.
+  Git Bash was rewriting the bare `/NOLOGO` into a path under its own install
+  dir, and `lib.exe` then read that path as an input file and failed.
 - Order the audio retire handshake with seq_cst fences. Under acquire/release
   alone the C++ model let a clip be freed while a block that had not yet seen
   its stop still read it.

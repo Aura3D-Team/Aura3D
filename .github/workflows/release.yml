@@ -545,6 +545,12 @@ jobs:
         # over aura3d.lib after, the same way the ar-based jobs merge into
         # "$FAT_LIB.merged" and mv it into place rather than overwriting
         # $FAT_LIB directly mid-read.
+        #
+        # MSYS_NO_PATHCONV: this step's shell is Git Bash (workflow default),
+        # which rewrites a bare /word argument into a Windows path rooted at
+        # its own install dir
+        env:
+          MSYS_NO_PATHCONV: 1
         run: |
           FAT_LIB="stage/aura3d-windows-x86_64/lib/aura3d_windows_amd64.lib"
 
