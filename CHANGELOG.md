@@ -36,6 +36,9 @@ All notable changes to Aura3D are documented in this file.
   install it under `include/vma`) and install the vcpkg port in CI.
 - Android script and Gradle build search the per-ABI prefix before the shared
   one, so the host SDL3 is no longer linked into an arm64 binary.
+- `vendor/KHR/khrplatform.h` was a partial copy missing the real header's
+  `_WIN64` branch: `GLintptr`/`GLsizeiptr` silently truncated to 32 bits on
+  Win64 (LLP64), where `long` and pointers differ in width.
 - Order the audio retire handshake with seq_cst fences. Under acquire/release
   alone the C++ model let a clip be freed while a block that had not yet seen
   its stop still read it.
