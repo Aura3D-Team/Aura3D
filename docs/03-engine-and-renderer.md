@@ -28,6 +28,46 @@ aura3d::RendererChoice backend = engine.getBackend();
 `Engine` owns the renderer and the `ResourceManager` for its whole lifetime —
 you don't call `new`/`delete` on either.
 
+## Window decorations
+
+```cpp
+aura3d::AuraConfig config;
+config.window.decorations = wma::DecorationMode::ClientSide; // or "decorations": "client"
+Engine engine(config, "settings.json");
+
+aura3d::ui::UIView ui(*engine.getRenderer()); // owns a DefaultWindowDecoration
+ui.setWindowTitle("My application");
+```
+
+The decoration frames `root().setContent()`: a title bar with the title
+centred, and — while the window is resizable and not maximized — a 1 px border
+in the same colour whose edges and corners start a native resize.
+`root().contentBounds()` is what remains; 3D rendering still covers the full
+framebuffer. Server-decorated, fullscreen and non-toplevel windows hide it, and
+Wayland may override the request either way.
+
+```cpp
+auto bar = std::make_unique<aura3d::ui::DefaultWindowDecoration>();
+bar->titleLabel().style().textColor({0.8f, 0.9f, 1.0f, 1.0f});
+ui.setWindowDecoration(std::move(bar)); // nullptr removes it
+```
+
+For a different layout, derive from `IWindowDecoration`: reserve the frame with
+`contentInsets()` (or `layout().padding`), place children in `arrangeContent()`
+and implement `update(window, title)`. It drives the window through WMA:
+
+| UI event | WMA call |
+|---|---|
+| Minimize | `window.minimize()` |
+| Maximize / restore | `window.isMaximized() ? window.restore() : window.maximize()` |
+| Close | `window.close()` |
+| Title-bar press | `window.beginMove()` |
+| Border press | `window.beginResize(wma::ResizeEdge::BottomRight)` |
+| Border hover | `window.getMouseListener().setSystemCursor(wma::SystemCursor::NwseResize)` |
+
+`beginMove()` / `beginResize()` must be called while the pressing button is
+still held. Only native Wayland implements them; other backends return `false`.
+
 ## `IRenderer`: the interface every backend implements
 
 All three backends (Vulkan, OpenGL, CPU) implement the same

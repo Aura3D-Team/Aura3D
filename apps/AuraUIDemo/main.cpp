@@ -550,17 +550,16 @@ int main(int argc, char **argv)
 try
 {
     GalleryState gallery;
-    Engine engine("settings.json");
+
+    // The gallery shows off AuraUI's title bar; settings.json may still opt out.
+    AuraConfig config;
+    config.window.decorations = wma::DecorationMode::ClientSide;
+    Engine engine(config, "settings.json");
 
     IRenderer *renderer = engine.getRenderer();
     wma::IWindowManager *window = renderer->getWindowManager();
 
-    /*
-     * No font ships with the engine, so this is empty and AuraUI falls back to
-     * the embedded 5x8 bitmap font -- crude, but it draws on every platform
-     * with no asset staged. Point it at any .ttf/.otf for real typography;
-     * nothing else about the gallery changes.
-     */
+    // Empty uses the embedded bitmap face; set a font path to override it.
     UIViewDesc desc{};
     desc.fontPath = "";
 

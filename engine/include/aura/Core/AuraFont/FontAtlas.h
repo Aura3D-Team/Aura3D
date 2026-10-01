@@ -122,7 +122,7 @@ class FontAtlas
                                                                                            const Desc &desc = Desc{});
 
     /**
-     * @brief Builds an atlas from the engine's embedded 5x8 bitmap font.
+     * @brief Builds an atlas from the engine's embedded rounded bitmap font.
      *
      * Requires no asset on disk, so it is the dependable fallback on platforms
      * where no font file is staged (WASM, Android) and when a load fails.
@@ -345,8 +345,6 @@ class FontAtlas
     float _descent = 0.0f;
     float _lineHeight = 0.0f;
 
-    //! Integer upscale applied to the 5x8 bitmap font in fallback mode.
-    u32 _bitmapScale = 1;
 };
 
 } // namespace aura3d

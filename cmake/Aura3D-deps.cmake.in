@@ -5,8 +5,8 @@
 #! skipping find_dependency(OpenGL) because a wasm install came after it.
 
 find_dependency(Threads)
-find_dependency(ink CONFIG)
-find_dependency(wma)
+find_dependency(ink 0.5.0 CONFIG)
+find_dependency(wma 0.5.0)
 
 # glm::glm is in the link interface either way; where glm ships no CMake package
 # the imported target is rebuilt from headers, as cmake/Dependencies.cmake does.

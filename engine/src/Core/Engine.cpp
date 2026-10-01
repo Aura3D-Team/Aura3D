@@ -74,6 +74,7 @@ void Engine::_configureWindow()
     _windowDetails.height = config->getWindowHeight();
     _windowDetails.resizable = config->getWindowResizable();
     _windowDetails.fullscreen = config->getFullscreen();
+    _windowDetails.decorationMode = config->getWindowDecorations();
     _windowDetails.vsync = config->getVSync();
     _windowDetails.targetFPS = config->getFPSLimit();
 

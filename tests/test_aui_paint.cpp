@@ -632,10 +632,45 @@ void testRoundedOutlineCoverage()
     }
 }
 
+void testGlyphsStayOnDevicePixels()
+{
+    for (const f32 scale : {1.0f, 1.25f, 1.5f, 2.0f})
+    {
+        RecordingRenderer renderer;
+        AtlasTextShaper shaper;
+        shaper.setScale(scale);
+        ShapedText text;
+        shaper.shape("Aura3D Wi", TextStyle{.pixelSize = 14.3f}, kUnbounded, text);
+        DrawList list;
+        list.begin(Rect::fromSize({}, {400, 100}));
+        list.drawText(text, {10.35f, 6.7f}, {1, 1, 1, 1});
+        DrawListRenderer backend(renderer, shaper);
+        backend.build(list, scale);
+        backend.submit();
+
+        bool aligned = !renderer.quads.empty();
+        for (const auto &vertex : renderer.quads)
+            aligned &= glm::all(glm::lessThan(glm::abs(vertex.pos - glm::round(vertex.pos)), glm::vec2{0.001f}));
+        AURA_CHECK(aligned, "fractional layout snaps glyph edges to device pixels");
+
+        const auto *atlas = shaper.page(text.page);
+        bool exact = atlas != nullptr;
+        for (usize i = 0; atlas && i + 2 < renderer.quads.size(); i += 4)
+        {
+            const auto &top = renderer.quads[i];
+            const auto &bottom = renderer.quads[i + 2];
+            const glm::vec2 texels = (bottom.texCoord - top.texCoord) * glm::vec2{atlas->width(), atlas->height()};
+            exact &= glm::all(glm::lessThan(glm::abs(bottom.pos - top.pos - texels), glm::vec2{0.001f}));
+        }
+        AURA_CHECK(exact, "each glyph atlas texel maps to one device pixel");
+    }
+}
+
 } // namespace
 
 int main()
 {
+    testGlyphsStayOnDevicePixels();
     testClipping();
     testSingleBatch();
     testSecondFontSizeCostsOneMoreBatch();

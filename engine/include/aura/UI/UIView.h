@@ -8,6 +8,7 @@
 #include "aura/UI/Backend/DrawListRenderer.h"
 #include "aura/UI/Text/TextEngine.h"
 #include "aura/UI/UIRoot.h"
+#include "aura/UI/WindowDecoration.h"
 
 /**
  * @file UIView.h
@@ -48,14 +49,16 @@ namespace aura3d::ui
 /// Construction parameters for a @ref UIView.
 struct UIViewDesc
 {
-    /// Path to a .ttf/.otf. Empty, or a file that fails to load, falls back to
-    /// the engine's embedded bitmap font -- so a UI always draws.
+    /// Path to a .ttf/.otf. Empty or unreadable uses the embedded bitmap face.
     std::string fontPath;
 
     u32 glyphPageSize = 1024; //! Edge length of each glyph page, in texels.
     u32 maxFontSizes = 6;     //! Distinct rasterization sizes kept resident.
 
     Theme theme{};
+
+    /// Empty uses the configured window title. Updated via setWindowTitle().
+    std::string windowTitle;
 };
 
 /**
@@ -67,7 +70,8 @@ struct UIViewDesc
 class UIView
 {
   public:
-    explicit UIView(IRenderer &renderer, const UIViewDesc &desc = UIViewDesc{});
+    explicit UIView(IRenderer &renderer, const UIViewDesc &desc = UIViewDesc{},
+                    std::unique_ptr<IWindowDecoration> decoration = std::make_unique<DefaultWindowDecoration>());
     ~UIView();
 
     UIView(const UIView &) = delete;
@@ -86,6 +90,17 @@ class UIView
      */
     void attachInput(wma::IWindowManager &window);
     void detachInput();
+
+    /// Replaces the window frame without replacing application content.
+    /// nullptr disables it; server-decorated, fullscreen and non-toplevel windows hide it.
+    void setWindowDecoration(std::unique_ptr<IWindowDecoration> decoration);
+    [[nodiscard]] IWindowDecoration *windowDecoration() const noexcept;
+
+    void setWindowTitle(std::string title);
+    [[nodiscard]] const std::string &windowTitle() const noexcept
+    {
+        return _windowTitle;
+    }
 
     /**
      * @brief Runs the frame: animations, layout, recording and submission.
@@ -183,6 +198,7 @@ class UIView
     wma::TouchFingerId _finger = 0;
     bool _windowFocused = true;
     std::shared_ptr<void> _inputLifetime;
+    std::string _windowTitle;
 };
 
 } // namespace aura3d::ui

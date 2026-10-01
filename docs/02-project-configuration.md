@@ -47,6 +47,7 @@ nothing, so this doc is deliberately exact about which is which.
         "backend": "SDL3",
         "resizable": true,
         "fullscreen": false,
+        "decorations": "server",
         "vsync": true,
         "vsync_mode": "Fifo",
         "fps_limit": 60
@@ -107,6 +108,7 @@ nothing, so this doc is deliberately exact about which is which.
 | `backend` | string | `"SDL3"` | Windowing library `wma` creates the window through: `"SDL3"`, `"GLFW"`, `"X11"`, or `"WAYLAND"` (case-insensitive). SDL3 is the only one exercised by all three renderer backends on every platform this engine targets — pick another only if you have a specific reason to (e.g. testing wma's X11/Wayland backends directly). An unrecognized value falls back to SDL3 with a warning, the same pattern `renderer.backend` uses. |
 | `resizable` | bool | `true` | |
 | `fullscreen` | bool | `false` | |
+| `decorations` | string | `"server"` | `"client"` makes `UIView` draw the title bar — see [03-engine-and-renderer.md](03-engine-and-renderer.md#window-decorations). A Wayland compositor may override the request either way. |
 | `vsync` | bool | `false` | Legacy on/off switch. When `true` and `vsync_mode` is absent, resolves to `Fifo`. Also zeroes `fps_limit` (the display is the limiter). |
 | `vsync_mode` | string | derived from `vsync` | One of `AutoVsync`, `AutoNoVsync`, `Fifo`, `FifoRelaxed`, `Immediate`, `Mailbox`. Vulkan-only — see [03-engine-and-renderer.md](03-engine-and-renderer.md#present-modes-vulkan). Falls back to `Fifo` if the surface doesn't support the requested mode. |
 | `fps_limit` | int | 60 | Ignored when `vsync` is `true`. |

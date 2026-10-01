@@ -79,15 +79,19 @@ UIRoot::UIRoot(ITextShaper &shaper, Theme theme)
 UIRoot::~UIRoot()
 {
     /*
-     * Both trees call back into _forget() as they go, which reads the members
+     * The trees call back into _forget() as they go, which reads the members
      * below. The tooltip is dropped by hand first because _forget() would
      * otherwise try to close it through a layer that is already being torn
-     * down, and _content goes before _overlay so overlay teardown is last.
+     * down. Content and decoration detach before the overlay they may reference.
      */
     _tooltipTarget = nullptr;
     _tooltipOverlay = OverlayLayer::kNone;
 
-    _content.reset();
+    while (_content || _decoration)
+    {
+        _adopt(nullptr);
+        setDecoration(nullptr);
+    }
     _overlay.reset();
 }
 
@@ -123,6 +127,27 @@ Widget &UIRoot::setContent(std::unique_ptr<Widget> content)
     Widget &reference = *content;
     _adopt(std::move(content));
     return reference;
+}
+
+void UIRoot::setDecoration(std::unique_ptr<Widget> decoration)
+{
+    // Detach callbacks may install another decoration; finish those replacements
+    // before adopting the caller's widget, just as setContent does.
+    while (_decoration)
+    {
+        auto previous = std::move(_decoration);
+        previous->_setRoot(nullptr);
+    }
+
+    _decoration = std::move(decoration);
+    if (_decoration)
+    {
+        _decoration->_parent = nullptr;
+        _decoration->_setRoot(this);
+    }
+
+    _layoutDirty = true;
+    _paintDirty = true;
 }
 
 void UIRoot::resize(glm::vec2 logicalSize)
@@ -195,17 +220,27 @@ void UIRoot::update(f32 deltaSeconds)
 
 void UIRoot::_layout()
 {
-    if (!_content)
+    _contentBounds = surface();
+    if (_decoration)
     {
-        _overlay->measure(Constraints::loose(_size));
-        _overlay->arrange(surface());
+        _decoration->measure(Constraints::tight(_size));
+        _decoration->arrange(surface());
 
-        _layoutDirty = false;
-        return;
+        //! Clamped so insets wider than a tiny surface leave an empty rectangle
+        //! inside it rather than an inverted one.
+        if (_decoration->visibility() != Visibility::Collapsed)
+        {
+            const Rect inner = _decoration->contentRect();
+            _contentBounds.min = glm::clamp(inner.min, _contentBounds.min, _contentBounds.max);
+            _contentBounds.max = glm::clamp(inner.max, _contentBounds.min, _contentBounds.max);
+        }
     }
 
-    _content->measure(Constraints::loose(_size));
-    _content->arrange(surface());
+    if (_content)
+    {
+        _content->measure(Constraints::loose(_contentBounds.size()));
+        _content->arrange(_contentBounds);
+    }
 
     //! After the content, and against the same surface: an overlay is placed
     //! from anchors the content pass has just settled.
@@ -227,7 +262,13 @@ bool UIRoot::paint(DrawList &out)
     out.begin(surface());
 
     if (_content)
+    {
+        ClipScope clip(out, _contentBounds);
         _content->paintTree(out);
+    }
+
+    if (_decoration)
+        _decoration->paintTree(out);
 
     //! Last, so it is on top of everything the content drew -- which is the
     //! entire reason the layer exists.
@@ -291,7 +332,11 @@ Widget *UIRoot::widgetAt(glm::vec2 position) const
     if (_overlay->hasModal())
         return _overlay.get();
 
-    return _content ? pick(*_content, position) : nullptr;
+    const bool inContent = _contentBounds.contains(position);
+    if (_decoration && !inContent)
+        return pick(*_decoration, position);
+
+    return _content && inContent ? pick(*_content, position) : nullptr;
 }
 
 // -----------------------------------------------------------------------------
@@ -397,11 +442,14 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
     _updateHover(position);
 
     const bool nearby = glm::length(position - _lastPressPosition) <= kDoubleClickSlop;
-    const bool soon = _lastPressTime >= 0.0f && _time - _lastPressTime <= kDoubleClickSeconds;
+    const bool soon = _lastPressTime >= 0.0f && _time - _lastPressTime <= kDoubleClickSeconds &&
+                      button == _lastPressButton && _lastPressTarget.get() == hovered();
 
     _clickCount = (nearby && soon) ? _clickCount + 1 : 1;
     _lastPressTime = _time;
     _lastPressPosition = position;
+    _lastPressButton = button;
+    _lastPressTarget = WidgetRef(hovered());
 
     //! Before dispatch, so the press that dismisses a menu is not also
     //! delivered to whatever the menu was covering.
@@ -654,9 +702,12 @@ bool UIRoot::_moveFocus(int direction)
     {
         _collectFocusable(*floating, _focusScratch);
     }
-    else if (_content)
+    else
     {
-        _collectFocusable(*_content, _focusScratch);
+        if (_content)
+            _collectFocusable(*_content, _focusScratch);
+        if (_decoration)
+            _collectFocusable(*_decoration, _focusScratch);
     }
 
     if (_focusScratch.empty())
@@ -867,6 +918,13 @@ AccessibilityNode UIRoot::accessibilityTree() const
     {
         AccessibilityNode child{};
         collectAccessibility(*_content, child);
+        tree.children.push_back(std::move(child));
+    }
+
+    if (_decoration && _decoration->visibility() != Visibility::Collapsed)
+    {
+        AccessibilityNode child{};
+        collectAccessibility(*_decoration, child);
         tree.children.push_back(std::move(child));
     }
 

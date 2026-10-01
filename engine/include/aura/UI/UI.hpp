@@ -27,8 +27,8 @@
  * | Backend   | Backend/DrawListRenderer      | DrawList to draw calls                |
  * | Platform  | UIView                        | Renderer and window, wired up         |
  *
- * Nothing below the Backend row knows a renderer exists, and nothing below
- * UIView knows a window does.
+ * Nothing below the Backend row knows a renderer exists. UIView and its
+ * WindowDecoration widgets use WMA; layout and dispatch stay platform-free.
  */
 
 #include "aura/UI/Core/Accessibility.h"
@@ -52,5 +52,6 @@
 #include "aura/UI/Widgets/Layouts.h"
 #include "aura/UI/Widgets/Menus.h"
 #include "aura/UI/Widgets/Navigation.h"
+#include "aura/UI/WindowDecoration.h"
 
 #endif // AURA_UI_HPP

@@ -2,6 +2,20 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.4.0]
+
+### Added
+
+- `UIView` supplies a dark `DefaultWindowDecoration` for client-decorated toplevel windows: a centred title, native minimize, maximize/restore and close, title dragging, double-click maximize, and a thin same-colour border whose edges and corners resize with matching cursors. Replace it with an `IWindowDecoration` widget or disable it with `nullptr`.
+- `UIRoot::setDecoration()` frames application content independently of it; content fills the decoration's `contentRect()`. Decoration controls use normal AuraUI styling, input, focus and accessibility.
+- `window.decorations` (`"server"` / `"client"`) and `AuraConfig::Window::decorations` request client-side decorations without a custom window factory.
+
+### Changed
+
+- Requires WMA 0.5 for native window controls and decoration negotiation.
+- Rounded embedded bitmap font with proportional spacing and exact device-size rasterization. Glyph quads align to device pixels, keeping text sharp without font downloads or glyph antialiasing.
+- Title-bar controls are full-height, square, flush-right caption buttons with 12 px glyphs and neutral, blue and red hover states.
+
 ## [0.3.0]
 
 ### Added

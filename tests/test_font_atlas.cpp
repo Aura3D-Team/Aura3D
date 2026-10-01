@@ -98,6 +98,30 @@ void testBitmapFallbackMetrics()
     }
 }
 
+void testBitmapRasterSizeAndCoverage()
+{
+    for (const float height : {12.0f, 14.0f, 16.0f, 18.0f, 20.0f, 32.0f})
+    {
+        auto desc = smallAtlas();
+        desc.pixelHeight = height;
+        auto atlas = FontAtlas::builtinBitmap(desc);
+        const auto *wide = atlas->glyph(U'W');
+        const auto *narrow = atlas->glyph(U'i');
+        AURA_CHECK(wide && narrow && narrow->advance < wide->advance,
+                   "bitmap glyphs use proportional spacing");
+        AURA_CHECK(wide && wide->size.y == height && atlas->lineHeight() == height,
+                   "bitmap raster and line box match the requested device size");
+        for (char32_t cp = U'!'; cp <= U'~'; ++cp)
+            (void)atlas->glyph(cp);
+        const auto upload = atlas->takeDirtyUpload();
+        bool binary = upload.has_value();
+        if (upload)
+            for (usize i = 3; i < upload->rgba.size(); i += 4)
+                binary &= upload->rgba[i] == 0 || upload->rgba[i] == 255;
+        AURA_CHECK(binary, "embedded glyphs retain one-bit coverage at every raster size");
+    }
+}
+
 void testGlyphCachingIsStable()
 {
     auto atlas = FontAtlas::builtinBitmap(smallAtlas());
@@ -292,6 +316,7 @@ void testTrueTypeLoadFailureIsReported()
 
 int main()
 {
+    testBitmapRasterSizeAndCoverage();
     testUtf8Decoding();
     testBitmapFallbackMetrics();
     testGlyphCachingIsStable();
