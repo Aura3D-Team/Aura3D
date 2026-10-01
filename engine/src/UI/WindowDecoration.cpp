@@ -4,6 +4,7 @@
 #include <array>
 
 #include "aura/UI/Core/Icon.h"
+#include "aura/UI/UIRoot.h"
 
 namespace aura3d::ui
 {
@@ -15,7 +16,7 @@ constexpr f32 kTitleInset = 16.0f;
 constexpr f32 kTitleGap = 12.0f;
 constexpr f32 kIconSize = 12.0f;
 constexpr f32 kBorder = 1.5f;
-/// How far along an edge from a corner a press resizes diagonally.
+/// How far along an edge from a corner the hit test reports a diagonal resize.
 constexpr f32 kCornerReach = 16.0f;
 
 /// Toolkit-reserved icon ids (below icon::kFirstUserId); triangle() uses 0-3.
@@ -85,26 +86,6 @@ Button &addControl(Widget &parent, const char *name, const ColorSet &colors)
     return button;
 }
 
-[[nodiscard]] constexpr wma::SystemCursor cursorFor(wma::ResizeEdge edge) noexcept
-{
-    switch (edge)
-    {
-    case wma::ResizeEdge::Top:
-    case wma::ResizeEdge::Bottom:
-        return wma::SystemCursor::NsResize;
-    case wma::ResizeEdge::Left:
-    case wma::ResizeEdge::Right:
-        return wma::SystemCursor::EwResize;
-    case wma::ResizeEdge::TopLeft:
-    case wma::ResizeEdge::BottomRight:
-        return wma::SystemCursor::NwseResize;
-    case wma::ResizeEdge::TopRight:
-    case wma::ResizeEdge::BottomLeft:
-        return wma::SystemCursor::NeswResize;
-    }
-    return wma::SystemCursor::Default;
-}
-
 /// Insets wider than a tiny surface must leave an empty rectangle, not an inverted one.
 [[nodiscard]] Rect clampInside(const Rect &rect, const Rect &outer) noexcept
 {
@@ -116,6 +97,13 @@ Button &addControl(Widget &parent, const char *name, const ColorSet &colors)
 // -----------------------------------------------------------------------------
 // IWindowDecoration
 // -----------------------------------------------------------------------------
+
+wma::WindowHit IWindowDecoration::windowHit(glm::vec2 point) const
+{
+    if (!root() || contentRect().contains(point))
+        return wma::WindowHit::Client;
+    return root()->widgetAt(point) == this ? wma::WindowHit::Caption : wma::WindowHit::Client;
+}
 
 void IWindowDecoration::paint(DrawList &out)
 {
@@ -133,75 +121,6 @@ void IWindowDecoration::paint(DrawList &out)
 }
 
 // -----------------------------------------------------------------------------
-// Resize handles
-// -----------------------------------------------------------------------------
-
-/// An invisible hit target along one side; the frame paints the border under it.
-class DefaultWindowDecoration::ResizeHandle final : public Widget
-{
-  public:
-    ResizeHandle(DefaultWindowDecoration &frame, wma::ResizeEdge side) : _frame(frame), _side(side)
-    {
-        setVisibility(Visibility::Collapsed);
-    }
-
-    bool onPointerMove(const PointerEvent &event) override
-    {
-        _frame._setCursor(cursorFor(_edgeAt(event.position)));
-        return true;
-    }
-
-    void onPointerLeave() override
-    {
-        _frame._setCursor(wma::SystemCursor::Default);
-    }
-
-    bool onPointerDown(const PointerEvent &event) override
-    {
-        if (event.button != PointerButton::Left || !_frame._window)
-            return false;
-        //! Consumed even where unsupported, so a border press never becomes a title drag.
-        _frame._window->beginResize(_edgeAt(event.position));
-        return true;
-    }
-
-  protected:
-    void paint(DrawList &) override
-    {
-    }
-
-  private:
-    [[nodiscard]] wma::ResizeEdge _edgeAt(glm::vec2 point) const noexcept
-    {
-        using enum wma::ResizeEdge;
-        const Rect frame = _frame.bounds();
-        const bool horizontal = _side == Top || _side == Bottom;
-        const f32 along = horizontal ? point.x - frame.min.x : point.y - frame.min.y;
-        const f32 length = horizontal ? frame.width() : frame.height();
-        const bool start = along < kCornerReach;
-        if (!start && along < length - kCornerReach)
-            return _side;
-
-        switch (_side)
-        {
-        case Top:
-            return start ? TopLeft : TopRight;
-        case Bottom:
-            return start ? BottomLeft : BottomRight;
-        case Left:
-            return start ? TopLeft : BottomLeft;
-        case Right:
-            return start ? TopRight : BottomRight;
-        default:
-            return _side;
-        }
-    }
-
-    DefaultWindowDecoration &_frame;
-    wma::ResizeEdge _side;
-};
-
-// -----------------------------------------------------------------------------
 // DefaultWindowDecoration
 // -----------------------------------------------------------------------------
 
@@ -212,6 +131,8 @@ DefaultWindowDecoration::DefaultWindowDecoration()
     style().fill({0.006f, 0.006f, 0.006f, 1}).outline({0, 0, 0, 0}, 0).rounded(0).pad(0);
 
     _title = &add<Label>();
+    //! The title is part of the draggable bar, not a click target of its own.
+    _title->setHitTestVisible(false);
     _title->setFontSize(16);
     _title->style().textColor({0.82f, 0.82f, 0.82f, 1});
 
@@ -225,11 +146,6 @@ DefaultWindowDecoration::DefaultWindowDecoration()
     _restoreIcon = &_maximize->add<DecorationIcon>(WindowIcon::Restore);
     _restoreIcon->setVisibility(Visibility::Collapsed);
     _close->add<DecorationIcon>(WindowIcon::Close);
-
-    /// Added last so they are hit first: the outermost pixels resize, even over Close.
-    using enum wma::ResizeEdge;
-    _handles = {&add<ResizeHandle>(*this, Top), &add<ResizeHandle>(*this, Bottom), &add<ResizeHandle>(*this, Left),
-                &add<ResizeHandle>(*this, Right)};
 
     _minimize->clicked.connect(
         [this]
@@ -248,11 +164,6 @@ DefaultWindowDecoration::DefaultWindowDecoration()
             if (_window)
                 _window->close();
         });
-}
-
-DefaultWindowDecoration::~DefaultWindowDecoration()
-{
-    _setCursor(wma::SystemCursor::Default);
 }
 
 void DefaultWindowDecoration::update(wma::IWindowManager &window, std::string_view title)
@@ -275,10 +186,6 @@ void DefaultWindowDecoration::update(wma::IWindowManager &window, std::string_vi
     if (_resizable != resizable)
     {
         _resizable = resizable;
-        for (ResizeHandle *handle : _handles)
-            handle->setVisibility(resizable ? Visibility::Visible : Visibility::Collapsed);
-        if (!resizable)
-            _setCursor(wma::SystemCursor::Default);
         invalidateLayout();
     }
 }
@@ -305,32 +212,43 @@ void DefaultWindowDecoration::_toggleMaximized()
     }
 }
 
-void DefaultWindowDecoration::_setCursor(wma::SystemCursor cursor)
+wma::WindowHit DefaultWindowDecoration::windowHit(glm::vec2 point) const
 {
-    const bool resizing = cursor != wma::SystemCursor::Default;
-    if (!_window || (!resizing && !_cursorSet))
-        return;
-    _window->getMouseListener().setSystemCursor(cursor);
-    _cursorSet = resizing;
-}
-
-bool DefaultWindowDecoration::onPointerDown(const PointerEvent &event)
-{
-    if (!_window || event.button != PointerButton::Left || !_titleBar().contains(event.position))
-        return false;
-    for (Button *button : {_minimize, _maximize, _close})
-        if (button->bounds().contains(event.position))
-            return false;
-    if (event.clickCount % 2 == 0)
-        _toggleMaximized();
-    else
-        _window->beginMove();
-    return true;
+    using enum wma::WindowHit;
+    const Rect frame = bounds();
+    if (_resizable && frame.contains(point))
+    {
+        //! The outermost pixels resize, even over Close, so every corner works.
+        const bool top = point.y < frame.min.y + kBorder;
+        const bool bottom = point.y >= frame.max.y - kBorder;
+        const bool left = point.x < frame.min.x + kBorder;
+        const bool right = point.x >= frame.max.x - kBorder;
+        const bool nearTop = point.y < frame.min.y + kCornerReach;
+        const bool nearBottom = point.y >= frame.max.y - kCornerReach;
+        const bool nearLeft = point.x < frame.min.x + kCornerReach;
+        const bool nearRight = point.x >= frame.max.x - kCornerReach;
+        if ((top && nearLeft) || (left && nearTop))
+            return TopLeft;
+        if ((top && nearRight) || (right && nearTop))
+            return TopRight;
+        if ((bottom && nearLeft) || (left && nearBottom))
+            return BottomLeft;
+        if ((bottom && nearRight) || (right && nearBottom))
+            return BottomRight;
+        if (top)
+            return Top;
+        if (bottom)
+            return Bottom;
+        if (left)
+            return Left;
+        if (right)
+            return Right;
+    }
+    return IWindowDecoration::windowHit(point);
 }
 
 void DefaultWindowDecoration::arrangeContent(const Rect &)
 {
-    const Rect frame = bounds();
     const Rect bar = _titleBar();
 
     /// Full-height and flush right, like native caption buttons, so a maximized
@@ -350,16 +268,6 @@ void DefaultWindowDecoration::arrangeContent(const Rect &)
     const f32 width = std::clamp(_title->desiredSize().x, 0.0f, std::max(0.0f, right - left));
     const f32 titleX = std::max(left, std::min(bar.center().x - width * 0.5f, right - width));
     _title->arrange(Rect::fromSize({titleX, bar.min.y}, {width, bar.height()}));
-
-    const f32 grip = std::min({kBorder, frame.width(), frame.height()});
-    const std::array<Rect, 4> sides{
-        Rect::fromSize(frame.min, {frame.width(), grip}),
-        Rect::fromSize({frame.min.x, frame.max.y - grip}, {frame.width(), grip}),
-        Rect::fromSize(frame.min, {grip, frame.height()}),
-        Rect::fromSize({frame.max.x - grip, frame.min.y}, {grip, frame.height()}),
-    };
-    for (usize i = 0; i < sides.size(); ++i)
-        _handles[i]->arrange(sides[i]);
 }
 
 void DefaultWindowDecoration::paintChildren(DrawList &out)

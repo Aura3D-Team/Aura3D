@@ -92,7 +92,8 @@ class UIView
     void detachInput();
 
     /// Replaces the window frame without replacing application content.
-    /// nullptr disables it; server-decorated, fullscreen and non-toplevel windows hide it.
+    /// nullptr disables it. Hidden on server-decorated, fullscreen and non-toplevel
+    /// windows, and until attachInput() installs it as the window's hit test.
     void setWindowDecoration(std::unique_ptr<IWindowDecoration> decoration);
     [[nodiscard]] IWindowDecoration *windowDecoration() const noexcept;
 
@@ -197,6 +198,7 @@ class UIView
     bool _touchActive = false;
     wma::TouchFingerId _finger = 0;
     bool _windowFocused = true;
+    bool _frameHitTest = false;
     std::shared_ptr<void> _inputLifetime;
     std::string _windowTitle;
 };

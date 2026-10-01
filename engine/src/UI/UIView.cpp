@@ -71,7 +71,11 @@ void UIView::detachInput()
     _inputLifetime.reset();
     _root.cancelInput();
     if (_window)
+    {
         _window->setTextInputEnabled(false);
+        _window->setHitTest({});
+    }
+    _frameHitTest = false;
     _window = nullptr;
     _mouse = nullptr;
     _touchActive = false;
@@ -89,6 +93,17 @@ void UIView::attachInput(wma::IWindowManager &window)
     const std::weak_ptr<void> alive = _inputLifetime;
     _window = &window;
     _mouse = &window.getMouseListener();
+
+    //! The decoration's regions drive native move, resize and caption double-click.
+    _frameHitTest = window.setHitTest(
+        [this](f64 x, f64 y)
+        {
+            const IWindowDecoration *decoration = windowDecoration();
+            return decoration && decoration->visibility() == Visibility::Visible
+                       ? decoration->windowHit({static_cast<f32>(x), static_cast<f32>(y)})
+                       : wma::WindowHit::Client;
+        });
+    _syncSurface();
 
     for (const i32 button : {wma::MouseButton::WMALeft, wma::MouseButton::WMARight, wma::MouseButton::WMAMiddle})
     {
@@ -235,7 +250,8 @@ void UIView::_syncSurface()
     {
         auto *window = _renderer->getWindowManager();
         const auto *details = window ? window->getWindowDetails() : nullptr;
-        const bool visible = details && window->isToplevel() && !details->fullscreen &&
+        //! Without a native hit test nothing could move the window from the bar.
+        const bool visible = details && _frameHitTest && window->isToplevel() && !details->fullscreen &&
                              window->getDecorationMode() == wma::DecorationMode::ClientSide;
         decoration->setVisibility(visible ? Visibility::Visible : Visibility::Collapsed);
         if (window)

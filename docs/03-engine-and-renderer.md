@@ -40,11 +40,16 @@ ui.setWindowTitle("My application");
 ```
 
 The decoration frames `root().setContent()`: a title bar with the title
-centred, and — while the window is resizable and not maximized — a 1 px border
-in the same colour whose edges and corners start a native resize.
-`root().contentBounds()` is what remains; 3D rendering still covers the full
-framebuffer. Server-decorated, fullscreen and non-toplevel windows hide it, and
-Wayland may override the request either way.
+centred, and — while the window is resizable and not maximized — a thin border
+in the same colour. `root().contentBounds()` is what remains; 3D rendering still
+covers the full framebuffer.
+
+Moving, resizing, resize cursors and double-click maximize are the window
+manager's: `attachInput()` installs the decoration's `windowHit()` as the
+window's `setHitTest()`, and every WMA backend acts on it natively. The bar is
+hidden on server-decorated, fullscreen and non-toplevel windows, wherever the
+backend has no native move (GLFW off X11, the browser, Android), and Wayland
+may override the request either way.
 
 ```cpp
 auto bar = std::make_unique<aura3d::ui::DefaultWindowDecoration>();
@@ -54,19 +59,17 @@ ui.setWindowDecoration(std::move(bar)); // nullptr removes it
 
 For a different layout, derive from `IWindowDecoration`: reserve the frame with
 `contentInsets()` (or `layout().padding`), place children in `arrangeContent()`
-and implement `update(window, title)`. It drives the window through WMA:
+and implement `update(window, title)`.
 
-| UI event | WMA call |
-|---|---|
-| Minimize | `window.minimize()` |
-| Maximize / restore | `window.isMaximized() ? window.restore() : window.maximize()` |
-| Close | `window.close()` |
-| Title-bar press | `window.beginMove()` |
-| Border press | `window.beginResize(wma::ResizeEdge::BottomRight)` |
-| Border hover | `window.getMouseListener().setSystemCursor(wma::SystemCursor::NwseResize)` |
+| Region | Reported by `windowHit()` | Handled by |
+|---|---|---|
+| Content, buttons, any hit-testable child | `wma::WindowHit::Client` | AuraUI |
+| Frame background | `Caption` | WMA: move, double-click maximize |
+| Border (override) | `Top`, `BottomRight`, … | WMA: resize and its cursor |
 
-`beginMove()` / `beginResize()` must be called while the pressing button is
-still held. Only native Wayland implements them; other backends return `false`.
+Buttons call `window.minimize()`, `window.close()` and
+`window.isMaximized() ? window.restore() : window.maximize()`. Make labels in
+the bar non-hit-testable (`setHitTestVisible(false)`) so they drag.
 
 ## `IRenderer`: the interface every backend implements
 

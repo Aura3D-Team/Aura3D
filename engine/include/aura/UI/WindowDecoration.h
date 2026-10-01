@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <array>
 #include <string_view>
 
 #include "aura/UI/Widgets/Controls.h"
@@ -20,6 +19,11 @@ class IWindowDecoration : public Widget
   public:
     virtual void update(wma::IWindowManager &window, std::string_view title) = 0;
 
+    /// What the window manager should do with a press at @p point; UIView makes
+    /// this the window's hit test. Content and interactive children are Client,
+    /// the frame's own background is Caption. Must be cheap: asked on every move.
+    [[nodiscard]] virtual wma::WindowHit windowHit(glm::vec2 point) const;
+
   protected:
     void paint(DrawList &out) override;
 };
@@ -30,10 +34,9 @@ class DefaultWindowDecoration : public IWindowDecoration
 {
   public:
     DefaultWindowDecoration();
-    ~DefaultWindowDecoration() override;
 
     void update(wma::IWindowManager &window, std::string_view title) override;
-    bool onPointerDown(const PointerEvent &event) override;
+    [[nodiscard]] wma::WindowHit windowHit(glm::vec2 point) const override;
     [[nodiscard]] Thickness contentInsets() const noexcept override;
 
     [[nodiscard]] Label &titleLabel() noexcept
@@ -58,11 +61,8 @@ class DefaultWindowDecoration : public IWindowDecoration
     void paintChildren(DrawList &out) override;
 
   private:
-    class ResizeHandle;
-
     [[nodiscard]] Rect _titleBar() const noexcept;
     void _toggleMaximized();
-    void _setCursor(wma::SystemCursor cursor);
 
     wma::IWindowManager *_window = nullptr;
     Label *_title = nullptr;
@@ -71,12 +71,8 @@ class DefaultWindowDecoration : public IWindowDecoration
     Button *_close = nullptr;
     Widget *_maximizeIcon = nullptr;
     Widget *_restoreIcon = nullptr;
-    //! Top, bottom, left, right.
-    std::array<ResizeHandle *, 4> _handles{};
     bool _maximized = false;
     bool _resizable = false;
-    //! Whether this decoration owns the current cursor image and must restore it.
-    bool _cursorSet = false;
 };
 
 } // namespace aura3d::ui

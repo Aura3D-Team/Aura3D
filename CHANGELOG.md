@@ -7,6 +7,7 @@ All notable changes to Aura3D are documented in this file.
 ### Added
 
 - `UIView` supplies a dark `DefaultWindowDecoration` for client-decorated toplevel windows: a centred title, native minimize, maximize/restore and close, title dragging, double-click maximize, and a thin same-colour border whose edges and corners resize with matching cursors. Replace it with an `IWindowDecoration` widget or disable it with `nullptr`.
+- Decorations behave the same on every WMA backend: `IWindowDecoration::windowHit()` becomes the window's native hit test, so the window manager moves, resizes and maximizes. The bar is hidden where a backend has no native move.
 - `UIRoot::setDecoration()` frames application content independently of it; content fills the decoration's `contentRect()`. Decoration controls use normal AuraUI styling, input, focus and accessibility.
 - `window.decorations` (`"server"` / `"client"`) and `AuraConfig::Window::decorations` request client-side decorations without a custom window factory.
 

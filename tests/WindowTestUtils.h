@@ -2,6 +2,7 @@
 #define AURA_WINDOW_TEST_UTILS_H
 
 #include <string>
+#include <utility>
 #include <wma/wma.hpp>
 
 namespace aura3d::test
@@ -35,9 +36,6 @@ class FakeMouse final : public wma::MouseListener
 class FakeWindow final : public wma::IWindowManager
 {
   public:
-    int moves = 0;
-    int resizes = 0;
-    wma::ResizeEdge lastResize = wma::ResizeEdge::Top;
     int minimizes = 0;
     int maximizes = 0;
     int restores = 0;
@@ -53,15 +51,11 @@ class FakeWindow final : public wma::IWindowManager
     wma::KeyboardListener keyboard;
     FakeMouse mouse;
 
-    bool beginMove() noexcept override
+    wma::HitTest hitTest;
+
+    bool setHitTest(wma::HitTest value) override
     {
-        ++moves;
-        return true;
-    }
-    bool beginResize(wma::ResizeEdge edge) noexcept override
-    {
-        ++resizes;
-        lastResize = edge;
+        hitTest = std::move(value);
         return true;
     }
     bool minimize() noexcept override

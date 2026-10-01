@@ -72,7 +72,7 @@ void nativeCommands()
     Harness h;
     auto &bar = *h.decoration;
     h.click(bar.minimizeButton().bounds().center());
-    AURA_CHECK(h.window.minimizes == 1 && h.window.moves == 0, "minimize submits only the native minimize request");
+    AURA_CHECK(h.window.minimizes == 1 && h.window.maximizes == 0, "minimize submits only the native minimize request");
 
     h.click(bar.maximizeButton().bounds().center());
     h.frame();
@@ -97,44 +97,34 @@ void nativeCommands()
     bar.maximizeButton().accessibility(info = {});
     AURA_CHECK(info.name == "Maximize", "confirmed restoration changes the action back to maximize");
     h.click(bar.closeButton().bounds().center());
-    AURA_CHECK(h.window.shouldClose() && h.window.closes == 1 && h.window.moves == 0,
-               "close requests shutdown without starting a title drag");
+    AURA_CHECK(h.window.shouldClose() && h.window.closes == 1, "close requests shutdown");
 }
 
-void titleInput()
+void frameRegions()
 {
+    using enum wma::WindowHit;
     Harness h;
-    auto &bar = *h.decoration;
-    const glm::vec2 label = bar.titleLabel().bounds().center();
-    h.root.pointerDown(label);
-    AURA_CHECK(h.window.moves == 1 && !h.root.pointerCapture(),
-               "pressing the title label starts the native move immediately without UI capture");
-    h.root.pointerUp(label);
-    h.root.pointerDown(label);
-    h.root.pointerUp(label);
-    AURA_CHECK(h.window.maximizes == 1 && h.window.moves == 1,
-               "the second title press toggles maximize instead of starting another move");
+    const auto &bar = *h.decoration;
+    const auto hit = [&bar](glm::vec2 point)
+    {
+        return bar.windowHit(point);
+    };
+    AURA_CHECK(hit(h.decoration->titleLabel().bounds().center()) == Caption && hit({60, 17}) == Caption,
+               "the title and the empty bar drag the window");
+    AURA_CHECK(hit(h.decoration->minimizeButton().bounds().center()) == Client &&
+                   hit(h.decoration->closeButton().bounds().center()) == Client && hit({240, 120}) == Client,
+               "caption buttons and application content stay client areas");
+    AURA_CHECK(hit({0.5f, 120}) == Left && hit({479.5f, 120}) == Right && hit({240, 0.5f}) == Top &&
+                   hit({240, 239.5f}) == Bottom,
+               "each border resizes from its own edge");
+    AURA_CHECK(hit({0.5f, 10}) == TopLeft && hit({479.5f, 0.5f}) == TopRight && hit({10, 239.5f}) == BottomLeft &&
+                   hit({479.5f, 230}) == BottomRight,
+               "corners resize diagonally, even over the close button");
 
     h.window.maximized = true;
-    h.frame(0.5f);
-    h.root.pointerDown(label);
-    h.root.pointerUp(label);
-    h.root.pointerDown(label);
-    h.root.pointerUp(label);
-    AURA_CHECK(h.window.restores == 1, "a title double click restores an already maximized window");
-
-    const int moves = h.window.moves;
-    h.click(label, PointerButton::Right);
-    h.click(bar.closeButton().bounds().center(), PointerButton::Right);
-    AURA_CHECK(h.window.moves == moves && h.window.closes == 0, "right clicks do not drag or activate controls");
-
-    h.frame(0.5f);
-    h.root.pointerDown(label, PointerButton::Right);
-    h.root.pointerUp(label, PointerButton::Right);
-    h.root.pointerDown(label);
-    h.root.pointerUp(label);
-    AURA_CHECK(h.window.moves == moves + 1 && h.window.restores == 1,
-               "a right click followed by a left click is not a title double click");
+    h.frame();
+    AURA_CHECK(hit({0.5f, 120}) == Client && hit({479.5f, 0.5f}) == Client && hit({240, 0.5f}) == Caption,
+               "a maximized window has no resize border");
 }
 
 void cancelledAndKeyboardActions()
@@ -254,50 +244,24 @@ void centredTitle()
 
 void resizeBorder()
 {
-    using enum wma::ResizeEdge;
     Harness h;
     const Rect inner = h.root.contentBounds();
-    AURA_CHECK(near(inner.min.x, 1) && near(inner.min.y, 34) && near(inner.max.x, 479) && near(inner.max.y, 239),
+    AURA_CHECK(near(inner.min.x, 1.5f) && near(inner.min.y, 34) && near(inner.max.x, 478.5f) && near(inner.max.y, 238.5f),
                "a resizable window frames its content with the title bar and a thin border");
-
-    const wma::MouseListener &mouse = h.window.mouse;
-    h.root.pointerMoved({0.5f, 120});
-    AURA_CHECK(mouse.getSystemCursor() == wma::SystemCursor::EwResize, "a side border shows a horizontal resize cursor");
-    h.root.pointerMoved({479.5f, 239.5f});
-    AURA_CHECK(mouse.getSystemCursor() == wma::SystemCursor::NwseResize, "a corner shows a diagonal resize cursor");
-    h.root.pointerMoved({240, 120});
-    AURA_CHECK(mouse.getSystemCursor() == wma::SystemCursor::Default, "leaving the border restores the default cursor");
-
-    struct Press
-    {
-        glm::vec2 at;
-        wma::ResizeEdge edge;
-    };
-    bool edges = true;
-    for (const Press &press : {Press{{0.5f, 120}, Left}, Press{{240, 239.5f}, Bottom}, Press{{240, 0.5f}, Top},
-                               Press{{479.5f, 0.5f}, TopRight}, Press{{0.5f, 239.5f}, BottomLeft}})
-    {
-        h.click(press.at);
-        edges &= h.window.lastResize == press.edge;
-    }
-    AURA_CHECK(edges && h.window.resizes == 5 && h.window.moves == 0 && h.window.closes == 0,
-               "border presses resize from the matching edge, even over the close button");
 
     h.paint();
     const glm::vec4 barColor = h.decoration->resolvedStyle().surface.normal;
     bool framed = false;
     for (const auto &command : h.list.commands())
         framed |= command.type == DrawCommandType::Rect && command.color == barColor &&
-                  near(command.bounds.min.x, 0) && near(command.bounds.max.x, 1) && near(command.bounds.min.y, 34);
+                  near(command.bounds.min.x, 0) && near(command.bounds.max.x, 1.5f) && near(command.bounds.min.y, 34);
     AURA_CHECK(framed, "the border is painted in the title bar's colour");
 
     h.window.maximized = true;
     h.frame();
     const Rect full = h.root.contentBounds();
-    h.click({0.5f, 120});
-    AURA_CHECK(near(full.min.x, 0) && near(full.max.x, 480) && near(full.max.y, 240) && near(full.min.y, 34) &&
-                   h.window.resizes == 5,
-               "a maximized window drops the border and its resize handles");
+    AURA_CHECK(near(full.min.x, 0) && near(full.max.x, 480) && near(full.max.y, 240) && near(full.min.y, 34),
+               "a maximized window gives the border back to the content");
 }
 
 DrawCommand buttonFill(Harness &h, Button &button)
@@ -392,7 +356,7 @@ void replacementAndFocus()
 int main()
 {
     nativeCommands();
-    titleInput();
+    frameRegions();
     cancelledAndKeyboardActions();
     layoutAndClipping();
     iconGeometry();
