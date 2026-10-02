@@ -20,11 +20,6 @@ static_assert(sizeof(BlockHeader) <= std::numeric_limits<u32>::max() / 2,
 
 constexpr usize kMinAlign = alignof(BlockHeader);
 
-[[nodiscard]] constexpr usize roundUp(usize value, usize alignment) noexcept
-{
-    return (value + alignment - 1) & ~(alignment - 1);
-}
-
 [[nodiscard]] void *tryAllocate(usize size, usize alignment) noexcept
 {
     const usize align = alignment < kMinAlign ? kMinAlign : alignment;
@@ -37,7 +32,8 @@ constexpr usize kMinAlign = alignof(BlockHeader);
     if (base == nullptr)
         return nullptr;
 
-    auto *payload = reinterpret_cast<std::byte *>(roundUp(reinterpret_cast<usize>(base) + sizeof(BlockHeader), align));
+    auto *payload =
+        reinterpret_cast<std::byte *>(INK_ALIGN_SIZE(reinterpret_cast<usize>(base) + sizeof(BlockHeader), align));
 
     const auto offset = static_cast<usize>(payload - base);
 
