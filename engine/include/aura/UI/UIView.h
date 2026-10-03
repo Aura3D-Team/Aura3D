@@ -199,6 +199,10 @@ class UIView
     wma::TouchFingerId _finger = 0;
     bool _windowFocused = true;
     bool _frameHitTest = false;
+    //! windowDecoration() runs on every pointer move as the hit test, so the cast
+    //! is redone only when the root's decoration changes.
+    mutable IWindowDecoration *_decoration = nullptr;
+    mutable u64 _decorationGeneration = ~u64{0};
     std::shared_ptr<void> _inputLifetime;
     std::string _windowTitle;
 };

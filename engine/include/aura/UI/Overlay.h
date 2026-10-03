@@ -153,6 +153,10 @@ class OverlayLayer final : public Widget
     /// True while any open overlay is modal.
     [[nodiscard]] bool hasModal() const noexcept;
 
+    /// True while an open, clickable overlay closes on an outside click: a menu, a
+    /// drop-down. What closeLightDismissible() would close.
+    [[nodiscard]] bool hasLightDismissible() const noexcept;
+
     [[nodiscard]] Widget *topmost() const noexcept;
     [[nodiscard]] Widget *focusScope() const noexcept;
     [[nodiscard]] Widget *widgetAt(glm::vec2 point) const;

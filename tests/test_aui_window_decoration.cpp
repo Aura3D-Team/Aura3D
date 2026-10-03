@@ -242,6 +242,37 @@ void centredTitle()
                "a short title is centred on the window, not beside the controls");
 }
 
+void overlaysAndModals()
+{
+    using enum wma::WindowHit;
+    Harness h;
+    const glm::vec2 bar{60, 17};
+    h.root.overlay().open<Column>(OverlayDesc{.anchor = Rect{{100, 100}, {140, 120}}});
+    h.frame();
+    AURA_CHECK(h.decoration->windowHit(bar) == Client && h.decoration->windowHit({0.5f, 120}) == Client,
+               "while a menu is open the first press on the frame reaches AuraUI");
+    h.root.pointerDown(bar);
+    h.root.pointerUp(bar);
+    h.frame();
+    AURA_CHECK(h.root.overlay().empty() && h.decoration->windowHit(bar) == Caption,
+               "that press closes the menu and the bar drags again");
+
+    h.root.overlay().open<Column>(OverlayDesc{.anchor = Rect{{150, 80}, {330, 160}},
+                                              .placement = Placement::Over,
+                                              .modal = true,
+                                              .dismissOnOutsideClick = false});
+    h.frame();
+    AURA_CHECK(h.decoration->windowHit(bar) == Caption && h.decoration->windowHit({0.5f, 120}) == Left,
+               "a modal dialog leaves the title bar and border working");
+    AURA_CHECK(h.decoration->windowHit(h.decoration->closeButton().bounds().center()) == Client,
+               "caption buttons stay client areas under a modal");
+
+    const u64 generation = h.root.decorationGeneration();
+    h.root.setDecoration(nullptr);
+    AURA_CHECK(h.root.decorationGeneration() != generation, "replacing the decoration changes its generation");
+    h.decoration = nullptr;
+}
+
 void resizeBorder()
 {
     Harness h;
@@ -357,6 +388,7 @@ int main()
 {
     nativeCommands();
     frameRegions();
+    overlaysAndModals();
     cancelledAndKeyboardActions();
     layoutAndClipping();
     iconGeometry();

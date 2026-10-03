@@ -119,6 +119,60 @@ struct AuraBitmapFont
         data['}'] = {0x00, 0xC0, 0x20, 0x20, 0x20, 0x20, 0x20, 0x10, 0x20, 0x20, 0x20, 0x20, 0x20, 0xC0, 0x00, 0x00};
         data['~'] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x98, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     }
+
+    /// Columns a glyph inks, [first, first + width); width 0 for a blank glyph.
+    struct Ink
+    {
+        i32 first = 0;
+        i32 width = 0;
+    };
+
+    [[nodiscard]] constexpr Ink ink(const Glyph &glyph) const noexcept
+    {
+        i32 first = charWidth;
+        i32 last = -1;
+        for (const u8 row : glyph)
+            for (i32 col = 0; col < charWidth; ++col)
+                if ((row & (1u << (charWidth - 1 - col))) != 0)
+                {
+                    first = col < first ? col : first;
+                    last = col > last ? col : last;
+                }
+        return last < first ? Ink{} : Ink{first, last - first + 1};
+    }
+
+    /// Pixels a glyph drawn @p height tall spans: its inked columns, scaled.
+    [[nodiscard]] constexpr u32 width(Ink ink, u32 height) const noexcept
+    {
+        if (ink.width == 0)
+            return 0;
+        const u32 pixels = scaled(ink.width, height);
+        return pixels == 0 ? 1 : pixels;
+    }
+
+    /// Whole pixels to the next glyph, so every glyph of a string lands on the
+    /// pixel grid and gaps between letters stay even.
+    [[nodiscard]] constexpr u32 advance(Ink ink, u32 height) const noexcept
+    {
+        return scaled(ink.width == 0 ? charWidth / 2 : ink.width + charSpacing, height);
+    }
+
+    /// Whether pixel (@p x, @p y) of a glyph drawn @p width by @p height is inked.
+    /// Nearest sampling at pixel centres keeps every stroke one-bit.
+    [[nodiscard]] constexpr bool covers(const Glyph &glyph, Ink ink, u32 width, u32 height, u32 x,
+                                        u32 y) const noexcept
+    {
+        const u32 row = (2 * y + 1) * static_cast<u32>(charHeight) / (2 * height);
+        const u32 col = static_cast<u32>(ink.first) + (2 * x + 1) * static_cast<u32>(ink.width) / (2 * width);
+        return (glyph[row] & (1u << (static_cast<u32>(charWidth) - 1 - col))) != 0;
+    }
+
+  private:
+    [[nodiscard]] constexpr u32 scaled(i32 units, u32 height) const noexcept
+    {
+        const auto rows = static_cast<u32>(charHeight);
+        return (static_cast<u32>(units) * height + rows / 2) / rows;
+    }
 };
 
 [[nodiscard]] inline const AuraBitmapFont &GetDefaultBitmapFont() noexcept

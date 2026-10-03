@@ -145,6 +145,7 @@ void UIRoot::setDecoration(std::unique_ptr<Widget> decoration)
         _decoration->_parent = nullptr;
         _decoration->_setRoot(this);
     }
+    ++_decorationGeneration;
 
     _layoutDirty = true;
     _paintDirty = true;

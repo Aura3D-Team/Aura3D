@@ -7,14 +7,16 @@ All notable changes to Aura3D are documented in this file.
 ### Added
 
 - `UIView` supplies a dark `DefaultWindowDecoration` for client-decorated toplevel windows: a centred title, native minimize, maximize/restore and close, title dragging, double-click maximize, and a thin same-colour border whose edges and corners resize with matching cursors. Replace it with an `IWindowDecoration` widget or disable it with `nullptr`.
-- Decorations behave the same on every WMA backend: `IWindowDecoration::windowHit()` becomes the window's native hit test, so the window manager moves, resizes and maximizes. The bar is hidden where a backend has no native move.
+- Decorations behave the same on every WMA backend: `IWindowDecoration::windowHit()` becomes the window's native hit test, so the window manager moves, resizes and maximizes. The bar is hidden where a backend has no native move. An open menu takes the first press on the frame, so pressing the bar closes it; a modal dialog leaves the bar and border working.
 - `UIRoot::setDecoration()` frames application content independently of it; content fills the decoration's `contentRect()`. Decoration controls use normal AuraUI styling, input, focus and accessibility.
 - `window.decorations` (`"server"` / `"client"`) and `AuraConfig::Window::decorations` request client-side decorations without a custom window factory.
+- `OverlayLayer::hasLightDismissible()`: whether a press outside would close something.
 
 ### Changed
 
 - Requires WMA 0.5 for native window controls and decoration negotiation.
-- Rounded embedded bitmap font with proportional spacing and exact device-size rasterization. Glyph quads align to device pixels, keeping text sharp without font downloads or glyph antialiasing.
+- Rounded embedded bitmap font with proportional spacing and exact device-size rasterization. Advances are whole device pixels and glyph quads align to them, keeping text sharp and evenly spaced without font downloads or glyph antialiasing.
+- The software renderer's `drawText()` draws the new face proportionally. `fontSize` keeps its old meaning, 8 px of line height per step, so existing layouts keep their size.
 - Title-bar controls are full-height, square, flush-right caption buttons with 12 px glyphs and neutral, blue and red hover states.
 
 ## [0.3.0]

@@ -25,6 +25,11 @@ class IWindowDecoration : public Widget
     [[nodiscard]] virtual wma::WindowHit windowHit(glm::vec2 point) const;
 
   protected:
+    /// True when AuraUI must see a press at @p point: a popup sits over it, or one
+    /// is open elsewhere and this press should close it. A modal layer alone does
+    /// not count, so a dialog never pins the window in place.
+    [[nodiscard]] bool overlayTakesPress(glm::vec2 point) const;
+
     void paint(DrawList &out) override;
 };
 

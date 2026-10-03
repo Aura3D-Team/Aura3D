@@ -87,6 +87,12 @@ class UIRoot
     {
         return _decoration.get();
     }
+    /// Changes with every setDecoration(), so a cached cast of decoration() knows
+    /// when to redo it; a recycled address cannot fool it.
+    [[nodiscard]] u64 decorationGeneration() const noexcept
+    {
+        return _decorationGeneration;
+    }
 
     /// The content's rectangle after the latest layout pass.
     [[nodiscard]] Rect contentBounds() const noexcept
@@ -348,6 +354,7 @@ class UIRoot
 
     glm::vec2 _size{0.0f};
     Rect _contentBounds{};
+    u64 _decorationGeneration = 0;
     f32 _scale = 1.0f;
 
     bool _layoutDirty = true;

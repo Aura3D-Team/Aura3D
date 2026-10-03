@@ -367,7 +367,7 @@ class CpuFrameBufferManager
      */
     void queueTriangle(const ScreenTriangle &triangle, const Texture *texture, bool overlay = false);
 
-    // Text rendering
+    // Text rendering. fontSize is 8 px of line height per step; 2 is the embedded face's native size.
     void drawText(const std::string &text, Point p, u32 color, u32 fontSize = 2);
 
     // Getters

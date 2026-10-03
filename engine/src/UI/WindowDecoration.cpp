@@ -86,6 +86,17 @@ Button &addControl(Widget &parent, const char *name, const ColorSet &colors)
     return button;
 }
 
+/// Whether a visible, hit-testable descendant of @p parent -- a button -- is at @p point.
+[[nodiscard]] bool hitsChild(const Widget &parent, glm::vec2 point)
+{
+    for (const auto &child : parent.children())
+    {
+        if (child->visibility() == Visibility::Visible && (child->hitTest(point) || hitsChild(*child, point)))
+            return true;
+    }
+    return false;
+}
+
 /// Insets wider than a tiny surface must leave an empty rectangle, not an inverted one.
 [[nodiscard]] Rect clampInside(const Rect &rect, const Rect &outer) noexcept
 {
@@ -98,11 +109,21 @@ Button &addControl(Widget &parent, const char *name, const ColorSet &colors)
 // IWindowDecoration
 // -----------------------------------------------------------------------------
 
+bool IWindowDecoration::overlayTakesPress(glm::vec2 point) const
+{
+    const UIRoot *ui = root();
+    if (!ui)
+        return false;
+    const OverlayLayer &overlay = ui->overlay();
+    const Widget *hit = overlay.widgetAt(point);
+    return (hit && hit != &overlay) || overlay.hasLightDismissible();
+}
+
 wma::WindowHit IWindowDecoration::windowHit(glm::vec2 point) const
 {
-    if (!root() || contentRect().contains(point))
+    if (contentRect().contains(point) || overlayTakesPress(point) || hitsChild(*this, point))
         return wma::WindowHit::Client;
-    return root()->widgetAt(point) == this ? wma::WindowHit::Caption : wma::WindowHit::Client;
+    return wma::WindowHit::Caption;
 }
 
 void IWindowDecoration::paint(DrawList &out)
@@ -216,7 +237,7 @@ wma::WindowHit DefaultWindowDecoration::windowHit(glm::vec2 point) const
 {
     using enum wma::WindowHit;
     const Rect frame = bounds();
-    if (_resizable && frame.contains(point))
+    if (_resizable && frame.contains(point) && !overlayTakesPress(point))
     {
         //! The outermost pixels resize, even over Close, so every corner works.
         const bool top = point.y < frame.min.y + kBorder;

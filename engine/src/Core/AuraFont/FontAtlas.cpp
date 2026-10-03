@@ -233,31 +233,16 @@ bool FontAtlas::rasterizeBitmap(char32_t codepoint, GlyphInfo &out)
     if (codepoint >= 128)
         return false;
 
-    const auto &bits = font.data[static_cast<size_t>(codepoint)];
-    i32 first = font.charWidth;
-    i32 last = -1;
-    for (const u8 row : bits)
-        for (i32 col = 0; col < font.charWidth; ++col)
-            if ((row & (1u << (font.charWidth - 1 - col))) != 0)
-            {
-                first = std::min(first, col);
-                last = std::max(last, col);
-            }
-
-    const float scale = _desc.pixelHeight / static_cast<float>(font.charHeight);
-    if (last < first)
-    {
-        out.advance = static_cast<float>(font.charWidth) * 0.5f * scale;
-        out.size = {0.0f, 0.0f};
-        return true;
-    }
-
-    const u32 inkWidth = static_cast<u32>(last - first + 1);
-    const u32 glyphW = std::max(1u, static_cast<u32>(std::lround(static_cast<float>(inkWidth) * scale)));
+    const auto &glyph = font.data[static_cast<size_t>(codepoint)];
+    const AuraBitmapFont::Ink ink = font.ink(glyph);
     const u32 glyphH = static_cast<u32>(_desc.pixelHeight);
-    // Keep layout proportional across display scales; only the raster is rounded.
-    out.advance = static_cast<float>(inkWidth + font.charSpacing) * scale;
+    const u32 glyphW = font.width(ink, glyphH);
+
+    out.advance = static_cast<float>(font.advance(ink, glyphH));
     out.bearing = {0.0f, 0.0f};
+    out.size = {0.0f, 0.0f};
+    if (glyphW == 0)
+        return true;
     out.size = {static_cast<float>(glyphW), static_cast<float>(glyphH)};
 
     const auto origin = reserveCell(glyphW, glyphH);
@@ -267,16 +252,9 @@ bool FontAtlas::rasterizeBitmap(char32_t codepoint, GlyphInfo &out)
     std::vector<u8> expanded(static_cast<size_t>(glyphW) * glyphH, 0);
     // Rasterize at device size with binary coverage, so drawing needs no resampling.
     for (u32 row = 0; row < glyphH; ++row)
-    {
-        const u32 sourceY = (2 * row + 1) * static_cast<u32>(font.charHeight) / (2 * glyphH);
-        const u8 rowBits = bits[sourceY];
         for (u32 col = 0; col < glyphW; ++col)
-        {
-            const u32 sourceX = static_cast<u32>(first) + (2 * col + 1) * inkWidth / (2 * glyphW);
-            if ((rowBits & (1u << (static_cast<u32>(font.charWidth) - 1 - sourceX))) != 0)
+            if (font.covers(glyph, ink, glyphW, glyphH, col, row))
                 expanded[static_cast<size_t>(row) * glyphW + col] = 255;
-        }
-    }
 
     blitCoverage(expanded.data(), glyphW, *origin, glyphW, glyphH);
     markDirty(origin->x, origin->y, glyphW, glyphH);

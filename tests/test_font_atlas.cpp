@@ -9,11 +9,14 @@
 
 #include "TestUtils.h"
 
+#include "aura/Core/AuraFont/AuraBitmapFont.h"
 #include "aura/Core/AuraFont/FontAtlas.h"
 
+using aura3d::AuraBitmapFont;
 using aura3d::decodeUtf8;
 using aura3d::FontAtlas;
 using aura3d::FontAtlasDesc;
+using aura3d::GetDefaultBitmapFont;
 using aura3d::GlyphInfo;
 
 namespace
@@ -109,6 +112,9 @@ void testBitmapRasterSizeAndCoverage()
         const auto *narrow = atlas->glyph(U'i');
         AURA_CHECK(wide && narrow && narrow->advance < wide->advance,
                    "bitmap glyphs use proportional spacing");
+        AURA_CHECK(wide && narrow && wide->advance == std::round(wide->advance) &&
+                       narrow->advance == std::round(narrow->advance),
+                   "bitmap advances are whole pixels, so gaps between letters stay even");
         AURA_CHECK(wide && wide->size.y == height && atlas->lineHeight() == height,
                    "bitmap raster and line box match the requested device size");
         for (char32_t cp = U'!'; cp <= U'~'; ++cp)
@@ -120,6 +126,27 @@ void testBitmapRasterSizeAndCoverage()
                 binary &= upload->rgba[i] == 0 || upload->rgba[i] == 255;
         AURA_CHECK(binary, "embedded glyphs retain one-bit coverage at every raster size");
     }
+}
+
+void testBitmapFaceAtNativeSize()
+{
+    const AuraBitmapFont &font = GetDefaultBitmapFont();
+    const auto &glyph = font.data['W'];
+    const AuraBitmapFont::Ink ink = font.ink(glyph);
+    const u32 width = font.width(ink, 16);
+    bool exact = width == static_cast<u32>(ink.width);
+    for (u32 y = 0; exact && y < 16; ++y)
+        for (u32 x = 0; x < width; ++x)
+        {
+            const bool bit = (glyph[y] & (1u << (font.charWidth - 1 - ink.first - static_cast<i32>(x)))) != 0;
+            exact &= font.covers(glyph, ink, width, 16, x, y) == bit;
+        }
+    AURA_CHECK(exact, "at 16 px the face is drawn pixel for pixel");
+
+    const AuraBitmapFont::Ink space = font.ink(font.data[' ']);
+    AURA_CHECK(font.width(space, 16) == 0 && font.advance(space, 16) == 4 &&
+                   font.advance(font.ink(font.data['i']), 16) < font.advance(ink, 16),
+               "blank glyphs advance half a cell and narrow glyphs advance less than wide ones");
 }
 
 void testGlyphCachingIsStable()
@@ -317,6 +344,7 @@ void testTrueTypeLoadFailureIsReported()
 int main()
 {
     testBitmapRasterSizeAndCoverage();
+    testBitmapFaceAtNativeSize();
     testUtf8Decoding();
     testBitmapFallbackMetrics();
     testGlyphCachingIsStable();

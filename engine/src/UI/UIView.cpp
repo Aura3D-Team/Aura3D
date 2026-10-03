@@ -55,7 +55,12 @@ void UIView::setWindowDecoration(std::unique_ptr<IWindowDecoration> decoration)
 
 IWindowDecoration *UIView::windowDecoration() const noexcept
 {
-    return dynamic_cast<IWindowDecoration *>(_root.decoration());
+    if (_decorationGeneration != _root.decorationGeneration())
+    {
+        _decoration = dynamic_cast<IWindowDecoration *>(_root.decoration());
+        _decorationGeneration = _root.decorationGeneration();
+    }
+    return _decoration;
 }
 
 void UIView::setWindowTitle(std::string title)
