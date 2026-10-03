@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Renderer/IRenderer.h"
 #include "aura/UI/Text/Utf8.h"
 
@@ -28,11 +29,16 @@ namespace
 
 } // namespace
 
-UIView::UIView(IRenderer &renderer, const UIViewDesc &desc)
+UIView::UIView(IRenderer &renderer, const UIViewDesc &desc, std::unique_ptr<IWindowDecoration> decoration)
     : _renderer(&renderer),
       _shaper(TextShaperDesc{.fontPath = desc.fontPath, .pageSize = desc.glyphPageSize, .maxPages = desc.maxFontSizes}),
-      _root(_shaper, desc.theme), _backend(renderer, _shaper)
+      _root(_shaper, desc.theme), _backend(renderer, _shaper),
+      _windowTitle(desc.windowTitle.empty() ? AuraSettings::get()->getWindowTitle() : desc.windowTitle)
 {
+    _root.setDecoration(std::move(decoration));
+    if (!desc.windowTitle.empty())
+        if (auto *window = _renderer->getWindowManager())
+            window->setTitle(_windowTitle.c_str());
     _syncSurface();
 }
 
@@ -41,12 +47,40 @@ UIView::~UIView()
     detachInput();
 }
 
+void UIView::setWindowDecoration(std::unique_ptr<IWindowDecoration> decoration)
+{
+    _root.setDecoration(std::move(decoration));
+    _syncSurface();
+}
+
+IWindowDecoration *UIView::windowDecoration() const noexcept
+{
+    if (_decorationGeneration != _root.decorationGeneration())
+    {
+        _decoration = dynamic_cast<IWindowDecoration *>(_root.decoration());
+        _decorationGeneration = _root.decorationGeneration();
+    }
+    return _decoration;
+}
+
+void UIView::setWindowTitle(std::string title)
+{
+    _windowTitle = std::move(title);
+    if (auto *window = _renderer->getWindowManager())
+        window->setTitle(_windowTitle.c_str());
+    _syncSurface();
+}
+
 void UIView::detachInput()
 {
     _inputLifetime.reset();
     _root.cancelInput();
     if (_window)
+    {
         _window->setTextInputEnabled(false);
+        _window->setHitTest({});
+    }
+    _frameHitTest = false;
     _window = nullptr;
     _mouse = nullptr;
     _touchActive = false;
@@ -64,6 +98,17 @@ void UIView::attachInput(wma::IWindowManager &window)
     const std::weak_ptr<void> alive = _inputLifetime;
     _window = &window;
     _mouse = &window.getMouseListener();
+
+    //! The decoration's regions drive native move, resize and caption double-click.
+    _frameHitTest = window.setHitTest(
+        [this](f64 x, f64 y)
+        {
+            const IWindowDecoration *decoration = windowDecoration();
+            return decoration && decoration->visibility() == Visibility::Visible
+                       ? decoration->windowHit({static_cast<f32>(x), static_cast<f32>(y)})
+                       : wma::WindowHit::Client;
+        });
+    _syncSurface();
 
     for (const i32 button : {wma::MouseButton::WMALeft, wma::MouseButton::WMARight, wma::MouseButton::WMAMiddle})
     {
@@ -206,6 +251,17 @@ void UIView::_syncSurface()
 
     _root.setScale(scale);
     _root.resize(logical);
+    if (auto *decoration = windowDecoration())
+    {
+        auto *window = _renderer->getWindowManager();
+        const auto *details = window ? window->getWindowDetails() : nullptr;
+        //! Without a native hit test nothing could move the window from the bar.
+        const bool visible = details && _frameHitTest && window->isToplevel() && !details->fullscreen &&
+                             window->getDecorationMode() == wma::DecorationMode::ClientSide;
+        decoration->setVisibility(visible ? Visibility::Visible : Visibility::Collapsed);
+        if (window)
+            decoration->update(*window, _windowTitle);
+    }
 }
 
 void UIView::render(f32 deltaSeconds)

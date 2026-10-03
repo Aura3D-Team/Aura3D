@@ -17,6 +17,11 @@ namespace cpu
 namespace
 {
 
+//! drawText()'s fontSize keeps its meaning from the 5x8 face the embedded font
+//! replaced: an 8 px line per step, so callers keep their layout. The default
+//! of 2 draws the face at its native 16 px.
+constexpr u32 kLinePixelsPerFontSize = 8;
+
 /**
  * @brief Whether the directed edge @p a -> @p b is a top or left edge of a
  *        positive-area triangle, in this rasteriser's Y-down screen space.
@@ -872,66 +877,55 @@ u32 CpuFrameBufferManager::blendColors(u32 c1, u32 c2, f32 alpha)
 
 void CpuFrameBufferManager::drawText(const std::string &text, Point p, u32 color, u32 fontSize)
 {
-    int cursorX = p.x;
-    int scaledWidth = _font.charWidth * fontSize;
-    int scaledHeight = _font.charHeight * fontSize;
-    int scaledSpacing = _font.charSpacing * fontSize;
+    const u32 height = kLinePixelsPerFontSize * fontSize;
+    if (height == 0)
+        return;
+    const i32 lineAdvance = static_cast<i32>(height + static_cast<u32>(_font.charSpacing) * fontSize);
 
+    i32 cursorX = p.x;
     for (char c : text)
     {
         if (c == '\n')
         {
             cursorX = p.x;
-            p.y += scaledHeight + scaledSpacing;
+            p.y += lineAdvance;
             continue;
         }
 
         if ((c < 0) || (c > 127))
             c = '?';
 
-        if (cursorX >= settings.width || p.y >= settings.height || cursorX + scaledWidth <= 0 ||
-            p.y + scaledHeight <= 0)
+        const auto &glyph = _font.data[static_cast<unsigned char>(c)];
+        const AuraBitmapFont::Ink ink = _font.ink(glyph);
+        const u32 width = _font.width(ink, height);
+        const i32 advance = static_cast<i32>(_font.advance(ink, height));
+
+        if (width == 0 || cursorX >= settings.width || p.y >= settings.height ||
+            cursorX + static_cast<i32>(width) <= 0 || p.y + static_cast<i32>(height) <= 0)
         {
-            cursorX += scaledWidth + scaledSpacing;
+            cursorX += advance;
             continue;
         }
 
-        const auto &charData = _font.data[static_cast<unsigned char>(c)];
-
-        for (i32 row = 0; row < _font.charHeight; row++)
+        for (u32 y = 0; y < height; ++y)
         {
-            u8 rowBits = charData[row];
-            for (u32 scaleY = 0; scaleY < fontSize; scaleY++)
+            const i32 pixelY = p.y + static_cast<i32>(y);
+            if (pixelY < 0 || pixelY >= settings.height)
+                continue;
+            for (u32 x = 0; x < width; ++x)
             {
-                i32 pixelY = p.y + static_cast<int>(row * fontSize) + scaleY;
-                if (pixelY < 0 || pixelY >= settings.height)
-                    continue;
-
-                for (i32 col = 0; col < _font.charWidth; col++)
-                {
-                    bool isPixelOn = (rowBits & (1 << (_font.charWidth - 1 - col))) != 0;
-                    if (isPixelOn)
-                    {
-                        for (u32 scaleX = 0; scaleX < fontSize; scaleX++)
-                        {
-                            i32 pixelX = cursorX + static_cast<int>(col * fontSize) + scaleX;
-                            if (pixelX >= 0 && pixelX < settings.width)
-                            {
-                                setPixel({pixelX, pixelY}, color);
-                            }
-                        }
-                    }
-                }
+                const i32 pixelX = cursorX + static_cast<i32>(x);
+                if (pixelX >= 0 && pixelX < settings.width && _font.covers(glyph, ink, width, height, x, y))
+                    setPixel({pixelX, pixelY}, color);
             }
         }
-        cursorX += scaledWidth + scaledSpacing;
+        cursorX += advance;
     }
 }
 
 int CpuFrameBufferManager::getTextWidth(const std::string &text, u32 fontSize)
 {
-    i32 scaledWidth = _font.charWidth * fontSize;
-    i32 scaledSpacing = _font.charSpacing * fontSize;
+    const u32 height = kLinePixelsPerFontSize * fontSize;
 
     i32 width = 0;
     i32 maxWidth = 0;
@@ -945,7 +939,10 @@ int CpuFrameBufferManager::getTextWidth(const std::string &text, u32 fontSize)
             continue;
         }
 
-        width += scaledWidth + scaledSpacing;
+        if ((c < 0) || (c > 127))
+            c = '?';
+        const auto &glyph = _font.data[static_cast<unsigned char>(c)];
+        width += static_cast<i32>(_font.advance(_font.ink(glyph), height));
     }
 
     return std::max(maxWidth, width);
@@ -953,7 +950,7 @@ int CpuFrameBufferManager::getTextWidth(const std::string &text, u32 fontSize)
 
 int CpuFrameBufferManager::getTextHeight(const std::string &text, u32 fontSize)
 {
-    int scaledHeight = _font.charHeight * fontSize;
+    const int scaledHeight = static_cast<int>(kLinePixelsPerFontSize * fontSize);
     int lines = 1;
 
     for (char c : text)

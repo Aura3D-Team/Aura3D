@@ -80,6 +80,26 @@ class UIRoot
         return _content.get();
     }
 
+    /// Window chrome laid over the whole surface. Content fills the decoration's
+    /// contentRect(); replacing either leaves the other intact.
+    void setDecoration(std::unique_ptr<Widget> decoration);
+    [[nodiscard]] Widget *decoration() const noexcept
+    {
+        return _decoration.get();
+    }
+    /// Changes with every setDecoration(), so a cached cast of decoration() knows
+    /// when to redo it; a recycled address cannot fool it.
+    [[nodiscard]] u64 decorationGeneration() const noexcept
+    {
+        return _decorationGeneration;
+    }
+
+    /// The content's rectangle after the latest layout pass.
+    [[nodiscard]] Rect contentBounds() const noexcept
+    {
+        return _contentBounds;
+    }
+
     /**
      * @brief The floating layer: drop-downs, menus, tooltips, dialogs.
      *
@@ -327,11 +347,14 @@ class UIRoot
     Theme _theme{};
 
     std::unique_ptr<Widget> _content;
+    std::unique_ptr<Widget> _decoration;
 
     //! Always present, so nothing has to null-check the floating layer.
     std::unique_ptr<OverlayLayer> _overlay;
 
     glm::vec2 _size{0.0f};
+    Rect _contentBounds{};
+    u64 _decorationGeneration = 0;
     f32 _scale = 1.0f;
 
     bool _layoutDirty = true;
@@ -355,6 +378,8 @@ class UIRoot
 
     glm::vec2 _pointer{0.0f};
     bool _pointerInside = false;
+    PointerButton _lastPressButton = PointerButton::Left;
+    WidgetRef _lastPressTarget;
 
     //! Tooltip state: what the pointer is resting on, for how long, and the
     //! overlay currently showing for it.

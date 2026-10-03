@@ -243,7 +243,7 @@ void *VkTextureManager::acquireStagingBuffer(VkDeviceSize bytes)
     if (bytes > slot.capacity)
     {
         releaseStagingBuffer();
-        const VkDeviceSize capacity = std::max(bytes, VkDeviceSize{4} * 1024 * 1024);
+        const VkDeviceSize capacity = std::max(bytes, VkDeviceSize{INK_MIB_TO_BYTES(4)});
         slot.staging = _memoryManager->createUploadBuffer(capacity, VK_SHARING_MODE_EXCLUSIVE);
         if (slot.staging.buffer == VK_NULL_HANDLE)
         {

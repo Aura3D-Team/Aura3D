@@ -1,5 +1,7 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
+#include <algorithm>
+
 #include <wma/wma.hpp>
 
 #include "aura/aura.h"
@@ -80,6 +82,26 @@ bool AuraSettings::getWindowResizable() const
 bool AuraSettings::getFullscreen() const
 {
     return _settings.getPath<bool>("/window/fullscreen", _defaults.window.fullscreen);
+}
+
+wma::DecorationMode AuraSettings::getWindowDecorations() const
+{
+    std::string mode = _settings.getPath<std::string>("/window/decorations", std::string());
+    if (mode.empty())
+        return _defaults.window.decorations;
+
+    std::ranges::transform(mode, mode.begin(),
+                           [](unsigned char c)
+                           {
+                               return static_cast<char>(std::tolower(c));
+                           });
+    if (mode == "server")
+        return wma::DecorationMode::ServerSide;
+    if (mode == "client")
+        return wma::DecorationMode::ClientSide;
+
+    INK_WARN << "AuraSettings: unsupported window decorations '" << mode << "'; expected \"server\" or \"client\"";
+    return _defaults.window.decorations;
 }
 
 bool AuraSettings::getVSync() const

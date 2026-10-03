@@ -232,6 +232,10 @@ struct AuraConfig
         bool fullscreen = false;
         bool vsync = false;
 
+        //! ClientSide makes UIView draw the title bar. A Wayland compositor may
+        //! still choose either mode; UIView follows its choice.
+        wma::DecorationMode decorations = wma::DecorationMode::ServerSide;
+
         //! Unset derives the mode from @c vsync: Fifo when on, AutoNoVsync off.
         std::optional<VSyncMode> vsyncMode;
 
@@ -336,6 +340,8 @@ class AuraSettings
     wma::WindowBackend getWindowBackend() const;
     bool getWindowResizable() const; //! default true
     bool getFullscreen() const;      //! default false
+    //! "server" (default) or "client"; unrecognized values warn and fall back.
+    wma::DecorationMode getWindowDecorations() const;
     bool getVSync() const;           //! default false
     VSyncMode getVSyncMode() const;  //! default: window/vsync_mode if set, else derived from getVSync()
     int getFPSLimit() const;         //! default 60

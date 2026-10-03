@@ -163,6 +163,16 @@ bool OverlayLayer::hasModal() const noexcept
                                });
 }
 
+bool OverlayLayer::hasLightDismissible() const noexcept
+{
+    for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
+    {
+        if (!_entries[i].closing && _entries[i].desc.dismissOnOutsideClick && childAt(i).hitTestVisible())
+            return true;
+    }
+    return false;
+}
+
 Widget *OverlayLayer::topmost() const noexcept
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)

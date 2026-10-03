@@ -28,6 +28,49 @@ aura3d::RendererChoice backend = engine.getBackend();
 `Engine` owns the renderer and the `ResourceManager` for its whole lifetime —
 you don't call `new`/`delete` on either.
 
+## Window decorations
+
+```cpp
+aura3d::AuraConfig config;
+config.window.decorations = wma::DecorationMode::ClientSide; // or "decorations": "client"
+Engine engine(config, "settings.json");
+
+aura3d::ui::UIView ui(*engine.getRenderer()); // owns a DefaultWindowDecoration
+ui.setWindowTitle("My application");
+```
+
+The decoration frames `root().setContent()`: a title bar with the title
+centred, and — while the window is resizable and not maximized — a thin border
+in the same colour. `root().contentBounds()` is what remains; 3D rendering still
+covers the full framebuffer.
+
+Moving, resizing, resize cursors and double-click maximize are the window
+manager's: `attachInput()` installs the decoration's `windowHit()` as the
+window's `setHitTest()`, and every WMA backend acts on it natively. The bar is
+hidden on server-decorated, fullscreen and non-toplevel windows, wherever the
+backend has no native move (GLFW off X11, the browser, Android), and Wayland
+may override the request either way.
+
+```cpp
+auto bar = std::make_unique<aura3d::ui::DefaultWindowDecoration>();
+bar->titleLabel().style().textColor({0.8f, 0.9f, 1.0f, 1.0f});
+ui.setWindowDecoration(std::move(bar)); // nullptr removes it
+```
+
+For a different layout, derive from `IWindowDecoration`: reserve the frame with
+`contentInsets()` (or `layout().padding`), place children in `arrangeContent()`
+and implement `update(window, title)`.
+
+| Region | Reported by `windowHit()` | Handled by |
+|---|---|---|
+| Content, buttons, any hit-testable child | `wma::WindowHit::Client` | AuraUI |
+| Frame background | `Caption` | WMA: move, double-click maximize |
+| Border (override) | `Top`, `BottomRight`, … | WMA: resize and its cursor |
+
+Buttons call `window.minimize()`, `window.close()` and
+`window.isMaximized() ? window.restore() : window.maximize()`. Make labels in
+the bar non-hit-testable (`setHitTestVisible(false)`) so they drag.
+
 ## `IRenderer`: the interface every backend implements
 
 All three backends (Vulkan, OpenGL, CPU) implement the same

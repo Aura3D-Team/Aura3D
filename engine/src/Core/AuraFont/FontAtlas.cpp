@@ -152,13 +152,11 @@ std::unique_ptr<FontAtlas> FontAtlas::builtinBitmap(const Desc &desc)
 
     const AuraBitmapFont &font = GetDefaultBitmapFont();
 
-    const float requested = desc.pixelHeight / static_cast<float>(font.charHeight);
-    atlas->_bitmapScale = std::max(1u, static_cast<u32>(std::lround(requested)));
-
-    const float glyphHeight = static_cast<float>(font.charHeight * atlas->_bitmapScale);
-    atlas->_ascent = glyphHeight;
-    atlas->_descent = 0.0f;
-    atlas->_lineHeight = glyphHeight + static_cast<float>(font.charSpacing * atlas->_bitmapScale);
+    atlas->_desc.pixelHeight = std::max(1.0f, std::round(desc.pixelHeight));
+    const float scale = atlas->_desc.pixelHeight / static_cast<float>(font.charHeight);
+    atlas->_ascent = static_cast<float>(font.baseline) * scale;
+    atlas->_descent = atlas->_ascent - atlas->_desc.pixelHeight;
+    atlas->_lineHeight = atlas->_desc.pixelHeight;
 
     return atlas;
 }
@@ -235,44 +233,28 @@ bool FontAtlas::rasterizeBitmap(char32_t codepoint, GlyphInfo &out)
     if (codepoint >= 128)
         return false;
 
-    const u32 scale = _bitmapScale;
-    const u32 glyphW = static_cast<u32>(font.charWidth) * scale;
-    const u32 glyphH = static_cast<u32>(font.charHeight) * scale;
+    const auto &glyph = font.data[static_cast<size_t>(codepoint)];
+    const AuraBitmapFont::Ink ink = font.ink(glyph);
+    const u32 glyphH = static_cast<u32>(_desc.pixelHeight);
+    const u32 glyphW = font.width(ink, glyphH);
 
-    out.advance = static_cast<float>((font.charWidth + font.charSpacing) * static_cast<i32>(scale));
+    out.advance = static_cast<float>(font.advance(ink, glyphH));
     out.bearing = {0.0f, 0.0f};
-
-    if (codepoint == U' ')
-    {
-        out.size = {0.0f, 0.0f};
+    out.size = {0.0f, 0.0f};
+    if (glyphW == 0)
         return true;
-    }
-
     out.size = {static_cast<float>(glyphW), static_cast<float>(glyphH)};
 
     const auto origin = reserveCell(glyphW, glyphH);
     if (!origin)
         return false;
 
-    const auto &bits = font.data[static_cast<size_t>(codepoint)];
     std::vector<u8> expanded(static_cast<size_t>(glyphW) * glyphH, 0);
-
-    for (i32 row = 0; row < font.charHeight; ++row)
-    {
-        const u8 rowBits = bits[static_cast<size_t>(row)];
-        for (i32 col = 0; col < font.charWidth; ++col)
-        {
-            if ((rowBits & (1u << (font.charWidth - 1 - col))) == 0)
-                continue;
-
-            for (u32 sy = 0; sy < scale; ++sy)
-            {
-                u8 *dstRow = expanded.data() + (static_cast<size_t>(row) * scale + sy) * glyphW +
-                             static_cast<size_t>(col) * scale;
-                std::memset(dstRow, 0xFF, scale);
-            }
-        }
-    }
+    // Rasterize at device size with binary coverage, so drawing needs no resampling.
+    for (u32 row = 0; row < glyphH; ++row)
+        for (u32 col = 0; col < glyphW; ++col)
+            if (font.covers(glyph, ink, glyphW, glyphH, col, row))
+                expanded[static_cast<size_t>(row) * glyphW + col] = 255;
 
     blitCoverage(expanded.data(), glyphW, *origin, glyphW, glyphH);
     markDirty(origin->x, origin->y, glyphW, glyphH);
