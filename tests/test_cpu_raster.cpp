@@ -9,6 +9,9 @@
 #include "aura/Core/JobSystem/JobSystem.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
 #include "aura/Renderer/Software/CpuAura/CpuFrameBufferManager.h"
+#ifdef AURA_HAS_CPU
+#include "aura/Renderer/Software/CPURenderer.h"
+#endif
 
 #include "TestUtils.h"
 #include "WindowTestUtils.h"
@@ -201,6 +204,67 @@ void checkRasterization()
     AURA_CHECK(allPixels(frame, 0, 1), "non-finite and far-offscreen triangles leave the framebuffer unchanged");
 }
 
+void checkBandBoundaries()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 16, .height = 16}, jobs};
+    for (i32 height : {1, 3, 15, 16, 17, 31})
+    {
+        frame.resizeFramebuffer(16, height);
+        frame.clear();
+        for (i32 row = -2; row < height + 2; ++row)
+        {
+            const f32 y = static_cast<f32>(row);
+            const glm::vec4 color = row % 2 ? glm::vec4{0, 1, 0, 1} : glm::vec4{1, 0, 0, 1};
+            const ScreenVertex a{0, y, 0, 1, {}, color}, b{16, y, 0, 1, {}, color};
+            const ScreenVertex c{16, y + 1, 0, 1, {}, color}, d{0, y + 1, 0, 1, {}, color};
+            frame.queueTriangle({a, b, c}, nullptr, Mode::Batch);
+            frame.queueTriangle({a, c, d}, nullptr, Mode::Batch);
+        }
+        frame.flush();
+        bool correct = true;
+        for (i32 y = 0; y < height; ++y)
+            for (i32 x = 0; x < 16; ++x)
+                correct &= frame.getPixel({x, y}).rgb == (y % 2 ? 0xFF00FF00u : 0xFFFF0000u);
+        AURA_CHECK(correct, "resized and uneven row bands preserve thin strips at every boundary");
+    }
+}
+
+#ifdef AURA_HAS_CPU
+void checkSingularLighting()
+{
+    JobSystem jobs{1};
+    cpu::CPURenderer renderer(wma::WindowDetails{.width = 16, .height = 16});
+    renderer.setWindowFactory(
+        [](auto, const auto &, auto)
+        {
+            return std::make_unique<test::FakeWindow>();
+        });
+    renderer.initialize(AuraSettings::get(), &jobs);
+    renderer.bindVertexBuffer(renderer.createVertexBuffer({{{-1, -1, 0}, {}, {1, 1, 1, 1}, {0, 0, 1}},
+                                                           {{1, -1, 0}, {}, {1, 1, 1, 1}, {0, 0, 1}},
+                                                           {{-1, 1, 0}, {}, {1, 1, 1, 1}, {0, 0, 1}}}));
+    renderer.bindIndexBuffer(renderer.createIndexBuffer(std::vector<u32>{0, 1, 2}));
+    renderer.setLight({.direction = {0, 0, -1}, .intensity = 1, .ambient = 0});
+    for (f32 scale : {0.f, 1.f, 2.f})
+        for (bool indexed : {false, true})
+        {
+            gfx::TransformUBO transform{glm::mat4{1}, glm::mat4{1}, glm::mat4{1}};
+            transform.model[2][2] = scale;
+            renderer.setTransform(transform);
+            renderer.beginRenderPass();
+            if (indexed)
+                renderer.drawIndexed(3);
+            else
+                renderer.draw(3);
+            renderer.endRenderPass();
+            AURA_CHECK(renderer.getFrameBufferManager()->getPixel({2, 12}).rgb == 0xFFFFFFFFu,
+                       "indexed and direct draws keep finite lighting under nonuniform and zero scale");
+        }
+}
+#endif
+
 } // namespace
 
 int main()
@@ -223,6 +287,10 @@ int main()
     AURA_CHECK(keptBelow > 0 && keptBelow < 12, "below-left view culls some but not all of the cube's 12 triangles");
 
     checkRasterization();
+    checkBandBoundaries();
+#ifdef AURA_HAS_CPU
+    checkSingularLighting();
+#endif
 
     AURA_TEST_MAIN_RETURN();
 }

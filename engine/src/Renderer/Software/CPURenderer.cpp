@@ -6,6 +6,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "aura/Core/AuraMath.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Core/JobSystem/JobSystem.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
@@ -366,7 +367,7 @@ void CPURenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     const float W = static_cast<float>(_frameBufferManager->getWidth());
     const float H = static_cast<float>(_frameBufferManager->getHeight());
     const glm::mat4 MVP = _currentTransform.proj * _currentTransform.view * _currentTransform.model;
-    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(_currentTransform.model)));
+    const glm::mat3 normalMatrix = gfx::normalMatrixOf(_currentTransform.model);
 
     const u32 safeCount = std::min(indexCount, static_cast<u32>(indices.size()));
     const u32 triCount = safeCount / 3;
@@ -422,7 +423,7 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     const float W = static_cast<float>(_frameBufferManager->getWidth());
     const float H = static_cast<float>(_frameBufferManager->getHeight());
     const glm::mat4 MVP = _currentTransform.proj * _currentTransform.view * _currentTransform.model;
-    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(_currentTransform.model)));
+    const glm::mat3 normalMatrix = gfx::normalMatrixOf(_currentTransform.model);
 
     const u32 safeCount = std::min(vertexCount, static_cast<u32>(verts.size()));
     const u32 triCount = safeCount / 3;
@@ -461,7 +462,7 @@ void CPURenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::spa
     const Texture *sampled = _resolveTexture(texture);
     const f32 width = static_cast<f32>(_frameBufferManager->getWidth());
     const f32 height = static_cast<f32>(_frameBufferManager->getHeight());
-    const glm::mat4 transform = batchTransform(gfx::BatchSpace::World);
+    const glm::mat4 transform = space == gfx::BatchSpace::World ? batchTransform(space) : glm::mat4{1};
     const auto emit = [&](const ScreenTriangle &triangle)
     {
         _frameBufferManager->queueTriangle(triangle, sampled, CpuFrameBufferManager::RasterMode::Batch);

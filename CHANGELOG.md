@@ -15,6 +15,7 @@ All notable changes to Aura3D are documented in this file.
 
 ### Changed
 
+- Vulkan reuses the allocation-free parallel executor for recording, keeps chunk state local, and binds scene descriptors together. CPU triangle binning skips untouched row bands and screen batches skip the world transform.
 - **Breaking:** `drawBatch2D()` and `gfx::Vertex2D` became `drawBatch()` and `gfx::BatchVertex`, with a `gfx::BatchSpace`: `Screen` (default; `z` is depth, 0 on the near plane) or `World`. Each backend draws every batch through one pipeline, in submission order with meshes.
 - **Breaking:** `FontAtlas::takeUpload(revision)` replaces `takeDirtyUpload()` and returns R8 coverage; each texture of a shared sheet keeps its own revision.
 - **Breaking:** removed the unused `gfx::Mesh2D` and `RENDERER_MODE_LIST`, and `CpuFrameBufferManager`'s `drawTriangle()`, `drawTriangle2D()`, `submitTriangles()` and `submitTriangles2D()`; `queueTriangle()` with a `RasterMode` replaces them.
@@ -30,6 +31,7 @@ All notable changes to Aura3D are documented in this file.
 
 ### Fixed
 
+- CPU meshes use the shared normal-matrix calculation, preserving lighting under singular model transforms.
 - `VK_RESULT_CHECK` evaluated a failing Vulkan call twice.
 - Vulkan threw and caught an exception several times a frame reading an absent `renderer.max_frames_in_flight`; the per-frame path no longer reads settings. The software renderer no longer allocates per present.
 - Vulkan meshes used the previous frame's camera when `setTransform()` followed `beginRenderPass()`, so they lagged world-space batches while the camera moved.

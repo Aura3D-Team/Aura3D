@@ -563,13 +563,6 @@ void CpuFrameBufferManager::binQueuedTriangles()
     if (_bandRanges.empty())
         return;
 
-    /*
-     * Bands are contiguous and ordered, so the band a row belongs to is found
-     * by walking forward from the previous triangle's band rather than
-     * searching. In practice the whole loop is two comparisons per triangle.
-     */
-    const i32 bandCount = static_cast<i32>(_bandRanges.size());
-
     for (u32 index = 0; index < _queuedTriangles.size(); ++index)
     {
         const ScreenTriangle &tri = _queuedTriangles[index];
@@ -584,14 +577,10 @@ void CpuFrameBufferManager::binQueuedTriangles()
         const i32 minY = static_cast<i32>(std::max(0.0f, std::floor(minYf)));
         const i32 maxY = static_cast<i32>(std::min(static_cast<f32>(settings.height - 1), std::ceil(maxYf)));
 
-        for (i32 band = 0; band < bandCount; ++band)
-        {
-            const BandRange range = _bandRanges[band];
-            if (range.yStart > maxY)
-                break; //! Bands are ordered; nothing further can overlap.
-            if (range.yEnd > minY)
-                _bandBins[band].push_back(index);
-        }
+        // Skip bands ending before the triangle, preserving submission order in every bin.
+        auto band = std::ranges::upper_bound(_bandRanges, minY, {}, &BandRange::yEnd);
+        for (; band != _bandRanges.end() && band->yStart <= maxY; ++band)
+            _bandBins[static_cast<usize>(band - _bandRanges.begin())].push_back(index);
     }
 }
 

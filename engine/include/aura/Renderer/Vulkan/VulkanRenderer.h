@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cstddef>
-#include <future>
 #include <memory>
 #include <optional>
 #include <string>
@@ -35,12 +34,12 @@
 #include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkDebugMetrics.h"
 #endif
 
-//! Forward-declared to keep ink/ThreadPool.h (and its <thread>/<mutex>
+//! Forward-declared to keep ink/ParallelProcessor.h (and its <thread>/<mutex>
 //! transitive includes) out of every translation unit that includes this
 //! header -- same reasoning as CpuFrameBufferManager.
 namespace ink
 {
-class ThreadPool;
+class ParallelProcessor;
 }
 
 namespace aura3d
@@ -228,13 +227,6 @@ class VulkanRenderer : public IRenderer
     VkCommandBuffer _sceneCmd = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> _chunkCmds;
 
-    /*
-     * One context per worker, reused for the renderer's lifetime. Held by
-     * pointer because a context owns a bind cache that must not be copied or
-     * moved while a worker is recording through it.
-     */
-    std::vector<std::unique_ptr<VkCommandRecordingContext>> _recordingContexts;
-
     //! Draw list for the batch being recorded: handles resolved once on the
     //! submitting thread so workers touch no renderer-owned lookup table.
     //! Retained across frames to keep the per-frame path allocation-free.
@@ -246,17 +238,9 @@ class VulkanRenderer : public IRenderer
      * rasteriser uses -- only one backend is ever live per run, so the two
      * cannot contend for it. Built by the first drawMeshes() that fans out.
      */
-    std::unique_ptr<ink::ThreadPool> _recordPool;
+    std::unique_ptr<ink::ParallelProcessor> _recordPool;
     u32 _recordWorkerCount = 1;
 
-    /*
-     * Join handles for the chunk tasks drawMeshes() fans out. A member, and
-     * only ever cleared, so a steady-state frame reuses the allocation rather
-     * than building a fresh vector of futures per frame. Never outlives the
-     * drawMeshes() call that fills it -- every future is waited on before that
-     * function returns.
-     */
-    std::vector<std::future<void>> _recordFutures;
     u32 _currentFrame = 0;
     u32 _currentImageIndex = 0;
     u32 _imagesCount = 0;

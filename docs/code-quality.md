@@ -8,9 +8,15 @@ cannot parse. The Linux Debug preset already sets both options.
 Inside `vulkan-dev`, from this repository:
 
 ```sh
-python3 ci/check-cpp.py format
+export CLANG_FORMAT=clang-format-22
+export CLANG_TIDY=clang-tidy-22
+
+# Apply formatting, then verify
 python3 ci/check-cpp.py format --fix
-python3 ci/check-cpp.py lint --build build/linux/debug
+python3 ci/check-cpp.py format
+
+# Run lint
+python3 ci/check-cpp.py lint --build build/linux/debug --jobs 6
 ```
 
 | Option | Scope |

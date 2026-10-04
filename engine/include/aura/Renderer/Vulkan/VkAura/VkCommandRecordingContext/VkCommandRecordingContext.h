@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include <array>
 #include <span>
-#include <vector>
 
 #include <vulkan/vulkan.h>
 
@@ -42,10 +42,8 @@ struct ResolvedDraw
 {
     glm::mat4 model{1.0f};
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
-    //! VK_NULL_HANDLE for a non-indexed draw, where vertexCount is used instead.
     VkBuffer indexBuffer = VK_NULL_HANDLE;
     u32 indexCount = 0;
-    u32 vertexCount = 0;
     //! Slot in the bindless texture table; see VulkanRenderer::textureArrayIndexOf().
     u32 textureIndex = 0;
     VkIndexType indexType = VK_INDEX_TYPE_UINT32;
@@ -62,9 +60,7 @@ struct ResolvedDraw
 struct SceneBindings
 {
     VkGraphicsPipelineManager *pipeline = nullptr;
-    VkDescriptorSet transformSet = VK_NULL_HANDLE; //!< set 0
-    VkDescriptorSet textureTable = VK_NULL_HANDLE; //!< set 1, the bindless table
-    VkDescriptorSet lightSet = VK_NULL_HANDLE;     //!< set 2
+    std::array<VkDescriptorSet, 3> descriptorSets{}; //!< Transform, textures, light.
     VkExtent2D extent{};
 };
 
@@ -113,42 +109,9 @@ struct RecordedState
  */
 void bindDrawState(VkCommandBuffer cmd, RecordedState &state, const SceneBindings &bindings, const ResolvedDraw &draw);
 
-/**
- * @class VkCommandRecordingContext
- * @brief One thread's slot for recording a chunk of a frame's draws into its
- *        own secondary command buffer.
- *
- * Exists because the two things a recording thread must not share are exactly
- * a command buffer (pools require external synchronization) and a bind cache
- * (RecordedState describes one buffer). Bundling them means "give each worker
- * a context" is the whole of the thread-safety argument: everything else a
- * worker touches -- SceneBindings, the pipeline manager's cached handles, the
- * ResolvedDraw array -- is read-only for the duration.
- *
- * Contexts are owned by VulkanRenderer and reused across frames, so a
- * steady-state frame allocates nothing here.
- */
-class VkCommandRecordingContext
-{
-  public:
-    /**
-     * @brief Records @p draws into @p cmd as a complete secondary command buffer.
-     *
-     * Begins @p cmd with inheritance from @p renderPass / @p framebuffer,
-     * records every draw, and ends it. The caller replays the result with
-     * vkCmdExecuteCommands.
-     *
-     * Safe to call concurrently on different contexts, provided each was given
-     * a command buffer from its own thread's pool.
-     */
-    void recordChunk(VkCommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer,
-                     const SceneBindings &bindings, std::span<const ResolvedDraw> draws);
-
-  private:
-    //! This context's private view of what is bound in the buffer it is
-    //! currently recording. Reset at the start of every chunk.
-    RecordedState _recorded;
-};
+/// Records a secondary buffer from its caller's thread-local command pool.
+void recordChunk(VkCommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer, const SceneBindings &bindings,
+                 std::span<const ResolvedDraw> draws);
 
 } // namespace vk
 } // namespace aura3d

@@ -4,16 +4,15 @@
 #include <bit>
 #include <chrono>
 #include <cstring>
-#include <future>
+#include <functional>
 #include <system_error>
 #include <thread>
 
-#include <ink/ThreadPool.h>
+#include <ink/ParallelProcessor.h>
 
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
 #include "aura/Renderer/Vulkan/VkAura/EmbeddedSpirv.h"
-#include "aura/Utils/FutureJoiner.h"
 #include "aura/aura.h"
 
 namespace aura3d
@@ -292,21 +291,10 @@ void VulkanRenderer::createResourceManagers()
 
     _vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(dev);
 
-    /*
-     * Recording workers. graphics.cpu_threads == 0 means "match the machine",
-     * the same convention the software rasteriser uses for the same setting.
-     * One context per worker, allocated once here: a context owns a bind cache
-     * tied to the buffer it is recording, so they are never shared or resized
-     * mid-frame.
-     */
+    //! Zero configured workers selects hardware concurrency.
     const int configuredThreads = AuraSettings::get()->getCpuThreads();
     const unsigned detected = std::thread::hardware_concurrency();
     _recordWorkerCount = configuredThreads > 0 ? static_cast<u32>(configuredThreads) : (detected > 0 ? detected : 1u);
-
-    _recordingContexts.clear();
-    _recordingContexts.reserve(_recordWorkerCount);
-    for (u32 i = 0; i < _recordWorkerCount; ++i)
-        _recordingContexts.push_back(std::make_unique<VkCommandRecordingContext>());
 
     //! The pool is built by the first drawMeshes() large enough to use it, so a
     //! scene that never reaches that size runs without the worker threads.
@@ -685,7 +673,6 @@ void VulkanRenderer::cleanup()
      * first would leave them holding handles to a destroyed device.
      */
     _recordPool.reset();
-    _recordingContexts.clear();
     _chunkCmds.clear();
     _resolvedDraws.clear();
 
@@ -1192,18 +1179,9 @@ void VulkanRenderer::bindDrawState(VkCommandBuffer cmd)
 
 SceneBindings VulkanRenderer::sceneBindings() const
 {
-    SceneBindings bindings;
-    bindings.pipeline = _vkGraphicsPipelineManager.get();
-    bindings.textureTable = _bindlessTextureSet;
-    bindings.extent = *_vkSwapChainManager->getExtent2D();
-
-    if (_currentFrame < _descSets.size())
-        bindings.transformSet = _descSets[_currentFrame];
-
-    if (_currentFrame < _lightDescSets.size())
-        bindings.lightSet = _lightDescSets[_currentFrame];
-
-    return bindings;
+    return {_vkGraphicsPipelineManager.get(),
+            {_descSets[_currentFrame], _bindlessTextureSet, _lightDescSets[_currentFrame]},
+            *_vkSwapChainManager->getExtent2D()};
 }
 
 void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
@@ -1285,22 +1263,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     VkRenderPass renderPass = *_vkRenderPassManager->getRenderPass();
     VkFramebuffer framebuffer = _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex];
 
-    /*
-     * Thresholds picked from measurement, not intuition (release build,
-     * validation off, RTX 4060 / 22 logical cores, Sandbox stress scene):
-     *
-     *      objects   serial   16 workers
-     *        2 000    232us        135us
-     *       20 000   2408us        926us   (2.6x)
-     *
-     * The fan-out has a fixed cost of roughly 100-200us -- waking the pool,
-     * one secondary command buffer begin/end per chunk, and a full state
-     * rebind per chunk since a secondary buffer inherits no bindings. Below a
-     * few hundred draws that cost is the entire budget, and at 2 000 objects
-     * with only 2-4 workers the threaded path measured *slower* than serial.
-     * So: stay inline unless the batch is genuinely large, and when it is,
-     * use every worker rather than a token few.
-     */
+    // Small batches stay inline to avoid worker wakeups and secondary-buffer setup.
     constexpr size_t kMinDrawsToThread = 512;
     constexpr size_t kMinDrawsPerChunk = 128;
 
@@ -1313,7 +1276,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     {
         try
         {
-            _recordPool = std::make_unique<ink::ThreadPool>(static_cast<size_t>(_recordWorkerCount));
+            _recordPool = std::make_unique<ink::ParallelProcessor>(static_cast<size_t>(_recordWorkerCount));
         }
         catch (const std::system_error &e)
         {
@@ -1343,8 +1306,6 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     const size_t remainder = _resolvedDraws.size() % chunkCount;
 
     _chunkCmds.reserve(_chunkCmds.size() + chunkCount + 2);
-    _recordFutures.clear();
-    _recordFutures.reserve(chunkCount);
 
     // Seal the preceding serial segment before appending worker chunks.
     VkCommandManager::endCommandBuffer(_sceneCmd);
@@ -1356,38 +1317,18 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
 
     try
     {
-        //! Joins every submitted task on any exit, so `bindings` (captured by
-        //! reference) and the slices outlive the workers even when a later
-        //! submit throws.
-        FutureJoiner joiner(_recordFutures);
-        size_t offset = 0;
-        for (size_t chunk = 0; chunk < chunkCount; ++chunk)
+        const auto record = [&](size_t chunk)
         {
+            const size_t offset = chunk * perChunk + std::min(chunk, remainder);
             const size_t count = perChunk + (chunk < remainder ? 1 : 0);
             const std::span<const ResolvedDraw> slice(_resolvedDraws.data() + offset, count);
-            offset += count;
-
-            VkCommandRecordingContext *context = _recordingContexts[chunk].get();
-            VkCommandBuffer *slot = &_chunkCmds[firstChunkCmd + chunk];
-
-            _recordFutures.push_back(_recordPool->submit(
-                [this, context, slot, slice, &bindings, renderPass, framebuffer]
-                {
-                    /*
-                     * Allocated on the worker thread on purpose: the buffer must
-                     * come from a pool owned by the thread that records into it,
-                     * and VkCommandManager keys its pools by thread id to
-                     * guarantee exactly that.
-                     */
-                    VkCommandBuffer cmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
-                    *slot = cmd;
-                    context->recordChunk(cmd, renderPass, framebuffer, bindings, slice);
-                }));
-        }
-
-        //! Blocks until the whole batch is recorded: the buffers have to be
-        //! closed before endRenderPass() can replay them.
-        joiner.get();
+            // Each participant, including the caller, acquires from its own command pool.
+            VkCommandBuffer cmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
+            _chunkCmds[firstChunkCmd + chunk] = cmd;
+            recordChunk(cmd, renderPass, framebuffer, bindings, slice);
+        };
+        // run() joins before returning or throwing; std::ref avoids allocating the callback.
+        _recordPool->run(chunkCount, std::ref(record));
     }
     catch (...)
     {
