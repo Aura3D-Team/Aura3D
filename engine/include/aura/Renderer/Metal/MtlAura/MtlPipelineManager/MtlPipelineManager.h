@@ -18,8 +18,8 @@ namespace mtl
  *        state and the rasterizer settings an encoder must apply alongside them.
  *
  * The Metal counterpart of VkGraphicsPipelineManager, and used the same way --
- * one instance per pipeline, so MetalRenderer holds two: the lit 3D scene
- * pipeline and the unlit 2D overlay.
+ * one instance per pipeline, so MetalRenderer holds a lit scene pipeline
+ * and an unlit batch pipeline.
  *
  * Two structural differences from the Vulkan original are worth knowing:
  *
@@ -52,7 +52,9 @@ class MtlPipelineManager
     {
         const char *vertexFunction = kVertexFunction3D;     //! MSL vertex entry point.
         const char *fragmentFunction = kFragmentFunction3D; //! MSL fragment entry point.
-        bool depthTest = false;                             //! Enables both the depth test and depth writes.
+        bool depthTest = false;                             //! Enables the test; writes unless depthWrite is off.
+        bool depthWrite = true;                             //! Ignored without depthTest.
+        MTL::CompareFunction depthCompare = MTL::CompareFunctionLess;
         bool alphaBlend = false;                            //! src*srcAlpha + dst*(1-srcAlpha).
         bool cullBackFaces = false;                         //! Discards back faces; see bind().
         const char *label = "Aura3D pipeline";              //! Shown in Xcode's GPU debugger.

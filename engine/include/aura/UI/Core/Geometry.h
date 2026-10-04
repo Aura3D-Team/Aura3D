@@ -14,7 +14,7 @@
  * @brief The value types every other AuraUI header speaks in.
  *
  * Pixels throughout, y growing downwards, origin at the surface's top-left --
- * the same convention IRenderer::drawBatch2D() takes, so nothing between a
+ * the same convention IRenderer::drawBatch() takes, so nothing between a
  * widget and the GPU has to flip an axis.
  */
 

@@ -78,7 +78,7 @@ constexpr glm::vec3 kSpawnOrigin{0.0f, 0.0f, -6.0f};
 }
 
 // The animated sprite: a texture regenerated every frame, drawn directly
-// through drawBatch2D -- independent of both the 3D scene and the UI's own
+// through drawBatch -- independent of both the 3D scene and the UI's own
 // batch.
 
 constexpr u32 kSpriteSize = 96;
@@ -88,7 +88,7 @@ constexpr u32 kSpriteSize = 96;
  *
  * Coverage only -- RGB stays white, alpha carries the shape -- exactly the
  * convention FontAtlas rasterizes glyphs with. That is what lets a single
- * texture be recoloured for free by the vertex colour drawBatch2D() blends it
+ * texture be recoloured for free by the vertex colour drawBatch() blends it
  * against, rather than needing one texture per hue.
  *
  * @note This differs from how FontAtlas or AuraUI's own atlas is kept up to
@@ -286,17 +286,17 @@ ui::Column &card(ui::Widget &parent, std::string_view title, const ui::Theme &th
 }
 
 /// Appends one axis-aligned textured quad to a 2D batch, matching the vertex
-/// order the engine's 2D pipeline uses everywhere (top-left, top-right,
+/// order the engine's batches use everywhere (top-left, top-right,
 /// bottom-right, bottom-left) so the two triangles share the quad's diagonal.
-void appendQuad(std::vector<gfx::Vertex2D> &vertices, std::vector<u32> &indices, const glm::vec2 &min,
+void appendQuad(std::vector<gfx::BatchVertex> &vertices, std::vector<u32> &indices, const glm::vec2 &min,
                 const glm::vec2 &max, const glm::vec4 &color)
 {
     const auto base = static_cast<u32>(vertices.size());
 
-    vertices.push_back({{min.x, min.y}, {0.0f, 0.0f}, color});
-    vertices.push_back({{max.x, min.y}, {1.0f, 0.0f}, color});
-    vertices.push_back({{max.x, max.y}, {1.0f, 1.0f}, color});
-    vertices.push_back({{min.x, max.y}, {0.0f, 1.0f}, color});
+    vertices.push_back({{min.x, min.y, 0}, {0.0f, 0.0f}, color});
+    vertices.push_back({{max.x, min.y, 0}, {1.0f, 0.0f}, color});
+    vertices.push_back({{max.x, max.y, 0}, {1.0f, 1.0f}, color});
+    vertices.push_back({{min.x, max.y, 0}, {0.0f, 1.0f}, color});
 
     indices.push_back(base + 0);
     indices.push_back(base + 1);
@@ -655,7 +655,7 @@ int main()
 
     // Built once: allocates the glyph atlas texture. Characters are rasterized
     // into it the first time they are drawn, and each string then costs a
-    // single batched draw call on the renderer's unlit 2D pipeline.
+    // single batched draw call on the renderer's unlit batch pipeline.
     TextOverlayDesc overlayDesc;
     overlayDesc.pixelHeight = 18.0f;
     TextOverlay overlay(r, overlayDesc);
@@ -663,7 +663,7 @@ int main()
 #ifdef AURA_HAS_UI
     /*
      * AuraUI's retained widget toolkit. It draws through the same
-     * backend-agnostic DrawList -> IRenderer::drawBatch2D() pipeline the text
+     * backend-agnostic DrawList -> IRenderer::drawBatch() pipeline the text
      * overlay uses, so this same tree runs unchanged on Vulkan, OpenGL, Metal
      * and the software rasterizer, and the whole sidebar costs a single draw
      * call. See docs/16-auraui-toolkit.md.
@@ -1032,7 +1032,7 @@ int main()
     float spriteRefreshAccum = 0.0f;
     float spriteTime = 0.0f;
 
-    std::vector<gfx::Vertex2D> spriteVertices;
+    std::vector<gfx::BatchVertex> spriteVertices;
     std::vector<u32> spriteIndices;
 
     auto &spriteCard = card(sidebarColumn, "Sprite", theme);
@@ -1256,10 +1256,16 @@ int main()
             }
 #endif
 
-            // The 2D pipeline supplies its own orthographic projection, so the
+            // Screen-space batches supply their own projection, so the
             // overlay needs nothing from the scene camera and leaves the scene's
             // transform untouched.
-            overlay.drawFPS(10.0f, 10.0f);
+            glm::vec2 corner{10.0f};
+#ifdef AURA_HAS_UI
+            //! Below the title bar a client-side decoration draws over the surface.
+            if (const ui::IWindowDecoration *decoration = ui.windowDecoration())
+                corner += decoration->contentRect().min * ui.root().scale();
+#endif
+            overlay.drawFPS(corner.x, corner.y);
 
 #ifdef AURA_HAS_UI
             //! overlay.fps() rather than a second average of our own: drawFPS()
@@ -1272,7 +1278,7 @@ int main()
             //! Drawn only while the sidebar is down, so it stops being clutter the
             //! moment it has done its job.
             if (!sidebarOpen)
-                overlay.drawText("F1: tool sidebar", 10.0f, 10.0f + overlay.lineHeight());
+                overlay.drawText("F1: tool sidebar", corner.x, corner.y + overlay.lineHeight());
 
             // -- 2D: the animated sprite, drawn independently of the UI ---------
             //! Regenerated above the render pass, not here; only the quad is
@@ -1292,7 +1298,7 @@ int main()
                 spriteVertices.clear();
                 spriteIndices.clear();
                 appendQuad(spriteVertices, spriteIndices, anchor - half, anchor + half, spriteColor);
-                r->drawBatch2D(spriteVertices, spriteIndices, spriteTexture);
+                r->drawBatch(spriteVertices, spriteIndices, spriteTexture);
             }
 
             //! Layout, dispatch and the single-batch submission for the whole

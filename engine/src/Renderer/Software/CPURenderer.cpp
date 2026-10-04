@@ -1,5 +1,9 @@
 #include "aura/Renderer/Software/CPURenderer.h"
 
+#include <algorithm>
+#include <cstring>
+#include <limits>
+
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "aura/Core/AuraSettings/AuraSettings.h"
@@ -11,6 +15,18 @@ namespace aura3d
 {
 namespace cpu
 {
+
+namespace
+{
+
+[[nodiscard]] bool validTextureSize(u32 width, u32 height, usize bytesPerPixel) noexcept
+{
+    return width > 0 && height > 0 && width <= static_cast<u32>(std::numeric_limits<i32>::max()) &&
+           height <= static_cast<u32>(std::numeric_limits<i32>::max()) &&
+           static_cast<usize>(width) <= std::numeric_limits<usize>::max() / height / bytesPerPixel;
+}
+
+} // namespace
 
 CPURenderer::CPURenderer(const wma::WindowDetails &windowDetails) : IRenderer(windowDetails)
 {
@@ -104,9 +120,9 @@ TextureHandle CPURenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 
 TextureHandle CPURenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height)
 {
-    if (!rgbaPixels || width == 0 || height == 0)
+    if (!rgbaPixels || !validTextureSize(width, height, 4))
     {
-        INK_ERROR << "CPURenderer: refusing to upload an empty texture";
+        INK_ERROR << "CPURenderer: refusing invalid texture data or dimensions";
         return {};
     }
 
@@ -127,22 +143,62 @@ TextureHandle CPURenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 wid
 
     //! Textures are stored as mip-level vectors.
     //! Handle is 1-based so that no valid handle collides with the invalid-handle sentinel.
-    _texturePool.push_back({std::move(tex)});
+    _texturePool.emplace_back().push_back(std::move(tex));
     return static_cast<TextureHandle>(_texturePool.size()); // 1-based
 }
 
 TextureHandle CPURenderer::createDynamicTexture(u32 width, u32 height)
 {
-    if (width == 0 || height == 0)
+    if (!validTextureSize(width, height, 4))
     {
-        INK_ERROR << "CPURenderer: refusing to allocate a zero-sized dynamic texture";
+        INK_ERROR << "CPURenderer: refusing invalid texture dimensions";
         return {};
     }
 
     //! Texture's constructor zero-fills, i.e. transparent black.
     Texture tex(static_cast<int>(width), static_cast<int>(height));
-    _texturePool.push_back({std::move(tex)});
+    _texturePool.emplace_back().push_back(std::move(tex));
     return static_cast<TextureHandle>(_texturePool.size()); // 1-based
+}
+
+TextureHandle CPURenderer::createCoverageTexture(u32 width, u32 height)
+{
+    if (!validTextureSize(width, height, 1))
+    {
+        INK_ERROR << "CPURenderer: refusing invalid coverage texture dimensions";
+        return {};
+    }
+
+    Texture tex(static_cast<i32>(width), static_cast<i32>(height), true);
+    _texturePool.emplace_back().push_back(std::move(tex));
+    return static_cast<TextureHandle>(_texturePool.size());
+}
+
+void CPURenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                              const u8 *coverage)
+{
+    if (!coverage || width == 0 || height == 0)
+        return;
+    if (!isValidHandle(handle) || handle.value() > _texturePool.size())
+    {
+        INK_ERROR << "CPURenderer: coverage update on an unknown texture";
+        return;
+    }
+
+    auto &mips = _texturePool[handle.value() - 1];
+    if (mips.empty())
+        return;
+    Texture &tex = mips[0];
+    if (tex.coverage.empty() || x > static_cast<u32>(tex.width) || y > static_cast<u32>(tex.height) ||
+        width > static_cast<u32>(tex.width) - x || height > static_cast<u32>(tex.height) - y)
+    {
+        INK_ERROR << "CPURenderer: invalid coverage texture update";
+        return;
+    }
+
+    for (u32 row = 0; row < height; ++row)
+        std::memcpy(tex.coverage.data() + static_cast<size_t>(y + row) * tex.width + x,
+                    coverage + static_cast<size_t>(row) * width, width);
 }
 
 void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels)
@@ -161,6 +217,11 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 wi
         return;
 
     Texture &tex = mips[0];
+    if (!tex.coverage.empty())
+    {
+        INK_ERROR << "CPURenderer: RGBA update on a coverage texture";
+        return;
+    }
     if (x > static_cast<u32>(tex.width) || y > static_cast<u32>(tex.height) ||
         width > static_cast<u32>(tex.width) - x || height > static_cast<u32>(tex.height) - y)
     {
@@ -174,11 +235,9 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 wi
         const u8 *src = rgbaPixels + static_cast<size_t>(row) * width * 4;
         u32 *dst = tex.data.data() + static_cast<size_t>(y + row) * tex.width + x;
 
-        for (u32 col = 0; col < width; ++col)
-        {
-            dst[col] = (static_cast<u32>(src[col * 4 + 3]) << 24) | (static_cast<u32>(src[col * 4 + 0]) << 16) |
-                       (static_cast<u32>(src[col * 4 + 1]) << 8) | static_cast<u32>(src[col * 4 + 2]);
-        }
+        for (u32 col = 0; col < width; ++col, src += 4)
+            dst[col] = (static_cast<u32>(src[3]) << 24) | (static_cast<u32>(src[0]) << 16) |
+                       (static_cast<u32>(src[1]) << 8) | static_cast<u32>(src[2]);
     }
 }
 
@@ -384,53 +443,49 @@ void CPURenderer::draw(u32 vertexCount, u32 instanceCount)
     (void)instanceCount;
 }
 
-void CPURenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                              TextureHandle texture)
+glm::uvec2 CPURenderer::renderTargetSize() const noexcept
 {
-    AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
+    if (!_frameBufferManager)
+        return glm::uvec2{0};
+    return {static_cast<u32>(std::max(_frameBufferManager->getWidth(), 0)),
+            static_cast<u32>(std::max(_frameBufferManager->getHeight(), 0))};
+}
 
+void CPURenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
+                            TextureHandle texture, gfx::BatchSpace space)
+{
+    AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
     if (!_frameBufferManager || vertices.empty() || indices.empty())
         return;
 
     const Texture *sampled = _resolveTexture(texture);
-
-    /*
-     * No projection matrix is needed here: the batch already arrives in window
-     * pixels, which is precisely the software rasteriser's own coordinate space.
-     * What the GPU backends express as an orthographic matrix is, on this path,
-     * simply the absence of a transform.
-     */
-    const auto toScreenVertex = [](const gfx::Vertex2D &v) noexcept
+    const f32 width = static_cast<f32>(_frameBufferManager->getWidth());
+    const f32 height = static_cast<f32>(_frameBufferManager->getHeight());
+    const glm::mat4 transform = batchTransform(gfx::BatchSpace::World);
+    const auto emit = [&](const ScreenTriangle &triangle)
     {
-        ScreenVertex sv;
-        sv.x = v.pos.x;
-        sv.y = v.pos.y;
-        sv.z = 0.0f;
-        sv.invW = 1.0f; //! Orthographic: no perspective division.
-        sv.uv = v.texCoord;
-        sv.color = v.color;
-        return sv;
+        _frameBufferManager->queueTriangle(triangle, sampled, CpuFrameBufferManager::RasterMode::Batch);
+    };
+    const auto toClip = [&](const gfx::BatchVertex &v) -> ClipVertex
+    {
+        return {transform * glm::vec4(v.pos, 1), v.texCoord, v.color};
+    };
+    const auto toScreen = [](const gfx::BatchVertex &v) -> ScreenVertex
+    {
+        return {v.pos.x, v.pos.y, v.pos.z, 1, v.texCoord, v.color};
     };
 
-    const size_t triCount = indices.size() / 3;
-
-    for (size_t t = 0; t < triCount; ++t)
+    for (usize t = 0; t + 2 < indices.size(); t += 3)
     {
-        const u32 i0 = indices[t * 3 + 0];
-        const u32 i1 = indices[t * 3 + 1];
-        const u32 i2 = indices[t * 3 + 2];
-
+        const u32 i0 = indices[t], i1 = indices[t + 1], i2 = indices[t + 2];
         if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())
             continue;
 
-        /*
-         * No back-face test here, matching the GPU overlay pipelines, which
-         * disable culling outright (see overlayOptions.cullBackFaces). UI
-         * quads carry no meaningful winding and a glyph must draw whichever
-         * way its two triangles happen to be wound.
-         */
-        _frameBufferManager->queueTriangle(
-            {toScreenVertex(vertices[i0]), toScreenVertex(vertices[i1]), toScreenVertex(vertices[i2])}, sampled, true);
+        // Screen batches already use the rasterizer's pixel and depth coordinates.
+        if (space == gfx::BatchSpace::Screen)
+            emit({toScreen(vertices[i0]), toScreen(vertices[i1]), toScreen(vertices[i2])});
+        else
+            clipTriangle(toClip(vertices[i0]), toClip(vertices[i1]), toClip(vertices[i2]), width, height, emit, false);
     }
 }
 

@@ -8,6 +8,8 @@ in vec3 fragPos;
 out vec4 outColor;
 
 uniform sampler2D textureSampler;
+// WebGL2 has no texture swizzles; remap linear R8 coverage here.
+uniform bool coverageOnly;
 
 // Mirrors aura3d::gfx::LightUBO (std140).
 layout(std140) uniform LightBlock {
@@ -27,5 +29,7 @@ void main()
     float lighting = light.ambient + diffuse;
 
     vec4 texColor = texture(textureSampler, fragTexCoord);
+    if (coverageOnly)
+        texColor = vec4(1.0, 1.0, 1.0, texColor.r);
     outColor = texColor * fragColor * vec4(light.color.rgb * lighting, 1.0);
 }

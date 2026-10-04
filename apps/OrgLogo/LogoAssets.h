@@ -78,7 +78,7 @@ struct UvRect
  * @brief One texture holding every sprite the star field draws with.
  *
  * A single atlas is what lets the whole field -- hundreds of stars plus any
- * meteors -- go out as one drawBatch2D() call: the overlay path takes one
+ * meteors -- go out as one drawBatch() call: the overlay path takes one
  * texture per batch, so a second sprite sheet would mean a second draw.
  */
 struct StarAtlas

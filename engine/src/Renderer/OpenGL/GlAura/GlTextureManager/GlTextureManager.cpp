@@ -1,11 +1,17 @@
 #include "aura/Renderer/OpenGL/GlAura/GlTextureManager/GlTextureManager.h"
 
+#include <limits>
+#include <vector>
+
 namespace aura3d
 {
 namespace gl
 {
 
-GlTextureManager::GlTextureManager() = default;
+GlTextureManager::GlTextureManager()
+{
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &_maxTextureSize);
+}
 GlTextureManager::~GlTextureManager()
 {
     cleanup();
@@ -19,7 +25,8 @@ TextureHandle GlTextureManager::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
 
 TextureHandle GlTextureManager::createTextureFromPixels(const u8 *rgba, u32 width, u32 height, bool smooth)
 {
-    if (!rgba || width == 0 || height == 0)
+    if (!rgba || width == 0 || height == 0 || width > static_cast<u32>(_maxTextureSize) ||
+        height > static_cast<u32>(_maxTextureSize))
     {
         INK_ERROR << "GlTextureManager: refusing to upload an empty texture";
         return {};
@@ -45,10 +52,7 @@ TextureHandle GlTextureManager::createTextureFromPixels(const u8 *rgba, u32 widt
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-    glBindTexture(GL_TEXTURE_2D, 0);
-    //! Uploading made this texture current on the active unit and then unbound
-    //! it, both behind bind()'s back; drop the cache rather than let it lie.
-    invalidateBindings();
+    restoreBinding();
 
     _textures[handle] = data;
     return handle;
@@ -56,39 +60,50 @@ TextureHandle GlTextureManager::createTextureFromPixels(const u8 *rgba, u32 widt
 
 TextureHandle GlTextureManager::createDynamicTexture(u32 width, u32 height)
 {
-    if (width == 0 || height == 0)
+    return createDynamic(width, height, false);
+}
+
+TextureHandle GlTextureManager::createCoverageTexture(u32 width, u32 height)
+{
+    return createDynamic(width, height, true);
+}
+
+TextureHandle GlTextureManager::createDynamic(u32 width, u32 height, bool coverageOnly)
+{
+    const size_t bytesPerTexel = coverageOnly ? 1u : 4u;
+    if (width == 0 || height == 0 || width > static_cast<u32>(std::numeric_limits<GLsizei>::max()) ||
+        height > static_cast<u32>(std::numeric_limits<GLsizei>::max()) || width > static_cast<u32>(_maxTextureSize) ||
+        height > static_cast<u32>(_maxTextureSize) ||
+        static_cast<size_t>(width) > std::numeric_limits<size_t>::max() / height / bytesPerTexel)
     {
-        INK_ERROR << "GlTextureManager: refusing to allocate a zero-sized dynamic texture";
+        INK_ERROR << "GlTextureManager: refusing invalid dynamic texture dimensions";
         return {};
     }
 
+    //! Allocate before changing GL state: a failed host allocation must not leak
+    //! a texture name or invalidate the binding cache behind its back.
+    const std::vector<u8> zeros(static_cast<size_t>(width) * height * bytesPerTexel, 0);
     auto handle = _nextHandle++;
     GlTextureData data;
     data.width = width;
     data.height = height;
+    data.coverageOnly = coverageOnly;
 
     glGenTextures(1, &data.texture);
     glBindTexture(GL_TEXTURE_2D, data.texture);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    /*
-     * A null pixel pointer allocates the storage without uploading anything.
-     * The contents are undefined until updateRegion() writes them, which is
-     * exactly the glyph-atlas usage: reserve the sheet once, fill cells later.
-     */
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA,
-                 GL_UNSIGNED_BYTE, nullptr);
+    //! Both formats promise transparent initial contents, including glyph padding.
+    glTexImage2D(GL_TEXTURE_2D, 0, coverageOnly ? GL_R8 : GL_RGBA, static_cast<GLsizei>(width),
+                 static_cast<GLsizei>(height), 0, coverageOnly ? GL_RED : GL_RGBA, GL_UNSIGNED_BYTE, zeros.data());
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glBindTexture(GL_TEXTURE_2D, 0);
-    //! Uploading made this texture current on the active unit and then unbound
-    //! it, both behind bind()'s back; drop the cache rather than let it lie.
-    invalidateBindings();
+    restoreBinding();
 
     _textures[handle] = data;
     return handle;
@@ -96,7 +111,19 @@ TextureHandle GlTextureManager::createDynamicTexture(u32 width, u32 height)
 
 void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgba)
 {
-    if (!rgba || width == 0 || height == 0)
+    updatePixels(handle, x, y, width, height, rgba, false);
+}
+
+void GlTextureManager::updateCoverageRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                            const u8 *coverage)
+{
+    updatePixels(handle, x, y, width, height, coverage, true);
+}
+
+void GlTextureManager::updatePixels(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *pixels,
+                                    bool coverageOnly)
+{
+    if (!pixels || width == 0 || height == 0)
         return;
 
     auto it = _textures.find(handle);
@@ -107,6 +134,11 @@ void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 widt
     }
 
     const GlTextureData &data = it->second;
+    if (data.coverageOnly != coverageOnly)
+    {
+        INK_ERROR << "GlTextureManager: update format does not match texture format";
+        return;
+    }
     if (x > data.width || y > data.height || width > data.width - x || height > data.height - y)
     {
         INK_ERROR << "GlTextureManager: updateRegion rectangle exceeds the texture bounds";
@@ -116,9 +148,13 @@ void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 widt
     glBindTexture(GL_TEXTURE_2D, data.texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width),
-                    static_cast<GLsizei>(height), GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    invalidateBindings();
+                    static_cast<GLsizei>(height), coverageOnly ? GL_RED : GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    restoreBinding();
+}
+
+void GlTextureManager::restoreBinding() noexcept
+{
+    glBindTexture(GL_TEXTURE_2D, _activeUnit < kTrackedUnits ? _boundToUnit[_activeUnit] : 0);
 }
 
 void GlTextureManager::invalidateBindings() noexcept
@@ -126,11 +162,11 @@ void GlTextureManager::invalidateBindings() noexcept
     _boundToUnit.fill(0);
 }
 
-void GlTextureManager::bind(TextureHandle handle, GLuint unit)
+const GlTextureData *GlTextureManager::bind(TextureHandle handle, GLuint unit)
 {
     auto it = _textures.find(handle);
     if (it == _textures.end())
-        return;
+        return nullptr;
 
     const GLuint texture = it->second.texture;
 
@@ -141,11 +177,11 @@ void GlTextureManager::bind(TextureHandle handle, GLuint unit)
         glActiveTexture(GL_TEXTURE0 + unit);
         glBindTexture(GL_TEXTURE_2D, texture);
         _activeUnit = unit;
-        return;
+        return &it->second;
     }
 
     if (_boundToUnit[unit] == texture)
-        return;
+        return &it->second;
 
     if (_activeUnit != unit)
     {
@@ -155,6 +191,7 @@ void GlTextureManager::bind(TextureHandle handle, GLuint unit)
 
     glBindTexture(GL_TEXTURE_2D, texture);
     _boundToUnit[unit] = texture;
+    return &it->second;
 }
 
 GlTextureData *GlTextureManager::get(TextureHandle handle)

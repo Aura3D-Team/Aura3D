@@ -34,8 +34,8 @@ class VkDescriptorManager
     /**
      * Constructor - initializes the descriptor pool
      * @param vkDevice Pointer to the Vulkan logical device
-     * @param bindlessTextureCapacity Slots in each of the two persistent
-     *        bindless texture-array sets (3D + overlay). Must be the value
+     * @param bindlessTextureCapacity Slots in the persistent bindless
+     *        texture-array set both pipelines share. Must be the value
      *        VkDeviceManager::maxBindlessTextures() resolved against the real
      *        device, never kDesiredBindlessTextures directly -- the pool has
      *        to reserve exactly what the descriptor set layouts declare.

@@ -147,7 +147,7 @@ with no audio API, so the two settings never constrain each other. See
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `shaders` | string | `./resources/shaders/` | Read by `AuraSettings::getShadersPath()`; not currently consumed by the built-in pipelines (they embed their SPIR-V/GLSL — see [10-platform-builds.md](10-platform-builds.md)), but available for your own shader loading. |
+| `shaders` | string | `./resources/shaders/` | Read by `AuraSettings::getShadersPath()`; not currently consumed by the built-in pipelines (the build embeds them from `resources/shaders`), but available for your own shader loading. |
 | `textures` | string | `./resources/textures/` | Convention used by `ResourceManager::loadTexture` callers — see `apps/Sandbox/main.cpp`'s `settings->getTexturesPath() + "crate.png"`. |
 | `models` | string | `./resources/models/` | Same convention for `ResourceManager::loadMesh`. |
 | `audio` | string | `./resources/audio/` | Same convention for `ResourceManager::loadSound` — see `apps/Sandbox/main.cpp`'s `settings->getAudioPath() + "orb_hum.wav"`. Generate the Sandbox's own audio with `scripts/gen_sandbox_audio.py`. |

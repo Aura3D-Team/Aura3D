@@ -32,7 +32,7 @@ enum class FramePhase : u32
     Acquire,       ///< vkAcquireNextImageKHR (swapchain/WSI).
     BeginPass,     ///< Command buffer begin + render pass begin.
     RecordScene,   ///< drawMeshes(): resolving and recording scene draws.
-    RecordOverlay, ///< The 2D overlay batch (text, UI).
+    RecordOverlay, ///< Screen-space batches (text, UI).
     EndPass,       ///< Replaying secondaries + ending the pass/buffer.
     Submit,        ///< vkQueueSubmit.
     Present,       ///< vkQueuePresentKHR (hands the frame to the compositor).

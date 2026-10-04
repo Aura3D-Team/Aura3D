@@ -1,6 +1,7 @@
 #ifndef CPUFRAMEBUFFERMANAGER_H
 #define CPUFRAMEBUFFERMANAGER_H
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <glm/glm.hpp>
@@ -93,11 +94,15 @@ enum InterpolationMethod : u32
 
 struct Texture
 {
-    Texture(i32 w, i32 h) : data(static_cast<size_t>(w) * static_cast<size_t>(h), 0), width(w), height(h)
+    Texture(i32 w, i32 h, bool coverageOnly = false)
+        : data(coverageOnly ? 0 : static_cast<size_t>(w) * static_cast<size_t>(h), 0),
+          coverage(coverageOnly ? static_cast<size_t>(w) * static_cast<size_t>(h) : 0, 0), width(w), height(h)
     {
     }
 
     AlignedVector<u32> data;
+    //! Coverage textures own one byte per texel and sample as white RGB plus alpha.
+    AlignedVector<u8> coverage;
     i32 width;
     i32 height;
 
@@ -107,34 +112,18 @@ struct Texture
     {
         x = INK_CLAMP(x, 0, width - 1);
         y = INK_CLAMP(y, 0, height - 1);
-        return data[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)];
+        const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+        return coverage.empty() ? data[index] : (static_cast<u32>(coverage[index]) << 24) | 0x00FFFFFFu;
     }
 
-    /**
-     * @brief Bilinearly filtered sample at normalized (u, v), ARGB8888.
-     *
-     * Point sampling would throw away exactly the thing FontAtlas exists to
-     * produce: stb_truetype rasterizes glyphs with antialiased (grayscale)
-     * coverage, not 1-bit edges, but a pen position is essentially never on an
-     * integer pixel boundary, since it accumulates fractional glyph advances.
-     * Reading the nearest texel instead of blending its neighbours turns that
-     * soft coverage back into a hard, jagged edge the moment a glyph lands
-     * off-grid -- which is always. Vulkan, OpenGL and Metal all sample the
-     * atlas linearly already (see each backend's texture manager); this is
-     * what brings the software rasteriser's text to the same quality.
-     *
-     * Applies to every texture sampled here, not only glyphs -- consistent
-     * with the GPU backends, which do not special-case fonts either.
-     */
+    /// Bilinear clamp-to-edge sampling, with texel centres at (i + 0.5) / size.
     [[nodiscard]] u32 sample(f32 u, f32 v) const noexcept
     {
-        /*
-         * Texel-centre convention: texel i's centre sits at (i + 0.5) / size,
-         * so subtracting 0.5 converts a UV back into continuous texel space
-         * where whole numbers land exactly on texel centres -- matching every
-         * GPU sampler this mirrors, rather than being offset half a texel
-         * from them.
-         */
+        if (width <= 0 || height <= 0)
+            return 0;
+        // Clamp before the integer conversion, including infinities and NaNs.
+        u = u > 0 ? std::min(u, 1.0f) : 0.0f;
+        v = v > 0 ? std::min(v, 1.0f) : 0.0f;
         const f32 fx = u * static_cast<f32>(width) - 0.5f;
         const f32 fy = v * static_cast<f32>(height) - 0.5f;
 
@@ -150,6 +139,20 @@ struct Texture
         const u32 c10 = texelClamped(x0 + 1, y0);
         const u32 c01 = texelClamped(x0, y0 + 1);
         const u32 c11 = texelClamped(x0 + 1, y0 + 1);
+
+        if (!coverage.empty())
+        {
+            //! RGB is constant white; interpolate only coverage in the font hot path.
+            const auto lerpCoverage = [](u32 a, u32 b, f32 t) noexcept -> u32
+            {
+                const f32 value = static_cast<f32>(a) + (static_cast<f32>(b) - static_cast<f32>(a)) * t;
+                //! Never negative, so adding a half before truncating rounds to nearest without a libm call.
+                return static_cast<u32>(value + 0.5f); // NOLINT(bugprone-incorrect-roundings)
+            };
+            const u32 alpha =
+                lerpCoverage(lerpCoverage(c00 >> 24, c10 >> 24, tx), lerpCoverage(c01 >> 24, c11 >> 24, tx), ty);
+            return (alpha << 24) | 0x00FFFFFFu;
+        }
 
         return lerpArgb(lerpArgb(c00, c10, tx), lerpArgb(c01, c11, tx), ty);
     }
@@ -176,7 +179,7 @@ struct Texture
  *
  * All floating-point positions are in pixel coordinates.
  * Attributes (uv, color) are stored in their original form; perspective-
- * correct interpolation is applied inside drawTriangle().
+ * correct interpolation is applied when the triangle is rasterised.
  */
 struct ScreenVertex
 {
@@ -188,8 +191,7 @@ struct ScreenVertex
     glm::vec4 color = {1, 1, 1, 1}; ///< Vertex color  [0, 1] per channel
 };
 
-//! One triangle's worth of already-projected vertices, as consumed by the
-//! queued entry points queueTriangle(), submitTriangles() and submitTriangles2D().
+//! One triangle's worth of already-projected vertices, as queued by queueTriangle().
 struct ScreenTriangle
 {
     ScreenVertex v0, v1, v2;
@@ -275,63 +277,6 @@ class CpuFrameBufferManager
     void drawFilledPolygon(const std::vector<Point> &points, u32 color);
 
     /**
-     * @brief Rasterise a single screen-space triangle.
-     *
-     * Implements a half-space (edge-function) rasteriser with:
-     *   - Barycentric perspective-correct attribute interpolation
-     *   - Per-pixel depth test (when Config::useDepthBuffer is true)
-     *   - Optional bilinear texture sampling (see Texture::sample())
-     *   - Vertex-colour × texture-colour modulation
-     *
-     * @param v0,v1,v2  Screen-space vertices from the vertex transform stage.
-     * @param texture   Optional texture; pass nullptr for untextured geometry.
-     */
-    void drawTriangle(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2, const Texture *texture);
-
-    /**
-     * @brief Rasterise a screen-space triangle for the unlit 2D overlay pass.
-     *
-     * The software counterpart of the GPU backends' 2D pipeline, and it differs
-     * from drawTriangle() in exactly the ways that pipeline does:
-     *   - Affine (not perspective-correct) attribute interpolation. The overlay
-     *     projection is orthographic, so w is 1 everywhere and the perspective
-     *     divide would be an identity operation.
-     *   - No depth test and no depth write, so the batch always composites on
-     *     top of the scene already drawn.
-     *   - Straight source-over alpha blending against the colour plane, rather
-     *     than an opaque overwrite. This is what lets an antialiased glyph's
-     *     partially covered edge texels fade into the background.
-     *
-     * @param v0,v1,v2  Vertices already in pixel coordinates.
-     * @param texture   Optional texture; nullptr draws vertex colour alone.
-     */
-    void drawTriangle2D(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2, const Texture *texture);
-
-    /**
-     * @brief Queues an already-projected triangle list for this frame.
-     *
-     * Copies the triangles into the frame's batch queue and returns
-     * immediately -- nothing is rasterised until flush().
-     *
-     * That deferral is the point. Rasterising here instead would mean one
-     * thread-pool fan-out *per draw call*: a scene of 200 objects paid 200
-     * rounds of waking every worker, splitting the framebuffer and joining
-     * again, and each round's fixed cost is paid whether the draw covers the
-     * screen or four pixels. Queuing lets a whole frame's geometry go out in a
-     * single dispatch.
-     *
-     * @param triangles Already-projected triangles (see @ref ScreenTriangle).
-     * @param texture   Optional shared texture; pass nullptr for untextured.
-     *                  Must stay alive until flush() returns.
-     */
-    void submitTriangles(std::span<const ScreenTriangle> triangles, const Texture *texture);
-
-    /// The drawTriangle2D() analogue of submitTriangles(): unlit, alpha-blended,
-    /// affine-interpolated. Queued into the same list, so an overlay submitted
-    /// after the scene still composites on top of it.
-    void submitTriangles2D(std::span<const ScreenTriangle> triangles, const Texture *texture);
-
-    /**
      * @brief Rasterises everything queued this frame, then empties the queue.
      *
      * The framebuffer is split into horizontal row-bands and each band is
@@ -341,8 +286,7 @@ class CpuFrameBufferManager
      *
      * Within a band, batches are replayed in submission order, so the result is
      * pixel-identical to having rasterised each draw call as it arrived -- the
-     * property the alpha-blended 2D overlay depends on, since blending is not
-     * commutative.
+     * property blended batches depend on, since blending is not commutative.
      *
      * Each band rasterises only the triangles that actually reach its rows:
      * a binning pass buckets triangles by the bands their bounding boxes span
@@ -354,18 +298,22 @@ class CpuFrameBufferManager
      */
     void flush();
 
+    //! How flush() rasterizes a queued triangle.
+    enum class RasterMode : u8
+    {
+        Scene, //!< Opaque, LESS depth test and depth writes.
+        Batch, //!< Source-over blend, LEQUAL depth test without depth writes.
+    };
+
     /**
-     * @brief Queues one triangle, the per-triangle form of submitTriangles().
+     * @brief Queues one projected triangle; nothing is rasterised until flush().
      *
-     * Appends straight into the frame's queue, so a vertex stage that emits
-     * triangles one at a time (the clipper does) needs no intermediate list
-     * and no second copy. Consecutive calls with the same @p texture and
-     * @p overlay extend one batch, which keeps flush() replaying draw calls
-     * in submission order exactly as the span forms do.
-     *
-     * @param overlay  `true` for the unlit, alpha-blended 2D path of submitTriangles2D().
+     * Deferring lets a whole frame go out in one thread-pool dispatch rather
+     * than one per draw call. Consecutive calls with the same @p texture and
+     * @p mode extend one batch, and flush() replays batches in submission order.
+     * @p texture must stay alive until flush() returns.
      */
-    void queueTriangle(const ScreenTriangle &triangle, const Texture *texture, bool overlay = false);
+    void queueTriangle(const ScreenTriangle &triangle, const Texture *texture, RasterMode mode = RasterMode::Scene);
 
     // Text rendering. fontSize is 8 px of line height per step; 2 is the embedded face's native size.
     void drawText(const std::string &text, Point p, u32 color, u32 fontSize = 2);
@@ -401,20 +349,10 @@ class CpuFrameBufferManager
   private:
     float get_eased_time(float t_param, InterpolationMethod method);
 
-    /**
-     * @brief Core of drawTriangle(), restricted to rows @c [yStart, yEnd).
-     *
-     * drawTriangle() itself is this called with the full framebuffer height;
-     * flush() calls it once per row-band from worker threads. Callers
-     * are responsible for the bands being disjoint -- that disjointness is
-     * the entire basis for this being safe to call concurrently.
-     */
+    // Row bands own disjoint pixels; only Scene writes depth.
+    template <bool Blended>
     void rasterizeTriangleSpan(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2,
                                const Texture *texture, i32 yStart, i32 yEnd);
-
-    /// The drawTriangle2D() analogue of rasterizeTriangleSpan().
-    void rasterizeTriangle2DSpan(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2,
-                                 const Texture *texture, i32 yStart, i32 yEnd);
 
     //! Splits [0, settings.height) into row-bands and runs @p rasterizeBand(band,
     //! yStart, yEnd) on each, blocking until all complete. Band boundaries come
@@ -438,8 +376,7 @@ class CpuFrameBufferManager
     struct QueuedBatch
     {
         const Texture *texture = nullptr;
-        //! true -> rasterizeTriangle2DSpan (unlit, blended, no depth).
-        bool overlay = false;
+        RasterMode mode = RasterMode::Scene;
         u32 first = 0;
         u32 count = 0;
     };
@@ -507,6 +444,10 @@ class CpuFrameBufferManager
 
     // Aura Font
     const AuraBitmapFont &_font;
+    //! The face at the last text height drawn, so drawing text every frame costs no layout work.
+    AuraBitmapFont::Layout _textLayout;
+
+    [[nodiscard]] const AuraBitmapFont::Layout &textLayoutFor(u32 height);
 };
 
 } // namespace cpu

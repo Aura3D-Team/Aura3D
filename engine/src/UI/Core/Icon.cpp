@@ -16,7 +16,7 @@ namespace
 
 //! Cells are square and small; the shape is drawn at the size the widget asks
 //! for, so a mask larger than this is a mask nobody can see the detail of.
-constexpr u32 kMaxCell = 32;
+constexpr u32 kMaxCell = 64;
 
 /**
  * @brief The glyph page icons rasterize into, materializing it if need be.
@@ -47,10 +47,11 @@ void convex(DrawList &out, ITextShaper &shaper, const Rect &bounds, std::span<co
     if (!page)
         return;
 
-    //! Square, and sized to the shape as drawn: a cell rasterized at the pixel
-    //! size it is sampled at needs no minification, which is what keeps the
-    //! edge exactly as smooth as the coverage says it is.
-    const f32 extent = std::min(bounds.width(), bounds.height());
+    //! Square, and sized to the shape as drawn in device pixels: a cell
+    //! rasterized at the size it is sampled at needs no resampling, which is
+    //! what keeps the edge exactly as smooth as the coverage says it is.
+    const f32 scale = shaper.scale();
+    const f32 extent = std::min(bounds.width(), bounds.height()) * scale;
     const u32 cell = std::clamp(static_cast<u32>(std::lround(extent)), 3u, kMaxCell);
 
     std::array<glm::vec2, 16> scaled{};
@@ -68,7 +69,7 @@ void convex(DrawList &out, ITextShaper &shaper, const Rect &bounds, std::span<co
 
     //! Centred at its rasterized size rather than stretched to `bounds`, so a
     //! square shape stays square in a rectangle that is not.
-    const glm::vec2 size{static_cast<f32>(cell), static_cast<f32>(cell)};
+    const glm::vec2 size{static_cast<f32>(cell) / scale};
     const Rect quad = Rect::fromSize(bounds.center() - size * 0.5f, size);
 
     out.drawMask(quad, 0, mask->min, mask->max, color);

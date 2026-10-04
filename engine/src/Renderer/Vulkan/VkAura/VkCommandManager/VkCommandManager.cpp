@@ -141,10 +141,10 @@ VkFixedArray<VkCommandBuffer> VkCommandManager::createCommandBuffer()
 
 VkCommandBuffer VkCommandManager::acquireSecondaryCommandBuffer(u32 frameIndex)
 {
-    if (frameIndex >= GetMaxFramesInFlight())
+    ThreadPools &pools = _threadPools();
+    if (frameIndex >= pools.render.size())
         throw AuraException("acquireSecondaryCommandBuffer: frame index out of range");
 
-    ThreadPools &pools = _threadPools();
     RenderPool &renderPool = pools.render[frameIndex];
 
     if (renderPool.pool == VK_NULL_HANDLE)
@@ -171,9 +171,6 @@ VkCommandBuffer VkCommandManager::acquireSecondaryCommandBuffer(u32 frameIndex)
 
 void VkCommandManager::resetRenderPools(u32 frameIndex)
 {
-    if (frameIndex >= GetMaxFramesInFlight())
-        throw AuraException("resetRenderPools: frame index out of range");
-
     /*
      * Holds the lock across the resets rather than copying the pool handles
      * out first: this runs once per frame with no recording in flight, so
@@ -184,6 +181,8 @@ void VkCommandManager::resetRenderPools(u32 frameIndex)
 
     for (auto &[threadId, pools] : _threadCommandPools)
     {
+        if (frameIndex >= pools->render.size())
+            throw AuraException("resetRenderPools: frame index out of range");
         RenderPool &renderPool = pools->render[frameIndex];
         if (renderPool.pool == VK_NULL_HANDLE)
             continue;

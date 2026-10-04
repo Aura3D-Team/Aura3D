@@ -4,12 +4,11 @@
 #include <algorithm>
 #include <glad/glad.h>
 #include <stdexcept>
-#include <thread>
 
-#include <glm/ext/matrix_clip_space.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 #include "aura/Core/Profiling/FrameProfiler.h"
+#include "aura/Renderer/OpenGL/EmbeddedGlsl.h"
 #include "aura/aura.h"
 
 namespace aura3d
@@ -48,10 +47,14 @@ void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     _textureMgr = std::make_unique<GlTextureManager>();
 
     _uniformMgr->create(_shaderProgram);
-    createOverlay2DBuffers();
+    createBatchBuffers();
+    //! Sampled by untextured batches and invalid scene bindings, as on the other backends.
+    _whiteTexture = _textureMgr->createSolidColorTexture(255, 255, 255, 255);
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
+    //! Only batches blend, always as straight alpha, so the factors are set once.
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
     _isInitialized = true;
 }
@@ -84,7 +87,7 @@ void OpenGLRenderer::loadOpenGLEntryPoints()
             throw std::runtime_error(std::string("OpenGLRenderer: failed to create GL context: ") + SDL_GetError());
         }
 
-        if (SDL_GL_MakeCurrent(window, context) != 0)
+        if (!SDL_GL_MakeCurrent(window, context))
         {
             throw std::runtime_error(std::string("OpenGLRenderer: failed to make GL context current: ") +
                                      SDL_GetError());
@@ -118,6 +121,8 @@ GLuint compileShaderStage(GLenum type, const char *source)
         char log[512];
         glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
         INK_ERROR << "GL shader compile error: " << log;
+        glDeleteShader(shader);
+        return 0;
     }
     return shader;
 }
@@ -127,11 +132,19 @@ GLuint linkShaderProgram(const char *vertexSource, const char *fragmentSource)
 {
     const GLuint vert = compileShaderStage(GL_VERTEX_SHADER, vertexSource);
     const GLuint frag = compileShaderStage(GL_FRAGMENT_SHADER, fragmentSource);
+    if (!vert || !frag)
+    {
+        glDeleteShader(vert);
+        glDeleteShader(frag);
+        throw std::runtime_error("OpenGLRenderer: built-in shader compilation failed");
+    }
 
     const GLuint program = glCreateProgram();
     glAttachShader(program, vert);
     glAttachShader(program, frag);
     glLinkProgram(program);
+    glDeleteShader(vert);
+    glDeleteShader(frag);
 
     GLint ok = GL_FALSE;
     glGetProgramiv(program, GL_LINK_STATUS, &ok);
@@ -139,12 +152,10 @@ GLuint linkShaderProgram(const char *vertexSource, const char *fragmentSource)
     {
         char log[512];
         glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        INK_ERROR << "GL shader link error: " << log;
+        glDeleteProgram(program);
+        throw std::runtime_error(std::string("OpenGLRenderer: built-in shader link failed: ") + log);
     }
 
-    //! The program keeps its own copy once linked, so the stages can go now.
-    glDeleteShader(vert);
-    glDeleteShader(frag);
     return program;
 }
 
@@ -152,64 +163,44 @@ GLuint linkShaderProgram(const char *vertexSource, const char *fragmentSource)
 
 void OpenGLRenderer::compileBuiltInShaders()
 {
-    _shaderProgram = linkShaderProgram(GL_VERTEX_3D, GL_FRAGMENT_3D);
+    _shaderProgram = linkShaderProgram(gl_shader3d_vert, gl_shader3d_frag);
 
-    /*
-     * Point the 3D sampler at texture unit 0 once, here. Sampler uniforms are
-     * part of the program object and survive until it is relinked, so there is
-     * nothing to re-assert per draw -- the renderer binds every texture to
-     * unit 0 and never moves it.
-     */
-    _sampler3DLoc = glGetUniformLocation(_shaderProgram, "textureSampler");
-    if (_sampler3DLoc >= 0)
-    {
-        glUseProgram(_shaderProgram);
-        glUniform1i(_sampler3DLoc, 0);
-    }
+    //! Both programs sample unit 0; sampler uniforms are program state, so they are set once.
+    _coverage3DLoc = glGetUniformLocation(_shaderProgram, "coverageOnly");
+    glUseProgram(_shaderProgram);
+    glUniform1i(glGetUniformLocation(_shaderProgram, "textureSampler"), 0);
 
-    //! The overlay pipeline is a second, entirely separate program: unlit, no
-    //! light block, and its projection supplied per batch rather than per frame.
-    _overlay2DProgram = linkShaderProgram(GL_VERTEX_2D, GL_FRAGMENT_2D);
-    _overlay2DProjLoc = glGetUniformLocation(_overlay2DProgram, "uProj");
-    _overlay2DSamplerLoc = glGetUniformLocation(_overlay2DProgram, "textureSampler");
-
-    //! Same reasoning for the overlay program's sampler.
-    if (_overlay2DSamplerLoc >= 0)
-    {
-        glUseProgram(_overlay2DProgram);
-        glUniform1i(_overlay2DSamplerLoc, 0);
-    }
+    _batchProgram = linkShaderProgram(gl_batch_vert, gl_batch_frag);
+    _batchTransformLoc = glGetUniformLocation(_batchProgram, "uTransform");
+    _batchCoverageLoc = glGetUniformLocation(_batchProgram, "coverageOnly");
+    glUseProgram(_batchProgram);
+    glUniform1i(glGetUniformLocation(_batchProgram, "textureSampler"), 0);
 
     glUseProgram(_shaderProgram);
 }
 
-void OpenGLRenderer::createOverlay2DBuffers()
+void OpenGLRenderer::createBatchBuffers()
 {
-    glGenVertexArrays(1, &_overlay2DVao);
-    glGenBuffers(1, &_overlay2DVbo);
-    glGenBuffers(1, &_overlay2DEbo);
+    glGenVertexArrays(1, &_batchVao);
+    glGenBuffers(1, &_batchVbo);
+    glGenBuffers(1, &_batchEbo);
+    glBindVertexArray(_batchVao);
+    glBindBuffer(GL_ARRAY_BUFFER, _batchVbo);
 
-    glBindVertexArray(_overlay2DVao);
-    glBindBuffer(GL_ARRAY_BUFFER, _overlay2DVbo);
-
-    //! Layout must match gfx::Vertex2D and the 2D shader's input locations.
     // OpenGL requires byte offsets encoded as pointers when a VBO is bound.
     // NOLINTBEGIN(performance-no-int-to-ptr)
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D),
-                          reinterpret_cast<void *>(offsetof(gfx::Vertex2D, pos)));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::BatchVertex),
+                          reinterpret_cast<void *>(offsetof(gfx::BatchVertex, pos)));
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D),
-                          reinterpret_cast<void *>(offsetof(gfx::Vertex2D, texCoord)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::BatchVertex),
+                          reinterpret_cast<void *>(offsetof(gfx::BatchVertex, texCoord)));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::Vertex2D),
-                          reinterpret_cast<void *>(offsetof(gfx::Vertex2D, color)));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::BatchVertex),
+                          reinterpret_cast<void *>(offsetof(gfx::BatchVertex, color)));
     glEnableVertexAttribArray(2);
     // NOLINTEND(performance-no-int-to-ptr)
 
-    //! The element buffer binding is VAO state, so bind it while the VAO is
-    //! current and it is restored automatically on every later bind.
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _overlay2DEbo);
-
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _batchEbo);
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -234,20 +225,22 @@ void OpenGLRenderer::cleanup()
         glDeleteProgram(_shaderProgram);
     _shaderProgram = 0;
 
-    if (_overlay2DProgram)
-        glDeleteProgram(_overlay2DProgram);
-    if (_overlay2DVao)
-        glDeleteVertexArrays(1, &_overlay2DVao);
-    if (_overlay2DVbo)
-        glDeleteBuffers(1, &_overlay2DVbo);
-    if (_overlay2DEbo)
-        glDeleteBuffers(1, &_overlay2DEbo);
-    _overlay2DProgram = 0;
-    _overlay2DVao = _overlay2DVbo = _overlay2DEbo = 0;
-    _overlay2DVboBytes = _overlay2DEboBytes = 0;
-    _overlay2DProjLoc = _overlay2DSamplerLoc = _sampler3DLoc = -1;
+    if (_batchProgram)
+        glDeleteProgram(_batchProgram);
+    if (_batchVao)
+        glDeleteVertexArrays(1, &_batchVao);
+    for (GLuint *buffer : {&_batchVbo, &_batchEbo})
+        if (*buffer)
+            glDeleteBuffers(1, buffer);
+    _batchProgram = 0;
+    _batchVao = _batchVbo = _batchEbo = 0;
+    _batchVboBytes = _batchEboBytes = 0;
+    _batchTransformLoc = -1;
+    _batchCoverageLoc = _coverage3DLoc = -1;
+    _batchCoverage = _coverage3D = -1;
     //! The texture pool dies with _textureMgr below, so drop the cached handle.
-    _white2DTexture = {};
+    _whiteTexture = {};
+    _batchState = false;
 
     _vertexMgr.reset();
     _indexMgr.reset();
@@ -289,6 +282,18 @@ TextureHandle OpenGLRenderer::createDynamicTexture(u32 width, u32 height)
     return _textureMgr->createDynamicTexture(width, height);
 }
 
+TextureHandle OpenGLRenderer::createCoverageTexture(u32 width, u32 height)
+{
+    return _textureMgr ? _textureMgr->createCoverageTexture(width, height) : TextureHandle{};
+}
+
+void OpenGLRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                                 const u8 *coverage)
+{
+    if (_textureMgr)
+        _textureMgr->updateCoverageRegion(handle, x, y, width, height, coverage);
+}
+
 void OpenGLRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                          const u8 *rgbaPixels)
 {
@@ -317,6 +322,8 @@ void OpenGLRenderer::beginRenderPass()
     if (!_uniformMgr)
         return;
 
+    //! Depth writes must be on for the clear to reach the depth buffer.
+    useSceneState();
     glClearColor(_clearR, _clearG, _clearB, _clearA);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     _uniformMgr->bind(_shaderProgram);
@@ -414,13 +421,41 @@ void OpenGLRenderer::bindIndexBuffer(IndexBufferHandle handle)
 void OpenGLRenderer::bindTexture(TextureHandle handle)
 {
     _currentTexture = handle;
-    _textureMgr->bind(handle, 0);
+    //! While batches own the program, the switch back binds it.
+    if (!_batchState)
+        bindSceneTexture();
+}
 
-    /*
-     * The sampler uniform is *program* state: it keeps its value until the
-     * program is relinked, so it is set once at link time (see
-     * compileBuiltInShaders) rather than re-asserted here.
-     */
+void OpenGLRenderer::bindSceneTexture()
+{
+    const GlTextureData *data = _textureMgr->bind(_currentTexture, 0);
+    if (!data)
+        data = _textureMgr->bind(_whiteTexture, 0);
+    const GLint coverage = data && data->coverageOnly ? 1 : 0;
+    if (_coverage3D != coverage)
+    {
+        glUniform1i(_coverage3DLoc, coverage);
+        _coverage3D = coverage;
+    }
+}
+
+void OpenGLRenderer::useSceneState()
+{
+    if (!_batchState)
+        return;
+
+    _batchState = false;
+    glUseProgram(_shaderProgram);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    //! The batch VAO replaced the scene's, along with its element-array binding.
+    _vertexMgr->invalidateBinding();
+    if (!_vertexMgr->bind(_currentVertexBuffer))
+        _vertexMgr->unbind();
+    _indexMgr->invalidateBinding();
+    _indexMgr->bind(_currentIndexBuffer);
+    bindSceneTexture();
 }
 
 void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
@@ -429,6 +464,7 @@ void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     if (!idxData)
         return;
 
+    useSceneState();
     if (instanceCount > 1)
     {
         glDrawElementsInstanced(GL_TRIANGLES, indexCount, idxData->type, nullptr, instanceCount);
@@ -441,6 +477,7 @@ void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 
 void OpenGLRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
+    useSceneState();
     if (instanceCount > 1)
     {
         glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
@@ -451,93 +488,59 @@ void OpenGLRenderer::draw(u32 vertexCount, u32 instanceCount)
     }
 }
 
-void OpenGLRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                                 TextureHandle texture)
+glm::uvec2 OpenGLRenderer::renderTargetSize() const noexcept
 {
-    AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
+    //! The size handleWindowChanges() gives glViewport, so pixels map one to one.
+    const wma::WindowDetails *wd = _windowManagerApi ? _windowManagerApi->getWindowDetails() : nullptr;
+    return wd ? glm::uvec2{static_cast<u32>(std::max(wd->width, 0)), static_cast<u32>(std::max(wd->height, 0))}
+              : glm::uvec2{0};
+}
 
-    if (!_overlay2DProgram || !_textureMgr || vertices.empty() || indices.empty())
+void OpenGLRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
+                               TextureHandle texture, gfx::BatchSpace space)
+{
+    AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
+
+    if (!_batchProgram || !_textureMgr || vertices.empty() || indices.empty())
         return;
 
-    //! An untextured batch still samples, so stand in an opaque white texel and
-    //! let the vertex colour come through unchanged.
-    TextureHandle sampled = texture;
-    if (!isValidHandle(sampled))
+    //! Entered once per run of batches; the next scene draw leaves it (useSceneState()).
+    if (!_batchState)
     {
-        if (!isValidHandle(_white2DTexture))
-            _white2DTexture = _textureMgr->createSolidColorTexture(255, 255, 255, 255);
-        sampled = _white2DTexture;
+        glUseProgram(_batchProgram);
+        glDepthFunc(GL_LEQUAL);
+        glDepthMask(GL_FALSE);
+        glEnable(GL_BLEND);
+        _batchState = true;
     }
 
-    const wma::WindowDetails *wd = _windowManagerApi->getWindowDetails();
-    const f32 width = static_cast<f32>(wd->width);
-    const f32 height = static_cast<f32>(wd->height);
-    if (width <= 0.0f || height <= 0.0f)
-        return;
+    glUniformMatrix4fv(_batchTransformLoc, 1, GL_FALSE, glm::value_ptr(batchTransform(space)));
+    const GlTextureData *data = _textureMgr->bind(texture, 0);
+    if (!data)
+        data = _textureMgr->bind(_whiteTexture, 0);
+    const GLint coverage = data && data->coverageOnly ? 1 : 0;
+    if (_batchCoverage != coverage)
+    {
+        glUniform1i(_batchCoverageLoc, coverage);
+        _batchCoverage = coverage;
+    }
 
-    /*
-     * Window pixels -> clip space. Passing height as `bottom` and 0 as `top`
-     * inverts the Y axis, which is what puts pixel (0,0) at the top-left corner
-     * even though GL's NDC grows upwards. _NO because this is the desktop/ES
-     * [-1,1] depth convention; the depth range is irrelevant here since the
-     * overlay writes a constant z = 0 and depth testing is off.
-     */
-    const glm::mat4 projection = glm::orthoRH_NO(0.0f, width, height, 0.0f, -1.0f, 1.0f);
-
-    glUseProgram(_overlay2DProgram);
-    glUniformMatrix4fv(_overlay2DProjLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    //! The sampler was pointed at unit 0 when the program was linked and is
-    //! program state, so it needs no per-batch re-assertion.
-    _textureMgr->bind(sampled, 0);
-
-    /*
-     * The overlay owns its VAO directly rather than going through
-     * _vertexMgr, so the managers' bind caches cannot see this switch. Tell
-     * them, or the next scene draw skips a VAO/EBO bind it genuinely needs and
-     * renders the overlay's geometry with the scene's shader.
-     */
-    glBindVertexArray(_overlay2DVao);
+    //! The batch owns its VAO, so the managers' bind caches stop describing reality.
+    glBindVertexArray(_batchVao);
     _vertexMgr->invalidateBinding();
     _indexMgr->invalidateBinding();
 
-    glBindBuffer(GL_ARRAY_BUFFER, _overlay2DVbo);
+    // Orphan the stores so uploads need not wait for preceding draws.
+    glBindBuffer(GL_ARRAY_BUFFER, _batchVbo);
+    _batchVboBytes = std::max(_batchVboBytes, vertices.size_bytes());
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(_batchVboBytes), nullptr, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(vertices.size_bytes()), vertices.data());
 
-    /*
-     * Orphan then refill. Handing the driver a fresh store with a null pointer
-     * lets it hand back new memory instead of stalling until the previous
-     * frame's draw has finished reading the old one. The allocation only ever
-     * grows, so a steady-state overlay settles after a few frames.
-     */
-    const size_t vertexBytes = vertices.size_bytes();
-    _overlay2DVboBytes = std::max(_overlay2DVboBytes, vertexBytes);
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(_overlay2DVboBytes), nullptr, GL_DYNAMIC_DRAW);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(vertexBytes), vertices.data());
+    _batchEboBytes = std::max(_batchEboBytes, indices.size_bytes());
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(_batchEboBytes), nullptr, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(indices.size_bytes()), indices.data());
 
-    const size_t indexBytes = indices.size_bytes();
-    _overlay2DEboBytes = std::max(_overlay2DEboBytes, indexBytes);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(_overlay2DEboBytes), nullptr, GL_DYNAMIC_DRAW);
-    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(indexBytes), indices.data());
-
-    /*
-     * Overlay state: composite over whatever is already in the colour buffer,
-     * and ignore depth entirely so the batch is never occluded by the scene.
-     */
-    const GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    //! The whole batch in one call -- the point of the exercise.
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, nullptr);
-
-    glDisable(GL_BLEND);
-    if (depthWasEnabled)
-        glEnable(GL_DEPTH_TEST);
-
-    //! Hand the 3D program and VAO state back, so a following scene draw needs
-    //! no knowledge that an overlay ran.
-    _vertexMgr->unbind();
-    glUseProgram(_shaderProgram);
 }
 
 void OpenGLRenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)

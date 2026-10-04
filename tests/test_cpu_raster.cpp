@@ -1,29 +1,17 @@
-/*
- * Software rasteriser conventions.
- *
- * The CPU backend culls back faces at the vertex stage, which is only correct
- * if its notion of "front" matches the GPU backends' -- those cull with
- * VK_FRONT_FACE_COUNTER_CLOCKWISE, so an asset that renders solid under Vulkan
- * must render solid here. Getting the sign backwards does not crash or warn;
- * it renders every closed mesh inside-out, showing its far faces through its
- * near ones. That is exactly the kind of silent, convention-level mistake worth
- * pinning down in a test rather than in a comment.
- *
- * Ground truth here is geometric and independent of the rasteriser: a triangle
- * faces the camera when its outward face normal points back towards the eye.
- * The test asserts isFrontFacing() agrees with that on every triangle of a
- * cube, from several viewpoints.
- */
-
+// CPU winding, coverage, interpolation and ordered depth/blend behavior.
+#include <array>
+#include <limits>
 #include <vector>
 
 #include <glm/glm.hpp>
 
 #include "aura/Core/Camera/Camera.h"
+#include "aura/Core/JobSystem/JobSystem.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
 #include "aura/Renderer/Software/CpuAura/CpuFrameBufferManager.h"
 
 #include "TestUtils.h"
+#include "WindowTestUtils.h"
 
 using namespace aura3d;
 using aura3d::cpu::ScreenVertex;
@@ -130,6 +118,89 @@ int checkCubeFromEye(const glm::vec3 &eye, const char *label)
     return kept;
 }
 
+using Framebuffer = cpu::CpuFrameBufferManager;
+using Mode = Framebuffer::RasterMode;
+
+void queueQuad(Framebuffer &frame, f32 depth, glm::vec4 color, Mode mode, bool reverse = false)
+{
+    const ScreenVertex a{0, 0, depth, 1, {}, color}, b{16, 0, depth, 1, {}, color};
+    const ScreenVertex c{16, 16, depth, 1, {}, color}, d{0, 16, depth, 1, {}, color};
+    frame.queueTriangle(reverse ? cpu::ScreenTriangle{c, b, a} : cpu::ScreenTriangle{a, b, c}, nullptr, mode);
+    frame.queueTriangle(reverse ? cpu::ScreenTriangle{d, c, a} : cpu::ScreenTriangle{a, c, d}, nullptr, mode);
+}
+
+bool allPixels(const Framebuffer &frame, u32 color, f32 depth)
+{
+    for (i32 y = 0; y < 16; ++y)
+        for (i32 x = 0; x < 16; ++x)
+        {
+            const cpu::Pixel pixel = frame.getPixel({x, y});
+            if (pixel.rgb != color || pixel.z != depth)
+                return false;
+        }
+    return true;
+}
+
+void checkRasterization()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 16, .height = 16}, jobs};
+    for (bool reverse : {false, true})
+    {
+        frame.clear();
+        queueQuad(frame, 0, {1, 0, 0, 0.5f}, Mode::Batch, reverse);
+        frame.flush();
+        AURA_CHECK(allPixels(frame, 0x7F7F0000u, 1),
+                   "shared diagonal blends exactly once in either winding, preserving framebuffer alpha");
+    }
+
+    frame.clear();
+    queueQuad(frame, 0.5f, {1, 0, 0, 1}, Mode::Scene);
+    queueQuad(frame, 0.75f, {0, 1, 0, 1}, Mode::Batch);
+    queueQuad(frame, 0.5f, {0, 0, 1, 0.5f}, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, 0xFF7F007Fu, 0.5f), "batches reject hidden pixels and blend at equal scene depth");
+    queueQuad(frame, 0, {0, 1, 0, 0.5f}, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, 0xFF3F7F3Fu, 0.5f), "screen depth overlays the scene without modifying depth");
+
+    frame.clear();
+    queueQuad(frame, 0.1f, {1, 0, 0, 1}, Mode::Batch);
+    queueQuad(frame, 0.8f, {0, 1, 0, 1}, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, 0xFF00FF00u, 1), "batch call order wins even when the later batch is farther away");
+    queueQuad(frame, 0.5f, {0, 0, 1, 1}, Mode::Scene);
+    queueQuad(frame, 0, {1, 0, 0, 0.5f}, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, 0xFF7F007Fu, 0.5f), "scene and batch submissions retain their order across row bands");
+
+    frame.clear();
+    ScreenVertex a{0, 0, 0.5f, 1, {}, {1, 0, 0, 1}};
+    ScreenVertex b{8, 0, 0.5f, 0.5f, {}, {0, 1, 0, 1}};
+    ScreenVertex c{0, 8, 0.5f, 0.25f, {}, {0, 0, 1, 1}};
+    for (Mode mode : {Mode::Scene, Mode::Batch})
+    {
+        frame.clear();
+        frame.queueTriangle({a, b, c}, nullptr, mode);
+        frame.flush();
+        // At (2.5,2.5), screen weights are 3/8, 5/16, 5/16; reciprocal w sums to 39/64.
+        const u32 expected = 0xFF000000u | ((255u * 24 / 39) << 16) | ((255u * 10 / 39) << 8) | (255u * 5 / 39);
+        AURA_CHECK(frame.getPixel({2, 2}).rgb == expected, "scene and batch colors use perspective-correct weights");
+    }
+
+    frame.clear();
+    a.x = std::numeric_limits<f32>::quiet_NaN();
+    frame.queueTriangle({a, b, c}, nullptr, Mode::Batch);
+    a.x = -1e20f;
+    b.x = 1e20f;
+    c.x = 0;
+    a.y = b.y = c.y = 1e20f;
+    frame.queueTriangle({a, b, c}, nullptr, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, 0, 1), "non-finite and far-offscreen triangles leave the framebuffer unchanged");
+}
+
 } // namespace
 
 int main()
@@ -150,6 +221,8 @@ int main()
     AURA_CHECK(keptCorner > 0 && keptCorner < 12, "corner view culls some but not all of the cube's 12 triangles");
     AURA_CHECK(keptFront > 0 && keptFront < 12, "front view culls some but not all of the cube's 12 triangles");
     AURA_CHECK(keptBelow > 0 && keptBelow < 12, "below-left view culls some but not all of the cube's 12 triangles");
+
+    checkRasterization();
 
     AURA_TEST_MAIN_RETURN();
 }

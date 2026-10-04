@@ -17,9 +17,9 @@ VkDescriptorManager::VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTexture
      * pool_size is generous headroom for that per-frame-count churn, not a
      * texture-count budget (see the constructor's doc comment).
      *
-     * Combined-image-sampler sets: exactly two persistent bindless texture
-     * arrays (VulkanRenderer's 3D and overlay set 1), each declared with
-     * descriptorCount == bindlessTextureCapacity. This is a fixed, one-time
+     * Combined-image-sampler sets: exactly one persistent bindless texture
+     * array, shared by VulkanRenderer's scene and batch pipelines and declared
+     * with descriptorCount == bindlessTextureCapacity. This is a fixed, one-time
      * reservation -- it does not grow with the number of textures actually
      * created, which is the entire point of the bindless migration (a
      * per-texture-per-image-per-pipeline scheme exhausted a 256-descriptor
@@ -31,13 +31,13 @@ VkDescriptorManager::VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTexture
     poolSizes[0].descriptorCount = static_cast<u32>(_pool_size);
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = bindlessTextureCapacity * 2u;
+    poolSizes[1].descriptorCount = bindlessTextureCapacity;
 
     _poolCreateInfo = {};
     _poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     _poolCreateInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
     _poolCreateInfo.pPoolSizes = poolSizes.data();
-    //! +4: the two persistent bindless sets, plus slack above the per-image
+    //! +4: the persistent bindless set, plus slack above the per-image
     //! UBO churn pool_size*2 already generously covers.
     _poolCreateInfo.maxSets = static_cast<u32>(_pool_size) * 2u + 4u;
     //! FREE_DESCRIPTOR_SET: the per-image transform/light sets are freed and

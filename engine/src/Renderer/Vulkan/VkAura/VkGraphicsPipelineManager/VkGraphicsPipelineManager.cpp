@@ -396,8 +396,8 @@ void VkGraphicsPipelineManager::createPipeline(
     VkPipelineDepthStencilStateCreateInfo depthStencil = {};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = options.depthTest ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable = options.depthTest ? VK_TRUE : VK_FALSE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthWriteEnable = options.depthTest && options.depthWrite ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp = options.depthCompare;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 

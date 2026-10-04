@@ -73,7 +73,7 @@ the bar non-hit-testable (`setHitTestVisible(false)`) so they drag.
 
 ## `IRenderer`: the interface every backend implements
 
-All three backends (Vulkan, OpenGL, CPU) implement the same
+All four backends (Vulkan, OpenGL, Metal, CPU) implement the same
 `aura3d::IRenderer` abstract class. Your game code is written once against
 this interface and never needs to know which backend is actually running.
 
@@ -82,7 +82,7 @@ The methods you'll use directly, grouped by purpose:
 **Per-frame draw cycle**
 ```cpp
 r->beginRenderPass();   // clears the framebuffer, starts recording
-// ... setTransform / bindMaterial / drawMesh / drawBatch2D calls ...
+// ... setTransform / bindMaterial / drawMesh / drawBatch calls ...
 r->endRenderPass();     // ends recording; endFrame() presents (handled by run())
 ```
 
@@ -101,7 +101,7 @@ r->createSolidColorTexture(r, g, b, a);        // -> TextureHandle
 r->setTransform(camera.buildUBO(modelMatrix)); // upload model/view/proj for the next draw
 r->bindMaterial(materialHandle);
 r->drawMesh(meshHandle);                       // the primary 3D draw path
-r->drawBatch2D(vertices, indices, texture);     // one batch, one draw call — see doc 7
+r->drawBatch(vertices, indices, texture);       // one batch, one draw call — see doc 7
 ```
 
 **State**
@@ -115,14 +115,17 @@ type-safe wrappers around a `u32` (`aura3d::Handle<Tag>`, one instantiation per
 resource kind, so a `TextureHandle` cannot be passed where a `MeshHandle` is
 expected — the compiler rejects it). A default-constructed handle (`{}`) is
 the sentinel for "nothing" / "failed to create"; `isValidHandle(handle)` tests
-for it. Passing an invalid handle where a texture is expected is defined to
-mean "keep whatever is already bound", not a crash.
+for it. A default texture in `drawMesh()` preserves the current binding;
+`drawBatch(..., {})` draws with vertex color alone. Those defaults do not
+make stale handles safe after a renderer switch.
 
 ## The run loop
 
 ```cpp
 r->run([&]() {
-    // your per-frame update + draw code
+    // Update application state here, including frames without a render target.
+    if (!r->frameBegun())
+        return;
     r->beginRenderPass();
     // ...
     r->endRenderPass();
@@ -130,8 +133,6 @@ r->run([&]() {
 ```
 
 `IRenderer::run()`:
-- registers **Escape → quit** on the keyboard automatically, so every Aura3D
-  app gets a working close key for free;
 - hands your callback to `wma::IWindowManager::process()`, which wraps it as
   `beginFrame(); yourCallback(); endFrame();` every frame;
 - on desktop this blocks until the window closes; on WASM it registers the
@@ -139,9 +140,15 @@ r->run([&]() {
   callback and everything it captures by reference must stay alive after
   `run()` returns, on that platform).
 
-You almost never call `beginFrame`/`endFrame` yourself — `run()` does it.
-`beginRenderPass`/`endRenderPass` are yours to call, once per frame, around
-your draw calls.
+Install input actions, including any Escape shortcut, through the window
+manager. `run()` does not install a quit key. Its callback is invoked even
+when a frame could not be acquired, so retain pending redraw work until
+`frameBegun()` is true.
+
+You call `beginFrame()`/`endFrame()` yourself only in a custom window loop.
+`beginRenderPass()`/`endRenderPass()` remain application calls around the
+frame's drawing. A loop that draws only on change must also draw while
+`needsFrame()` is true, for resize and presentation recovery.
 
 ## Backend resolution & fallback
 
@@ -155,15 +162,17 @@ RendererFactory::resolve(choice);       // choice, or the nearest available one
 RendererFactory::create(choice, details); // constructs it, falling back with a warning
 ```
 
-The fallback order is always **Vulkan → OpenGL → Software**. Per-platform
-compile-time defaults (`defaultChoice()`, used when `settings.json` names a
-backend that isn't even a known string):
+If the requested backend was compiled in, it is used. Otherwise resolution
+tries the platform default first, then the available entries in
+**Vulkan → Metal → OpenGL → Software**. Availability here means compiled
+support, not successful device initialization. Platform defaults are:
 
 | Platform | Default |
 |---|---|
 | WASM | OpenGL (WebGL2) |
+| macOS / iOS | Metal |
 | Android | Vulkan |
-| Desktop | Vulkan → OpenGL → Software |
+| Other desktop platforms | Vulkan → OpenGL → Software |
 
 `Engine::getBackend()` always reflects what's *actually* running, which may
 differ from what `settings.json` asked for — check it rather than assuming
@@ -193,19 +202,18 @@ a plain on/off switch through their own present paths.
 
 ## Switching backends at runtime
 
-```cpp
-engine_renderer_before->cleanup(); 
-engine.switchBackend(aura3d::RendererChoice::OPENGL);
-```
+`engine.switchBackend(aura3d::RendererChoice::OPENGL)` performs cleanup
+itself; do not clean up the active renderer before calling it.
 
 `Engine::switchBackend()`:
 - resolves the request the same way startup does (falls back rather than
   failing);
 - is a no-op if the resolved choice is already active;
-- tears down the old renderer and brings up the new one against the same
-  window;
-- **invalidates every handle** the old renderer issued. `ResourceManager`'s
-  cache is stale after this — reload what you need through `engine.resources()`.
+- tears down the old renderer and window, then creates their replacements
+  from the current configuration;
+- **invalidates every handle** the old renderer issued and clears/rebinds the
+  `ResourceManager` cache. Reload assets through `engine.resources()` and
+  recreate renderer-dependent helpers such as text overlays and UI views.
 
 ```cpp
 engine.switchBackend(aura3d::RendererChoice::OPENGL);

@@ -37,7 +37,7 @@ TextOverlay::TextOverlay(IRenderer *renderer, const TextOverlayDesc &desc) : _re
     if (!_atlas)
         _atlas = FontAtlas::builtinBitmap(atlasDesc);
 
-    _atlasTexture = _renderer->createDynamicTexture(_atlas->width(), _atlas->height());
+    _atlasTexture = _renderer->createCoverageTexture(_atlas->width(), _atlas->height());
     if (!isValidHandle(_atlasTexture))
         INK_ERROR << "TextOverlay: could not allocate the glyph atlas texture";
 }
@@ -59,7 +59,7 @@ void TextOverlay::drawText(std::string_view text, float x, float y, const glm::v
 
     uploadAtlasChanges();
 
-    _renderer->drawBatch2D(_vertices, _indices, _atlasTexture);
+    _renderer->drawBatch(_vertices, _indices, _atlasTexture);
 }
 
 void TextOverlay::buildBatch(std::string_view text, float x, float y, const glm::vec4 &color, float scale)
@@ -108,10 +108,10 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y, const glm:
 
             const auto base = static_cast<u32>(_vertices.size());
 
-            _vertices.push_back({{left, top}, {glyph->uvMin.x, glyph->uvMin.y}, color});
-            _vertices.push_back({{right, top}, {glyph->uvMax.x, glyph->uvMin.y}, color});
-            _vertices.push_back({{right, bottom}, {glyph->uvMax.x, glyph->uvMax.y}, color});
-            _vertices.push_back({{left, bottom}, {glyph->uvMin.x, glyph->uvMax.y}, color});
+            _vertices.push_back({{left, top, 0}, {glyph->uvMin.x, glyph->uvMin.y}, color});
+            _vertices.push_back({{right, top, 0}, {glyph->uvMax.x, glyph->uvMin.y}, color});
+            _vertices.push_back({{right, bottom, 0}, {glyph->uvMax.x, glyph->uvMax.y}, color});
+            _vertices.push_back({{left, bottom, 0}, {glyph->uvMin.x, glyph->uvMax.y}, color});
 
             _indices.push_back(base + 0);
             _indices.push_back(base + 1);
@@ -128,12 +128,12 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y, const glm:
 
 void TextOverlay::uploadAtlasChanges()
 {
-    const auto pending = _atlas->takeDirtyUpload();
+    const auto pending = _atlas->takeUpload(_atlasRevision);
     if (!pending)
         return;
 
-    _renderer->updateTextureRegion(_atlasTexture, pending->region.x, pending->region.y, pending->region.width,
-                                   pending->region.height, pending->rgba.data());
+    _renderer->updateCoverageTextureRegion(_atlasTexture, pending->region.x, pending->region.y, pending->region.width,
+                                           pending->region.height, pending->coverage.data());
 }
 
 glm::vec2 TextOverlay::measureText(std::string_view text, float scale)

@@ -245,7 +245,7 @@ the same handful of calls above:
   primitives, textures via `engine.resources()->loadTexture(...)` instead of
   solid colors — see [05-meshes-materials-textures.md](05-meshes-materials-textures.md).
 - **Menus / pause screen**: a second keyboard context
-  (`keyboard.createContext()`) plus a `drawBatch2D` panel — see
+  (`keyboard.createContext()`) plus a `drawBatch` panel — see
   [08-input.md](08-input.md) and [07-2d-rendering-and-text.md](07-2d-rendering-and-text.md).
 - **A different backend for comparison**: flip `renderer.backend` in
   `settings.json` to `"opengl"` or `"cpu"` — no code changes.

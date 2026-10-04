@@ -15,7 +15,7 @@ over it (`Camera`, `Material`, `ResourceManager`, `TextOverlay`, ...).
 ## Why three backends
 
 - **Vulkan** — the primary desktop/Android path. MSAA, push-constant
-  per-object transforms, a dedicated 2D overlay pipeline, GPU font rendering.
+  per-object transforms, one batch pipeline for 2D and 3D, GPU font rendering.
 - **OpenGL** — desktop GL and WebGL2 (via Emscripten) for WASM builds.
 - **CPU (software)** — a real triangle rasterizer (perspective-correct
   interpolation, depth testing, Gouraud shading) with no GPU dependency at
@@ -79,7 +79,7 @@ game:
 | 4 | [Camera](docs/04-camera.md) | Perspective/ortho projections, target vs. free-look |
 | 5 | [Meshes, Materials & Textures](docs/05-meshes-materials-textures.md) | Loading OBJ/images, `ResourceManager`, `Material` |
 | 6 | [Lighting](docs/06-lighting.md) | The directional light model |
-| 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch2D`, the overlay pipeline, `TextOverlay` |
+| 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch`, lines and shapes, `TextOverlay` |
 | 8 | [Input](docs/08-input.md) | Keyboard/mouse contexts and bindings |
 | 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
 | 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Windows, Android, WebAssembly |

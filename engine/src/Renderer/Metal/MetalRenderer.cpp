@@ -4,8 +4,6 @@
 #include <array>
 #include <cstring>
 
-#include <glm/ext/matrix_clip_space.hpp>
-
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Core/AuraMath.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
@@ -113,19 +111,15 @@ void MetalRenderer::createPipelines()
     sceneOptions.label = "Aura3D scene 3D";
     _scenePipeline = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, sceneOptions);
 
-    MtlPipelineManager::Options overlayOptions;
-    overlayOptions.vertexFunction = kVertexFunction2D;
-    overlayOptions.fragmentFunction = kFragmentFunction2D;
-    //! No depth test and no writes: the overlay composites over the finished
-    //! scene and must never be occluded by it.
-    overlayOptions.depthTest = false;
-    overlayOptions.alphaBlend = true;
-    //! Screen-space quads have no meaningful facing, so culling them would drop
-    //! whichever winding the batch happened to emit.
-    overlayOptions.cullBackFaces = false;
-    overlayOptions.label = "Aura3D overlay 2D";
-    _overlayPipeline =
-        std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, overlayOptions);
+    MtlPipelineManager::Options batchOptions;
+    batchOptions.vertexFunction = kVertexFunctionBatch;
+    batchOptions.fragmentFunction = kFragmentFunctionBatch;
+    batchOptions.depthTest = true;
+    batchOptions.depthWrite = false;
+    batchOptions.depthCompare = MTL::CompareFunctionLessEqual;
+    batchOptions.alphaBlend = true;
+    batchOptions.label = "Aura3D batch";
+    _batchPipeline = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, batchOptions);
 }
 
 void MetalRenderer::handleWindowChanges()
@@ -191,12 +185,12 @@ void MetalRenderer::cleanup()
 
     for (u32 slot = 0; slot < MTL_MAX_FRAMES_IN_FLIGHT; ++slot)
     {
-        _overlayVertexBuffers[slot].reset();
-        _overlayIndexBuffers[slot].reset();
-        _overlayVertexCapacity[slot] = 0;
-        _overlayIndexCapacity[slot] = 0;
-        _overlayVertexUsed[slot] = 0;
-        _overlayIndexUsed[slot] = 0;
+        _batchVertexBuffers[slot].reset();
+        _batchIndexBuffers[slot].reset();
+        _batchVertexCapacity[slot] = 0;
+        _batchIndexCapacity[slot] = 0;
+        _batchVertexUsed[slot] = 0;
+        _batchIndexUsed[slot] = 0;
     }
 
     //! The texture pool dies with _textureManager, so drop the cached handle.
@@ -210,7 +204,7 @@ void MetalRenderer::cleanup()
      * the drawable manager references the layer, and the layer references the
      * window that wma owns.
      */
-    _overlayPipeline.reset();
+    _batchPipeline.reset();
     _scenePipeline.reset();
     _textureManager.reset();
     _indexManager.reset();
@@ -287,6 +281,18 @@ TextureHandle MetalRenderer::createDynamicTexture(u32 width, u32 height)
     return _textureManager->createDynamic(width, height);
 }
 
+TextureHandle MetalRenderer::createCoverageTexture(u32 width, u32 height)
+{
+    return _textureManager ? _textureManager->createCoverage(width, height) : TextureHandle{};
+}
+
+void MetalRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                                const u8 *coverage)
+{
+    if (_textureManager)
+        (void)_textureManager->updateCoverageRegion(handle, x, y, width, height, coverage);
+}
+
 void MetalRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels)
 {
     if (!_textureManager)
@@ -319,7 +325,7 @@ void MetalRenderer::beginFrame()
     /*
      * Take a frame slot before touching anything per-frame: this is what bounds
      * the CPU to MTL_MAX_FRAMES_IN_FLIGHT frames ahead of the GPU and what makes
-     * the overlay buffers at index _currentFrame safe to overwrite. This is
+     * the batch buffers at index _currentFrame safe to overwrite. This is
      * this backend's counterpart to Vulkan's fence wait -- a semaphore-style
      * throttle rather than a fence, but the same "block until the GPU has
      * caught up enough" cost, and scoped the same way so it is not silently
@@ -330,10 +336,10 @@ void MetalRenderer::beginFrame()
         _frameSlots->acquire();
     }
 
-    //! Past the throttle, so this slot's overlay buffers are the GPU's no
+    //! Past the throttle, so this slot's batch buffers are the GPU's no
     //! longer and the frame's batches can start appending from the top again.
-    _overlayVertexUsed[_currentFrame] = 0;
-    _overlayIndexUsed[_currentFrame] = 0;
+    _batchVertexUsed[_currentFrame] = 0;
+    _batchIndexUsed[_currentFrame] = 0;
 
     _framePool.emplace();
 
@@ -386,15 +392,16 @@ void MetalRenderer::beginRenderPass()
 
     /*
      * The scene pipeline is bound up front so an application that draws 3D
-     * without an intervening overlay needs no bind of its own. drawBatch2D()
-     * swaps to the overlay pipeline and swaps back, so this stays the state any
-     * scene draw can assume.
+     * without an intervening batch needs no bind of its own. drawBatch() and
+     * bindDrawState() switch pipelines only when the draw kind changes, so a
+     * run of batches binds once.
      *
      * No setViewport() call: Metal's default viewport is the whole attachment
      * with a [0,1] depth range, which is exactly what is wanted. Vulkan needs an
      * explicit one only because it flips Y through a negative height there.
      */
     _scenePipeline->bind(_encoder);
+    _batchPipelineBound = false;
     _renderPassActive = true;
 }
 
@@ -499,6 +506,12 @@ MTL::Texture *MetalRenderer::resolveSampledTexture(TextureHandle handle)
 
 void MetalRenderer::bindDrawState()
 {
+    if (_batchPipelineBound)
+    {
+        _scenePipeline->bind(_encoder);
+        _batchPipelineBound = false;
+    }
+
     TransformUniforms transform;
     transform.model = _currentTransform.model;
     transform.view = _currentTransform.view;
@@ -565,112 +578,76 @@ void MetalRenderer::draw(u32 vertexCount, u32 instanceCount)
                              static_cast<NS::UInteger>(vertexCount), static_cast<NS::UInteger>(instanceCount));
 }
 
-bool MetalRenderer::ensureOverlay2DCapacity(size_t vertexBytes, size_t indexBytes)
+bool MetalRenderer::ensureBatchCapacity(size_t vertexBytes, size_t indexBytes)
 {
     const u32 frame = _currentFrame;
 
-    if (_overlayVertexCapacity[frame] < vertexBytes)
+    /*
+     * Doubling, so a frame of many small batches reallocates a handful of times
+     * rather than once per batch. A replaced buffer stays alive while earlier
+     * batches still use it: the command buffer retains everything it binds.
+     */
+    const auto grow =
+        [&](NS::SharedPtr<MTL::Buffer> &buffer, size_t &capacity, size_t needed, size_t minimum, const char *label)
     {
-        NS::SharedPtr<MTL::Buffer> buffer = _bufferManager->createDynamic(vertexBytes, "Aura3D overlay vertices");
-
-        if (!buffer)
+        if (needed <= capacity)
+            return true;
+        const size_t grown = std::max({needed, minimum, capacity * 2});
+        NS::SharedPtr<MTL::Buffer> replacement = _bufferManager->createDynamic(grown, label);
+        if (!replacement)
             return false;
-
-        _overlayVertexBuffers[frame] = std::move(buffer);
-        _overlayVertexCapacity[frame] = vertexBytes;
-    }
-
-    if (_overlayIndexCapacity[frame] < indexBytes)
-    {
-        NS::SharedPtr<MTL::Buffer> buffer = _bufferManager->createDynamic(indexBytes, "Aura3D overlay indices");
-
-        if (!buffer)
-            return false;
-
-        _overlayIndexBuffers[frame] = std::move(buffer);
-        _overlayIndexCapacity[frame] = indexBytes;
-    }
-
-    return true;
+        buffer = std::move(replacement);
+        capacity = grown;
+        return true;
+    };
+    return grow(_batchVertexBuffers[frame], _batchVertexCapacity[frame], vertexBytes, 65536, "Aura3D batch vertices") &&
+           grow(_batchIndexBuffers[frame], _batchIndexCapacity[frame], indexBytes, 16384, "Aura3D batch indices");
 }
 
-void MetalRenderer::drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                                TextureHandle texture)
+glm::uvec2 MetalRenderer::renderTargetSize() const noexcept
 {
-    AURA_FRAME_SCOPE(FramePhase::RecordOverlay);
+    /*
+     * The drawable's size rather than wma's logical window size: those differ by
+     * the backing scale factor on a Retina display, and it is the drawable that a
+     * batch has to cover (the same reason the Vulkan path uses its swapchain
+     * extent).
+     */
+    return _layerManager ? glm::uvec2{_layerManager->getWidth(), _layerManager->getHeight()} : glm::uvec2{0};
+}
 
-    if (!_renderPassActive || vertices.empty() || indices.empty())
+void MetalRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
+                              TextureHandle texture, gfx::BatchSpace space)
+{
+    AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
+
+    if (!_renderPassActive || !_batchPipeline || vertices.empty() || indices.empty())
         return;
 
-    const size_t vertexBytes = vertices.size_bytes();
-    const size_t indexBytes = indices.size_bytes();
-
-    /*
-     * Appended, not overwritten: nothing this encoder records runs until the
-     * command buffer is committed, so every batch needs its own slice rather
-     * than a shared offset 0 -- otherwise each draw reads whatever the frame's
-     * last batch left behind. vertexBytes is a whole number of Vertex2D and
-     * indexBytes a whole number of u32, so the running totals stay aligned for
-     * both binds without any rounding.
-     */
-    const size_t vertexOffset = _overlayVertexUsed[_currentFrame];
-    const size_t indexOffset = _overlayIndexUsed[_currentFrame];
-
-    if (!ensureOverlay2DCapacity(vertexOffset + vertexBytes, indexOffset + indexBytes))
+    // Every encoded draw retains its own slice until this frame slot completes.
+    const size_t vertexOffset = _batchVertexUsed[_currentFrame];
+    const size_t indexOffset = _batchIndexUsed[_currentFrame];
+    if (!ensureBatchCapacity(vertexOffset + vertices.size_bytes(), indexOffset + indices.size_bytes()))
         return;
 
-    MTL::Buffer *vertexBuffer = _overlayVertexBuffers[_currentFrame].get();
-    MTL::Buffer *indexBuffer = _overlayIndexBuffers[_currentFrame].get();
+    MTL::Buffer *vertexBuffer = _batchVertexBuffers[_currentFrame].get();
+    MTL::Buffer *indexBuffer = _batchIndexBuffers[_currentFrame].get();
+    std::memcpy(static_cast<u8 *>(vertexBuffer->contents()) + vertexOffset, vertices.data(), vertices.size_bytes());
+    std::memcpy(static_cast<u8 *>(indexBuffer->contents()) + indexOffset, indices.data(), indices.size_bytes());
+    _batchVertexUsed[_currentFrame] = vertexOffset + vertices.size_bytes();
+    _batchIndexUsed[_currentFrame] = indexOffset + indices.size_bytes();
 
-    /*
-     * A plain memcpy into shared storage. Safe to write without any barrier
-     * because these are this frame slot's own buffers, and beginFrame()'s
-     * semaphore acquire already established that the last frame to use this slot
-     * has completed on the GPU.
-     */
-    std::memcpy(static_cast<u8 *>(vertexBuffer->contents()) + vertexOffset, vertices.data(), vertexBytes);
-    std::memcpy(static_cast<u8 *>(indexBuffer->contents()) + indexOffset, indices.data(), indexBytes);
-
-    _overlayVertexUsed[_currentFrame] = vertexOffset + vertexBytes;
-    _overlayIndexUsed[_currentFrame] = indexOffset + indexBytes;
-
-    const f32 width = static_cast<f32>(_layerManager->getWidth());
-    const f32 height = static_cast<f32>(_layerManager->getHeight());
-    if (width <= 0.0f || height <= 0.0f)
-        return;
-
-    /*
-     * Window pixels -> clip space, taken from the drawable's size rather than
-     * wma's logical window size: those differ by the backing scale factor on a
-     * Retina display, and it is the drawable that the projection has to cover
-     * (the same reason the Vulkan path uses its swapchain extent).
-     *
-     * Passing height as `bottom` and 0 as `top` inverts the Y axis, which puts
-     * pixel (0,0) at the top-left corner even though Metal's clip space grows
-     * upwards -- the identical swap the OpenGL and Vulkan overlays make. _ZO
-     * because Metal's depth range is [0,1]; the value is irrelevant with the
-     * overlay's depth test disabled.
-     */
-    Overlay2DUniforms overlay;
-    overlay.proj = glm::orthoRH_ZO(0.0f, width, height, 0.0f, 0.0f, 1.0f);
-
-    _overlayPipeline->bind(_encoder);
+    const BatchUniforms batch{batchTransform(space)};
+    if (!_batchPipelineBound)
+    {
+        _batchPipeline->bind(_encoder);
+        _batchPipelineBound = true;
+    }
     _encoder->setVertexBuffer(vertexBuffer, vertexOffset, kVertexGeometrySlot);
-    _encoder->setVertexBytes(&overlay, sizeof(overlay), kVertexUniformSlot);
+    _encoder->setVertexBytes(&batch, sizeof(batch), kVertexUniformSlot);
     _encoder->setFragmentTexture(resolveSampledTexture(texture), kFragmentAlbedoSlot);
     _encoder->setFragmentSamplerState(_textureManager->getSampler(), kFragmentAlbedoSlot);
-
-    //! The whole batch in one call -- the point of the exercise.
     _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(indices.size()),
                                     MTL::IndexTypeUInt32, indexBuffer, static_cast<NS::UInteger>(indexOffset));
-
-    /*
-     * Hand the scene pipeline back, so a following 3D draw needs no knowledge
-     * that an overlay ran. Its own bindDrawState() re-pushes the transform,
-     * light and texture, so only the pipeline/depth/cull triple has to be
-     * restored here.
-     */
-    _scenePipeline->bind(_encoder);
 }
 
 void MetalRenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)

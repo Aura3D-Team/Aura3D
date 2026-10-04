@@ -286,10 +286,12 @@ const Rect caret = shaped.caretRect(byte);         // byte offset -> pixels
 shaped.selectionRects(begin, end, out);            // one rect per line
 ```
 
-`AtlasTextShaper` keeps one glyph page per rasterization size, so a 32px
-heading and a 12px caption are both crisp rather than one being a scaled copy
-of the other. Caret arithmetic goes through `ui::utf8`, so nothing can leave a
-caret inside a multi-byte character.
+`AtlasTextShaper` rasterizes each cached size separately and packs the results
+into shared R8 sheets. Size views keep stable UVs; overflow can open another
+sheet without invalidating retained text. `maxPages` caps cached raster sizes
+and physical sheets; additional sizes use the nearest cached size.
+Caret arithmetic goes through `ui::utf8`, so nothing can leave a caret inside a
+multi-byte character.
 
 What it does **not** do: ligatures, mark positioning, bidi, font fallback.
 Those need HarfBuzz and a font database. `ITextShaper` is an interface so they
@@ -379,7 +381,7 @@ Layout is in logical pixels at every scale: a 48-unit button is 48 units on a
 
 | Property | How |
 |---|---|
-| One draw call | Solid rectangles sample the glyph atlas' opaque cell, so surfaces, borders and text share a texture. A second font size adds one batch — not one per widget |
+| Shared draw calls | Surfaces, borders, icons and font sizes on the same atlas sheet share one batch. Images and switches between overflow sheets add batches |
 | No steady-state allocation | Vertex, index and command storage is retained at its high-water mark |
 | Rounded corners in constant geometry | A nine-slice against the atlas' antialiased corner mask: at most eleven quads whatever the radius |
 | Clipping without state changes | Quads are trimmed on the CPU, exact for axis-aligned geometry |

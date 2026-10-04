@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <cstddef>
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "aura/Renderer/IRenderer.h"
@@ -62,6 +65,9 @@ class VulkanRenderer : public IRenderer
     TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
     TextureHandle createDynamicTexture(u32 width, u32 height) override;
     void updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels) override;
+    TextureHandle createCoverageTexture(u32 width, u32 height) override;
+    void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                     const u8 *coverage) override;
 
     void beginFrame() override;
     [[nodiscard]] bool frameBegun() const noexcept override
@@ -91,8 +97,9 @@ class VulkanRenderer : public IRenderer
      * for batches too small for the hand-off to pay for itself.
      */
     void drawMeshes(std::span<const DrawItem> items) override;
-    void drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                     TextureHandle texture) override;
+    void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
+                   gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
+    [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
 
     wma::IWindowManager *getWindowManager() override;
@@ -153,14 +160,13 @@ class VulkanRenderer : public IRenderer
      * @brief Makes a newly created texture samplable by both pipelines.
      *
      * The single entry point every texture-creation path uses: writes the
-     * texture into the 3D and overlay bindless tables, or warns once and
-     * leaves it on the fallback slot if the table is full.
+     * texture into the bindless table, or warns once and leaves it on the
+     * fallback slot if the table is full.
      */
     void publishTexture(TextureHandle textureHandle);
 
-    //! Writes @p textureHandle's view/sampler into the 3D pipeline's bindless
-    //! texture array at textureArrayIndexOf(textureHandle). Allocation of the
-    //! array itself (_bindlessTextureSet3D) happens once, in createDescriptorSets().
+    //! Writes @p textureHandle's view/sampler into _bindlessTextureSet at
+    //! textureArrayIndexOf(textureHandle).
     void updateTextureDescriptorSets(TextureHandle textureHandle);
     void updateLightUniformBuffers();
     //! Records the per-draw state (transform push constants, UBO/light/texture
@@ -177,37 +183,13 @@ class VulkanRenderer : public IRenderer
      */
     [[nodiscard]] SceneBindings sceneBindings() const;
 
-    /**
-     * @brief Builds the unlit 2D overlay pipeline against the current render
-     *        pass and swapchain extent.
-     *
-     * Called from createDescriptorSets(), so it is rebuilt alongside the 3D
-     * pipeline whenever the swapchain is recreated.
-     */
-    void createOverlay2DPipeline();
+    void createBatchPipeline();
 
-    /**
-     * @brief Writes @p handle's view/sampler into the overlay pipeline's own
-     *        bindless texture array (_bindlessTextureSet2D) at
-     *        textureArrayIndexOf(handle).
-     *
-     * Separate from updateTextureDescriptorSets(): the two pipelines have
-     * different layouts, so a set allocated for one cannot be bound to the other.
-     */
-    void updateOverlay2DTextureDescriptorSets(TextureHandle handle);
+    //! Appends a batch to this frame's mapped buffers; returns its first vertex and index, or nullopt.
+    [[nodiscard]] std::optional<std::pair<u32, u32>> uploadBatch(std::span<const gfx::BatchVertex> vertices,
+                                                                 std::span<const u32> indices);
 
-    /**
-     * @brief Grows this frame's overlay vertex/index buffers to fit a batch.
-     *
-     * The buffers are host-visible and persistently mapped, and there is one
-     * pair per frame in flight so that writing this frame's geometry cannot
-     * scribble over a batch the GPU is still reading. They only ever grow, so a
-     * steady-state overlay stops allocating after the first few frames.
-     */
-    void ensureOverlay2DCapacity(u32 frame, VkDeviceSize vertexBytes, VkDeviceSize indexBytes);
-
-    //! Destroys every per-frame overlay buffer.
-    void destroyOverlay2DBuffers();
+    void destroyBatchBuffers();
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
     std::unique_ptr<VulkanMemoryManager> _memoryManager;
@@ -228,74 +210,23 @@ class VulkanRenderer : public IRenderer
     std::unique_ptr<aura3d::vk::VkCommandManager> _vkCommandManager;
     std::unique_ptr<aura3d::vk::VkRenderSyncManager> _vkRenderSyncManager;
 
-    /*
-     * The unlit 2D overlay pipeline: its own shader modules, its own layout
-     * (one combined image sampler in set 0, plus a 64-byte push-constant
-     * projection) and its own fixed-function state (no depth, alpha blending,
-     * no culling). Nothing about it is shared with the 3D pipeline above.
-     */
-    std::unique_ptr<aura3d::vk::VkGraphicsPipelineManager> _vkOverlay2DPipelineManager;
-    //! Sized in createDescriptorSets(), alongside _descSets/_lightDescSets --
-    //! not here: a default-constructed vector is empty, and these four are
-    //! indexed directly by frame slot from their first use, with no resize
-    //! anywhere else to fall back on.
-    VkFixedArray<AllocatedBuffer> _overlay2DVertexBuffers;
-    VkFixedArray<AllocatedBuffer> _overlay2DIndexBuffers;
-    VkFixedArray<VkDeviceSize> _overlay2DVertexCapacity;
-    VkFixedArray<VkDeviceSize> _overlay2DIndexCapacity;
-
-    /*
-     * Bytes of this frame's overlay buffers already spoken for. Every
-     * drawBatch2D() in a frame records into the same secondary command buffer,
-     * which is replayed once at endRenderPass() -- so the batches are not
-     * consumed as they are submitted, and writing each one at offset 0 left
-     * every draw in the frame reading whatever the *last* batch happened to
-     * leave there. Each batch now appends here and binds at its own offset.
-     */
-    VkFixedArray<VkDeviceSize> _overlay2DVertexUsed;
-    VkFixedArray<VkDeviceSize> _overlay2DIndexUsed;
-
-    //! Buffers that a mid-frame grow replaced while already-recorded draws
-    //! still pointed at them. Freed when this frame slot comes round again,
-    //! which is past the fence saying the GPU has finished with it.
-    VkFixedArray<std::vector<AllocatedBuffer>> _overlay2DRetiredBuffers;
-    //! Persistent bindless texture array bound at the overlay pipeline's set 0
-    //! (see _bindlessTextureSet3D below for why this is a single set rather
-    //! than one per texture).
-    VkDescriptorSet _bindlessTextureSet2D = VK_NULL_HANDLE;
-    //! 1x1 opaque white, at texture-array slot 0 (see textureArrayIndexOf()).
-    //! Substituted when a batch asks for no texture, and shared with the 3D
-    //! path as the fallback for bindTexture() given an invalid handle.
+    std::unique_ptr<aura3d::vk::VkGraphicsPipelineManager> _vkBatchPipelineManager;
+    VkFixedArray<AllocatedBuffer> _batchVertexBuffers;
+    VkFixedArray<AllocatedBuffer> _batchIndexBuffers;
+    VkFixedArray<VkDeviceSize> _batchVertexCapacity;
+    VkFixedArray<VkDeviceSize> _batchIndexCapacity;
+    VkFixedArray<VkDeviceSize> _batchVertexUsed;
+    VkFixedArray<VkDeviceSize> _batchIndexUsed;
+    //! Replaced buffers stay alive until this frame slot's fence completes.
+    VkFixedArray<std::vector<AllocatedBuffer>> _batchRetiredBuffers;
+    //! Opaque white in slot zero supplies untextured draws and invalid handles.
     TextureHandle _fallbackTexture;
 
     VkFixedArray<VkCommandBuffer> _cmdBuffers;
 
-    /*
-     * The render pass is begun with VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS,
-     * so no draw may be recorded into the primary buffer -- Vulkan has no
-     * mixed mode within a subpass instance. Draws go into these secondary
-     * buffers instead, and endRenderPass() replays them into the primary with
-     * a single vkCmdExecuteCommands, preserving scene call order with the
-     * overlay composited on top.
-     *
-     * Scene and overlay are kept apart rather than sharing one buffer because
-     * only the scene half is parallelizable: splitting it across worker
-     * threads means several scene buffers and still exactly one overlay,
-     * replayed last.
-     */
+    //! Serial draws and worker chunks share one ordered secondary-buffer stream.
     VkCommandBuffer _sceneCmd = VK_NULL_HANDLE;
-
-    /*
-     * Completed serial segments and worker chunks, in scene call order,
-     * replayed before the final _sceneCmd and _overlayCmd. Kept as a
-     * member and only ever cleared (never shrunk) so a steady-state frame
-     * reuses the same allocation.
-     */
     std::vector<VkCommandBuffer> _chunkCmds;
-
-    //! Scratch for endRenderPass()' vkCmdExecuteCommands argument. A member
-    //! purely so the per-frame replay costs no allocation.
-    std::vector<VkCommandBuffer> _replayList;
 
     /*
      * One context per worker, reused for the renderer's lifetime. Held by
@@ -313,7 +244,7 @@ class VulkanRenderer : public IRenderer
      * Workers for drawMeshes(). Sized from graphics.cpu_threads, the same
      * setting (and same auto-detect-when-0 convention) the software renderer's
      * rasteriser uses -- only one backend is ever live per run, so the two
-     * cannot contend for it.
+     * cannot contend for it. Built by the first drawMeshes() that fans out.
      */
     std::unique_ptr<ink::ThreadPool> _recordPool;
     u32 _recordWorkerCount = 1;
@@ -326,15 +257,6 @@ class VulkanRenderer : public IRenderer
      * function returns.
      */
     std::vector<std::future<void>> _recordFutures;
-    //! Begun on the frame's first drawBatch2D(), so a frame without an overlay
-    //! costs nothing.
-    VkCommandBuffer _overlayCmd = VK_NULL_HANDLE;
-    //! Whether the overlay pipeline and its texture set are already bound in
-    //! _overlayCmd. Unlike _recorded this needs no invalidation from the scene
-    //! path: the two record into different command buffers and cannot disturb
-    //! each other's bindings.
-    bool _overlayStateBound = false;
-
     u32 _currentFrame = 0;
     u32 _currentImageIndex = 0;
     u32 _imagesCount = 0;
@@ -397,17 +319,14 @@ class VulkanRenderer : public IRenderer
     std::vector<VkDescriptorSet> _lightDescSets; //! set 2: light, per image
 
     /*
-     * set 1: a single bindless combined-image-sampler array (MAX_BINDLESS_TEXTURES
-     * elements), bound once and never rebuilt per-texture or per-resize. A
-     * texture is selected per-draw via a push-constant array index (see
-     * bindDrawState()/textureArrayIndexOf()) instead of swapping which
-     * descriptor set is bound -- this is what let the old one-set-per-texture-
-     * per-image-per-pipeline scheme (which exhausted a 256-descriptor pool
-     * around the 42nd texture) go away entirely.
+     * Every texture in one bindless combined-image-sampler array, shared by the
+     * scene (set 1) and batch (set 0) pipelines and never rebuilt per texture
+     * or per resize. A draw selects its texture by a push-constant index (see
+     * textureArrayIndexOf()) rather than by binding another set.
      */
-    VkDescriptorSet _bindlessTextureSet3D = VK_NULL_HANDLE;
+    VkDescriptorSet _bindlessTextureSet = VK_NULL_HANDLE;
 
-    //! Slots in each bindless table, resolved from the device's
+    //! Slots in the bindless table, resolved from the device's
     //! update-after-bind limits at createResourceManagers() time
     //! (VkDeviceManager::maxBindlessTextures()). Both pipeline layouts, the
     //! descriptor pool and textureArrayIndexOf()'s bounds check all read this
@@ -443,7 +362,7 @@ class VulkanRenderer : public IRenderer
      * Slot 0 is _fallbackTexture, written before any draw can happen (see
      * initialize()), and is returned for two distinct cases that must both
      * stay in-bounds rather than sampling an arbitrary element:
-     *  - An invalid handle: bindTexture() was never called, or drawBatch2D() was
+     *  - An invalid handle: bindTexture() was never called, or drawBatch() was
      *    handed no texture.
      *  - A handle beyond _bindlessTextureCapacity: the scene created more
      *    textures than this device's table can hold. Sampling out of range is

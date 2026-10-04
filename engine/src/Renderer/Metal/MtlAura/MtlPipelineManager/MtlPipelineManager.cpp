@@ -45,7 +45,7 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
         colorAttachment->setRgbBlendOperation(MTL::BlendOperationAdd);
         colorAttachment->setAlphaBlendOperation(MTL::BlendOperationAdd);
         colorAttachment->setSourceRGBBlendFactor(MTL::BlendFactorSourceAlpha);
-        colorAttachment->setSourceAlphaBlendFactor(MTL::BlendFactorSourceAlpha);
+        colorAttachment->setSourceAlphaBlendFactor(MTL::BlendFactorOne);
         colorAttachment->setDestinationRGBBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
         colorAttachment->setDestinationAlphaBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
     }
@@ -72,8 +72,8 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
      * depth range is [0,1] like Vulkan's, not [-1,1] like OpenGL's. That is the
      * whole reason MetalRenderer asks Camera for ClipSpace::Vulkan.
      */
-    depthDescriptor->setDepthCompareFunction(options.depthTest ? MTL::CompareFunctionLess : MTL::CompareFunctionAlways);
-    depthDescriptor->setDepthWriteEnabled(options.depthTest);
+    depthDescriptor->setDepthCompareFunction(options.depthTest ? options.depthCompare : MTL::CompareFunctionAlways);
+    depthDescriptor->setDepthWriteEnabled(options.depthTest && options.depthWrite);
 
     _depthStencilState = adopt(device->newDepthStencilState(depthDescriptor.get()));
     if (!_depthStencilState)

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <memory>
 #include <span>
 #include <string>
@@ -42,13 +43,6 @@ class IGpuDebugSource;
     X(OPENGL)                                                                                                          \
     X(VULKAN)                                                                                                          \
     X(METAL)
-
-/**
- * @brief List of supported dimensions/modes for rendering.
- */
-#define RENDERER_MODE_LIST                                                                                             \
-    X(MODE_2D)                                                                                                         \
-    X(MODE_3D)
 
 namespace aura3d
 {
@@ -128,7 +122,6 @@ class IRenderer
     /**
      * @brief Constructs the base IRenderer instance.
      * * @param[in] windowDetails Struct containing initial parameters like size and title.
-     * @param[in] mode Specifies if this context handles 3D operations.
      */
     IRenderer(const wma::WindowDetails &windowDetails) : _windowDetails(windowDetails)
     {
@@ -222,6 +215,14 @@ class IRenderer
      * @return TextureHandle for the new texture, or an invalid handle on failure.
      */
     virtual TextureHandle createDynamicTexture(u32 width, u32 height) = 0;
+
+    /// One linear coverage byte per texel, initially zero; samples as (1, 1, 1, coverage).
+    /// Backends without native support use the RGBA compatibility implementation.
+    virtual TextureHandle createCoverageTexture(u32 width, u32 height);
+
+    /// Tightly packed width * height coverage bytes. Out-of-bounds updates are rejected.
+    virtual void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                             const u8 *coverage);
 
     /**
      * @brief Overwrites a sub-rectangle of a texture in place.
@@ -410,7 +411,7 @@ class IRenderer
      *
      * Unlike beginFrame()/endFrame(), always called by hand -- run() has no
      * opinion on how many passes a frame has. Pair with endRenderPass()
-     * around every draw()/drawIndexed()/drawBatch2D() call, whether inside
+     * around every draw()/drawIndexed()/drawBatch() call, whether inside
      * run()'s callback or a hand-rolled loop.
      */
     virtual void beginRenderPass() = 0;
@@ -468,35 +469,32 @@ class IRenderer
      */
     virtual void draw(u32 vertexCount, u32 instanceCount = 1) = 0;
 
-    /**
-     * @brief Submits one batch of unlit 2D geometry as a single draw call.
-     *
-     * Runs on a dedicated overlay pipeline, independent of the 3D scene:
-     *  - positions are window pixels with (0,0) at the top-left corner, mapped
-     *    to clip space by an orthographic projection the backend derives from
-     *    the current framebuffer size -- no camera is involved, so a caller
-     *    never has to fold a scene view/projection out of its coordinates;
-     *  - shading is unlit, @c texel * @c vertexColor, so overlays keep their
-     *    exact colour whatever the scene's light is doing;
-     *  - depth testing is off and straight alpha blending is on, so the batch
-     *    composites over everything already drawn this pass;
-     *  - the whole batch becomes one draw call, which is what makes a 500-glyph
-     *    string cost the same as a single quad.
-     *
-     * Vertex and index data are copied into backend-owned dynamic buffers, so
-     * the caller may reuse or destroy its arrays as soon as this returns.
-     *
-     * Must be called between beginRenderPass() and endRenderPass(), after the
-     * scene's own draws. Leaves no 2D state bound: the next 3D draw rebinds its
-     * own pipeline.
-     *
-     * @param[in] vertices Batch vertices in window-pixel space.
-     * @param[in] indices Triangle list into @p vertices.
-     * @param[in] texture Texture sampled by the batch; an invalid handle draws
-     *        untextured (vertex colour only).
-     */
-    virtual void drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                             TextureHandle texture) = 0;
+    /// Unlit straight-alpha triangles in submission order, depth-tested less-or-equal without
+    /// depth writes: draw opaque meshes first and UI last. An invalid texture samples white;
+    /// both arrays may be reused on return.
+    virtual void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
+                           TextureHandle texture, gfx::BatchSpace space = gfx::BatchSpace::Screen) = 0;
+
+    /// Segment @p width render-target pixels wide with flat ends, drawn as one quad
+    /// through drawBatch(). Invalid or zero-length segments draw nothing.
+    void drawLine(glm::vec2 from, glm::vec2 to, const glm::vec4 &color, f32 width = 1.0f);
+
+    /// Depth-tested; @p width stays in pixels at any depth and the part behind the camera is clipped.
+    void drawLine(glm::vec3 from, glm::vec3 to, const glm::vec4 &color, f32 width = 1.0f);
+
+    /// Untextured shapes through drawBatch(). Nonfinite input, nonpositive sizes and
+    /// degenerate triangles draw nothing.
+    void fillRect(glm::vec2 origin, glm::vec2 size, const glm::vec4 &color);
+    void fillTriangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, const glm::vec4 &color);
+    void fillTriangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec4 &color);
+
+    /// Size of the render target in the pixels screen-space batches and line widths use.
+    /// Backends report their live target; the base returns the window size it was built with.
+    [[nodiscard]] virtual glm::uvec2 renderTargetSize() const noexcept
+    {
+        return {static_cast<u32>(std::max(_windowDetails.width, 0)),
+                static_cast<u32>(std::max(_windowDetails.height, 0))};
+    }
 
     /**
      * @brief Sets the clear color for target framebuffers.
@@ -568,6 +566,9 @@ class IRenderer
     }
 
   protected:
+    /// Clip transform the batch pipeline applies for @p space on this backend.
+    [[nodiscard]] glm::mat4 batchTransform(gfx::BatchSpace space) const;
+
     [[nodiscard]] std::unique_ptr<wma::IWindowManager>
     makeWindow(wma::WindowBackend backend, const wma::WindowDetails &details, wma::GraphicsAPI api)
     {
@@ -618,6 +619,15 @@ class IRenderer
      * setTransform() override assigns it.
      */
     gfx::TransformUBO _currentTransform{};
+
+  private:
+    struct CoverageFallback
+    {
+        TextureHandle handle;
+        u32 width;
+        u32 height;
+    };
+    std::vector<CoverageFallback> _coverageFallbacks;
 };
 
 } // namespace aura3d

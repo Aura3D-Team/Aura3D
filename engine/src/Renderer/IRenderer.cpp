@@ -1,10 +1,159 @@
 #include "aura/Renderer/IRenderer.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <optional>
+
 #include "aura/Core/ImageLoader/ImageLoader.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
+#include "aura/Renderer/RendererFactory.h"
 
 namespace aura3d
 {
+
+namespace
+{
+
+constexpr std::array<u32, 6> kQuadIndices{0, 1, 2, 2, 3, 0};
+constexpr std::array<u32, 3> kTriangleIndices{0, 1, 2};
+
+template <glm::length_t N, glm::qualifier Q> [[nodiscard]] bool finite(const glm::vec<N, f32, Q> &value) noexcept
+{
+    for (glm::length_t i = 0; i < N; ++i)
+        if (!std::isfinite(value[i]))
+            return false;
+    return true;
+}
+
+[[nodiscard]] bool visible(const glm::vec4 &color) noexcept
+{
+    return color.a > 0.0f && finite(color);
+}
+
+[[nodiscard]] bool depthZeroToOne(RendererChoice backend) noexcept
+{
+    return RendererFactory::clipSpaceFor(backend) == Camera::ClipSpace::Vulkan;
+}
+
+//! Keeps the part of [a, b] on the non-negative side of a plane, given each end's signed distance.
+[[nodiscard]] bool clipSegment(glm::vec4 &a, glm::vec4 &b, f32 da, f32 db) noexcept
+{
+    if (da < 0.0f && db < 0.0f)
+        return false;
+    if (da < 0.0f)
+        a = glm::mix(a, b, da / (da - db));
+    else if (db < 0.0f)
+        b = glm::mix(b, a, db / (db - da));
+    return true;
+}
+
+//! Screen-space quad @p width pixels wide around [@p from, @p to], flat-ended; nullopt draws nothing.
+[[nodiscard]] std::optional<std::array<gfx::BatchVertex, 4>> lineQuad(glm::vec3 from, glm::vec3 to,
+                                                                      const glm::vec4 &color, f32 width) noexcept
+{
+    const f32 length = std::hypot(to.x - from.x, to.y - from.y);
+    if (!finite(from) || !finite(to) || !visible(color) || !(width > 0.0f) || !std::isfinite(width) ||
+        !(length > 0.0f) || !std::isfinite(length))
+        return std::nullopt;
+
+    const glm::vec3 normal{glm::vec2{from.y - to.y, to.x - from.x} * (width * 0.5f / length), 0.0f};
+    return std::array<gfx::BatchVertex, 4>{
+        {{from - normal, {}, color}, {to - normal, {}, color}, {to + normal, {}, color}, {from + normal, {}, color}}};
+}
+
+} // namespace
+
+void IRenderer::drawLine(glm::vec2 from, glm::vec2 to, const glm::vec4 &color, f32 width)
+{
+    if (const auto quad = lineQuad({from, 0.0f}, {to, 0.0f}, color, width))
+        drawBatch(*quad, kQuadIndices, {});
+}
+
+void IRenderer::drawLine(glm::vec3 from, glm::vec3 to, const glm::vec4 &color, f32 width)
+{
+    const glm::vec2 target{renderTargetSize()};
+    if (target.x <= 0.0f || target.y <= 0.0f)
+        return;
+
+    const glm::mat4 transform = batchTransform(gfx::BatchSpace::World);
+    glm::vec4 a = transform * glm::vec4(from, 1.0f);
+    glm::vec4 b = transform * glm::vec4(to, 1.0f);
+
+    //! Clipped to the near plane, and to w > 0 so the divide is defined; the rasterizer clips
+    //! the rest. Widening the projected segment in pixels keeps the width at any depth.
+    const bool zeroToOne = depthZeroToOne(getBackendType());
+    constexpr f32 kMinW = 1e-6f;
+    if (!clipSegment(a, b, zeroToOne ? a.z : a.z + a.w, zeroToOne ? b.z : b.z + b.w) ||
+        !clipSegment(a, b, a.w - kMinW, b.w - kMinW))
+        return;
+
+    const auto toScreen = [&](const glm::vec4 &clip)
+    {
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        return glm::vec3{(ndc.x + 1.0f) * 0.5f * target.x, (1.0f - ndc.y) * 0.5f * target.y,
+                         zeroToOne ? ndc.z : (ndc.z + 1.0f) * 0.5f};
+    };
+    if (const auto quad = lineQuad(toScreen(a), toScreen(b), color, width))
+        drawBatch(*quad, kQuadIndices, {});
+}
+
+void IRenderer::fillRect(glm::vec2 origin, glm::vec2 size, const glm::vec4 &color)
+{
+    const glm::vec2 end = origin + size;
+    if (!finite(origin) || !finite(end) || !(size.x > 0.0f) || !(size.y > 0.0f) || !visible(color))
+        return;
+
+    const std::array<gfx::BatchVertex, 4> quad{{{{origin, 0.0f}, {}, color},
+                                                {{end.x, origin.y, 0.0f}, {}, color},
+                                                {{end, 0.0f}, {}, color},
+                                                {{origin.x, end.y, 0.0f}, {}, color}}};
+    drawBatch(quad, kQuadIndices, {});
+}
+
+void IRenderer::fillTriangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, const glm::vec4 &color)
+{
+    if (!finite(a) || !finite(b) || !finite(c) || !visible(color))
+        return;
+
+    //! In double, so rounding cannot call a thin valid triangle degenerate.
+    const f64 area = (static_cast<f64>(b.x) - a.x) * (static_cast<f64>(c.y) - a.y) -
+                     (static_cast<f64>(b.y) - a.y) * (static_cast<f64>(c.x) - a.x);
+    if (area == 0.0)
+        return;
+
+    const std::array<gfx::BatchVertex, 3> triangle{
+        {{{a, 0.0f}, {}, color}, {{b, 0.0f}, {}, color}, {{c, 0.0f}, {}, color}}};
+    drawBatch(triangle, kTriangleIndices, {});
+}
+
+void IRenderer::fillTriangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec4 &color)
+{
+    if (!finite(a) || !finite(b) || !finite(c) || !visible(color) ||
+        glm::cross(glm::dvec3(b) - glm::dvec3(a), glm::dvec3(c) - glm::dvec3(a)) == glm::dvec3(0.0))
+        return;
+
+    const std::array<gfx::BatchVertex, 3> triangle{{{a, {}, color}, {b, {}, color}, {c, {}, color}}};
+    drawBatch(triangle, kTriangleIndices, {}, gfx::BatchSpace::World);
+}
+
+glm::mat4 IRenderer::batchTransform(gfx::BatchSpace space) const
+{
+    if (space == gfx::BatchSpace::World)
+        return _currentTransform.proj * _currentTransform.view * _currentTransform.model;
+
+    //! Pixels with y down and depth in [0, 1], to the y-up clip space every backend shares
+    //! (Vulkan's viewport is flipped to match) in this backend's depth range.
+    const glm::vec2 size{renderTargetSize()};
+    if (size.x <= 0.0f || size.y <= 0.0f)
+        return glm::mat4{0.0f};
+    const bool zeroToOne = depthZeroToOne(getBackendType());
+    return {{2.0f / size.x, 0.0f, 0.0f, 0.0f},
+            {0.0f, -2.0f / size.y, 0.0f, 0.0f},
+            {0.0f, 0.0f, zeroToOne ? 1.0f : 2.0f, 0.0f},
+            {-1.0f, 1.0f, zeroToOne ? 0.0f : -1.0f, 1.0f}};
+}
 
 void IRenderer::run(move_only_function<void()> onFrame)
 {
@@ -49,6 +198,38 @@ TextureHandle IRenderer::createCheckerboardTexture(u32 size)
 {
     const ImageData image = ImageLoader::makeCheckerboard(size);
     return createTextureFromPixels(image.pixels.data(), image.width, image.height);
+}
+
+TextureHandle IRenderer::createCoverageTexture(u32 width, u32 height)
+{
+    if (width == 0 || height == 0 || static_cast<u64>(width) * height > std::numeric_limits<usize>::max() / 4)
+        return {};
+
+    std::vector<u8> rgba(static_cast<usize>(width) * height * 4, 255);
+    for (usize i = 3; i < rgba.size(); i += 4)
+        rgba[i] = 0;
+    const TextureHandle handle = createDynamicTexture(width, height);
+    if (isValidHandle(handle))
+    {
+        updateTextureRegion(handle, 0, 0, width, height, rgba.data());
+        _coverageFallbacks.push_back({handle, width, height});
+    }
+    return handle;
+}
+
+void IRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                            const u8 *coverage)
+{
+    const auto entry = std::ranges::find(_coverageFallbacks, handle, &CoverageFallback::handle);
+    if (!coverage || width == 0 || height == 0 || entry == _coverageFallbacks.end() || x >= entry->width ||
+        y >= entry->height || width > entry->width - x || height > entry->height - y)
+        return;
+
+    const usize count = static_cast<usize>(width) * height;
+    std::vector<u8> rgba(count * 4, 255);
+    for (usize i = 0; i < count; ++i)
+        rgba[i * 4 + 3] = coverage[i];
+    updateTextureRegion(handle, x, y, width, height, rgba.data());
 }
 
 MeshHandle IRenderer::createMesh(const gfx::Mesh3D &mesh)
@@ -175,6 +356,7 @@ const Material *IRenderer::getMaterial(MaterialHandle handle) const
 
 void IRenderer::clearSharedResources()
 {
+    _coverageFallbacks.clear();
     _meshes.clear();
     _materials.clear();
     _currentMaterial = Material{};

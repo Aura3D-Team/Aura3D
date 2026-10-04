@@ -169,7 +169,7 @@ void StarField::submit(aura3d::IRenderer &renderer, const SceneLayout &layout)
     if (_indices.empty() || !aura3d::isValidHandle(_atlas))
         return;
 
-    renderer.drawBatch2D(_vertices, _indices, _atlas);
+    renderer.drawBatch(_vertices, _indices, _atlas);
 }
 
 void StarField::_buildBatch(const SceneLayout &layout)

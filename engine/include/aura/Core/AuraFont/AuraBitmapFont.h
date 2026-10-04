@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <vector>
 
 #include "aura/aura.h"
 
@@ -133,7 +134,7 @@ struct AuraBitmapFont
         i32 last = -1;
         for (const u8 row : glyph)
             for (i32 col = 0; col < charWidth; ++col)
-                if ((row & (1u << (charWidth - 1 - col))) != 0)
+                if (inked(row, col))
                 {
                     first = col < first ? col : first;
                     last = col > last ? col : last;
@@ -141,38 +142,51 @@ struct AuraBitmapFont
         return last < first ? Ink{} : Ink{first, last - first + 1};
     }
 
-    /// Pixels a glyph drawn @p height tall spans: its inked columns, scaled.
-    [[nodiscard]] constexpr u32 width(Ink ink, u32 height) const noexcept
+    /// One glyph at one size: the source row and column every output pixel samples.
+    struct ScaledGlyph
     {
-        if (ink.width == 0)
-            return 0;
-        const u32 pixels = scaled(ink.width, height);
-        return pixels == 0 ? 1 : pixels;
+        std::vector<u8> rows;    //!< Source row of each output row.
+        std::vector<u8> columns; //!< Source column of each output column; empty for a blank glyph.
+        u32 advance = 0;         //!< Whole pixels to the next glyph, so glyphs stay on the grid.
+    };
+
+    /// The face at one pixel height. Building it is not free; keep it per size.
+    struct Layout
+    {
+        std::vector<u8> rows; //!< Source row of each output row, shared by every glyph.
+        u32 ascent = 0;       //!< Output rows above the baseline.
+        u32 caps = 0;         //!< Output rows of cap height, which scale widths with it.
+        std::array<ScaledGlyph, 128> glyphs{};
+    };
+
+    /**
+     * @brief Maps @p height output rows onto the face's 16, one row at a time.
+     *
+     * Shrinking removes the row whose loss erases the fewest pixels -- ones
+     * matching neither neighbour -- so blank padding goes first and a 1 px
+     * stroke last, keeping two descender rows so g, p and y stay legible.
+     * Growing repeats every row evenly and the most redundant cap-height rows
+     * once more, so glyphs grow and thin strokes keep one width. Nearest
+     * sampling instead dropped rows at fixed positions: cap lines at 13 px.
+     *
+     * Each glyph then keeps, within every band -- padding, ascenders,
+     * x-height, descenders -- the row count the face gave the band, so cap
+     * tops and baselines line up, while choosing its own most telling rows:
+     * 12 px keeps both the gap under an i's dot and the 4's crossbar.
+     */
+    [[nodiscard]] Layout layout(u32 height) const;
+
+    [[nodiscard]] constexpr bool inked(u8 row, i32 column) const noexcept
+    {
+        return (row & (1u << (charWidth - 1 - column))) != 0;
     }
 
-    /// Whole pixels to the next glyph, so every glyph of a string lands on the
-    /// pixel grid and gaps between letters stay even.
-    [[nodiscard]] constexpr u32 advance(Ink ink, u32 height) const noexcept
-    {
-        return scaled(ink.width == 0 ? charWidth / 2 : ink.width + charSpacing, height);
-    }
-
-    /// Whether pixel (@p x, @p y) of a glyph drawn @p width by @p height is inked.
-    /// Nearest sampling at pixel centres keeps every stroke one-bit.
-    [[nodiscard]] constexpr bool covers(const Glyph &glyph, Ink ink, u32 width, u32 height, u32 x,
-                                        u32 y) const noexcept
-    {
-        const u32 row = (2 * y + 1) * static_cast<u32>(charHeight) / (2 * height);
-        const u32 col = static_cast<u32>(ink.first) + (2 * x + 1) * static_cast<u32>(ink.width) / (2 * width);
-        return (glyph[row] & (1u << (static_cast<u32>(charWidth) - 1 - col))) != 0;
-    }
-
-  private:
-    [[nodiscard]] constexpr u32 scaled(i32 units, u32 height) const noexcept
-    {
-        const auto rows = static_cast<u32>(charHeight);
-        return (static_cast<u32>(units) * height + rows / 2) / rows;
-    }
+    /// First row of the glyph body: capitals start here, rows above are padding.
+    static constexpr i32 bodyTop = 2;
+    /// First row of lowercase letters.
+    static constexpr i32 xHeightTop = 5;
+    /// Rows below the baseline kept while shrinking, so descenders stay readable.
+    static constexpr u32 minDescender = 2;
 };
 
 [[nodiscard]] inline const AuraBitmapFont &GetDefaultBitmapFont() noexcept

@@ -38,13 +38,13 @@ struct TextOverlayDesc
 };
 
 /**
- * @brief Draws text over the current frame through the renderer's dedicated
- * unlit 2D pipeline. Behaves identically on every backend.
+ * @brief Draws text over the current frame through the renderer's unlit batch
+ * pipeline. Behaves identically on every backend.
  *
  * Glyphs are cached in a @ref FontAtlas (one GPU texture, allocated once);
  * each character rasterizes on first use, costing a small sub-image upload
  * rather than a new texture. A whole draw call's text is one
- * IRenderer::drawBatch2D() call regardless of length.
+ * IRenderer::drawBatch() call regardless of length.
  *
  * Positions are window pixels, (0,0) top-left; no camera is involved. Text is
  * UTF-8, unsupported codepoints render as '?', '\n' starts a new line.
@@ -151,6 +151,7 @@ class TextOverlay
     IRenderer *_renderer;
     std::unique_ptr<FontAtlas> _atlas;
     TextureHandle _atlasTexture;
+    u64 _atlasRevision = 0; //! FontAtlas::takeUpload()'s cursor for _atlasTexture.
     glm::vec4 _color{1.0f};
     bool _usingTrueType = false;
 
@@ -159,14 +160,8 @@ class TextOverlay
     float _fps = 0.0f;
     char _cachedFpsString[48] = "FPS: 0  (0.00 ms)";
 
-    //! Retained across calls (no reallocation in steady state) and over-aligned
-    //! rather than plain std::vector: the batch is memcpy'd/glBufferSubData'd
-    //! every frame, and a 32-byte-aligned base keeps every 32-byte Vertex2D
-    //! individually aligned for that copy, not just the array's first element.
-    static_assert(sizeof(gfx::Vertex2D) == 32, "Vertex2D must stay 32 bytes for the aligned batch storage "
-                                               "below to align every vertex, not merely the array's base.");
-
-    AlignedVector<gfx::Vertex2D> _vertices;
+    //! Reused across frames to avoid allocations after warmup.
+    AlignedVector<gfx::BatchVertex> _vertices;
     AlignedVector<u32> _indices;
 };
 

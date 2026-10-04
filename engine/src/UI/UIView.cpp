@@ -240,7 +240,7 @@ void UIView::_syncSurface()
         if (framebuffer.valid() && logical.x > 0.0f)
         {
             /*
-             * The framebuffer is what drawBatch2D() draws into; the window's
+             * The framebuffer is what drawBatch() draws into; the window's
              * logical size is what the pointer reports in. Their ratio is the
              * device-pixel ratio, and taking it from the two the platform
              * actually gives us is more dependable than any scale setting.

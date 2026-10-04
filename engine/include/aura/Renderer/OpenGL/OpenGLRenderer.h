@@ -4,9 +4,7 @@
 #pragma once
 
 #include <memory>
-#include <unordered_map>
 
-#include "aura/Renderer/EmbeddedShaders.h"
 #include "aura/Renderer/IRenderer.h"
 #include "aura/Renderer/OpenGL/GlAura/GlIndexBufferManager/GlIndexBufferManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlTextureManager/GlTextureManager.h"
@@ -34,7 +32,10 @@ class OpenGLRenderer : public IRenderer
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
     TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
     TextureHandle createDynamicTexture(u32 width, u32 height) override;
+    TextureHandle createCoverageTexture(u32 width, u32 height) override;
     void updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels) override;
+    void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                     const u8 *coverage) override;
 
     void beginFrame() override;
     void beginRenderPass() override;
@@ -48,8 +49,9 @@ class OpenGLRenderer : public IRenderer
     void bindTexture(TextureHandle handle) override;
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
-    void drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                     TextureHandle texture) override;
+    void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
+                   gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
+    [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
 
     wma::IWindowManager *getWindowManager() override
@@ -68,14 +70,13 @@ class OpenGLRenderer : public IRenderer
     void loadOpenGLEntryPoints();
     void compileBuiltInShaders();
 
-    /**
-     * @brief Creates the overlay pipeline's persistent VAO and dynamic buffers.
-     *
-     * One VAO/VBO/EBO triple serves every drawBatch2D() call for the renderer's
-     * whole life. The buffers only ever grow, so a steady-state overlay stops
-     * reallocating after the first few frames.
-     */
-    void createOverlay2DBuffers();
+    void createBatchBuffers();
+
+    //! Leaves batch state: scene program, depth writes, no blending, and the scene's
+    //! VAO and texture back. Batches switch lazily, so a run of them pays once.
+    void useSceneState();
+    //! Binds _currentTexture, white for an invalid handle, and the scene's coverage flag.
+    void bindSceneTexture();
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
     std::unique_ptr<GlVertexBufferManager> _vertexMgr;
@@ -86,26 +87,20 @@ class OpenGLRenderer : public IRenderer
     GLuint _shaderProgram = 0;
     bool _isInitialized = false;
 
-    //! Dedicated unlit 2D overlay pipeline, independent of the 3D program above.
-    GLuint _overlay2DProgram = 0;
-    GLint _overlay2DProjLoc = -1;    //! Cached uniform location of uProj.
-    GLint _overlay2DSamplerLoc = -1; //! Cached uniform location of textureSampler.
-
-    /*
-     * Location of the 3D program's textureSampler, resolved once at link time.
-     * Queried per bindTexture() before -- glGetUniformLocation hashes the name
-     * string inside the driver on every call, which is a real cost when it
-     * happens once per textured object per frame. The value it sets (unit 0)
-     * is program state and never changes, so nothing re-writes it per draw.
-     */
-    GLint _sampler3DLoc = -1;
-    GLuint _overlay2DVao = 0;
-    GLuint _overlay2DVbo = 0;
-    GLuint _overlay2DEbo = 0;
-    size_t _overlay2DVboBytes = 0; //! Current VBO allocation, in bytes.
-    size_t _overlay2DEboBytes = 0; //! Current EBO allocation, in bytes.
-    //! 1x1 opaque white, substituted when a batch asks for no texture.
-    TextureHandle _white2DTexture;
+    GLuint _batchProgram = 0;
+    GLint _batchTransformLoc = -1;
+    GLint _batchCoverageLoc = -1;
+    GLint _coverage3DLoc = -1;
+    //! Last coverageOnly value each program was given; -1 before the first.
+    GLint _batchCoverage = -1;
+    GLint _coverage3D = -1;
+    GLuint _batchVao = 0;
+    GLuint _batchVbo = 0;
+    GLuint _batchEbo = 0;
+    size_t _batchVboBytes = 0;
+    size_t _batchEboBytes = 0;
+    TextureHandle _whiteTexture;
+    bool _batchState = false; //! The batch program, depth and blend state are current.
 
     VertexBufferHandle _currentVertexBuffer;
     IndexBufferHandle _currentIndexBuffer;

@@ -218,21 +218,18 @@ struct TextShaperDesc
 
     u32 pageSize = 1024; //! Edge length of each square glyph page, in texels.
 
-    /// Largest number of distinct rasterization sizes kept alive at once. Each
-    /// costs one page and one GPU texture, so a theme using four text sizes
-    /// wants four -- not one per pixel value some animation passed through.
+    /// Caps distinct rasterization sizes and physical texture sheets. Sizes
+    /// share sheets until full; retained runs keep their original cells.
     u32 maxPages = 6;
 };
 
 /**
  * @class AtlasTextShaper
- * @brief The FontAtlas-backed shaper: kerned, wrapped, and one page per size.
+ * @brief The FontAtlas-backed shaper: kerned, wrapped, with shared coverage sheets.
  *
- * A FontAtlas rasterizes at a single em size, so a shaper that must serve a
- * 32px heading and a 12px caption keeps one page each rather than scaling one
- * of them -- scaling is exactly what makes small text on a big atlas look
- * washed out. Pages are created on first use and capped by
- * TextShaperDesc::maxPages.
+ * Each rasterization size keeps its own metrics and glyph cache while sharing
+ * texture storage with other sizes. Full shared sheets spill into a new sheet
+ * without invalidating previously shaped runs, within TextShaperDesc::maxPages.
  */
 class AtlasTextShaper final : public ITextShaper
 {
@@ -248,6 +245,7 @@ class AtlasTextShaper final : public ITextShaper
     [[nodiscard]] f32 lineHeight(const TextStyle &style) override;
     [[nodiscard]] f32 ascent(const TextStyle &style) override;
 
+    /// Includes retained size views, so this may exceed the physical sheet cap.
     [[nodiscard]] u32 pageCount() const noexcept override;
     [[nodiscard]] FontAtlas *page(u32 index) noexcept override;
 
@@ -257,9 +255,7 @@ class AtlasTextShaper final : public ITextShaper
         return _scale;
     }
 
-    /// True when the requested font loaded and the embedded fallback is not in
-    /// use. Worth surfacing: the fallback is a 5x8 bitmap, and a UI that
-    /// silently degraded to it looks broken rather than unstyled.
+    /// True when using the embedded rounded bitmap font.
     [[nodiscard]] bool usingFallbackFont() const noexcept
     {
         return _fontData.empty();
@@ -274,17 +270,22 @@ class AtlasTextShaper final : public ITextShaper
         u32 devicePixels = 0; //! Rasterization size; the page's identity.
         f32 lineHeight = 0.0f;
         f32 ascent = 0.0f;
+        u64 initialRevision = 0;
     };
 
-    /// Index of the page serving @p style, creating it if there is room.
+    /// Page serving @p style, creating it if there is room.
     /// Falls back to the nearest existing page when the cap is reached.
     [[nodiscard]] Page *_pageFor(const TextStyle &style);
+    [[nodiscard]] Page *_appendPage(u32 devicePixels, bool shareStorage);
+    void _shape(std::string_view utf8, const TextStyle &style, f32 maxWidth, ShapedText &out, bool allowNewSheet);
 
     [[nodiscard]] u32 _devicePixelsFor(const TextStyle &style) const noexcept;
 
     TextShaperDesc _desc{};
     std::vector<u8> _fontData; //! Empty when running on the embedded font.
     std::vector<Page> _pages;
+    u32 _distinctSizes = 0;
+    u32 _storagePages = 0;
     f32 _scale = 1.0f;
 };
 

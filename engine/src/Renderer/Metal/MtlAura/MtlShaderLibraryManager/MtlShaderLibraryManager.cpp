@@ -74,8 +74,8 @@ void MtlShaderLibraryManager::compileSourceLibrary(MTL::Device *device)
 
     NS::SharedPtr<MTL::CompileOptions> options = adopt(MTL::CompileOptions::alloc()->init());
     /*
-     * Pinned to the same language version scripts/gen_embedded_metallib.sh
-     * passes to `xcrun metal` (-std=metal3.0), so a shader that compiles offline
+     * Pinned to the same language version cmake/EmbedShaders.cmake passes to
+     * `xcrun metal` (-std=metal3.0), so a shader that compiles offline
      * cannot behave differently when compiled here. Metal 3.0 is macOS 13 /
      * iOS 16 and up, which is at or below the deployment target the Apple
      * presets set (see CMakePresets.json).
@@ -104,9 +104,7 @@ NS::SharedPtr<MTL::Function> MtlShaderLibraryManager::newFunction(const char *fu
     if (!function)
     {
         throw AuraException("MtlShaderLibraryManager: the shader library has no function named '" +
-                            std::string(functionName) +
-                            "' (MtlAuraCore.h and resources/shaders/metal/* disagree; "
-                            "re-run scripts/gen_embedded_metallib.sh)");
+                            std::string(functionName) + "' (MtlAuraCore.h and resources/shaders/metal/* disagree)");
     }
 
     return function;

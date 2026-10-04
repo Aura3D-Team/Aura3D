@@ -16,6 +16,7 @@
 
 #include <glm/glm.hpp>
 
+#include "aura/Core/AuraFont/AuraBitmapFont.h"
 #include "aura/aura.h"
 
 namespace aura3d
@@ -67,9 +68,9 @@ struct FontAtlasDesc
  * The atlas owns one large single-channel coverage bitmap (2048x2048 by
  * default). Glyphs are rasterized lazily -- the first time a codepoint is
  * actually drawn -- and packed into it with a shelf allocator. Every
- * rasterization grows a pending dirty rectangle; @ref takeDirtyUpload hands
- * that rectangle over as RGBA8 so the renderer can push it to the GPU with a
- * sub-image copy instead of reuploading the whole texture.
+ * rasterization grows a pending dirty rectangle; @ref takeUpload hands that
+ * rectangle over as R8 so the renderer can push it to the GPU with a sub-image
+ * copy instead of reuploading the whole texture.
  *
  * The atlas stores coverage only (white RGB, alpha = coverage). Text colour is
  * supplied per-vertex at draw time, so one atlas serves every colour.
@@ -98,11 +99,11 @@ class FontAtlas
         glm::vec2 max{0.0f};
     };
 
-    /// A dirty rectangle expanded to RGBA8, ready for a sub-image upload.
+    /// A rectangle of coverage, ready for IRenderer::updateCoverageTextureRegion().
     struct PendingUpload
     {
-        DirtyRegion region;       //! Destination rectangle inside the atlas.
-        std::span<const u8> rgba; //! region.width * region.height * 4 bytes.
+        DirtyRegion region;           //! Destination rectangle inside the atlas.
+        std::span<const u8> coverage; //! region.width * region.height bytes, tightly packed.
     };
 
     /**
@@ -129,6 +130,17 @@ class FontAtlas
      * Never fails.
      */
     [[nodiscard]] static std::unique_ptr<FontAtlas> builtinBitmap(const Desc &desc = Desc{});
+
+    /// Shares immutable font data and texture storage; glyph metrics stay size-specific.
+    [[nodiscard]] std::unique_ptr<FontAtlas> createSharedSize(float pixelHeight) const;
+
+    /// Equal for views sharing one sheet, so they can share one texture.
+    [[nodiscard]] const void *storageIdentity() const noexcept;
+    /// Advances whenever the shared sheet changes.
+    [[nodiscard]] u64 coverageRevision() const noexcept;
+
+    /// Clears and returns whether a cell failed to fit since the previous call.
+    [[nodiscard]] bool takeAllocationFailure() noexcept;
 
     ~FontAtlas();
 
@@ -244,24 +256,25 @@ class FontAtlas
         return _desc.height;
     }
 
-    /// True when glyphs were rasterized since the last @ref takeDirtyUpload.
-    [[nodiscard]] bool dirty() const noexcept
-    {
-        return _dirty;
-    }
+    /// True when glyphs were rasterized since the last @ref takeUpload.
+    [[nodiscard]] bool dirty() const noexcept;
 
     /**
-     * @brief Hands over the pending sub-image upload and marks the atlas clean.
+     * @brief What a texture last synced at @p revision lacks, or nullopt when it is current.
      *
-     * @return The RGBA8 expansion of the dirty rectangle, or nullopt when
-     *         nothing changed. The span stays valid until the next call.
+     * Every texture of the sheet keeps its own @p revision, starting at 0, and this
+     * advances it. The dirty rectangle serves the texture that saw the last clean
+     * state; any other gets the whole sheet. The span lasts until the next call on
+     * any view of the sheet.
      */
-    [[nodiscard]] std::optional<PendingUpload> takeDirtyUpload();
+    [[nodiscard]] std::optional<PendingUpload> takeUpload(u64 &revision);
 
   private:
     struct FontImpl;
+    struct Storage;
 
-    explicit FontAtlas(const Desc &desc);
+    explicit FontAtlas(const Desc &desc, std::shared_ptr<Storage> storage = {});
+    void initializeMetrics();
 
     /// Rasterizes @p codepoint through stb_truetype; false when absent.
     [[nodiscard]] bool rasterizeTrueType(char32_t codepoint, GlyphInfo &out);
@@ -287,10 +300,9 @@ class FontAtlas
     void blitCoverage(const u8 *src, u32 srcStride, glm::uvec2 origin, u32 w, u32 h) noexcept;
 
     Desc _desc{};
-    std::unique_ptr<FontImpl> _font; //! Null for the bitmap-font fallback.
-    std::vector<u8> _fontData;       //! Backing .ttf bytes; stb points into these.
-    std::vector<u8> _coverage;       //! width * height single-channel master.
-    std::vector<u8> _scratch;        //! RGBA staging for the pending upload.
+    std::shared_ptr<FontImpl> _font; //! Null for the bitmap-font fallback.
+    std::shared_ptr<Storage> _storage;
+    u32 _failedAllocations = 0;
 
     std::unordered_map<char32_t, GlyphInfo> _glyphs;
 
@@ -315,36 +327,13 @@ class FontAtlas
 
     mutable std::array<KernEntry, kKernCacheSlots> _kernCache{};
 
-    //! Cached result of solidTexelUv(); empty until the first call places it.
-    std::optional<glm::vec2> _solidUv;
-
-    /*
-     * cornerMask() results, indexed by radius. Flat rather than a map: the
-     * lookup is on the UI's per-rectangle path and the key is already a small
-     * dense integer, so there is nothing for a hash to buy.
-     */
-    std::array<std::optional<UvRect>, kMaxCornerRadius + 1> _cornerMasks{};
-    std::unordered_map<u32, UvRect> _cornerRingMasks;
-
-    //! convexMask() results, keyed by the caller's shape id. A map rather than
-    //! the flat array above: these ids are sparse and chosen by the caller,
-    //! where a radius is a small dense integer.
-    std::unordered_map<u32, UvRect> _convexMasks;
-
-    //! Shelf allocator cursor.
-    u32 _shelfX = 0;
-    u32 _shelfY = 0;
-    u32 _shelfHeight = 0;
-
-    //! Pending dirty rectangle, stored as inclusive-exclusive bounds.
-    u32 _dirtyX0 = 0, _dirtyY0 = 0, _dirtyX1 = 0, _dirtyY1 = 0;
-    bool _dirty = false;
-
     float _scale = 1.0f; //! stb_truetype units -> pixels.
     float _ascent = 0.0f;
     float _descent = 0.0f;
     float _lineHeight = 0.0f;
 
+    //! The embedded face at this atlas's size; empty for a TrueType atlas.
+    AuraBitmapFont::Layout _bitmapLayout;
 };
 
 } // namespace aura3d

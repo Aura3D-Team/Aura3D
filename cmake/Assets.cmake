@@ -8,16 +8,30 @@
 #   aura_copy_assets(TARGET)
 #       Stages resources/ and the app settings.json next to TARGET's binary.
 
+# A host tool even when cross-compiling, hence NO_CMAKE_FIND_ROOT_PATH. The NDK
+# and vcpkg (shaderc/glslang ports) ship one outside PATH. A cached path
+# outlives an SDK upgrade, so it is looked up again once it no longer exists.
+if(AURA_GLSL_COMPILER AND NOT EXISTS "${AURA_GLSL_COMPILER}")
+    unset(AURA_GLSL_COMPILER CACHE)
+endif()
+file(GLOB _aura_ndk_shader_tools LIST_DIRECTORIES true "${ANDROID_NDK}/shader-tools/*")
 find_program(AURA_GLSL_COMPILER
-    NAMES glslc glslangValidator
-    DOC "GLSL -> SPIR-V compiler used to build resources/shaders/vulkan"
+    NAMES glslc glslangValidator glslang
+    HINTS "$ENV{VULKAN_SDK}/bin" ${_aura_ndk_shader_tools}
+          "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/shaderc"
+          "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/shaderc"
+          "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/glslang"
+          "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/glslang"
+    NO_CMAKE_FIND_ROOT_PATH
+    DOC "GLSL -> SPIR-V compiler for resources/shaders/vulkan"
 )
+unset(_aura_ndk_shader_tools)
 
 # Compile all GLSL sources found in INPUT_DIR into SPIR-V (.spv) in OUTPUT_DIR.
 #
-# The engine always ships a compiled copy of the 3D shaders inside
-# EmbeddedSpirv.h, so a missing compiler is a warning rather than an error:
-# builds still succeed and fall back to the embedded modules.
+# These are the loose copies an app can load at runtime; the engine's own
+# modules are embedded by aura_embed_shaders() (cmake/EmbedShaders.cmake), so a
+# missing compiler only skips this step.
 function(aura_compile_shaders TARGET INPUT_DIR OUTPUT_DIR)
     file(GLOB _aura_shader_sources CONFIGURE_DEPENDS
         "${INPUT_DIR}/*.vert"
@@ -33,8 +47,7 @@ function(aura_compile_shaders TARGET INPUT_DIR OUTPUT_DIR)
     if(NOT AURA_GLSL_COMPILER)
         message(WARNING
             "aura_compile_shaders: no glslc/glslangValidator found; "
-            "skipping SPIR-V compilation for ${TARGET}. "
-            "The Vulkan backend will use the modules embedded in EmbeddedSpirv.h.")
+            "skipping SPIR-V compilation for ${TARGET}.")
         return()
     endif()
 

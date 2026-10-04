@@ -17,6 +17,21 @@ namespace aura3d
 struct FontAtlas::FontImpl
 {
     stbtt_fontinfo info{};
+    std::vector<u8> data;
+};
+
+struct FontAtlas::Storage
+{
+    std::vector<u8> coverage;
+    std::vector<u8> scratch;
+    std::optional<glm::vec2> solidUv;
+    std::array<std::optional<UvRect>, kMaxCornerRadius + 1> cornerMasks{};
+    std::unordered_map<u32, UvRect> cornerRingMasks;
+    std::unordered_map<u32, UvRect> convexMasks;
+    u32 shelfX = 0, shelfY = 0, shelfHeight = 0;
+    u32 dirtyX0 = 0, dirtyY0 = 0, dirtyX1 = 0, dirtyY1 = 0;
+    bool dirty = false;
+    u64 revision = 0, cleanRevision = 0;
 };
 
 namespace
@@ -84,13 +99,23 @@ char32_t decodeUtf8(std::string_view text, size_t &offset) noexcept
         scalar = (scalar << 6) | (continuation & 0x3Fu);
     }
 
+    constexpr std::array<char32_t, 4> minimum{0, 0x80u, 0x800u, 0x10000u};
+    if (scalar < minimum[extraBytes] || scalar > 0x10FFFFu || (scalar >= 0xD800u && scalar <= 0xDFFFu))
+    {
+        ++offset;
+        return 0xFFFDu;
+    }
     offset += extraBytes + 1;
     return scalar;
 }
 
-FontAtlas::FontAtlas(const Desc &desc) : _desc(desc)
+FontAtlas::FontAtlas(const Desc &desc, std::shared_ptr<Storage> storage) : _desc(desc), _storage(std::move(storage))
 {
-    _coverage.assign(static_cast<size_t>(_desc.width) * _desc.height, 0);
+    if (!_storage)
+    {
+        _storage = std::make_shared<Storage>();
+        _storage->coverage.assign(static_cast<size_t>(_desc.width) * _desc.height, 0);
+    }
 }
 
 FontAtlas::~FontAtlas() = default;
@@ -121,27 +146,17 @@ std::expected<std::unique_ptr<FontAtlas>, std::string> FontAtlas::fromMemory(std
         return std::unexpected("FontAtlas: empty font image");
 
     std::unique_ptr<FontAtlas> atlas(new FontAtlas(desc));
-    atlas->_fontData = std::move(fontData);
-    atlas->_font = std::make_unique<FontImpl>();
+    atlas->_font = std::make_shared<FontImpl>();
+    atlas->_font->data = std::move(fontData);
 
-    const int offset = stbtt_GetFontOffsetForIndex(atlas->_fontData.data(), 0);
+    const int offset = stbtt_GetFontOffsetForIndex(atlas->_font->data.data(), 0);
     if (offset < 0)
         return std::unexpected("FontAtlas: no usable face in the font image");
 
-    if (!stbtt_InitFont(&atlas->_font->info, atlas->_fontData.data(), offset))
+    if (!stbtt_InitFont(&atlas->_font->info, atlas->_font->data.data(), offset))
         return std::unexpected("FontAtlas: stb_truetype rejected the font image");
 
-    atlas->_scale = stbtt_ScaleForPixelHeight(&atlas->_font->info, desc.pixelHeight);
-
-    int ascent = 0;
-    int descent = 0;
-    int lineGap = 0;
-    stbtt_GetFontVMetrics(&atlas->_font->info, &ascent, &descent, &lineGap);
-
-    atlas->_ascent = static_cast<float>(ascent) * atlas->_scale;
-    atlas->_descent = static_cast<float>(descent) * atlas->_scale;
-
-    atlas->_lineHeight = static_cast<float>(ascent - descent + lineGap) * atlas->_scale;
+    atlas->initializeMetrics();
 
     return atlas;
 }
@@ -150,15 +165,60 @@ std::unique_ptr<FontAtlas> FontAtlas::builtinBitmap(const Desc &desc)
 {
     std::unique_ptr<FontAtlas> atlas(new FontAtlas(desc));
 
-    const AuraBitmapFont &font = GetDefaultBitmapFont();
-
-    atlas->_desc.pixelHeight = std::max(1.0f, std::round(desc.pixelHeight));
-    const float scale = atlas->_desc.pixelHeight / static_cast<float>(font.charHeight);
-    atlas->_ascent = static_cast<float>(font.baseline) * scale;
-    atlas->_descent = atlas->_ascent - atlas->_desc.pixelHeight;
-    atlas->_lineHeight = atlas->_desc.pixelHeight;
-
+    atlas->initializeMetrics();
     return atlas;
+}
+
+void FontAtlas::initializeMetrics()
+{
+    if (_font)
+    {
+        _scale = stbtt_ScaleForPixelHeight(&_font->info, _desc.pixelHeight);
+        int ascent = 0, descent = 0, lineGap = 0;
+        stbtt_GetFontVMetrics(&_font->info, &ascent, &descent, &lineGap);
+        _ascent = static_cast<float>(ascent) * _scale;
+        _descent = static_cast<float>(descent) * _scale;
+        _lineHeight = static_cast<float>(ascent - descent + lineGap) * _scale;
+        return;
+    }
+    const AuraBitmapFont &font = GetDefaultBitmapFont();
+    _desc.pixelHeight = std::max(1.0f, std::round(_desc.pixelHeight));
+    _bitmapLayout = font.layout(static_cast<u32>(_desc.pixelHeight));
+    _ascent = static_cast<float>(_bitmapLayout.ascent);
+    _descent = _ascent - _desc.pixelHeight;
+    _lineHeight = _desc.pixelHeight;
+}
+
+std::unique_ptr<FontAtlas> FontAtlas::createSharedSize(float pixelHeight) const
+{
+    Desc desc = _desc;
+    desc.pixelHeight = pixelHeight;
+    std::unique_ptr<FontAtlas> atlas(new FontAtlas(desc, _storage));
+    atlas->_font = _font;
+    atlas->initializeMetrics();
+    return atlas;
+}
+
+const void *FontAtlas::storageIdentity() const noexcept
+{
+    return _storage.get();
+}
+
+u64 FontAtlas::coverageRevision() const noexcept
+{
+    return _storage->revision;
+}
+
+bool FontAtlas::dirty() const noexcept
+{
+    return _storage->dirty;
+}
+
+bool FontAtlas::takeAllocationFailure() noexcept
+{
+    const bool failed = _failedAllocations != 0;
+    _failedAllocations = 0;
+    return failed;
 }
 
 const GlyphInfo *FontAtlas::glyph(char32_t codepoint)
@@ -167,6 +227,7 @@ const GlyphInfo *FontAtlas::glyph(char32_t codepoint)
         return &it->second;
 
     GlyphInfo info{};
+    const u32 failures = _failedAllocations;
     const bool ok = _font ? rasterizeTrueType(codepoint, info) : rasterizeBitmap(codepoint, info);
 
     if (!ok)
@@ -174,11 +235,14 @@ const GlyphInfo *FontAtlas::glyph(char32_t codepoint)
         if (codepoint == kReplacementGlyph)
             return nullptr;
 
+        const bool full = failures != _failedAllocations;
         const GlyphInfo *substitute = glyph(kReplacementGlyph);
         if (!substitute)
             return nullptr;
 
-        return &(_glyphs[codepoint] = *substitute);
+        // A full sheet may still fit this glyph later after a failed taller cell.
+        // Keep real missing-glyph substitutes cached, but never cache exhaustion.
+        return full ? substitute : &(_glyphs[codepoint] = *substitute);
     }
 
     return &(_glyphs[codepoint] = info);
@@ -212,7 +276,7 @@ bool FontAtlas::rasterizeTrueType(char32_t codepoint, GlyphInfo &out)
     if (!origin)
         return false;
 
-    u8 *dst = _coverage.data() + static_cast<size_t>(origin->y) * _desc.width + origin->x;
+    u8 *dst = _storage->coverage.data() + static_cast<size_t>(origin->y) * _desc.width + origin->x;
     stbtt_MakeGlyphBitmap(&_font->info, dst, static_cast<int>(glyphW), static_cast<int>(glyphH),
                           static_cast<int>(_desc.width), _scale, _scale, glyphIndex);
 
@@ -234,11 +298,11 @@ bool FontAtlas::rasterizeBitmap(char32_t codepoint, GlyphInfo &out)
         return false;
 
     const auto &glyph = font.data[static_cast<size_t>(codepoint)];
-    const AuraBitmapFont::Ink ink = font.ink(glyph);
-    const u32 glyphH = static_cast<u32>(_desc.pixelHeight);
-    const u32 glyphW = font.width(ink, glyphH);
+    const AuraBitmapFont::ScaledGlyph &scaled = _bitmapLayout.glyphs[static_cast<size_t>(codepoint)];
+    const auto glyphW = static_cast<u32>(scaled.columns.size());
+    const auto glyphH = static_cast<u32>(scaled.rows.size());
 
-    out.advance = static_cast<float>(font.advance(ink, glyphH));
+    out.advance = static_cast<float>(scaled.advance);
     out.bearing = {0.0f, 0.0f};
     out.size = {0.0f, 0.0f};
     if (glyphW == 0)
@@ -249,14 +313,13 @@ bool FontAtlas::rasterizeBitmap(char32_t codepoint, GlyphInfo &out)
     if (!origin)
         return false;
 
-    std::vector<u8> expanded(static_cast<size_t>(glyphW) * glyphH, 0);
     // Rasterize at device size with binary coverage, so drawing needs no resampling.
     for (u32 row = 0; row < glyphH; ++row)
+    {
+        u8 *dst = _storage->coverage.data() + static_cast<size_t>(origin->y + row) * _desc.width + origin->x;
         for (u32 col = 0; col < glyphW; ++col)
-            if (font.covers(glyph, ink, glyphW, glyphH, col, row))
-                expanded[static_cast<size_t>(row) * glyphW + col] = 255;
-
-    blitCoverage(expanded.data(), glyphW, *origin, glyphW, glyphH);
+            dst[col] = font.inked(glyph[scaled.rows[row]], scaled.columns[col]) ? 255 : 0;
+    }
     markDirty(origin->x, origin->y, glyphW, glyphH);
 
     const float atlasW = static_cast<float>(_desc.width);
@@ -286,8 +349,8 @@ float FontAtlas::kerning(char32_t left, char32_t right) const noexcept
 
 std::optional<glm::vec2> FontAtlas::solidTexelUv() noexcept
 {
-    if (_solidUv)
-        return _solidUv;
+    if (_storage->solidUv)
+        return _storage->solidUv;
 
     constexpr u32 kCellSize = 4;
 
@@ -301,10 +364,11 @@ std::optional<glm::vec2> FontAtlas::solidTexelUv() noexcept
     blitCoverage(opaque.data(), kCellSize, *origin, kCellSize, kCellSize);
     markDirty(origin->x, origin->y, kCellSize, kCellSize);
 
-    _solidUv = glm::vec2{(static_cast<float>(origin->x) + 0.5f * kCellSize) / static_cast<float>(_desc.width),
-                         (static_cast<float>(origin->y) + 0.5f * kCellSize) / static_cast<float>(_desc.height)};
+    _storage->solidUv =
+        glm::vec2{(static_cast<float>(origin->x) + 0.5f * kCellSize) / static_cast<float>(_desc.width),
+                  (static_cast<float>(origin->y) + 0.5f * kCellSize) / static_cast<float>(_desc.height)};
 
-    return _solidUv;
+    return _storage->solidUv;
 }
 
 const FontAtlas::UvRect *FontAtlas::cornerMask(u32 radius) noexcept
@@ -312,7 +376,7 @@ const FontAtlas::UvRect *FontAtlas::cornerMask(u32 radius) noexcept
     if (radius == 0 || radius > kMaxCornerRadius)
         return nullptr;
 
-    std::optional<UvRect> &slot = _cornerMasks[radius];
+    std::optional<UvRect> &slot = _storage->cornerMasks[radius];
     if (slot)
         return &*slot;
 
@@ -387,7 +451,7 @@ const FontAtlas::UvRect *FontAtlas::cornerRingMask(u32 radius, f32 width) noexce
     const u32 quantized =
         std::clamp(static_cast<u32>(std::lround(std::min(width, f32(radius)) * 256)), 1u, radius * 256);
     const u32 key = (radius << 16) | quantized;
-    if (auto it = _cornerRingMasks.find(key); it != _cornerRingMasks.end())
+    if (auto it = _storage->cornerRingMasks.find(key); it != _storage->cornerRingMasks.end())
         return &it->second;
     const auto origin = reserveCell(radius, radius);
     if (!origin)
@@ -423,7 +487,7 @@ const FontAtlas::UvRect *FontAtlas::cornerRingMask(u32 radius, f32 width) noexce
     markDirty(origin->x, origin->y, radius, radius);
     const UvRect uv{{f32(origin->x) / _desc.width, f32(origin->y) / _desc.height},
                     {f32(origin->x + radius) / _desc.width, f32(origin->y + radius) / _desc.height}};
-    return &_cornerRingMasks.emplace(key, uv).first->second;
+    return &_storage->cornerRingMasks.emplace(key, uv).first->second;
 }
 
 namespace
@@ -509,7 +573,7 @@ const FontAtlas::UvRect *FontAtlas::convexMask(u32 id, u32 size, std::span<const
     if (size == 0 || size > kMaxMaskSize || polygon.size() < 3 || polygon.size() > kMaxMaskVertices)
         return nullptr;
 
-    if (const auto it = _convexMasks.find(id); it != _convexMasks.end())
+    if (const auto it = _storage->convexMasks.find(id); it != _storage->convexMasks.end())
         return &it->second;
 
     const auto origin = reserveCell(size, size);
@@ -556,7 +620,7 @@ const FontAtlas::UvRect *FontAtlas::convexMask(u32 id, u32 size, std::span<const
     const auto atlasW = static_cast<float>(_desc.width);
     const auto atlasH = static_cast<float>(_desc.height);
 
-    const auto [entry, inserted] = _convexMasks.emplace(
+    const auto [entry, inserted] = _storage->convexMasks.emplace(
         id, UvRect{{static_cast<float>(origin->x) / atlasW, static_cast<float>(origin->y) / atlasH},
                    {static_cast<float>(origin->x + size) / atlasW, static_cast<float>(origin->y + size) / atlasH}});
 
@@ -566,87 +630,91 @@ const FontAtlas::UvRect *FontAtlas::convexMask(u32 id, u32 size, std::span<const
 std::optional<glm::uvec2> FontAtlas::reserveCell(u32 w, u32 h) noexcept
 {
     const u32 padding = _desc.padding;
+    const auto fail = [&]() -> std::optional<glm::uvec2>
+    {
+        ++_failedAllocations;
+        return std::nullopt;
+    };
+    if (w > _desc.width || h > _desc.height || padding > _desc.width - w || padding > _desc.height - h)
+        return fail();
+
     const u32 strideW = w + padding;
     const u32 strideH = h + padding;
-
-    if (strideW > _desc.width || strideH > _desc.height)
-        return std::nullopt;
-
-    if (_shelfX + strideW > _desc.width)
+    u32 x = _storage->shelfX;
+    u32 y = _storage->shelfY;
+    u32 shelfHeight = _storage->shelfHeight;
+    if (strideW > _desc.width - x)
     {
-        _shelfY += _shelfHeight;
-        _shelfX = 0;
-        _shelfHeight = 0;
+        y += shelfHeight;
+        x = 0;
+        shelfHeight = 0;
     }
+    if (strideH > _desc.height - y)
+        return fail();
 
-    if (_shelfY + strideH > _desc.height)
-        return std::nullopt;
-
-    const glm::uvec2 origin{_shelfX, _shelfY};
-
-    _shelfX += strideW;
-    _shelfHeight = std::max(_shelfHeight, strideH);
-
-    return origin;
+    // Commit only successful placements: a tall rejected cell must not discard
+    // usable space remaining on the current shelf.
+    _storage->shelfX = x + strideW;
+    _storage->shelfY = y;
+    _storage->shelfHeight = std::max(shelfHeight, strideH);
+    return glm::uvec2{x, y};
 }
 
 void FontAtlas::blitCoverage(const u8 *src, u32 srcStride, glm::uvec2 origin, u32 w, u32 h) noexcept
 {
     for (u32 row = 0; row < h; ++row)
     {
-        u8 *dst = _coverage.data() + static_cast<size_t>(origin.y + row) * _desc.width + origin.x;
+        u8 *dst = _storage->coverage.data() + static_cast<size_t>(origin.y + row) * _desc.width + origin.x;
         std::memcpy(dst, src + static_cast<size_t>(row) * srcStride, w);
     }
 }
 
 void FontAtlas::markDirty(u32 x, u32 y, u32 w, u32 h) noexcept
 {
-    if (!_dirty)
+    ++_storage->revision;
+    if (!_storage->dirty)
     {
-        _dirtyX0 = x;
-        _dirtyY0 = y;
-        _dirtyX1 = x + w;
-        _dirtyY1 = y + h;
-        _dirty = true;
+        _storage->dirtyX0 = x;
+        _storage->dirtyY0 = y;
+        _storage->dirtyX1 = x + w;
+        _storage->dirtyY1 = y + h;
+        _storage->dirty = true;
         return;
     }
 
-    _dirtyX0 = std::min(_dirtyX0, x);
-    _dirtyY0 = std::min(_dirtyY0, y);
-    _dirtyX1 = std::max(_dirtyX1, x + w);
-    _dirtyY1 = std::max(_dirtyY1, y + h);
+    _storage->dirtyX0 = std::min(_storage->dirtyX0, x);
+    _storage->dirtyY0 = std::min(_storage->dirtyY0, y);
+    _storage->dirtyX1 = std::max(_storage->dirtyX1, x + w);
+    _storage->dirtyY1 = std::max(_storage->dirtyY1, y + h);
 }
 
-std::optional<FontAtlas::PendingUpload> FontAtlas::takeDirtyUpload()
+std::optional<FontAtlas::PendingUpload> FontAtlas::takeUpload(u64 &revision)
 {
-    if (!_dirty)
+    Storage &storage = *_storage;
+    if (revision == storage.revision)
         return std::nullopt;
 
-    const DirtyRegion region{
-        _dirtyX0,
-        _dirtyY0,
-        _dirtyX1 - _dirtyX0,
-        _dirtyY1 - _dirtyY0,
-    };
+    //! Only the consumer that saw the last clean state can make do with the dirty rectangle.
+    DirtyRegion region{0, 0, _desc.width, _desc.height};
+    if (storage.dirty && revision == storage.cleanRevision)
+        region = {storage.dirtyX0, storage.dirtyY0, storage.dirtyX1 - storage.dirtyX0,
+                  storage.dirtyY1 - storage.dirtyY0};
 
-    _scratch.resize(static_cast<size_t>(region.width) * region.height * 4);
-
-    for (u32 row = 0; row < region.height; ++row)
+    const u8 *first = storage.coverage.data() + static_cast<size_t>(region.y) * _desc.width + region.x;
+    std::span<const u8> coverage{first, static_cast<size_t>(region.width) * region.height};
+    //! Whole rows are already contiguous; a narrower rectangle is packed.
+    if (region.width != _desc.width)
     {
-        const u8 *src = _coverage.data() + static_cast<size_t>(region.y + row) * _desc.width + region.x;
-        u8 *dst = _scratch.data() + static_cast<size_t>(row) * region.width * 4;
-
-        for (u32 col = 0; col < region.width; ++col)
-        {
-            dst[col * 4 + 0] = 0xFF;
-            dst[col * 4 + 1] = 0xFF;
-            dst[col * 4 + 2] = 0xFF;
-            dst[col * 4 + 3] = src[col];
-        }
+        storage.scratch.resize(coverage.size());
+        for (u32 row = 0; row < region.height; ++row)
+            std::memcpy(storage.scratch.data() + static_cast<size_t>(row) * region.width,
+                        first + static_cast<size_t>(row) * _desc.width, region.width);
+        coverage = storage.scratch;
     }
 
-    _dirty = false;
-    return PendingUpload{region, std::span<const u8>(_scratch)};
+    storage.dirty = false;
+    storage.cleanRevision = revision = storage.revision;
+    return PendingUpload{region, coverage};
 }
 
 } // namespace aura3d
