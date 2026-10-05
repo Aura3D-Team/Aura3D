@@ -54,6 +54,7 @@ class RecordingRenderer final : public IRenderer
     {
     }
 
+    using IRenderer::drawBatch;
     void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
                    gfx::BatchSpace space = gfx::BatchSpace::Screen) override
     {
@@ -400,12 +401,21 @@ void testRendererPrimitives()
 {
     RecordingRenderer renderer;
     const glm::vec4 tint{.2f, .4f, .8f, .5f};
+    gfx::Canvas shapes;
+    //! Draws what was added since the last call as one batch.
+    const auto submit = [&](gfx::BatchSpace space = gfx::BatchSpace::Screen)
+    {
+        renderer.drawBatch(shapes, {}, space);
+        shapes.clear();
+    };
+
     const std::array<std::array<glm::vec2, 2>, 3> segments{
         {{{{10, 10}, {30, 10}}}, {{{40, 10}, {40, 30}}}, {{{30, 40}, {10, 20}}}}};
     for (const auto &[from, to] : segments)
-        renderer.drawLine(from, to, tint, 4);
-    AURA_CHECK(renderer.batches.size() == 3 && renderer.vertexTotal == 12 && renderer.indicesInRange,
-               "horizontal, vertical and reversed diagonal lines are one quad each");
+        shapes.line(from, to, tint, 4);
+    submit();
+    AURA_CHECK(renderer.batches.size() == 1 && renderer.vertexTotal == 12 && renderer.indicesInRange,
+               "horizontal, vertical and reversed diagonal lines in one batch are one draw of a quad each");
     bool geometry = renderer.quads.size() == 12;
     for (usize i = 0; geometry && i < segments.size(); ++i)
     {
@@ -421,7 +431,8 @@ void testRendererPrimitives()
                "line quads preserve endpoints, width and straight-alpha tint without allocating textures");
 
     renderer.clear();
-    renderer.drawLine({5, 6}, {15, 6}, tint);
+    shapes.line(glm::vec2{5, 6}, glm::vec2{15, 6}, tint);
+    submit();
     AURA_CHECK(renderer.vertexTotal == 4 && renderer.batches.front().indexCount == 6,
                "single lines use the portable triangle path at the default one-pixel width");
 
@@ -429,28 +440,32 @@ void testRendererPrimitives()
     renderer.setTransform(
         {glm::mat4{1.0f}, glm::mat4{1.0f}, glm::perspectiveRH_NO(glm::radians(90.0f), aspect, 0.1f, 100.0f)});
     renderer.clear();
-    renderer.drawLine({0, 0}, {0, 0}, tint);
-    renderer.drawLine({0, 0}, {1, 1}, tint, -1);
-    renderer.drawLine({std::numeric_limits<f32>::infinity(), 0}, {1, 1}, tint);
-    renderer.drawLine(glm::vec3{0, 0, -5}, glm::vec3{0, 0, -5}, tint);
-    renderer.drawLine(glm::vec3{0, 0, 5}, glm::vec3{1, 0, 5}, tint);
-    renderer.drawLine(glm::vec3{0, 0, -2}, glm::vec3{0, 0, -20}, tint);
-    renderer.fillRect({}, {-1, 4}, tint);
-    renderer.fillTriangle({0, 0}, {1, 1}, {2, 2}, tint);
-    renderer.fillTriangle(glm::vec3{0, 0, -1}, glm::vec3{1, 1, -2}, glm::vec3{2, 2, -3}, tint);
-    AURA_CHECK(renderer.batches.empty() && renderer.sceneBatches.empty(),
-               "degenerate, nonfinite, behind-camera and end-on primitives emit no stale geometry");
+    const gfx::CanvasView view = renderer.canvasView();
+    shapes.line(glm::vec2{0, 0}, glm::vec2{0, 0}, tint);
+    shapes.line(glm::vec2{0, 0}, glm::vec2{1, 1}, tint, -1);
+    shapes.line(glm::vec2{std::numeric_limits<f32>::infinity(), 0}, glm::vec2{1, 1}, tint);
+    shapes.line(view, glm::vec3{0, 0, -5}, glm::vec3{0, 0, -5}, tint);
+    shapes.line(view, glm::vec3{0, 0, 5}, glm::vec3{1, 0, 5}, tint);
+    shapes.line(view, glm::vec3{0, 0, -2}, glm::vec3{0, 0, -20}, tint);
+    shapes.rect({}, {-1, 4}, tint);
+    shapes.triangle(glm::vec2{0, 0}, glm::vec2{1, 1}, glm::vec2{2, 2}, tint);
+    shapes.triangle(glm::vec3{0, 0, -1}, glm::vec3{1, 1, -2}, glm::vec3{2, 2, -3}, tint);
+    AURA_CHECK(shapes.empty(), "degenerate, nonfinite, behind-camera and end-on primitives add nothing");
+    submit();
+    AURA_CHECK(renderer.batches.empty() && renderer.sceneBatches.empty(), "an empty batch draws nothing");
 
-    renderer.fillRect({10, 20}, {30, 40}, tint);
-    renderer.fillTriangle({0, 0}, {10, 0}, {0, 10}, tint);
-    renderer.fillTriangle({0, 10}, {10, 0}, {0, 0}, tint);
-    AURA_CHECK(renderer.batches.size() == 3 && renderer.vertexTotal == 10 && renderer.indicesInRange &&
+    shapes.rect({10, 20}, {30, 40}, tint);
+    shapes.triangle(glm::vec2{0, 0}, glm::vec2{10, 0}, glm::vec2{0, 10}, tint);
+    shapes.triangle(glm::vec2{0, 10}, glm::vec2{10, 0}, glm::vec2{0, 0}, tint);
+    submit();
+    AURA_CHECK(renderer.batches.size() == 1 && renderer.vertexTotal == 10 && renderer.indicesInRange &&
                    renderer.quads[0].pos == glm::vec3(10, 20, 0) && renderer.quads[2].pos == glm::vec3(40, 60, 0),
                "rectangles and either triangle winding submit valid untextured geometry");
 
     //! A segment receding from the camera stays four pixels wide at both ends, at its own depth.
     renderer.clear();
-    renderer.drawLine(glm::vec3{-1, -1, -2}, glm::vec3{1, -1, -30}, tint, 4);
+    shapes.line(renderer.canvasView(), glm::vec3{-1, -1, -2}, glm::vec3{1, -1, -30}, tint, 4);
+    submit();
     bool constantWidth = renderer.batches.size() == 1 && renderer.quads.size() == 4 &&
                          renderer.batches.front().indexCount == 6 && renderer.indicesInRange;
     if (constantWidth)
@@ -474,7 +489,8 @@ void testRendererPrimitives()
     gfx::TransformUBO singular{glm::mat4{1}, glm::mat4{1}, glm::mat4{1}};
     singular.model[2][2] = 0;
     renderer.setTransform(singular);
-    renderer.drawLine(glm::vec3{-.5f, 0, 0}, glm::vec3{.5f, 0, 0}, tint, 4);
+    shapes.line(renderer.canvasView(), glm::vec3{-.5f, 0, 0}, glm::vec3{.5f, 0, 0}, tint, 4);
+    submit();
     AURA_CHECK(renderer.quads.size() == 4 &&
                    std::fabs(glm::length(glm::vec2(renderer.quads[3].pos - renderer.quads[0].pos)) - 4) < .01f,
                "a line under a singular model transform keeps its pixel width, needing no inverse");
@@ -482,7 +498,8 @@ void testRendererPrimitives()
 
     //! Crossing the camera plane beside the eye: only the part in front survives, as a valid quad.
     renderer.clear();
-    renderer.drawLine(glm::vec3{-1, 0, -5}, glm::vec3{3, 0, 5}, tint, 2);
+    shapes.line(renderer.canvasView(), glm::vec3{-1, 0, -5}, glm::vec3{3, 0, 5}, tint, 2);
+    submit();
     bool clipped = renderer.batches.size() == 1 && renderer.quads.size() == 4;
     for (usize i = 0; clipped && i < renderer.quads.size(); ++i)
         clipped &= std::isfinite(renderer.quads[i].pos.x) && renderer.quads[i].pos.z > -1e-4f;
@@ -492,18 +509,34 @@ void testRendererPrimitives()
     const auto [width, height] = std::array{static_cast<f32>(renderer.target.x), static_cast<f32>(renderer.target.y)};
     renderer.setTransform({glm::mat4{1.0f}, glm::mat4{1.0f}, glm::orthoRH_NO(0.0f, width, height, 0.0f, -1.0f, 1.0f)});
     renderer.clear();
-    renderer.drawLine(glm::vec2{30, 40}, glm::vec2{10, 20}, tint, 3);
-    renderer.drawLine(glm::vec3{30, 40, 0}, glm::vec3{10, 20, 0}, tint, 3);
+    shapes.line(glm::vec2{30, 40}, glm::vec2{10, 20}, tint, 3);
+    shapes.line(renderer.canvasView(), glm::vec3{30, 40, 0}, glm::vec3{10, 20, 0}, tint, 3);
+    submit();
     bool matching = renderer.quads.size() == 8;
     for (usize i = 0; matching && i < 4; ++i)
         matching = glm::length(glm::vec2(renderer.quads[i].pos - renderer.quads[i + 4].pos)) < .01f;
     AURA_CHECK(matching, "the 3D overload reduces to the 2D one under a pixel-space transform");
 
+    //! drawMeshes() hands the caller's model back, so World geometry after it is not moved by the last item.
+    const glm::mat4 world = renderer.batchTransform(gfx::BatchSpace::World);
+    IRenderer::DrawItem moved{};
+    moved.model[3] = glm::vec4{100.0f, 0.0f, 0.0f, 1.0f};
+    renderer.drawMeshes(std::span{&moved, 1});
     renderer.clear();
-    renderer.fillTriangle(glm::vec3{0, 0, 0}, glm::vec3{10, 0, 0}, glm::vec3{0, 10, 0}, tint);
+    shapes.line(glm::vec2{30, 40}, glm::vec2{10, 20}, tint, 3);
+    shapes.line(renderer.canvasView(), glm::vec3{30, 40, 0}, glm::vec3{10, 20, 0}, tint, 3);
+    submit();
+    bool unmoved = renderer.batchTransform(gfx::BatchSpace::World) == world && renderer.quads.size() == 8;
+    for (usize i = 0; unmoved && i < 4; ++i)
+        unmoved = glm::length(glm::vec2(renderer.quads[i].pos - renderer.quads[i + 4].pos)) < .01f;
+    AURA_CHECK(unmoved, "World lines after drawMeshes() use the caller's model, not the last mesh's");
+
+    renderer.clear();
+    shapes.triangle(glm::vec3{0, 0, 0}, glm::vec3{10, 0, 0}, glm::vec3{0, 10, 0}, tint);
+    submit(gfx::BatchSpace::World);
     AURA_CHECK(renderer.sceneBatches.size() == 1 && renderer.scene.size() == 3 && renderer.batches.empty() &&
                    renderer.scene[1].pos == glm::vec3(10, 0, 0),
-               "a 3D triangle goes through the scene batch, not the overlay");
+               "a World batch goes through the scene path, not the screen one");
 }
 
 void testScreenSpaceSharesClipConvention()

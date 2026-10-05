@@ -33,7 +33,7 @@ constexpr usize kMinAlign = alignof(BlockHeader);
         return nullptr;
 
     auto *payload =
-        reinterpret_cast<std::byte *>(INK_ALIGN_SIZE(reinterpret_cast<usize>(base) + sizeof(BlockHeader), align));
+        reinterpret_cast<std::byte *>(ink::align_up(reinterpret_cast<usize>(base) + sizeof(BlockHeader), align));
 
     const auto offset = static_cast<usize>(payload - base);
 

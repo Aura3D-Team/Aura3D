@@ -16,6 +16,7 @@
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Renderer/Canvas.h"
 #include "aura/Renderer/Material.h"
 #include "aura/Renderer/RenderHandles.h"
 
@@ -469,24 +470,21 @@ class IRenderer
      */
     virtual void draw(u32 vertexCount, u32 instanceCount = 1) = 0;
 
-    /// Unlit straight-alpha triangles in submission order, depth-tested less-or-equal without
-    /// depth writes: draw opaque meshes first and UI last. An invalid texture samples white;
-    /// both arrays may be reused on return.
+    /// One draw call of unlit straight-alpha triangles, in submission order with meshes,
+    /// depth-tested less-or-equal without depth writes: draw opaque meshes first and UI last.
+    /// An invalid texture samples white; both arrays may be reused on return.
     virtual void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
                            TextureHandle texture, gfx::BatchSpace space = gfx::BatchSpace::Screen) = 0;
 
-    /// Segment @p width render-target pixels wide with flat ends, drawn as one quad
-    /// through drawBatch(). Invalid or zero-length segments draw nothing.
-    void drawLine(glm::vec2 from, glm::vec2 to, const glm::vec4 &color, f32 width = 1.0f);
+    void drawBatch(const gfx::Canvas &canvas, TextureHandle texture = {},
+                   gfx::BatchSpace space = gfx::BatchSpace::Screen)
+    {
+        if (!canvas.empty())
+            drawBatch(canvas.vertices(), canvas.indices(), texture, space);
+    }
 
-    /// Depth-tested; @p width stays in pixels at any depth and the part behind the camera is clipped.
-    void drawLine(glm::vec3 from, glm::vec3 to, const glm::vec4 &color, f32 width = 1.0f);
-
-    /// Untextured shapes through drawBatch(). Nonfinite input, nonpositive sizes and
-    /// degenerate triangles draw nothing.
-    void fillRect(glm::vec2 origin, glm::vec2 size, const glm::vec4 &color);
-    void fillTriangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, const glm::vec4 &color);
-    void fillTriangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec4 &color);
+    /// The current camera and render target, for gfx::Canvas::line() in world space.
+    [[nodiscard]] gfx::CanvasView canvasView() const;
 
     /// Size of the render target in the pixels screen-space batches and line widths use.
     /// Backends report their live target; the base returns the window size it was built with.

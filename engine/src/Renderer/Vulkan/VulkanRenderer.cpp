@@ -54,6 +54,9 @@ namespace
     return attributes;
 }
 
+//! Camera slots per frame in flight; a frame's cameras past this overwrite the last slot.
+constexpr u32 kTransformSlots = 64;
+
 void declareBatchInterface(VkGraphicsPipelineManager &pipeline, u32 bindlessTextureCapacity)
 {
     pipeline.resetInterface();
@@ -100,9 +103,10 @@ void declareScene3DInterface(VkGraphicsPipelineManager &pipeline, u32 bindlessTe
 {
     pipeline.resetInterface();
 
+    //! Dynamic: each camera of a frame is a slot of one buffer, chosen at bind time.
     DescriptorBindingInfo uboBinding;
     uboBinding.binding = 0;
-    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     uboBinding.descriptorCount = 1;
     uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pipeline.addDescriptorBinding(0, uboBinding);
@@ -355,12 +359,16 @@ void VulkanRenderer::createUniformBuffers()
      */
     const u32 framesInFlight = GetMaxFramesInFlight();
 
-    _vkUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight);
+    const VkPhysicalDeviceProperties *properties = nullptr;
+    vmaGetPhysicalDeviceProperties(_memoryManager->getAllocator(), &properties);
+    _vkUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight, sizeof(gfx::TransformUBO),
+                                                  kTransformSlots, properties->limits.minUniformBufferOffsetAlignment);
 
     for (u32 i = 0; i < framesInFlight; ++i)
     {
-        _vkUniformBufferManager->updateUniformBuffer(i, const_cast<gfx::TransformUBO &>(_currentTransform));
+        _vkUniformBufferManager->updateUniformBuffer(i, _currentTransform);
     }
+    _transformSlotsUsed = 0;
 
     _vkLightUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight, sizeof(gfx::LightUBO));
 
@@ -423,7 +431,8 @@ void VulkanRenderer::createDescriptorSets()
             _vkDescriptorManager->allocateDescriptorSet(_vkGraphicsPipelineManager->getDescriptorSetLayout(0));
 
         VkDescriptorBufferInfo bufInfo = _vkUniformBufferManager->getDescriptorBufferInfo(i);
-        _vkDescriptorManager->updateDescriptorSet(_descSets[i], 0, bufInfo.buffer, bufInfo.range, bufInfo.offset);
+        _vkDescriptorManager->updateDescriptorSet(_descSets[i], 0, bufInfo.buffer, bufInfo.range, bufInfo.offset,
+                                                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);
 
         _lightDescSets[i] =
             _vkDescriptorManager->allocateDescriptorSet(_vkGraphicsPipelineManager->getDescriptorSetLayout(2));
@@ -1021,6 +1030,8 @@ void VulkanRenderer::beginFrame()
      */
     _batchVertexUsed[_currentFrame] = 0;
     _batchIndexUsed[_currentFrame] = 0;
+    //! This slot's camera ring starts over; the first setTransform() or beginRenderPass() fills slot 0.
+    _transformSlotsUsed = 0;
 
     for (AllocatedBuffer &retired : _batchRetiredBuffers[_currentFrame])
         _memoryManager->destroyBuffer(retired);
@@ -1054,7 +1065,8 @@ void VulkanRenderer::beginRenderPass()
     // Secondary buffers inherit no pipeline bindings.
     _recorded.reset();
 
-    _vkUniformBufferManager->updateUniformBuffer(_currentFrame, const_cast<gfx::TransformUBO &>(_currentTransform));
+    if (_transformSlotsUsed == 0)
+        publishTransform();
 }
 
 void VulkanRenderer::endRenderPass()
@@ -1134,11 +1146,20 @@ bool VulkanRenderer::needsFrame() const noexcept
 
 void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)
 {
+    const bool cameraChanged = ubo.view != _currentTransform.view || ubo.proj != _currentTransform.proj;
     _currentTransform = ubo;
-    //! Past this slot's fence, so meshes drawn after it see the camera World batches use.
-    if (_frameBegun)
-        _vkUniformBufferManager->updateUniformBuffer(_currentFrame, _currentTransform);
+    //! The model is a push constant, so only a new camera takes a slot; earlier meshes keep theirs.
+    if (_frameBegun && (cameraChanged || _transformSlotsUsed == 0))
+        publishTransform();
 }
+
+void VulkanRenderer::publishTransform()
+{
+    const u32 slot = std::min(_transformSlotsUsed, kTransformSlots - 1);
+    _vkUniformBufferManager->updateUniformBuffer(_currentFrame, _currentTransform, slot);
+    _transformSlotsUsed = slot + 1;
+}
+
 void VulkanRenderer::bindVertexBuffer(VertexBufferHandle handle)
 {
     _currentVertexBuffer = handle;
@@ -1181,7 +1202,9 @@ SceneBindings VulkanRenderer::sceneBindings() const
 {
     return {_vkGraphicsPipelineManager.get(),
             {_descSets[_currentFrame], _bindlessTextureSet, _lightDescSets[_currentFrame]},
-            *_vkSwapChainManager->getExtent2D()};
+            *_vkSwapChainManager->getExtent2D(),
+            static_cast<u32>(_vkUniformBufferManager->getSlotStride() *
+                             (_transformSlotsUsed > 0 ? _transformSlotsUsed - 1 : 0))};
 }
 
 void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
@@ -1230,9 +1253,9 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     _resolvedDraws.clear();
     _resolvedDraws.reserve(items.size());
 
+    //! Each draw carries its model; _currentTransform stays the caller's for later World batches.
     for (const DrawItem &item : items)
     {
-        _currentTransform.model = item.model;
         if (isValidHandle(item.material))
             bindMaterial(item.material);
 

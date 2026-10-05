@@ -1,6 +1,7 @@
 #include "aura/Renderer/Vulkan/VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
 
 #include "aura/Core/AuraException/AuraException.h"
+#include <algorithm>
 #include <cstring>
 
 #include "aura/aura.h"
@@ -20,12 +21,15 @@ VkUniformBufferManager::~VkUniformBufferManager()
     cleanup();
 }
 
-void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32 count, VkDeviceSize elementSize)
+void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32 count, VkDeviceSize elementSize,
+                                                  u32 slots, VkDeviceSize alignment)
 {
     cleanup();
 
     _elementSize = elementSize;
-    const VkDeviceSize bufferSize = _elementSize;
+    _slots = std::max(slots, 1u);
+    _slotStride = ink::align_up(_elementSize, std::max<VkDeviceSize>(alignment, 1));
+    const VkDeviceSize bufferSize = _slotStride * _slots;
     _buffers.resize(count);
 
     VmaAllocationCreateFlags flags =
@@ -43,14 +47,14 @@ void VkUniformBufferManager::createUniformBuffers(VkSharingMode sharingMode, u32
     }
 }
 
-void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, gfx::TransformUBO &ubo)
+void VkUniformBufferManager::updateUniformBuffer(u32 currentImage, const gfx::TransformUBO &ubo, u32 slot)
 {
-    updateUniformBufferRaw(currentImage, &ubo, sizeof(gfx::TransformUBO));
+    updateUniformBufferRaw(currentImage, &ubo, sizeof(gfx::TransformUBO), slot);
 }
 
-void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void *data, VkDeviceSize size)
+void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void *data, VkDeviceSize size, u32 slot)
 {
-    if (currentImage >= _buffers.size() || _buffers[currentImage].mappedData == nullptr || !data)
+    if (currentImage >= _buffers.size() || _buffers[currentImage].mappedData == nullptr || !data || slot >= _slots)
         return;
 
     AllocatedBuffer &allocatedBuffer = _buffers[currentImage];
@@ -62,8 +66,9 @@ void VkUniformBufferManager::updateUniformBufferRaw(u32 currentImage, const void
         return;
     }
 
-    std::memcpy(allocatedBuffer.mappedData, data, static_cast<size_t>(size));
-    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), allocatedBuffer.allocation, 0, size));
+    const VkDeviceSize offset = _slotStride * slot;
+    std::memcpy(static_cast<u8 *>(allocatedBuffer.mappedData) + offset, data, static_cast<size_t>(size));
+    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), allocatedBuffer.allocation, offset, size));
 }
 
 VkBuffer VkUniformBufferManager::getUniformBuffer(u32 index) const

@@ -96,6 +96,7 @@ class VulkanRenderer : public IRenderer
      * for batches too small for the hand-off to pay for itself.
      */
     void drawMeshes(std::span<const DrawItem> items) override;
+    using IRenderer::drawBatch;
     void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
                    gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
     [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;
@@ -188,6 +189,9 @@ class VulkanRenderer : public IRenderer
     [[nodiscard]] std::optional<std::pair<u32, u32>> uploadBatch(std::span<const gfx::BatchVertex> vertices,
                                                                  std::span<const u32> indices);
 
+    //! Writes the camera to the next slot of this frame's transform ring.
+    void publishTransform();
+
     void destroyBatchBuffers();
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
@@ -220,6 +224,9 @@ class VulkanRenderer : public IRenderer
     VkFixedArray<std::vector<AllocatedBuffer>> _batchRetiredBuffers;
     //! Opaque white in slot zero supplies untextured draws and invalid handles.
     TextureHandle _fallbackTexture;
+
+    //! Cameras this frame has written to its slot of the transform ring.
+    u32 _transformSlotsUsed = 0;
 
     VkFixedArray<VkCommandBuffer> _cmdBuffers;
 

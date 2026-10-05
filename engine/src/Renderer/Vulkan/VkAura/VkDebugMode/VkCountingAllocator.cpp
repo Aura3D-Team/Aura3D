@@ -180,7 +180,7 @@ void *VkCountingAllocator::allocate(usize size, usize alignment) noexcept
 
     auto *payload = base + sizeof(BlockHeader);
     const usize address = reinterpret_cast<usize>(payload);
-    payload += INK_ALIGN_SIZE(address, align) - address;
+    payload += ink::align_up(address, align) - address;
 
     const auto offset = static_cast<usize>(payload - base);
     if (offset > std::numeric_limits<u32>::max())

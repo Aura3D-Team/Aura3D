@@ -117,6 +117,9 @@ void frameRegions()
     AURA_CHECK(hit({0.5f, 120}) == Left && hit({479.5f, 120}) == Right && hit({240, 0.5f}) == Top &&
                    hit({240, 239.5f}) == Bottom,
                "each border resizes from its own edge");
+    AURA_CHECK(hit({4, 120}) == Left && hit({475.5f, 120}) == Right && hit({240, 236}) == Bottom &&
+                   hit({6, 120}) == Client && hit({240, 6}) == Caption,
+               "edges grab a few pixels in, past the thin painted border");
     AURA_CHECK(hit({0.5f, 10}) == TopLeft && hit({479.5f, 0.5f}) == TopRight && hit({10, 239.5f}) == BottomLeft &&
                    hit({479.5f, 230}) == BottomRight,
                "corners resize diagonally, even over the close button");

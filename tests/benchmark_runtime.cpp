@@ -129,7 +129,9 @@ int main(int argc, char **argv)
                 // Scene depth: the mesh hides the red batch triangle behind it, the
                 // blue 3D line in front of it shows, and the triangle shows beside it.
                 Probe{180, 215, {0, 255, 0}}, Probe{155, 215, {255, 0, 0}}, Probe{185, 222, {0, 0, 255}},
-                Probe{210, 215, {0, 0, 0}}};
+                Probe{210, 215, {0, 0, 0}},
+                // A second camera in the same pass moves only the mesh drawn after it.
+                Probe{285, 215, {0, 255, 0}}, Probe{265, 215, {0, 0, 0}}};
             struct Segment
             {
                 glm::vec2 from;
@@ -165,6 +167,20 @@ int main(int argc, char **argv)
                                                             {{8, 0, 0}, {.5f, .5f}, {1, 0, 1, 1}},
                                                             {{0, 8, 0}, {.5f, .5f}, {1, 0, 1, 1}}}};
             constexpr std::array<u32, 3> texturedIndices{0, 1, 2};
+            //! Built once and drawn every frame; each is one draw call.
+            gfx::Canvas behind;
+            behind.triangle(glm::vec3{150, 200, -0.5f}, glm::vec3{230, 200, -0.5f}, glm::vec3{150, 236, -0.5f},
+                            {1, 0, 0, 1});
+            gfx::Canvas shapes;
+            shapes.line({16, 24}, {96, 24}, {1, 0, 0, 1}, 8);
+            for (const Segment &segment : segments)
+                shapes.line(segment.from, segment.to, segment.color, 8);
+            shapes.rect({16, 144}, {80, 48}, {1, 1, 0, 1});
+            shapes.triangle(glm::vec2{128, 144}, glm::vec2{176, 144}, glm::vec2{128, 192}, {1, 0, 1, 1});
+            shapes.triangle(glm::vec2{240, 192}, glm::vec2{288, 144}, glm::vec2{240, 144}, {0, 1, 1, 1});
+            shapes.rect({256, 24}, {48, 48}, {1, 0, 0, 1});
+            shapes.line({280, 16}, {280, 80}, {0, 0, 1, .5f}, 16);
+            gfx::Canvas inFront;
             renderer.setClearColor(0, 0, 0, 1);
             u32 rendered = 0;
             u32 checkedPixels = 0;
@@ -176,19 +192,19 @@ int main(int argc, char **argv)
                 renderer.beginRenderPass();
                 renderer.setTransform({glm::mat4{1.0f}, glm::mat4{1.0f}, pixels});
                 renderer.drawMesh(occluderMesh, white);
-                renderer.fillTriangle(glm::vec3{150, 200, -0.5f}, glm::vec3{230, 200, -0.5f},
-                                      glm::vec3{150, 236, -0.5f}, {1, 0, 0, 1});
-                renderer.drawLine(glm::vec3{172, 222, 0.9f}, glm::vec3{198, 222, 0.9f}, {0, 0, 1, 1}, 2);
+                renderer.drawBatch(behind, {}, gfx::BatchSpace::World);
+                //! Projected with this frame's camera, so rebuilt each frame.
+                inFront.clear();
+                inFront.line(renderer.canvasView(), glm::vec3{172, 222, 0.9f}, glm::vec3{198, 222, 0.9f}, {0, 0, 1, 1},
+                             2);
+                renderer.drawBatch(inFront);
                 // Primitives must select the white fallback after a coverage draw.
                 renderer.drawBatch(textured, texturedIndices, emptyCoverage);
-                renderer.drawLine({16, 24}, {96, 24}, {1, 0, 0, 1}, 8);
-                for (const Segment &segment : segments)
-                    renderer.drawLine(segment.from, segment.to, segment.color, 8);
-                renderer.fillRect({16, 144}, {80, 48}, {1, 1, 0, 1});
-                renderer.fillTriangle({128, 144}, {176, 144}, {128, 192}, {1, 0, 1, 1});
-                renderer.fillTriangle({240, 192}, {288, 144}, {240, 144}, {0, 1, 1, 1});
-                renderer.fillRect({256, 24}, {48, 48}, {1, 0, 0, 1});
-                renderer.drawLine({280, 16}, {280, 80}, {0, 0, 1, .5f}, 16);
+                renderer.drawBatch(shapes);
+                glm::mat4 shifted{1.0f};
+                shifted[3].x = 100.0f;
+                renderer.setTransform({glm::mat4{1.0f}, shifted, pixels});
+                renderer.drawMesh(occluderMesh, white);
                 renderer.endRenderPass();
                 for (const auto &probe : probes)
                 {

@@ -101,7 +101,7 @@ r->createSolidColorTexture(r, g, b, a);        // -> TextureHandle
 r->setTransform(camera.buildUBO(modelMatrix)); // upload model/view/proj for the next draw
 r->bindMaterial(materialHandle);
 r->drawMesh(meshHandle);                       // the primary 3D draw path
-r->drawBatch(vertices, indices, texture);       // one batch, one draw call — see doc 7
+r->drawBatch(canvas, texture);               // a gfx::Canvas, one draw call — see doc 7
 ```
 
 **State**

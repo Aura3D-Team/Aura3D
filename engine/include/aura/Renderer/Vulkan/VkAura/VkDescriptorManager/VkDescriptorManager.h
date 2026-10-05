@@ -67,7 +67,7 @@ class VkDescriptorManager
      * @param offset Offset into the buffer
      */
     void updateDescriptorSet(VkDescriptorSet descriptorSet, u32 binding, VkBuffer buffer, VkDeviceSize size,
-                             VkDeviceSize offset = 0);
+                             VkDeviceSize offset = 0, VkDescriptorType type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
     void updateCombinedImageSamplerDescriptorSet(VkDescriptorSet descriptorSet, u32 binding, VkImageView imageView,
                                                  VkSampler sampler);

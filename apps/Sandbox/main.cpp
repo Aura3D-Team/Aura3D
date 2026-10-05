@@ -1261,14 +1261,14 @@ int main()
             // transform untouched.
             glm::vec2 corner{10.0f};
 #ifdef AURA_HAS_UI
-            //! Below the title bar a client-side decoration draws over the surface.
-            if (const ui::IWindowDecoration *decoration = ui.windowDecoration())
-                corner += decoration->contentRect().min * ui.root().scale();
+            //! Below the title bar a client-side decoration draws over the surface. The
+            //! root's content bounds already ignore a hidden (server-side) decoration.
+            corner += ui.root().contentBounds().min * ui.root().scale();
 #endif
-            overlay.drawFPS(corner.x, corner.y);
+            overlay.addFPS(corner.x, corner.y);
 
 #ifdef AURA_HAS_UI
-            //! overlay.fps() rather than a second average of our own: drawFPS()
+            //! overlay.fps() rather than a second average of our own: addFPS()
             //! above already smoothed it this frame, and reading it back is what
             //! keeps the corner and the card agreeing.
             char fps[32];
@@ -1278,7 +1278,11 @@ int main()
             //! Drawn only while the sidebar is down, so it stops being clutter the
             //! moment it has done its job.
             if (!sidebarOpen)
-                overlay.drawText("F1: tool sidebar", corner.x, corner.y + overlay.lineHeight());
+                overlay.addText("F1: tool sidebar", corner.x, corner.y + overlay.lineHeight());
+#endif
+            //! Both lines of text as one batch, under the sprite and the sidebar.
+            overlay.draw();
+#ifdef AURA_HAS_UI
 
             // -- 2D: the animated sprite, drawn independently of the UI ---------
             //! Regenerated above the render pass, not here; only the quad is

@@ -16,6 +16,9 @@ constexpr f32 kTitleInset = 16.0f;
 constexpr f32 kTitleGap = 12.0f;
 constexpr f32 kIconSize = 12.0f;
 constexpr f32 kBorder = 1.5f;
+/// Edges grab this far in, past the painted border: a surface without an invisible
+/// outer margin otherwise leaves a target too thin to hit with a mouse.
+constexpr f32 kResizeReach = 5.0f;
 /// How far along an edge from a corner the hit test reports a diagonal resize.
 constexpr f32 kCornerReach = 16.0f;
 
@@ -240,10 +243,10 @@ wma::WindowHit DefaultWindowDecoration::windowHit(glm::vec2 point) const
     if (_resizable && frame.contains(point) && !overlayTakesPress(point))
     {
         //! The outermost pixels resize, even over Close, so every corner works.
-        const bool top = point.y < frame.min.y + kBorder;
-        const bool bottom = point.y >= frame.max.y - kBorder;
-        const bool left = point.x < frame.min.x + kBorder;
-        const bool right = point.x >= frame.max.x - kBorder;
+        const bool top = point.y < frame.min.y + kResizeReach;
+        const bool bottom = point.y >= frame.max.y - kResizeReach;
+        const bool left = point.x < frame.min.x + kResizeReach;
+        const bool right = point.x >= frame.max.x - kResizeReach;
         const bool nearTop = point.y < frame.min.y + kCornerReach;
         const bool nearBottom = point.y >= frame.max.y - kCornerReach;
         const bool nearLeft = point.x < frame.min.x + kCornerReach;

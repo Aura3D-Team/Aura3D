@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <wma/managers/IWindowManager.hpp>
@@ -277,7 +278,8 @@ void CpuFrameBufferManager::drawLine(Point p0, Point p1, u32 color)
 
 float CpuFrameBufferManager::get_eased_time(float t_param, InterpolationMethod method)
 {
-    float t = INK_CLAMP(t_param, 0.0f, 1.0f);
+    //! NaN eases from the start.
+    float t = t_param > 0.0f ? std::min(t_param, 1.0f) : 0.0f;
     switch (method)
     {
     case InterpolationMethod::Linear:
@@ -441,15 +443,65 @@ void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex &v0, const 
     const glm::vec2 uv0w = p0->uv * p0->invW, uv1w = p1->uv * p1->invW, uv2w = p2->uv * p2->invW;
     const glm::vec4 col0w = p0->color * p0->invW, col1w = p1->color * p1->invW, col2w = p2->color * p2->invW;
 
+    //! Edge i's function is dx * (py - oy) - dy * (px - ox): edge 0 runs p1 -> p2, 1 p2 -> p0, 2 p0 -> p1.
+    const f32 ox0 = p1->x, oy0 = p1->y, dx0 = p2->x - p1->x, dy0 = p2->y - p1->y;
+    const f32 ox1 = p2->x, oy1 = p2->y, dx1 = p0->x - p2->x, dy1 = p0->y - p2->y;
+    const f32 ox2 = p0->x, oy2 = p0->y, dx2 = p1->x - p0->x, dy2 = p1->y - p0->y;
+    //! Narrow boxes keep the plain scan: there a row's span costs more than it skips.
+    constexpr i32 kMinSpanWidth = 16;
+    const bool walkSpans = xmax - xmin >= kMinSpanWidth;
+
     for (i32 y = ymin; y <= ymax; ++y)
     {
         const f32 py = static_cast<f32>(y) + 0.5f;
-        for (i32 x = xmin; x <= xmax; ++x)
+        const f32 row0 = dx0 * (py - oy0), row1 = dx1 * (py - oy1), row2 = dx2 * (py - oy2);
+
+        i32 xFirst = xmin;
+        i32 xLast = xmax;
+        if (walkSpans)
+        {
+            /*
+             * Walk only the row's span: a thin diagonal (every drawLine() quad)
+             * covers a sliver of its box. Each edge bounds px on one side where
+             * its function crosses zero; the bound carries a pixel of slack plus
+             * the edge function's float error, so the exact test below still
+             * decides every pixel it decided over the whole box.
+             */
+            f32 lo = static_cast<f32>(xmin);
+            f32 hi = static_cast<f32>(xmax);
+            bool rowEmpty = false;
+            const auto bound = [&](f32 row, f32 ox, f32 dy, bool topLeft)
+            {
+                if (dy == 0.0f)
+                {
+                    rowEmpty |= row < 0 || (row == 0 && !topLeft);
+                    return;
+                }
+                constexpr f32 kEpsilon = std::numeric_limits<f32>::epsilon();
+                const f32 offset = row / dy;
+                const f32 slack = 1.0f + 4.0f * kEpsilon * (std::abs(offset) + std::abs(ox));
+                //! Pixel x is centred on x + 0.5. A NaN bound leaves lo and hi as they were.
+                const f32 crossing = ox + offset - 0.5f;
+                if (dy > 0)
+                    hi = std::min(hi, crossing + slack);
+                else
+                    lo = std::max(lo, crossing - slack);
+            };
+            bound(row0, ox0, dy0, topLeft0);
+            bound(row1, ox1, dy1, topLeft1);
+            bound(row2, ox2, dy2, topLeft2);
+            if (rowEmpty || !(lo <= hi))
+                continue;
+            xFirst = static_cast<i32>(std::ceil(lo));
+            xLast = static_cast<i32>(std::floor(hi));
+        }
+
+        for (i32 x = xFirst; x <= xLast; ++x)
         {
             const f32 px = static_cast<f32>(x) + 0.5f;
-            const f32 w0 = (p2->x - p1->x) * (py - p1->y) - (p2->y - p1->y) * (px - p1->x);
-            const f32 w1 = (p0->x - p2->x) * (py - p2->y) - (p0->y - p2->y) * (px - p2->x);
-            const f32 w2 = (p1->x - p0->x) * (py - p0->y) - (p1->y - p0->y) * (px - p0->x);
+            const f32 w0 = row0 - dy0 * (px - ox0);
+            const f32 w1 = row1 - dy1 * (px - ox1);
+            const f32 w2 = row2 - dy2 * (px - ox2);
             if (w0 < 0 || (w0 == 0 && !topLeft0) || w1 < 0 || (w1 == 0 && !topLeft1) || w2 < 0 ||
                 (w2 == 0 && !topLeft2))
                 continue;

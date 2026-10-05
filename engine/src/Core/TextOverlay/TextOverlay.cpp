@@ -1,6 +1,7 @@
 #include "aura/Core/TextOverlay/TextOverlay.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <utility>
 
@@ -8,8 +9,7 @@ namespace aura3d
 {
 namespace
 {
-constexpr size_t kVerticesPerGlyph = 4;
-constexpr size_t kIndicesPerGlyph = 6;
+constexpr std::array<u32, 6> kGlyphIndices{0, 1, 2, 2, 3, 0};
 
 } // namespace
 
@@ -42,35 +42,29 @@ TextOverlay::TextOverlay(IRenderer *renderer, const TextOverlayDesc &desc) : _re
         INK_ERROR << "TextOverlay: could not allocate the glyph atlas texture";
 }
 
-void TextOverlay::drawText(std::string_view text, float x, float y, float scale)
+void TextOverlay::addText(std::string_view text, float x, float y, float scale)
 {
-    drawText(text, x, y, _color, scale);
+    addText(text, x, y, _color, scale);
 }
 
-void TextOverlay::drawText(std::string_view text, float x, float y, const glm::vec4 &color, float scale)
+void TextOverlay::addText(std::string_view text, float x, float y, const glm::vec4 &color, float scale)
 {
-    if (text.empty() || !isValidHandle(_atlasTexture))
-        return;
-
-    buildBatch(text, x, y, color, scale);
-
-    if (_indices.empty())
-        return;
-
-    uploadAtlasChanges();
-
-    _renderer->drawBatch(_vertices, _indices, _atlasTexture);
+    if (!text.empty() && isValidHandle(_atlasTexture))
+        appendText(text, x, y, color, scale);
 }
 
-void TextOverlay::buildBatch(std::string_view text, float x, float y, const glm::vec4 &color, float scale)
+void TextOverlay::draw()
 {
-    _vertices.clear();
-    _indices.clear();
+    if (!_batch.empty())
+    {
+        uploadAtlasChanges();
+        _renderer->drawBatch(_batch, _atlasTexture);
+    }
+    _batch.clear();
+}
 
-    const size_t glyphBudget = text.size();
-    _vertices.reserve(glyphBudget * kVerticesPerGlyph);
-    _indices.reserve(glyphBudget * kIndicesPerGlyph);
-
+void TextOverlay::appendText(std::string_view text, float x, float y, const glm::vec4 &color, float scale)
+{
     const float lineAdvance = _atlas->lineHeight() * scale;
 
     float penX = x;
@@ -106,19 +100,11 @@ void TextOverlay::buildBatch(std::string_view text, float x, float y, const glm:
             const float right = left + glyph->size.x * scale;
             const float bottom = top + glyph->size.y * scale;
 
-            const auto base = static_cast<u32>(_vertices.size());
-
-            _vertices.push_back({{left, top, 0}, {glyph->uvMin.x, glyph->uvMin.y}, color});
-            _vertices.push_back({{right, top, 0}, {glyph->uvMax.x, glyph->uvMin.y}, color});
-            _vertices.push_back({{right, bottom, 0}, {glyph->uvMax.x, glyph->uvMax.y}, color});
-            _vertices.push_back({{left, bottom, 0}, {glyph->uvMin.x, glyph->uvMax.y}, color});
-
-            _indices.push_back(base + 0);
-            _indices.push_back(base + 1);
-            _indices.push_back(base + 2);
-            _indices.push_back(base + 2);
-            _indices.push_back(base + 3);
-            _indices.push_back(base + 0);
+            const std::array<gfx::BatchVertex, 4> quad{{{{left, top, 0}, {glyph->uvMin.x, glyph->uvMin.y}, color},
+                                                        {{right, top, 0}, {glyph->uvMax.x, glyph->uvMin.y}, color},
+                                                        {{right, bottom, 0}, {glyph->uvMax.x, glyph->uvMax.y}, color},
+                                                        {{left, bottom, 0}, {glyph->uvMin.x, glyph->uvMax.y}, color}}};
+            _batch.append(quad, kGlyphIndices);
         }
 
         penX += glyph->advance * scale;
@@ -183,7 +169,7 @@ float TextOverlay::lineHeight(float scale) const noexcept
     return _atlas->lineHeight() * scale;
 }
 
-void TextOverlay::drawFPS(float x, float y, float scale)
+void TextOverlay::addFPS(float x, float y, float scale)
 {
     wma::IWindowManager *windowManager = _renderer->getWindowManager();
     if (!windowManager)
@@ -198,7 +184,7 @@ void TextOverlay::drawFPS(float x, float y, float scale)
         std::snprintf(_cachedFpsString, sizeof(_cachedFpsString), "FPS: %.0f", currentFps);
     }
 
-    drawText(_cachedFpsString, x, y, scale);
+    addText(_cachedFpsString, x, y, scale);
 }
 
 } // namespace aura3d

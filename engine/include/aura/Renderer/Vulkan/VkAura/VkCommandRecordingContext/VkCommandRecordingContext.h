@@ -62,6 +62,7 @@ struct SceneBindings
     VkGraphicsPipelineManager *pipeline = nullptr;
     std::array<VkDescriptorSet, 3> descriptorSets{}; //!< Transform, textures, light.
     VkExtent2D extent{};
+    u32 transformOffset = 0; //!< Dynamic offset of the camera slot in set 0.
 };
 
 /**
@@ -90,6 +91,7 @@ struct RecordedState
     //! rather than tracked per texture, so it folds in here with sets 0 and 2.
     bool staticSetsBound = false;
     bool viewportSet = false; //!< dynamic viewport + scissor
+    u32 transformOffset = 0;  //!< Set 0's dynamic offset, valid while staticSetsBound.
 
     void reset() noexcept
     {

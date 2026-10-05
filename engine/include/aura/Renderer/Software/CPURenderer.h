@@ -50,6 +50,7 @@ class CPURenderer : public IRenderer
     void bindTexture(TextureHandle handle) override;
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
+    using IRenderer::drawBatch;
     void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
                    gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
     [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;

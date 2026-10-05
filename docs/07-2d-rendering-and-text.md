@@ -12,8 +12,14 @@ const std::array<gfx::BatchVertex, 4> vertices{{
 constexpr std::array<u32, 6> indices{0, 1, 2, 2, 3, 0};
 r->drawBatch(vertices, indices, panelTexture);                        // screen pixels
 r->drawBatch(vertices, indices, panelTexture, gfx::BatchSpace::World); // through the transform
-r->drawLine(glm::vec2{16, 24}, glm::vec2{96, 24}, {1, 0, 0, 1}, 2);   // 2 px on screen
-r->drawLine(glm::vec3{0, 0, 0}, glm::vec3{0, 2, 0}, {0, 1, 0, 1}, 2); // 2 px at any depth
+
+gfx::Canvas canvas;                                                    // keeps capacity across frames
+canvas.line({16, 24}, {96, 24}, {1, 0, 0, 1}, 2);                      // 2 px on screen
+canvas.line(r->canvasView(), {0, 0, 0}, {0, 2, 0}, {0, 1, 0, 1}, 2);   // world, 2 px at any depth
+canvas.rect({16, 144}, {80, 48}, {1, 1, 0, 1});
+canvas.triangle(glm::vec2{128, 144}, {176, 144}, {128, 192}, {1, 0, 1, 1});
+r->drawBatch(canvas);                                                  // one draw call
+canvas.clear();
 ```
 
 One pipeline draws every batch, in submission order with meshes: unlit
@@ -23,10 +29,12 @@ Draw opaque meshes first and UI last.
 | `gfx::BatchSpace` | Positions |
 |---|---|
 | `Screen` (default) | Render-target pixels from the top-left; `z` is depth, `0` on the near plane (in front of everything), `1` on the far one. |
-| `World` | Through the current model, view and projection. |
+| `World` | Through the current model, view and projection. `drawMeshes()` leaves the model it was given. |
 
 - `{}` as the texture samples white, so the vertex colour alone shows. The arrays may be reused on return.
-- `drawLine` and `fillTriangle` take `vec2` for the screen or `vec3` for the world; `fillRect` is screen only. Each call is one batch.
+- Every `drawBatch` is one draw call. Put what shares a texture and space in one `gfx::Canvas`.
+- `line(r->canvasView(), ...)` projects with the camera current at that call; draw its batch in `Screen` space.
+- Invalid shapes (nonfinite, degenerate, zero width, invisible) add nothing.
 
 ## `TextOverlay`: text on top of `drawBatch`
 
@@ -44,9 +52,10 @@ desc.color       = {1, 1, 1, 1};
 TextOverlay overlay(r, desc); // built once — allocates the glyph atlas texture
 
 // per frame, between beginRenderPass()/endRenderPass():
-overlay.drawText("Score: 1200", 10.0f, 10.0f);
-overlay.drawText("Warning!", 10.0f, 40.0f, glm::vec4(1, 0.3f, 0.3f, 1)); // per-call color
-overlay.drawFPS(10.0f, 60.0f); // smoothed "FPS: <n>  (<ms> ms)"; overlay.fps() reads it back
+overlay.addText("Score: 1200", 10.0f, 10.0f);
+overlay.addText("Warning!", 10.0f, 40.0f, glm::vec4(1, 0.3f, 0.3f, 1)); // per-call color
+overlay.addFPS(10.0f, 60.0f); // smoothed "FPS: <n>  (<ms> ms)"; overlay.fps() reads it back
+overlay.draw();               // everything queued, one draw call
 ```
 
 **Font loading never fails visibly**: leave `fontPath` empty, or point it at
@@ -66,7 +75,7 @@ a new line; codepoints the font doesn't carry render as `?`.
 ```cpp
 glm::vec2 size = overlay.measureText("Game Over", 2.0f); // pixel bounds at this scale
 float lh = overlay.lineHeight(1.0f);                     // baseline-to-baseline distance
-overlay.setColor({1, 1, 0, 1});                            // default color for future drawText calls
+overlay.setColor({1, 1, 0, 1});                            // default color for future addText calls
 ```
 
 `measureText` is not `const` — measuring a string rasterizes any glyph in it
@@ -88,9 +97,9 @@ Coverage textures use one byte per texel (R8), sampled as white RGB plus alpha.
 A 1024×1024 sheet uses 1 MiB instead of 4 MiB, with one quarter of the upload bytes.
 The RGBA texture API remains available for images.
 
-Drawing a string walks it once, appends one quad per glyph into two vectors
-reused across frames, and hands the whole thing to `drawBatch` as a single
-draw call — a 500-character string costs one draw call, not 500.
+`addText` walks the string once and appends one quad per glyph to a batch
+reused across frames; `draw()` hands the frame's text to `drawBatch` as a
+single draw call — however many strings and characters it holds.
 
 AuraUI, the engine's widget toolkit, is the other consumer of this pipeline:
 panels, buttons and sliders, drawn entirely through `drawBatch` and this

@@ -11,23 +11,27 @@ All notable changes to Aura3D are documented in this file.
 - `UIRoot::setDecoration()` frames application content independently of it; content fills the decoration's `contentRect()`. Decoration controls use normal AuraUI styling, input, focus and accessibility.
 - `window.decorations` (`"server"` / `"client"`) and `AuraConfig::Window::decorations` request client-side decorations without a custom window factory.
 - `OverlayLayer::hasLightDismissible()`: whether a press outside would close something.
-- `drawLine()` and `fillTriangle()` take screen (`vec2`) or world (`vec3`) positions; `fillRect()` takes screen ones. World lines keep their pixel width at any depth and are depth-tested.
+- `gfx::Canvas`: lines, rectangles and triangles drawn by one `drawBatch(canvas)` call. World lines take `IRenderer::canvasView()` and keep their pixel width at any depth, depth-tested. A batch built once can be drawn every frame.
 
 ### Changed
 
 - Vulkan reuses the allocation-free parallel executor for recording, keeps chunk state local, and binds scene descriptors together. CPU triangle binning skips untouched row bands and screen batches skip the world transform.
+- The software rasterizer walks each row's covered span instead of the triangle's bounding box, so lines and thin triangles cost the pixels they cover.
+- Vulkan keeps up to 64 cameras per frame in a dynamic-offset uniform ring.
 - **Breaking:** `drawBatch2D()` and `gfx::Vertex2D` became `drawBatch()` and `gfx::BatchVertex`, with a `gfx::BatchSpace`: `Screen` (default; `z` is depth, 0 on the near plane) or `World`. Each backend draws every batch through one pipeline, in submission order with meshes.
+- **Breaking:** `TextOverlay::drawText()` and `drawFPS()` became `addText()` and `addFPS()`, which queue; `draw()` submits the frame's text as one batch.
 - **Breaking:** `FontAtlas::takeUpload(revision)` replaces `takeDirtyUpload()` and returns R8 coverage; each texture of a shared sheet keeps its own revision.
 - **Breaking:** removed the unused `gfx::Mesh2D` and `RENDERER_MODE_LIST`, and `CpuFrameBufferManager`'s `drawTriangle()`, `drawTriangle2D()`, `submitTriangles()` and `submitTriangles2D()`; `queueTriangle()` with a `RasterMode` replaces them.
 - Vulkan's scene and batch pipelines share one bindless texture table, and consecutive batches bind the frame's batch buffers once.
 - Vulkan builds its command-recording worker pool on the first `drawMeshes()` large enough to use it (512 draws), instead of one thread per core at startup. A default Sandbox runs 8 threads instead of 32.
 - Built-in shaders are embedded at build time from `resources/shaders`, so a shader edit takes effect on the next build. The committed `EmbeddedShaders.h`, `EmbeddedSpirv.h` and `EmbeddedMetalLib.h` and the `scripts/gen_embedded_*.sh` generators are gone. Vulkan builds require `glslc` or `glslangValidator`; `-DAURA_METAL_PRECOMPILE=ON` embeds a `.metallib` where Xcode's Metal toolchain is installed.
 - Font atlases upload single-channel coverage on Vulkan, OpenGL/WebGL, Metal and CPU. A 1024×1024 texture uses 1 MiB instead of 4 MiB; cached font sizes share packed sheets and draw batches.
-- Requires WMA 0.5 for native window controls and decoration negotiation.
+- Requires WMA 0.5 for native window controls and decoration negotiation, and ink 0.6.
 - Rounded embedded bitmap font with proportional spacing and exact device-size rasterization. Advances are whole device pixels and glyph quads align to them, keeping text sharp and evenly spaced without font downloads or glyph antialiasing.
 - The bitmap face scales row by row instead of by nearest sampling: shrinking drops padding and redundant rows first, and each glyph keeps its own most telling rows within aligned bands, so cap lines, crossbars and i dots survive at 11-13 px; growing repeats redundant rows, so strokes stay one pixel.
 - The software renderer's `drawText()` draws the new face proportionally. `fontSize` keeps its old meaning, 8 px of line height per step, so existing layouts keep their size.
 - Title-bar controls are full-height, square, flush-right caption buttons with 12 px glyphs and neutral, blue and red hover states.
+- The default decoration's edges resize from 5 px in; the painted border stays 1.5 px.
 
 ### Fixed
 
@@ -35,7 +39,9 @@ All notable changes to Aura3D are documented in this file.
 - `VK_RESULT_CHECK` evaluated a failing Vulkan call twice.
 - Vulkan threw and caught an exception several times a frame reading an absent `renderer.max_frames_in_flight`; the per-frame path no longer reads settings. The software renderer no longer allocates per present.
 - Vulkan meshes used the previous frame's camera when `setTransform()` followed `beginRenderPass()`, so they lagged world-space batches while the camera moved.
-- Sandbox drew its FPS counter under the client-side title bar.
+- Vulkan meshes now use the camera current when they are drawn. Every mesh of a frame took the last `setTransform()`'s view and projection, while world-space batches took the one current at their call.
+- World-space batches drawn after `drawMeshes()` were transformed by the last item's model matrix on every backend; `drawMeshes()` now leaves the caller's transform in place.
+- Sandbox drew its FPS counter under the client-side title bar, and below where it belongs with a server-side one.
 - OpenGL scene draws after a batch get their program, buffers and texture back, and an invalid texture samples white as on the other backends. Batches switch GL and Metal state once per run, not per call.
 - Vulkan batch-buffer growth keeps live allocations on failure. Software rasterization shares coverage rules across meshes and batches and preserves destination alpha.
 - Shared font caches synchronize correctly with multiple UI renderers and retain pending glyphs when texture creation fails. Commands that disappear after pixel snapping no longer split batches.

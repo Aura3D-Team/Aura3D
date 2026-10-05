@@ -1,6 +1,7 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
 #include <algorithm>
+#include <cctype>
 
 #include <wma/wma.hpp>
 

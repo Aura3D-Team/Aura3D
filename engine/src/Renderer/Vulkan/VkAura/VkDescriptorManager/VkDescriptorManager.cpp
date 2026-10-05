@@ -25,13 +25,17 @@ VkDescriptorManager::VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTexture
      * per-texture-per-image-per-pipeline scheme exhausted a 256-descriptor
      * pool around the 42nd texture).
      */
-    std::array<VkDescriptorPoolSize, 2> poolSizes = {};
+    std::array<VkDescriptorPoolSize, 3> poolSizes = {};
 
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<u32>(_pool_size);
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = bindlessTextureCapacity;
+
+    //! The transform set: one camera slot per setTransform(), picked by dynamic offset.
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    poolSizes[2].descriptorCount = static_cast<u32>(_pool_size);
 
     _poolCreateInfo = {};
     _poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -105,7 +109,7 @@ VkDescriptorSet VkDescriptorManager::allocateDescriptorSet(VkDescriptorSetLayout
  * The shader can then access this buffer through the binding point.
  */
 void VkDescriptorManager::updateDescriptorSet(VkDescriptorSet descriptorSet, u32 binding, VkBuffer buffer,
-                                              VkDeviceSize size, VkDeviceSize offset)
+                                              VkDeviceSize size, VkDeviceSize offset, VkDescriptorType type)
 {
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = buffer;
@@ -117,7 +121,7 @@ void VkDescriptorManager::updateDescriptorSet(VkDescriptorSet descriptorSet, u32
     writeDescriptorSet.dstSet = descriptorSet;
     writeDescriptorSet.dstBinding = binding;
     writeDescriptorSet.dstArrayElement = 0;
-    writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writeDescriptorSet.descriptorType = type;
     writeDescriptorSet.descriptorCount = 1;
     writeDescriptorSet.pBufferInfo = &bufferInfo;
 

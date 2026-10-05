@@ -110,8 +110,8 @@ struct Texture
     /// matching the wrap mode every GPU backend sets on its dynamic textures.
     [[nodiscard]] u32 texelClamped(int x, int y) const noexcept
     {
-        x = INK_CLAMP(x, 0, width - 1);
-        y = INK_CLAMP(y, 0, height - 1);
+        x = std::clamp(x, 0, width - 1);
+        y = std::clamp(y, 0, height - 1);
         const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
         return coverage.empty() ? data[index] : (static_cast<u32>(coverage[index]) << 24) | 0x00FFFFFFu;
     }
