@@ -406,17 +406,8 @@ template <bool Blended>
 void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex &v0, const ScreenVertex &v1,
                                                   const ScreenVertex &v2, const Texture *texture, i32 yStart, i32 yEnd)
 {
+    //! queueTriangle() rejected degenerate and nonfinite triangles once, not once per band.
     f32 area2 = signedArea2(v0, v1, v2);
-    if (!std::isfinite(area2) || std::abs(area2) < 1e-6f)
-        return;
-    for (const ScreenVertex *v : {&v0, &v1, &v2})
-    {
-        if (!std::isfinite(v->z) || !std::isfinite(v->invW) || v->invW <= 0)
-            return;
-        for (int channel = 0; channel < 4; ++channel)
-            if (!std::isfinite(v->color[channel]))
-                return;
-    }
 
     const f32 minX = std::min({v0.x, v1.x, v2.x}), maxX = std::max({v0.x, v1.x, v2.x});
     const f32 minY = std::min({v0.y, v1.y, v2.y}), maxY = std::max({v0.y, v1.y, v2.y});
@@ -442,6 +433,11 @@ void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex &v0, const 
     const bool affine = p0->invW == 1 && p1->invW == 1 && p2->invW == 1;
     const glm::vec2 uv0w = p0->uv * p0->invW, uv1w = p1->uv * p1->invW, uv2w = p2->uv * p2->invW;
     const glm::vec4 col0w = p0->color * p0->invW, col1w = p1->color * p1->invW, col2w = p2->color * p2->invW;
+    //! Canvas shapes and flat fills: every pixel takes the vertex color, so it is resolved once.
+    const bool flatUntextured = !texture && p0->color == p1->color && p1->color == p2->color;
+    const glm::vec4 flatSource = glm::clamp(p0->color, 0.0f, 1.0f) * 255.0f;
+    const f32 flatAlpha = flatSource.a / 255.0f;
+    const glm::vec4 flatWeighted = flatSource * flatAlpha;
 
     //! Edge i's function is dx * (py - oy) - dy * (px - ox): edge 0 runs p1 -> p2, 1 p2 -> p0, 2 p0 -> p1.
     const f32 ox0 = p1->x, oy0 = p1->y, dx0 = p2->x - p1->x, dy0 = p2->y - p1->y;
@@ -512,31 +508,34 @@ void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex &v0, const 
             if (settings.useDepthBuffer && (Blended ? z > dst.z : z >= dst.z))
                 continue;
 
-            glm::vec2 uv = b0 * uv0w + b1 * uv1w + b2 * uv2w;
-            glm::vec4 color = b0 * col0w + b1 * col1w + b2 * col2w;
-            // Orthographic batches avoid a reciprocal and perspective correction per fragment.
-            if (!affine)
+            glm::vec4 source = flatSource;
+            if (!flatUntextured)
             {
-                const f32 invW = b0 * p0->invW + b1 * p1->invW + b2 * p2->invW;
-                if (!(invW > 0))
-                    continue;
-                const f32 w = 1.0f / invW;
-                uv *= w;
-                color *= w;
+                glm::vec2 uv = b0 * uv0w + b1 * uv1w + b2 * uv2w;
+                glm::vec4 color = b0 * col0w + b1 * col1w + b2 * col2w;
+                // Orthographic batches avoid a reciprocal and perspective correction per fragment.
+                if (!affine)
+                {
+                    const f32 invW = b0 * p0->invW + b1 * p1->invW + b2 * p2->invW;
+                    if (!(invW > 0))
+                        continue;
+                    const f32 w = 1.0f / invW;
+                    uv *= w;
+                    color *= w;
+                }
+                color = glm::clamp(color, 0.0f, 1.0f);
+                const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
+                source = color * glm::vec4{(texel >> 16) & 255u, (texel >> 8) & 255u, texel & 255u, texel >> 24};
             }
-            color = glm::clamp(color, 0.0f, 1.0f);
-            const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
-            const glm::vec4 source =
-                color * glm::vec4{(texel >> 16) & 255u, (texel >> 8) & 255u, texel & 255u, texel >> 24};
             glm::vec4 output = source;
             if constexpr (Blended)
             {
-                const f32 alpha = source.a / 255.0f;
+                const f32 alpha = flatUntextured ? flatAlpha : source.a / 255.0f;
                 if (alpha <= 0)
                     continue;
                 const glm::vec4 background{(dst.rgb >> 16) & 255u, (dst.rgb >> 8) & 255u, dst.rgb & 255u,
                                            dst.rgb >> 24};
-                output = source * alpha + background * (1.0f - alpha);
+                output = (flatUntextured ? flatWeighted : source * alpha) + background * (1.0f - alpha);
                 output.a = source.a + background.a * (1.0f - alpha);
             }
             dst.rgb = (static_cast<u32>(output.a) << 24) | (static_cast<u32>(output.r) << 16) |
@@ -606,86 +605,136 @@ void CpuFrameBufferManager::dispatchRowBands(const std::function<void(i32 band, 
                     });
 }
 
-void CpuFrameBufferManager::binQueuedTriangles()
+namespace
 {
-    _bandBins.resize(_bandRanges.size());
-    for (std::vector<u32> &bin : _bandBins)
-        bin.clear();
 
-    if (_bandRanges.empty())
-        return;
-
-    for (u32 index = 0; index < _queuedTriangles.size(); ++index)
+//! Degenerate or nonfinite triangles are rejected once, at queue time, so no band repeats the checks.
+[[nodiscard]] bool acceptable(const ScreenTriangle &triangle) noexcept
+{
+    const f32 area2 = signedArea2(triangle.v0, triangle.v1, triangle.v2);
+    if (!std::isfinite(area2) || std::abs(area2) < 1e-6f)
+        return false;
+    for (const ScreenVertex *v : {&triangle.v0, &triangle.v1, &triangle.v2})
     {
-        const ScreenTriangle &tri = _queuedTriangles[index];
-
-        const float minYf = std::min({tri.v0.y, tri.v1.y, tri.v2.y});
-        const float maxYf = std::max({tri.v0.y, tri.v1.y, tri.v2.y});
-
-        //! Matches the row range rasterizeTriangleSpan() derives from the same
-        //! vertices, so a triangle is never binned away from a row it covers.
-        if (!(minYf < settings.height && maxYf >= 0))
-            continue;
-        const i32 minY = static_cast<i32>(std::max(0.0f, std::floor(minYf)));
-        const i32 maxY = static_cast<i32>(std::min(static_cast<f32>(settings.height - 1), std::ceil(maxYf)));
-
-        // Skip bands ending before the triangle, preserving submission order in every bin.
-        auto band = std::ranges::upper_bound(_bandRanges, minY, {}, &BandRange::yEnd);
-        for (; band != _bandRanges.end() && band->yStart <= maxY; ++band)
-            _bandBins[static_cast<usize>(band - _bandRanges.begin())].push_back(index);
+        if (!std::isfinite(v->z) || !std::isfinite(v->invW) || v->invW <= 0)
+            return false;
+        for (int channel = 0; channel < 4; ++channel)
+            if (!std::isfinite(v->color[channel]))
+                return false;
     }
+    return true;
 }
+
+[[nodiscard]] glm::vec2 rowsOf(const ScreenTriangle &triangle) noexcept
+{
+    return {std::min({triangle.v0.y, triangle.v1.y, triangle.v2.y}),
+            std::max({triangle.v0.y, triangle.v1.y, triangle.v2.y})};
+}
+
+//! A row extent no band reaches: the slot of a rejected triangle in a bulk-queued list.
+constexpr glm::vec2 kNoRows{std::numeric_limits<f32>::infinity(), -std::numeric_limits<f32>::infinity()};
+
+} // namespace
 
 void CpuFrameBufferManager::queueTriangle(const ScreenTriangle &triangle, const Texture *texture, RasterMode mode)
 {
+    if (!acceptable(triangle))
+        return;
+
     if (_queuedBatches.empty() || _queuedBatches.back().texture != texture || _queuedBatches.back().mode != mode)
+        _queuedBatches.push_back({texture, mode, _queuedCount, 0});
+    if (_queuedCount == _queuedTriangles.size())
     {
-        QueuedBatch batch;
-        batch.texture = texture;
-        batch.mode = mode;
-        batch.first = static_cast<u32>(_queuedTriangles.size());
-        batch.count = 0;
-        _queuedBatches.push_back(batch);
+        _queuedTriangles.emplace_back();
+        _queuedRows.emplace_back();
     }
-    _queuedTriangles.push_back(triangle);
+    _queuedTriangles[_queuedCount] = triangle;
+    _queuedRows[_queuedCount] = rowsOf(triangle);
+    ++_queuedCount;
     ++_queuedBatches.back().count;
+}
+
+void CpuFrameBufferManager::queueScreenTriangles(std::span<const gfx::BatchVertex> vertices,
+                                                 std::span<const u32> indices, const Texture *texture)
+{
+    const u32 count = static_cast<u32>(indices.size() / 3);
+    if (count == 0)
+        return;
+
+    const u32 first = _queuedCount;
+    if (_queuedTriangles.size() < first + count)
+    {
+        _queuedTriangles.resize(first + count);
+        _queuedRows.resize(first + count);
+    }
+    if (_queuedBatches.empty() || _queuedBatches.back().texture != texture ||
+        _queuedBatches.back().mode != RasterMode::Batch)
+        _queuedBatches.push_back({texture, RasterMode::Batch, first, 0});
+    _queuedBatches.back().count += count;
+    _queuedCount += count;
+
+    //! Each triangle owns its slot, so bands of the list convert without synchronisation.
+    const auto convert = [&](u32 begin, u32 end)
+    {
+        const auto toScreen = [](const gfx::BatchVertex &v) -> ScreenVertex
+        {
+            return {v.pos.x, v.pos.y, v.pos.z, 1, v.texCoord, v.color};
+        };
+        for (u32 t = begin; t < end; ++t)
+        {
+            const u32 i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
+            ScreenTriangle &triangle = _queuedTriangles[first + t];
+            glm::vec2 &rows = _queuedRows[first + t];
+            if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())
+            {
+                rows = kNoRows;
+                continue;
+            }
+            triangle = {toScreen(vertices[i0]), toScreen(vertices[i1]), toScreen(vertices[i2])};
+            rows = acceptable(triangle) ? rowsOf(triangle) : kNoRows;
+        }
+    };
+
+    //! Below this a pool wake-up costs more than the conversion it spreads.
+    constexpr u32 kParallelTriangles = 4096;
+    if (count < kParallelTriangles)
+        convert(0, count);
+    else
+        _jobs->dispatch(static_cast<i32>(count),
+                        [&](i32 begin, i32 end)
+                        {
+                            convert(static_cast<u32>(begin), static_cast<u32>(end));
+                        });
 }
 
 void CpuFrameBufferManager::flush()
 {
-    if (_queuedTriangles.empty())
+    if (_queuedCount == 0)
     {
         _queuedBatches.clear();
         return;
     }
 
     updateBandRanges();
-    binQueuedTriangles();
 
     dispatchRowBands(
-        [this](i32 band, i32 yStart, i32 yEnd)
+        [this](i32, i32 yStart, i32 yEnd)
         {
-            const std::vector<u32> &bin = _bandBins[static_cast<size_t>(band)];
-
             /*
-             * Walk the band's (ascending) triangle indices and the batch list
-             * together. Batches partition _queuedTriangles into contiguous ranges
-             * in submission order, so one linear pass visits every triangle in
-             * exactly the order it was submitted -- which is what keeps the
-             * blended 2D overlay compositing on top of the scene rather than
-             * under it -- while carrying each triangle's texture and mode along
-             * without storing them per triangle.
+             * Every band walks the whole queue in submission order -- which is
+             * what keeps blended batches compositing over earlier draws -- but
+             * reads a triangle only when its 8-byte row extent reaches the band,
+             * the same test rasterizeTriangleSpan() would make from all 144 bytes.
              */
-            size_t cursor = 0;
-
             for (const QueuedBatch &batch : _queuedBatches)
             {
-                const u32 end = batch.first + batch.count;
-
-                while (cursor < bin.size() && bin[cursor] < end)
+                for (u32 index = batch.first, end = batch.first + batch.count; index < end; ++index)
                 {
-                    const ScreenTriangle &tri = _queuedTriangles[bin[cursor]];
+                    const glm::vec2 rows = _queuedRows[index];
+                    if (rows.x >= static_cast<f32>(yEnd) || rows.y < static_cast<f32>(yStart))
+                        continue;
 
+                    const ScreenTriangle &tri = _queuedTriangles[index];
                     switch (batch.mode)
                     {
                     case RasterMode::Scene:
@@ -695,14 +744,12 @@ void CpuFrameBufferManager::flush()
                         rasterizeTriangleSpan<true>(tri.v0, tri.v1, tri.v2, batch.texture, yStart, yEnd);
                         break;
                     }
-
-                    ++cursor;
                 }
             }
         });
 
-    //! clear() keeps the capacity: the next frame reuses these allocations.
-    _queuedTriangles.clear();
+    //! The queue keeps its storage: the next frame reuses it without constructing anything.
+    _queuedCount = 0;
     _queuedBatches.clear();
 }
 

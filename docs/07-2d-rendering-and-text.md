@@ -20,6 +20,14 @@ canvas.rect({16, 144}, {80, 48}, {1, 1, 0, 1});
 canvas.triangle(glm::vec2{128, 144}, {176, 144}, {128, 192}, {1, 0, 1, 1});
 r->drawBatch(canvas);                                                  // one draw call
 canvas.clear();
+
+// Any other shape: triangles through append(); indices count from the first vertex passed.
+const std::array<gfx::BatchVertex, 4> corners{{{{200, 20, 0}, {}, {1, 0, 0, 1}},
+                                               {{300, 20, 0}, {}, {0, 1, 0, 1}},
+                                               {{300, 80, 0}, {}, {0, 0, 1, 1}},
+                                               {{200, 80, 0}, {}, {1, 1, 0, 1}}}};
+constexpr std::array<u32, 6> quad{0, 1, 2, 2, 3, 0};
+canvas.append(corners, quad);                                          // a gradient rectangle
 ```
 
 One pipeline draws every batch, in submission order with meshes: unlit
@@ -35,6 +43,7 @@ Draw opaque meshes first and UI last.
 - Every `drawBatch` is one draw call. Put what shares a texture and space in one `gfx::Canvas`.
 - `line(r->canvasView(), ...)` projects with the camera current at that call; draw its batch in `Screen` space.
 - Invalid shapes (nonfinite, degenerate, zero width, invisible) add nothing.
+- To move shapes, either rebuild the canvas each frame (`clear()` keeps its memory), or keep it and draw it in `World` space under a transform: `setTransform({model, view, projection})`.
 
 ## `TextOverlay`: text on top of `drawBatch`
 

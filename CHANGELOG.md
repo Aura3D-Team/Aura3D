@@ -18,6 +18,9 @@ All notable changes to Aura3D are documented in this file.
 - Vulkan reuses the allocation-free parallel executor for recording, keeps chunk state local, and binds scene descriptors together. CPU triangle binning skips untouched row bands and screen batches skip the world transform.
 - The software rasterizer walks each row's covered span instead of the triangle's bounding box, so lines and thin triangles cost the pixels they cover.
 - Vulkan keeps up to 64 cameras per frame in a dynamic-offset uniform ring.
+- Vulkan batch buffers live in system memory: the CPU copy no longer crosses PCIe as it is written. 25,000 moving canvas shapes: 900 to 575 µs per frame on an RTX 4060 Ti.
+- The software rasterizer resolves flat untextured triangles once per triangle, validates at queue time, drops its binning pass, and converts large screen batches across its workers: 2,880 to 2,050 µs for the same scene.
+- `benchmark_runtime <backend> canvas` measures that scene.
 - **Breaking:** `drawBatch2D()` and `gfx::Vertex2D` became `drawBatch()` and `gfx::BatchVertex`, with a `gfx::BatchSpace`: `Screen` (default; `z` is depth, 0 on the near plane) or `World`. Each backend draws every batch through one pipeline, in submission order with meshes.
 - **Breaking:** `TextOverlay::drawText()` and `drawFPS()` became `addText()` and `addFPS()`, which queue; `draw()` submits the frame's text as one batch.
 - **Breaking:** `FontAtlas::takeUpload(revision)` replaces `takeDirtyUpload()` and returns R8 coverage; each texture of a shared sheet keeps its own revision.

@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -251,6 +252,77 @@ int main(int argc, char **argv)
             std::printf("PRIMITIVES backend=%s rendered_frames=%u checked_pixels=%u\n", argv[1], rendered,
                         checkedPixels);
             return rendered == 12 ? 0 : 1;
+        }
+        if (argc > 2 && std::string_view(argv[2]) == "canvas")
+        {
+            //! A particle field moved and rebuilt every frame: the Canvas path end to end.
+            constexpr u32 kRects = 20000;
+            constexpr u32 kLines = 5000;
+            constexpr glm::vec2 kArea{318.0f, 238.0f};
+            struct Particle
+            {
+                glm::vec2 position;
+                glm::vec2 velocity;
+                glm::vec4 color;
+            };
+            std::vector<Particle> particles(kRects + kLines);
+            for (u32 i = 0; i < particles.size(); ++i)
+            {
+                const auto n = static_cast<f32>(i);
+                particles[i] = {{std::fmod(n * 7.3f, kArea.x), std::fmod(n * 3.1f, kArea.y)},
+                                {20.0f + static_cast<f32>(i % 50), 13.0f - static_cast<f32>(i % 37)},
+                                {static_cast<f32>(i % 255) / 255.0f, .5f, 1.0f, i < kRects ? 1.0f : .6f}};
+            }
+            const auto update = [&]
+            {
+                for (Particle &particle : particles)
+                {
+                    particle.position += particle.velocity * (1.0f / 60.0f);
+                    for (int axis = 0; axis < 2; ++axis)
+                    {
+                        if (particle.position[axis] < 0.0f)
+                            particle.position[axis] += kArea[axis];
+                        else if (particle.position[axis] >= kArea[axis])
+                            particle.position[axis] -= kArea[axis];
+                    }
+                }
+            };
+            gfx::Canvas canvas;
+            const auto build = [&]
+            {
+                update();
+                canvas.clear();
+                for (u32 i = 0; i < kRects; ++i)
+                    canvas.rect(particles[i].position, {2, 2}, particles[i].color);
+                for (u32 i = kRects; i < particles.size(); ++i)
+                    canvas.line(particles[i].position, particles[i].position + particles[i].velocity * 0.25f,
+                                particles[i].color, 1.5f);
+            };
+            measure("canvas_update", 120, update);
+            measure("canvas_build", 120, build);
+            const auto frame = [&](bool draw)
+            {
+                renderer.beginFrame();
+                renderer.beginRenderPass();
+                if (draw)
+                {
+                    build();
+                    renderer.drawBatch(canvas);
+                }
+                renderer.endRenderPass();
+                renderer.endFrame();
+            };
+            measure("canvas_empty_frame", 120,
+                    [&]
+                    {
+                        frame(false);
+                    });
+            measure("canvas_frame", 120,
+                    [&]
+                    {
+                        frame(true);
+                    });
+            return 0;
         }
         if (argc > 2 && std::string_view(argv[2]) == "coverage")
         {

@@ -1,9 +1,7 @@
 #include "aura/Renderer/Canvas.h"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
-#include <optional>
 
 namespace aura3d
 {
@@ -12,20 +10,10 @@ namespace gfx
 namespace
 {
 
-constexpr std::array<u32, 6> kQuadIndices{0, 1, 2, 2, 3, 0};
-constexpr std::array<u32, 3> kTriangleIndices{0, 1, 2};
-
-template <glm::length_t N, glm::qualifier Q> [[nodiscard]] bool finite(const glm::vec<N, f32, Q> &value) noexcept
+//! x - x is 0 for finite x and NaN for NaN or infinity, so one comparison tests a whole vector.
+template <glm::length_t N> [[nodiscard]] bool finite(const glm::vec<N, f32> &value) noexcept
 {
-    for (glm::length_t i = 0; i < N; ++i)
-        if (!std::isfinite(value[i]))
-            return false;
-    return true;
-}
-
-[[nodiscard]] bool visible(const glm::vec4 &color) noexcept
-{
-    return color.a > 0.0f && finite(color);
+    return value - value == glm::vec<N, f32>(0.0f);
 }
 
 //! Keeps the part of [a, b] on the non-negative side of a plane, given each end's signed distance.
@@ -40,26 +28,11 @@ template <glm::length_t N, glm::qualifier Q> [[nodiscard]] bool finite(const glm
     return true;
 }
 
-//! Quad @p width wide around [@p from, @p to] in x and y, flat-ended; nullopt draws nothing.
-[[nodiscard]] std::optional<std::array<BatchVertex, 4>> lineQuad(glm::vec3 from, glm::vec3 to, const glm::vec4 &color,
-                                                                 f32 width) noexcept
-{
-    const f32 length = std::hypot(to.x - from.x, to.y - from.y);
-    if (!finite(from) || !finite(to) || !visible(color) || !(width > 0.0f) || !std::isfinite(width) ||
-        !(length > 0.0f) || !std::isfinite(length))
-        return std::nullopt;
-
-    const glm::vec3 normal{glm::vec2{from.y - to.y, to.x - from.x} * (width * 0.5f / length), 0.0f};
-    return std::array<BatchVertex, 4>{
-        {{from - normal, {}, color}, {to - normal, {}, color}, {to + normal, {}, color}, {from + normal, {}, color}}};
-}
-
 } // namespace
 
 void Canvas::line(glm::vec2 from, glm::vec2 to, const glm::vec4 &color, f32 width)
 {
-    if (const auto quad = lineQuad({from, 0.0f}, {to, 0.0f}, color, width))
-        append(*quad, kQuadIndices);
+    segment({from, 0.0f}, {to, 0.0f}, color, width);
 }
 
 void Canvas::line(const CanvasView &view, glm::vec3 from, glm::vec3 to, const glm::vec4 &color, f32 width)
@@ -85,21 +58,16 @@ void Canvas::line(const CanvasView &view, glm::vec3 from, glm::vec3 to, const gl
         return glm::vec3{(ndc.x + 1.0f) * 0.5f * view.target.x, (1.0f - ndc.y) * 0.5f * view.target.y,
                          zeroToOne ? ndc.z : (ndc.z + 1.0f) * 0.5f};
     };
-    if (const auto quad = lineQuad(toScreen(a), toScreen(b), color, width))
-        append(*quad, kQuadIndices);
+    segment(toScreen(a), toScreen(b), color, width);
 }
 
 void Canvas::rect(glm::vec2 origin, glm::vec2 size, const glm::vec4 &color)
 {
     const glm::vec2 end = origin + size;
-    if (!finite(origin) || !finite(end) || !(size.x > 0.0f) || !(size.y > 0.0f) || !visible(color))
+    if (!(size.x > 0.0f) || !(size.y > 0.0f) || !(color.a > 0.0f) || !finite(glm::vec4{origin, end}) || !finite(color))
         return;
-
-    const std::array<BatchVertex, 4> quad{{{{origin, 0.0f}, {}, color},
-                                           {{end.x, origin.y, 0.0f}, {}, color},
-                                           {{end, 0.0f}, {}, color},
-                                           {{origin.x, end.y, 0.0f}, {}, color}}};
-    append(quad, kQuadIndices);
+    quad({{origin, 0.0f}, {}, color}, {{end.x, origin.y, 0.0f}, {}, color}, {{end, 0.0f}, {}, color},
+         {{origin.x, end.y, 0.0f}, {}, color});
 }
 
 void Canvas::triangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, const glm::vec4 &color)
@@ -110,25 +78,66 @@ void Canvas::triangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, const glm::vec4 &co
 void Canvas::triangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec4 &color)
 {
     //! In double, so rounding cannot call a thin valid triangle degenerate.
-    if (!finite(a) || !finite(b) || !finite(c) || !visible(color) ||
+    if (!(color.a > 0.0f) || !finite(a) || !finite(b) || !finite(c) || !finite(color) ||
         glm::cross(glm::dvec3(b) - glm::dvec3(a), glm::dvec3(c) - glm::dvec3(a)) == glm::dvec3(0.0))
         return;
-
-    const std::array<BatchVertex, 3> corners{{{a, {}, color}, {b, {}, color}, {c, {}, color}}};
-    append(corners, kTriangleIndices);
+    const auto base = static_cast<u32>(_vertices.size());
+    _vertices.push_back({a, {}, color});
+    _vertices.push_back({b, {}, color});
+    _vertices.push_back({c, {}, color});
+    const std::array<u32, 3> corners{base, base + 1, base + 2};
+    _indices.insert(_indices.end(), corners.begin(), corners.end());
 }
 
 void Canvas::append(std::span<const BatchVertex> vertices, std::span<const u32> indices)
 {
     const auto base = static_cast<u32>(_vertices.size());
     _vertices.insert(_vertices.end(), vertices.begin(), vertices.end());
-    const usize first = _indices.size();
-    _indices.resize(first + indices.size());
-    std::ranges::transform(indices, _indices.begin() + static_cast<std::ptrdiff_t>(first),
-                           [base](u32 index)
-                           {
-                               return index + base;
-                           });
+    for (const u32 index : indices)
+        _indices.push_back(base + index);
+}
+
+void Canvas::clear() noexcept
+{
+    _vertices.clear();
+    _indices.clear();
+}
+
+bool Canvas::empty() const noexcept
+{
+    return _indices.empty();
+}
+
+std::span<const BatchVertex> Canvas::vertices() const noexcept
+{
+    return _vertices;
+}
+
+std::span<const u32> Canvas::indices() const noexcept
+{
+    return _indices;
+}
+
+void Canvas::segment(glm::vec3 from, glm::vec3 to, const glm::vec4 &color, f32 width)
+{
+    const glm::vec2 d{to.x - from.x, to.y - from.y};
+    const f32 lengthSq = d.x * d.x + d.y * d.y;
+    if (!(width > 0.0f) || !(color.a > 0.0f) || !(lengthSq > 0.0f) || !finite(glm::vec4{from, width}) ||
+        !finite(glm::vec4{to, lengthSq}) || !finite(color))
+        return;
+    const glm::vec3 normal{glm::vec2{-d.y, d.x} * (width * 0.5f / std::sqrt(lengthSq)), 0.0f};
+    quad({from - normal, {}, color}, {to - normal, {}, color}, {to + normal, {}, color}, {from + normal, {}, color});
+}
+
+void Canvas::quad(const BatchVertex &a, const BatchVertex &b, const BatchVertex &c, const BatchVertex &d)
+{
+    const auto base = static_cast<u32>(_vertices.size());
+    _vertices.push_back(a);
+    _vertices.push_back(b);
+    _vertices.push_back(c);
+    _vertices.push_back(d);
+    const std::array<u32, 6> corners{base, base + 1, base + 2, base + 2, base + 3, base};
+    _indices.insert(_indices.end(), corners.begin(), corners.end());
 }
 
 } // namespace gfx

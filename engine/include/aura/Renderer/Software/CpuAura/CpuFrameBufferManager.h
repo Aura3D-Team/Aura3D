@@ -315,6 +315,11 @@ class CpuFrameBufferManager
      */
     void queueTriangle(const ScreenTriangle &triangle, const Texture *texture, RasterMode mode = RasterMode::Scene);
 
+    /// Queues a Batch-mode triangle list whose positions are already pixels with depth in z.
+    /// Large lists convert across the worker pool; indices past @p vertices are skipped.
+    void queueScreenTriangles(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
+                              const Texture *texture);
+
     // Text rendering. fontSize is 8 px of line height per step; 2 is the embedded face's native size.
     void drawText(const std::string &text, Point p, u32 color, u32 fontSize = 2);
 
@@ -356,15 +361,12 @@ class CpuFrameBufferManager
 
     //! Splits [0, settings.height) into row-bands and runs @p rasterizeBand(band,
     //! yStart, yEnd) on each, blocking until all complete. Band boundaries come
-    //! from _bandRanges, so binning and rasterisation always agree on them.
+    //! from _bandRanges.
     void dispatchRowBands(const std::function<void(i32 band, i32 yStart, i32 yEnd)> &rasterizeBand);
 
     //! Recomputes _bandRanges for the current height and worker count. Cheap,
     //! and called once per flush() so a resize cannot leave stale boundaries.
     void updateBandRanges();
-
-    //! Buckets every queued triangle into the bands its bounding box touches.
-    void binQueuedTriangles();
 
     /**
      * @brief One draw call's worth of queued triangles.
@@ -424,18 +426,15 @@ class CpuFrameBufferManager
      * which is allocation churn proportional to the scene's object count.
      */
 
-    //! Every triangle queued this frame, in submission order.
+    //! Every triangle queued this frame, in submission order: the first _queuedCount entries.
+    //! Both arrays keep their high-water size, so a frame never constructs triangles it overwrites.
     std::vector<ScreenTriangle> _queuedTriangles;
+    //! Each queued triangle's y extent, so a band tests 8 bytes per triangle rather than 144.
+    std::vector<glm::vec2> _queuedRows;
+    u32 _queuedCount = 0;
     //! Contiguous, ordered partition of _queuedTriangles; one per draw call.
     std::vector<QueuedBatch> _queuedBatches;
-    /*
-     * Per-band indices into _queuedTriangles, ascending. Built by
-     * binQueuedTriangles() so a band rasterises only the triangles whose
-     * bounding box actually reaches its rows, instead of scanning the whole
-     * frame's list to reject most of it.
-     */
-    std::vector<std::vector<u32>> _bandBins;
-    //! Row range owned by each band; index-aligned with _bandBins. One band
+    //! Row range owned by each band. One band
     //! per worker (see updateBandRanges()) -- JobSystem::dispatch() statically
     //! partitions its item range across the pool, so oversplitting into more
     //! bands than workers no longer buys anything: there is no shared task

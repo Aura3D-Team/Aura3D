@@ -460,9 +460,16 @@ void CPURenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::spa
         return;
 
     const Texture *sampled = _resolveTexture(texture);
+    // Screen batches already use the rasterizer's pixel and depth coordinates.
+    if (space == gfx::BatchSpace::Screen)
+    {
+        _frameBufferManager->queueScreenTriangles(vertices, indices, sampled);
+        return;
+    }
+
     const f32 width = static_cast<f32>(_frameBufferManager->getWidth());
     const f32 height = static_cast<f32>(_frameBufferManager->getHeight());
-    const glm::mat4 transform = space == gfx::BatchSpace::World ? batchTransform(space) : glm::mat4{1};
+    const glm::mat4 transform = batchTransform(space);
     const auto emit = [&](const ScreenTriangle &triangle)
     {
         _frameBufferManager->queueTriangle(triangle, sampled, CpuFrameBufferManager::RasterMode::Batch);
@@ -471,22 +478,13 @@ void CPURenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::spa
     {
         return {transform * glm::vec4(v.pos, 1), v.texCoord, v.color};
     };
-    const auto toScreen = [](const gfx::BatchVertex &v) -> ScreenVertex
-    {
-        return {v.pos.x, v.pos.y, v.pos.z, 1, v.texCoord, v.color};
-    };
 
     for (usize t = 0; t + 2 < indices.size(); t += 3)
     {
         const u32 i0 = indices[t], i1 = indices[t + 1], i2 = indices[t + 2];
         if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())
             continue;
-
-        // Screen batches already use the rasterizer's pixel and depth coordinates.
-        if (space == gfx::BatchSpace::Screen)
-            emit({toScreen(vertices[i0]), toScreen(vertices[i1]), toScreen(vertices[i2])});
-        else
-            clipTriangle(toClip(vertices[i0]), toClip(vertices[i1]), toClip(vertices[i2]), width, height, emit, false);
+        clipTriangle(toClip(vertices[i0]), toClip(vertices[i1]), toClip(vertices[i2]), width, height, emit, false);
     }
 }
 
