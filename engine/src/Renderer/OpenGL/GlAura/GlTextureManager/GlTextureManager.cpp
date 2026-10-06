@@ -32,7 +32,6 @@ TextureHandle GlTextureManager::createTextureFromPixels(const u8 *rgba, u32 widt
         return {};
     }
 
-    auto handle = _nextHandle++;
     GlTextureData data;
     data.width = width;
     data.height = height;
@@ -54,8 +53,8 @@ TextureHandle GlTextureManager::createTextureFromPixels(const u8 *rgba, u32 widt
 
     restoreBinding();
 
-    _textures[handle] = data;
-    return handle;
+    _textures.push_back(data);
+    return TextureHandle{static_cast<u32>(_textures.size())};
 }
 
 TextureHandle GlTextureManager::createDynamicTexture(u32 width, u32 height)
@@ -83,7 +82,6 @@ TextureHandle GlTextureManager::createDynamic(u32 width, u32 height, bool covera
     //! Allocate before changing GL state: a failed host allocation must not leak
     //! a texture name or invalidate the binding cache behind its back.
     const std::vector<u8> zeros(static_cast<size_t>(width) * height * bytesPerTexel, 0);
-    auto handle = _nextHandle++;
     GlTextureData data;
     data.width = width;
     data.height = height;
@@ -105,8 +103,8 @@ TextureHandle GlTextureManager::createDynamic(u32 width, u32 height, bool covera
 
     restoreBinding();
 
-    _textures[handle] = data;
-    return handle;
+    _textures.push_back(data);
+    return TextureHandle{static_cast<u32>(_textures.size())};
 }
 
 void GlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgba)
@@ -126,14 +124,14 @@ void GlTextureManager::updatePixels(TextureHandle handle, u32 x, u32 y, u32 widt
     if (!pixels || width == 0 || height == 0)
         return;
 
-    auto it = _textures.find(handle);
-    if (it == _textures.end())
+    const GlTextureData *found = get(handle);
+    if (!found)
     {
         INK_ERROR << "GlTextureManager: updateRegion on an unknown texture";
         return;
     }
 
-    const GlTextureData &data = it->second;
+    const GlTextureData &data = *found;
     if (data.coverageOnly != coverageOnly)
     {
         INK_ERROR << "GlTextureManager: update format does not match texture format";
@@ -160,15 +158,17 @@ void GlTextureManager::restoreBinding() noexcept
 void GlTextureManager::invalidateBindings() noexcept
 {
     _boundToUnit.fill(0);
+    //! Out of range: the next bind() issues glActiveTexture.
+    _activeUnit = kTrackedUnits;
 }
 
 const GlTextureData *GlTextureManager::bind(TextureHandle handle, GLuint unit)
 {
-    auto it = _textures.find(handle);
-    if (it == _textures.end())
+    const GlTextureData *data = get(handle);
+    if (!data)
         return nullptr;
 
-    const GLuint texture = it->second.texture;
+    const GLuint texture = data->texture;
 
     //! Beyond the tracked range there is nothing to compare against, so bind
     //! unconditionally rather than guess.
@@ -177,11 +177,11 @@ const GlTextureData *GlTextureManager::bind(TextureHandle handle, GLuint unit)
         glActiveTexture(GL_TEXTURE0 + unit);
         glBindTexture(GL_TEXTURE_2D, texture);
         _activeUnit = unit;
-        return &it->second;
+        return data;
     }
 
     if (_boundToUnit[unit] == texture)
-        return &it->second;
+        return data;
 
     if (_activeUnit != unit)
     {
@@ -191,23 +191,22 @@ const GlTextureData *GlTextureManager::bind(TextureHandle handle, GLuint unit)
 
     glBindTexture(GL_TEXTURE_2D, texture);
     _boundToUnit[unit] = texture;
-    return &it->second;
+    return data;
 }
 
 GlTextureData *GlTextureManager::get(TextureHandle handle)
 {
-    auto it = _textures.find(handle);
-    return (it != _textures.end()) ? &it->second : nullptr;
+    const usize index = usize{handle.value()} - 1; // 0 wraps out of range
+    return index < _textures.size() ? &_textures[index] : nullptr;
 }
 
 void GlTextureManager::cleanup()
 {
-    for (auto &[handle, data] : _textures)
+    for (auto &data : _textures)
     {
         glDeleteTextures(1, &data.texture);
     }
     _textures.clear();
-    _nextHandle = TextureHandle{1};
     //! The names just went away; nothing cached about them is meaningful.
     invalidateBindings();
 }

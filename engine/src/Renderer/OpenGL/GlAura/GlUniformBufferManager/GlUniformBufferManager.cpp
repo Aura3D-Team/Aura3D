@@ -1,11 +1,32 @@
 #include "aura/Renderer/OpenGL/GlAura/GlUniformBufferManager/GlUniformBufferManager.h"
 
-#include <glm/gtc/type_ptr.hpp>
-
 namespace aura3d
 {
 namespace gl
 {
+
+namespace
+{
+
+constexpr GLuint kCameraBinding = 0;
+constexpr GLuint kLightBinding = 1;
+
+//! Allocates a uniform buffer of @p size bytes and wires @p block of @p program to it.
+GLuint createBlock(GLuint program, const char *block, GLuint binding, GLsizeiptr size)
+{
+    GLuint buffer = 0;
+    glGenBuffers(1, &buffer);
+    glBindBuffer(GL_UNIFORM_BUFFER, buffer);
+    glBufferData(GL_UNIFORM_BUFFER, size, nullptr, GL_DYNAMIC_DRAW);
+
+    const GLuint index = glGetUniformBlockIndex(program, block);
+    if (index != GL_INVALID_INDEX)
+        glUniformBlockBinding(program, index, binding);
+    glBindBufferBase(GL_UNIFORM_BUFFER, binding, buffer);
+    return buffer;
+}
+
+} // namespace
 
 GlUniformBufferManager::GlUniformBufferManager() = default;
 GlUniformBufferManager::~GlUniformBufferManager()
@@ -15,44 +36,24 @@ GlUniformBufferManager::~GlUniformBufferManager()
 
 void GlUniformBufferManager::create(GLuint shaderProgram)
 {
-    _uboSize = 3 * sizeof(glm::mat4);
-
-    glGenBuffers(1, &_ubo);
-    glBindBuffer(GL_UNIFORM_BUFFER, _ubo);
-    glBufferData(GL_UNIFORM_BUFFER, _uboSize, nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-    GLuint blockIdx = glGetUniformBlockIndex(shaderProgram, "UniformBufferObject");
-    if (blockIdx != GL_INVALID_INDEX)
-    {
-        glUniformBlockBinding(shaderProgram, blockIdx, 0);
-        glBindBufferBase(GL_UNIFORM_BUFFER, 0, _ubo);
-    }
-
-    // LightUBO is laid out for std140, so it uploads as one contiguous block.
-    glGenBuffers(1, &_lightUbo);
-    glBindBuffer(GL_UNIFORM_BUFFER, _lightUbo);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(gfx::LightUBO), nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-    GLuint lightIdx = glGetUniformBlockIndex(shaderProgram, "LightBlock");
-    if (lightIdx != GL_INVALID_INDEX)
-    {
-        glUniformBlockBinding(shaderProgram, lightIdx, 1);
-        glBindBufferBase(GL_UNIFORM_BUFFER, 1, _lightUbo);
-    }
-
-    //! Creation left the general binding point empty; start the cache there.
-    _boundUniformBuffer = 0;
+    //! Std140 packs the two mat4s back to back, which is how TransformUBO lays out view and proj.
+    static_assert(offsetof(gfx::TransformUBO, proj) == offsetof(gfx::TransformUBO, view) + sizeof(glm::mat4));
+    _cameraUbo = createBlock(shaderProgram, "Camera", kCameraBinding, 2 * sizeof(glm::mat4));
+    _lightUbo = createBlock(shaderProgram, "LightBlock", kLightBinding, sizeof(gfx::LightUBO));
+    _cameraValid = false;
 }
 
-void GlUniformBufferManager::bindUniformBuffer(GLuint buffer)
+void GlUniformBufferManager::updateCamera(const gfx::TransformUBO &ubo)
 {
-    if (_boundUniformBuffer == buffer)
+    if (!_cameraUbo || (_cameraValid && ubo.view == _view && ubo.proj == _proj))
         return;
 
-    glBindBuffer(GL_UNIFORM_BUFFER, buffer);
-    _boundUniformBuffer = buffer;
+    //! The binding point is indexed, so the general binding is free to be reused by any upload.
+    glBindBuffer(GL_UNIFORM_BUFFER, _cameraUbo);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, 2 * sizeof(glm::mat4), &ubo.view);
+    _view = ubo.view;
+    _proj = ubo.proj;
+    _cameraValid = true;
 }
 
 void GlUniformBufferManager::updateLight(const gfx::LightUBO &light)
@@ -60,53 +61,17 @@ void GlUniformBufferManager::updateLight(const gfx::LightUBO &light)
     if (!_lightUbo)
         return;
 
-    bindUniformBuffer(_lightUbo);
+    glBindBuffer(GL_UNIFORM_BUFFER, _lightUbo);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(gfx::LightUBO), &light);
-}
-
-void GlUniformBufferManager::update(const gfx::TransformUBO &ubo)
-{
-    if (!_ubo)
-        return;
-
-    /*
-     * TransformUBO is three mat4s and nothing else, laid out back to back --
-     * which is byte-for-byte the std140 block the shader declares. So the
-     * whole thing goes up in one call, instead of the three consecutive
-     * sub-range uploads (one per matrix) it used to take. Those three were
-     * describing a contiguous range as if it were fragmented: same bytes, same
-     * order, three times the driver-side bookkeeping. And this runs per
-     * object, since setTransform() uploads on every draw.
-     */
-    static_assert(sizeof(gfx::TransformUBO) == 3 * sizeof(glm::mat4),
-                  "TransformUBO must stay three tightly packed mat4s: the "
-                  "single-call upload below writes it as one contiguous block, "
-                  "and the shader's std140 layout expects exactly that.");
-    static_assert(offsetof(gfx::TransformUBO, model) == 0);
-    static_assert(offsetof(gfx::TransformUBO, view) == sizeof(glm::mat4));
-    static_assert(offsetof(gfx::TransformUBO, proj) == 2 * sizeof(glm::mat4));
-
-    bindUniformBuffer(_ubo);
-    glBufferSubData(GL_UNIFORM_BUFFER, 0, static_cast<GLsizeiptr>(sizeof(gfx::TransformUBO)), &ubo);
-}
-
-void GlUniformBufferManager::bind(GLuint shaderProgram)
-{
-    glUseProgram(shaderProgram);
 }
 
 void GlUniformBufferManager::cleanup()
 {
-    if (_ubo)
-        glDeleteBuffers(1, &_ubo);
-    _ubo = 0;
-
-    if (_lightUbo)
-        glDeleteBuffers(1, &_lightUbo);
-    _lightUbo = 0;
-
-    //! Both names are gone, so whatever was cached about them is meaningless.
-    _boundUniformBuffer = 0;
+    for (GLuint *buffer : {&_cameraUbo, &_lightUbo})
+        if (*buffer)
+            glDeleteBuffers(1, buffer);
+    _cameraUbo = _lightUbo = 0;
+    _cameraValid = false;
 }
 
 } // namespace gl

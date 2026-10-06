@@ -59,13 +59,11 @@ inline constexpr const char *kFragmentFunctionBatch = "aura_fragment_batch";
 /**
  * @brief Colour format of the drawable, and therefore of every pipeline.
  *
- * BGRA8Unorm is CAMetalLayer's own default and the only format guaranteed
- * present on both macOS and iOS. Deliberately not the _sRGB variant: the
- * GLSL/CPU backends write linear values straight to an UNORM target, so
- * picking sRGB here would make the Metal backend the one outlier whose output
- * is gamma-encoded twice.
+ * sRGB, as on every backend: shaders output linear values, blending is linear
+ * and storage encoded (Vulkan's swapchain, the GL target, the CPU rasteriser),
+ * so all of them show the same pixels. CAMetalLayer accepts it on macOS and iOS.
  */
-inline constexpr MTL::PixelFormat kColorFormat = MTL::PixelFormatBGRA8Unorm;
+inline constexpr MTL::PixelFormat kColorFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
 
 /**
  * @brief Depth format of the scene pass.

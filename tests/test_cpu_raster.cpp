@@ -1,5 +1,7 @@
 // CPU winding, coverage, interpolation and ordered depth/blend behavior.
 #include <array>
+#include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <vector>
 
@@ -132,13 +134,51 @@ void queueQuad(Framebuffer &frame, f32 depth, glm::vec4 color, Mode mode, bool r
     frame.queueTriangle(reverse ? cpu::ScreenTriangle{d, c, a} : cpu::ScreenTriangle{a, c, d}, nullptr, mode);
 }
 
+// An independent reference for the GPU backends' sRGB targets: linear colors and blending, stored
+// encoded. The rasterizer uses tables; hardware is allowed 0.6 of a code, so channels match within one.
+u32 encodeByte(f32 linear)
+{
+    const f32 c = linear <= 0.0031308f ? linear * 12.92f : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+    return static_cast<u32>(std::lround(c * 255.0f));
+}
+
+f32 decodeByte(u32 byte)
+{
+    const f32 c = static_cast<f32>(byte) / 255.0f;
+    return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
+
+u32 stored(glm::vec4 linear)
+{
+    return (static_cast<u32>(std::lround(linear.a * 255.0f)) << 24) | (encodeByte(linear.r) << 16) |
+           (encodeByte(linear.g) << 8) | encodeByte(linear.b);
+}
+
+//! What a straight-alpha batch of @p source leaves over the stored @p destination.
+u32 over(u32 destination, glm::vec4 source)
+{
+    const glm::vec3 background{decodeByte((destination >> 16) & 255u), decodeByte((destination >> 8) & 255u),
+                               decodeByte(destination & 255u)};
+    const f32 keep = 1.0f - source.a;
+    return stored({glm::vec3(source) * source.a + background * keep,
+                   source.a + static_cast<f32>(destination >> 24) / 255.0f * keep});
+}
+
+bool sameColor(u32 actual, u32 expected)
+{
+    for (u32 shift : {0u, 8u, 16u, 24u})
+        if (std::abs(static_cast<i32>((actual >> shift) & 255u) - static_cast<i32>((expected >> shift) & 255u)) > 1)
+            return false;
+    return true;
+}
+
 bool allPixels(const Framebuffer &frame, u32 color, f32 depth)
 {
     for (i32 y = 0; y < 16; ++y)
         for (i32 x = 0; x < 16; ++x)
         {
             const cpu::Pixel pixel = frame.getPixel({x, y});
-            if (pixel.rgb != color || pixel.z != depth)
+            if (!sameColor(pixel.rgb, color) || pixel.z != depth)
                 return false;
         }
     return true;
@@ -154,7 +194,7 @@ void checkRasterization()
         frame.clear();
         queueQuad(frame, 0, {1, 0, 0, 0.5f}, Mode::Batch, reverse);
         frame.flush();
-        AURA_CHECK(allPixels(frame, 0x7F7F0000u, 1),
+        AURA_CHECK(allPixels(frame, over(0, {1, 0, 0, 0.5f}), 1),
                    "shared diagonal blends exactly once in either winding, preserving framebuffer alpha");
     }
 
@@ -163,10 +203,12 @@ void checkRasterization()
     queueQuad(frame, 0.75f, {0, 1, 0, 1}, Mode::Batch);
     queueQuad(frame, 0.5f, {0, 0, 1, 0.5f}, Mode::Batch);
     frame.flush();
-    AURA_CHECK(allPixels(frame, 0xFF7F007Fu, 0.5f), "batches reject hidden pixels and blend at equal scene depth");
+    const u32 blueOverRed = over(stored({1, 0, 0, 1}), {0, 0, 1, 0.5f});
+    AURA_CHECK(allPixels(frame, blueOverRed, 0.5f), "batches reject hidden pixels and blend at equal scene depth");
     queueQuad(frame, 0, {0, 1, 0, 0.5f}, Mode::Batch);
     frame.flush();
-    AURA_CHECK(allPixels(frame, 0xFF3F7F3Fu, 0.5f), "screen depth overlays the scene without modifying depth");
+    AURA_CHECK(allPixels(frame, over(blueOverRed, {0, 1, 0, 0.5f}), 0.5f),
+               "screen depth overlays the scene without modifying depth");
 
     frame.clear();
     queueQuad(frame, 0.1f, {1, 0, 0, 1}, Mode::Batch);
@@ -176,7 +218,8 @@ void checkRasterization()
     queueQuad(frame, 0.5f, {0, 0, 1, 1}, Mode::Scene);
     queueQuad(frame, 0, {1, 0, 0, 0.5f}, Mode::Batch);
     frame.flush();
-    AURA_CHECK(allPixels(frame, 0xFF7F007Fu, 0.5f), "scene and batch submissions retain their order across row bands");
+    AURA_CHECK(allPixels(frame, over(stored({0, 0, 1, 1}), {1, 0, 0, 0.5f}), 0.5f),
+               "scene and batch submissions retain their order across row bands");
 
     frame.clear();
     ScreenVertex a{0, 0, 0.5f, 1, {}, {1, 0, 0, 1}};
@@ -188,8 +231,9 @@ void checkRasterization()
         frame.queueTriangle({a, b, c}, nullptr, mode);
         frame.flush();
         // At (2.5,2.5), screen weights are 3/8, 5/16, 5/16; reciprocal w sums to 39/64.
-        const u32 expected = 0xFF000000u | ((255u * 24 / 39) << 16) | ((255u * 10 / 39) << 8) | (255u * 5 / 39);
-        AURA_CHECK(frame.getPixel({2, 2}).rgb == expected, "scene and batch colors use perspective-correct weights");
+        const u32 expected = stored({24.0f / 39.0f, 10.0f / 39.0f, 5.0f / 39.0f, 1.0f});
+        AURA_CHECK(sameColor(frame.getPixel({2, 2}).rgb, expected),
+                   "scene and batch colors use perspective-correct weights");
     }
 
     frame.clear();

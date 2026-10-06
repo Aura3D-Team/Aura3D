@@ -6,7 +6,7 @@
 #include <array>
 #include <glad/glad.h>
 #include <string>
-#include <unordered_map>
+#include <vector>
 
 #include "aura/Renderer/RenderHandles.h"
 
@@ -80,6 +80,10 @@ class GlTextureManager
     GlTextureData *get(TextureHandle handle);
     void cleanup();
 
+    //! Forgets every cached binding and the active unit, after GL texture state changed
+    //! behind this manager (the renderer's own target) or its names died (cleanup()).
+    void invalidateBindings() noexcept;
+
   private:
     TextureHandle createDynamic(u32 width, u32 height, bool coverageOnly);
     void updatePixels(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *pixels, bool coverageOnly);
@@ -89,8 +93,8 @@ class GlTextureManager
     //! correct if a second sampler is ever added.
     static constexpr GLuint kTrackedUnits = 8;
 
-    std::unordered_map<TextureHandle, GlTextureData> _textures;
-    TextureHandle _nextHandle{1};
+    //! Indexed by handle - 1: handles are dense, so a lookup is a bounds check and a load.
+    std::vector<GlTextureData> _textures;
     GLint _maxTextureSize = 0;
 
     //! GL texture name bound to each tracked unit; 0 means none/unknown.
@@ -102,9 +106,6 @@ class GlTextureManager
     //! Uploads borrow the active unit; handing back its cached texture keeps the
     //! cache true, so a draw after an upload needs no rebind.
     void restoreBinding() noexcept;
-
-    //! Drops every cached binding, for cleanup(), where the names become invalid.
-    void invalidateBindings() noexcept;
 };
 
 } // namespace gl

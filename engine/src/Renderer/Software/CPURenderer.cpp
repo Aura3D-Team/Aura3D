@@ -291,12 +291,8 @@ void CPURenderer::endFrame()
 
 void CPURenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
 {
-    const u8 lr = static_cast<u8>(r * 255.0f);
-    const u8 lg = static_cast<u8>(g * 255.0f);
-    const u8 lb = static_cast<u8>(b * 255.0f);
-    const u8 la = static_cast<u8>(a * 255.0f);
-    _clearColorU32 = (static_cast<u32>(la) << 24) | (static_cast<u32>(lr) << 16) | (static_cast<u32>(lg) << 8) |
-                     static_cast<u32>(lb);
+    //! Linear, like the GPU backends' clear values, which their sRGB targets encode.
+    _clearColorU32 = CpuFrameBufferManager::packLinearColor({r, g, b, a});
 }
 
 void CPURenderer::setTransform(const gfx::TransformUBO &ubo)

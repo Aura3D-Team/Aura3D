@@ -4,7 +4,7 @@
 #pragma once
 
 #include <glad/glad.h>
-#include <unordered_map>
+#include <vector>
 
 #include "aura/Renderer/RenderHandles.h"
 
@@ -49,8 +49,8 @@ class GlIndexBufferManager
     void cleanup();
 
   private:
-    std::unordered_map<IndexBufferHandle, GlIndexBufferData> _buffers;
-    IndexBufferHandle _nextHandle{1};
+    //! Indexed by handle - 1: handles are dense, so a lookup is a bounds check and a load.
+    std::vector<GlIndexBufferData> _buffers;
 
     //! Element buffer known to be bound in the *current* VAO; 0 means unknown.
     //! Only trustworthy between VAO switches -- see invalidateBinding().

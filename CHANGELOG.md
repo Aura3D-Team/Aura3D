@@ -20,7 +20,12 @@ All notable changes to Aura3D are documented in this file.
 - Vulkan keeps up to 64 cameras per frame in a dynamic-offset uniform ring.
 - Vulkan batch buffers live in system memory: the CPU copy no longer crosses PCIe as it is written. 25,000 moving canvas shapes: 900 to 575 µs per frame on an RTX 4060 Ti.
 - The software rasterizer resolves flat untextured triangles once per triangle, validates at queue time, drops its binning pass, and converts large screen batches across its workers: 2,880 to 2,050 µs for the same scene.
-- `benchmark_runtime <backend> canvas` measures that scene.
+- `benchmark_runtime <backend> canvas` measures that scene; `AURA_BENCH_WINDOW=sdl3|x11|wayland|glfw` runs any mode through that window backend.
+- Every backend blends in linear and stores sRGB, as Vulkan did: OpenGL renders each pass into an sRGB target and encodes it to the window, the software rasterizer encodes what it stores, and Metal draws to `BGRA8Unorm_sRGB`. A colour now shows the same pixels everywhere; on OpenGL and software, mid-tones are lighter than before (a 50% blend reads 188, not 128). Colours are linear; convert hex values.
+- OpenGL runs on every WMA backend (SDL3, X11, Wayland, GLFW): it loads through `IWindowManager::getGLProcAddress()` and presents through `swapBuffers()`.
+- OpenGL stages batches and draws each run from one upload, one draw per texture or transform change; batches of 64 KiB or more upload directly, through a mapped buffer where the platform has one. 400 small textured batches: 463 to 320 µs per frame; 25,000 canvas shapes: 794 to 650 µs.
+- OpenGL keeps only the camera in a uniform block and sends the model and its CPU-computed normal matrix per draw, as Vulkan and Metal do, instead of re-uploading three matrices and inverting the model per vertex. It skips an unchanged camera or model. Lit output matches on every backend (`benchmark_runtime <backend> lighting`).
+- The OpenGL backend is split into `GlTargetManager` (sRGB target and resolve), `GlBatchManager` (staging and batch draws) and `GlShaderManager::createProgram()`; its resource tables are vectors indexed by handle instead of hash maps.
 - **Breaking:** `drawBatch2D()` and `gfx::Vertex2D` became `drawBatch()` and `gfx::BatchVertex`, with a `gfx::BatchSpace`: `Screen` (default; `z` is depth, 0 on the near plane) or `World`. Each backend draws every batch through one pipeline, in submission order with meshes.
 - **Breaking:** `TextOverlay::drawText()` and `drawFPS()` became `addText()` and `addFPS()`, which queue; `draw()` submits the frame's text as one batch.
 - **Breaking:** `FontAtlas::takeUpload(revision)` replaces `takeDirtyUpload()` and returns R8 coverage; each texture of a shared sheet keeps its own revision.
@@ -50,6 +55,9 @@ All notable changes to Aura3D are documented in this file.
 - Shared font caches synchronize correctly with multiple UI renderers and retain pending glyphs when texture creation fails. Commands that disappear after pixel snapping no longer split batches.
 - Rounded widgets showed dark lines where a corner met the body: corner masks were sampled half a texel off and blended with the atlas padding. Fills, borders and clips now snap to device pixels and corner masks are rasterized at device size.
 - Icons are rasterized at device size and snapped, so they stay sharp at fractional and 2x UI scales.
+- OpenGL presented every frame twice under `IRenderer::run()`, halving a vsynced frame rate.
+- OpenGL sized its viewport from the logical window size, so a HiDPI window drew into a quarter of itself.
+- OpenGL pixel reads after `endRenderPass()` could return black: they read the window's framebuffer, undefined while the window is being mapped. They read the pass target now.
 
 ## [0.3.0]
 

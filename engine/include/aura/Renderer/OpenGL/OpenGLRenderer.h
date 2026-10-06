@@ -6,7 +6,9 @@
 #include <memory>
 
 #include "aura/Renderer/IRenderer.h"
+#include "aura/Renderer/OpenGL/GlAura/GlBatchManager/GlBatchManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlIndexBufferManager/GlIndexBufferManager.h"
+#include "aura/Renderer/OpenGL/GlAura/GlTargetManager/GlTargetManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlTextureManager/GlTextureManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlUniformBufferManager/GlUniformBufferManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlVertexBufferManager/GlVertexBufferManager.h"
@@ -69,39 +71,39 @@ class OpenGLRenderer : public IRenderer
 
   private:
     void loadOpenGLEntryPoints();
-    void compileBuiltInShaders();
+    void createSceneProgram();
 
-    void createBatchBuffers();
-
-    //! Leaves batch state: scene program, depth writes, no blending, and the scene's
-    //! VAO and texture back. Batches switch lazily, so a run of them pays once.
+    //! Scene state is the scene program, depth test and writes, no blending, and the scene's
+    //! VAO and texture. Batches and the resolve replace it; the next scene draw restores it.
     void useSceneState();
+    void leaveSceneState();
+    //! Draws the staged batches; call before anything that must see them.
+    void flushBatches();
     //! Binds _currentTexture, white for an invalid handle, and the scene's coverage flag.
     void bindSceneTexture();
+    //! Gives the scene program the current model and its normal matrix, if they changed.
+    void uploadModel();
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
     std::unique_ptr<GlVertexBufferManager> _vertexMgr;
     std::unique_ptr<GlIndexBufferManager> _indexMgr;
     std::unique_ptr<GlUniformBufferManager> _uniformMgr;
     std::unique_ptr<GlTextureManager> _textureMgr;
+    std::unique_ptr<GlTargetManager> _targetMgr;
+    std::unique_ptr<GlBatchManager> _batchMgr;
 
-    GLuint _shaderProgram = 0;
     bool _isInitialized = false;
+    bool _sceneState = false;
 
-    GLuint _batchProgram = 0;
-    GLint _batchTransformLoc = -1;
-    GLint _batchCoverageLoc = -1;
-    GLint _coverage3DLoc = -1;
-    //! Last coverageOnly value each program was given; -1 before the first.
-    GLint _batchCoverage = -1;
-    GLint _coverage3D = -1;
-    GLuint _batchVao = 0;
-    GLuint _batchVbo = 0;
-    GLuint _batchEbo = 0;
-    size_t _batchVboBytes = 0;
-    size_t _batchEboBytes = 0;
+    GLuint _sceneProgram = 0;
+    GLint _modelLoc = -1;
+    GLint _normalLoc = -1;
+    GLint _coverageLoc = -1;
+    //! What the scene program last received; unset until the first draw.
+    glm::mat4 _uploadedModel{0.0f};
+    bool _modelUploaded = false;
+    GLint _coverage = -1;
     TextureHandle _whiteTexture;
-    bool _batchState = false; //! The batch program, depth and blend state are current.
 
     VertexBufferHandle _currentVertexBuffer;
     IndexBufferHandle _currentIndexBuffer;

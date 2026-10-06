@@ -106,7 +106,7 @@ r->drawBatch(canvas, texture);               // a gfx::Canvas, one draw call —
 
 **State**
 ```cpp
-r->setClearColor(r, g, b, a);
+r->setClearColor(r, g, b, a);                  // linear, like every colour (doc 7)
 r->setLight(lightUBO);                         // see doc 6
 ```
 

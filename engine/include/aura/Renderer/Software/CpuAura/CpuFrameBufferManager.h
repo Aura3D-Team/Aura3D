@@ -313,6 +313,9 @@ class CpuFrameBufferManager
      * @p mode extend one batch, and flush() replays batches in submission order.
      * @p texture must stay alive until flush() returns.
      */
+    /// A linear color as the framebuffer stores it: sRGB-encoded RGB, as the GPU backends' targets do.
+    [[nodiscard]] static u32 packLinearColor(const glm::vec4 &color) noexcept;
+
     void queueTriangle(const ScreenTriangle &triangle, const Texture *texture, RasterMode mode = RasterMode::Scene);
 
     /// Queues a Batch-mode triangle list whose positions are already pixels with depth in z.

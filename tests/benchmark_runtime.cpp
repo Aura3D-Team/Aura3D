@@ -12,6 +12,8 @@
 #include <fstream>
 #include <new>
 #include <thread>
+
+#include <glm/gtc/matrix_transform.hpp>
 #ifdef AURA_HAS_OPENGL
 #include <glad/glad.h>
 #endif
@@ -105,6 +107,10 @@ int main(int argc, char **argv)
         config.graphics.gpuPreference = "any";
         config.audio.backend = wma::AudioBackend::Null;
         config.logging.level = ink::LogLevel::ERROR;
+        // AURA_BENCH_WINDOW=sdl3|x11|wayland|glfw runs any mode through that window backend.
+        if (const char *window = std::getenv("AURA_BENCH_WINDOW");
+            window && !WindowBackendFromString(window, config.window.backend))
+            return 1;
         Engine engine(config);
         auto &renderer = *engine.getRenderer();
         if (argc > 2 && std::string_view(argv[2]) == "primitives")
@@ -116,17 +122,18 @@ int main(int argc, char **argv)
                 std::array<u8, 3> rgb;
             };
             // Interior, outside-edge and flat-end probes also catch double
-            // blending where a translucent line's two triangles meet.
+            // blending where a translucent line's two triangles meet. Every
+            // backend blends in linear and stores sRGB: a 50% blend reads 188.
             const std::array probes{
                 Probe{48, 24, {255, 0, 0}}, Probe{15, 24, {0, 0, 0}}, Probe{96, 24, {0, 0, 0}},
                 Probe{48, 19, {0, 0, 0}}, Probe{48, 28, {0, 0, 0}}, Probe{128, 40, {0, 255, 0}},
                 Probe{128, 15, {0, 0, 0}}, Probe{128, 72, {0, 0, 0}}, Probe{200, 40, {0, 0, 255}},
                 Probe{193, 47, {0, 0, 0}}, Probe{48, 56, {0, 255, 255}}, Probe{15, 56, {0, 0, 0}},
-                Probe{96, 56, {0, 0, 0}}, Probe{48, 95, {128, 128, 128}}, Probe{48, 96, {128, 128, 128}},
-                Probe{200, 112, {128, 0, 128}}, Probe{48, 120, {128, 128, 0}}, Probe{32, 160, {255, 255, 0}},
+                Probe{96, 56, {0, 0, 0}}, Probe{48, 95, {188, 188, 188}}, Probe{48, 96, {188, 188, 188}},
+                Probe{200, 112, {188, 0, 188}}, Probe{48, 120, {188, 188, 0}}, Probe{32, 160, {255, 255, 0}},
                 Probe{15, 160, {0, 0, 0}}, Probe{96, 160, {0, 0, 0}}, Probe{136, 152, {255, 0, 255}},
                 Probe{172, 184, {0, 0, 0}}, Probe{248, 152, {0, 255, 255}}, Probe{284, 184, {0, 0, 0}},
-                Probe{280, 40, {128, 0, 128}}, Probe{280, 20, {0, 0, 128}}, Probe{264, 40, {255, 0, 0}},
+                Probe{280, 40, {188, 0, 188}}, Probe{280, 20, {0, 0, 188}}, Probe{264, 40, {255, 0, 0}},
                 // Scene depth: the mesh hides the red batch triangle behind it, the
                 // blue 3D line in front of it shows, and the triangle shows beside it.
                 Probe{180, 215, {0, 255, 0}}, Probe{155, 215, {255, 0, 0}}, Probe{185, 222, {0, 0, 255}},
@@ -235,9 +242,9 @@ int main(int argc, char **argv)
                     for (usize c = 0; c < 3; ++c)
                         if (std::abs(int(actual[c]) - int(probe.rgb[c])) > 1)
                         {
-                            std::fprintf(stderr, "PRIMITIVES pixel (%d,%d): got %u,%u,%u expected %u,%u,%u\n", probe.x,
-                                         probe.y, actual[0], actual[1], actual[2], probe.rgb[0], probe.rgb[1],
-                                         probe.rgb[2]);
+                            std::fprintf(stderr, "PRIMITIVES frame %u pixel (%d,%d): got %u,%u,%u expected %u,%u,%u\n",
+                                         frame, probe.x, probe.y, actual[0], actual[1], actual[2], probe.rgb[0],
+                                         probe.rgb[1], probe.rgb[2]);
                             return 2;
                         }
                     ++checkedPixels;
@@ -324,9 +331,83 @@ int main(int argc, char **argv)
                     });
             return 0;
         }
+        if (argc > 2 && std::string_view(argv[2]) == "lighting")
+        {
+            // A lit quad under a rotation and then a non-uniform scale: the normal is the inverse
+            // transpose of the model, not the model, so a wrong normal matrix shows in the colour.
+            const glm::mat4 model = glm::scale(glm::mat4{1.0f}, {2.0f, 1.0f, 1.0f}) *
+                                    glm::rotate(glm::mat4{1.0f}, glm::radians(60.0f), glm::vec3{0, 1, 0});
+            gfx::LightUBO light;
+            light.direction = glm::normalize(glm::vec3{-1.0f, 0.2f, -1.0f});
+            light.intensity = 0.6f;
+            light.ambient = 0.1f;
+            light.color = {1.0f, 0.5f, 0.25f, 1.0f};
+            const glm::vec3 normal = glm::normalize(glm::transpose(glm::inverse(glm::mat3(model))) * glm::vec3{0, 0, 1});
+            const f32 lighting = light.ambient + std::max(glm::dot(normal, -light.direction), 0.0f) * light.intensity;
+            const auto encode = [](f32 linear)
+            {
+                linear = std::min(linear, 1.0f);
+                const f32 encoded = linear <= 0.0031308f ? linear * 12.92f : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+                return static_cast<int>(std::lround(encoded * 255.0f));
+            };
+            //! The quad's centre after the model, in pixels of the 320x240 window.
+            const glm::vec4 centre = model * glm::vec4{0, 0, 0.5f, 1};
+            const i32 probeX = static_cast<i32>((centre.x + 1.0f) * 0.5f * 320.0f);
+            const i32 probeY = static_cast<i32>((1.0f - centre.y) * 0.5f * 240.0f);
+            const std::array<int, 3> expected{encode(light.color.r * lighting), encode(light.color.g * lighting),
+                                              encode(light.color.b * lighting)};
+
+            gfx::Mesh3D quad;
+            for (const glm::vec2 corner : {glm::vec2{-.5f, -.5f}, {.5f, -.5f}, {.5f, .5f}, {-.5f, .5f}})
+                quad.vertices.push_back({{corner, 0.5f}, {}, {1, 1, 1, 1}, {0, 0, 1}});
+            quad.indices = {0, 1, 2, 2, 3, 0, 0, 2, 1, 2, 0, 3};
+            const MeshHandle mesh = renderer.createMesh(std::move(quad));
+            const auto white = renderer.createSolidColorTexture(255, 255, 255, 255);
+            renderer.setLight(light);
+            renderer.setClearColor(0, 0, 0, 1);
+            std::array<u8, 4> actual{};
+            bool readable = false;
+            for (u32 frame = 0; frame < 3; ++frame)
+            {
+                renderer.beginFrame();
+                if (!renderer.frameBegun())
+                    continue;
+                renderer.beginRenderPass();
+                renderer.setTransform({model, glm::mat4{1.0f}, glm::mat4{1.0f}});
+                renderer.drawMesh(mesh, white);
+                renderer.endRenderPass();
+#ifdef AURA_HAS_OPENGL
+                if (renderer.getBackendType() == RendererChoice::OPENGL)
+                {
+                    glReadPixels(probeX, 239 - probeY, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, actual.data());
+                    readable = true;
+                }
+#endif
+#ifdef AURA_HAS_CPU
+                if (renderer.getBackendType() == RendererChoice::SOFTWARE)
+                {
+                    const u32 pixel =
+                        static_cast<cpu::CPURenderer &>(renderer).getFrameBufferManager()->getPixel({probeX, probeY}).rgb;
+                    actual = {static_cast<u8>(pixel >> 16), static_cast<u8>(pixel >> 8), static_cast<u8>(pixel), 255};
+                    readable = true;
+                }
+#endif
+                renderer.endFrame();
+            }
+            // Other backends are read from a screenshot at the probe pixel.
+            std::printf("LIGHTING backend=%s probe=%d,%d expected=%d,%d,%d", argv[1], probeX, probeY, expected[0],
+                        expected[1], expected[2]);
+            if (!readable)
+                return std::printf("\n"), 0;
+            std::printf(" got=%u,%u,%u\n", actual[0], actual[1], actual[2]);
+            for (usize c = 0; c < 3; ++c)
+                if (std::abs(int(actual[c]) - expected[c]) > 1)
+                    return 2;
+            return 0;
+        }
         if (argc > 2 && std::string_view(argv[2]) == "coverage")
         {
-            // Screenshot swatches: black, black, half-green, green, magenta;
+            // Screenshot swatches: black, black, half-green (188: linear blend, sRGB storage), green, magenta;
             // the second row samples a large atlas after upload-slot rotation.
             const auto untouched = renderer.createCoverageTexture(7, 3);
             const auto coverage = renderer.createCoverageTexture(7, 3);
@@ -426,7 +507,7 @@ int main(int argc, char **argv)
                         return true;
                     };
                     if (!checkPixel(40, 56, {0, 0, 0}) || !checkPixel(96, 56, {0, 0, 0}) ||
-                        !checkPixel(152, 56, {0, 128, 0}) || !checkPixel(208, 56, {0, 255, 0}) ||
+                        !checkPixel(152, 56, {0, 188, 0}) || !checkPixel(208, 56, {0, 255, 0}) ||
                         !checkPixel(264, 56, {255, 0, 255}) || !checkPixel(40, 136, {0, 255, 0}) ||
                         !checkPixel(112, 136, {255, 0, 255}) || glGetError() != GL_NO_ERROR)
                         return 2;

@@ -34,6 +34,10 @@ One pipeline draws every batch, in submission order with meshes: unlit
 `texel * color`, straight alpha, depth-tested less-or-equal, no depth writes.
 Draw opaque meshes first and UI last.
 
+Colours are linear on every backend: blending is linear and the target stores
+sRGB, so `{0.5, 0.5, 0.5, 1}` shows as 188, not 128. A hex or colour-picker
+value is sRGB; convert it to linear before passing it.
+
 | `gfx::BatchSpace` | Positions |
 |---|---|
 | `Screen` (default) | Render-target pixels from the top-left; `z` is depth, `0` on the near plane (in front of everything), `1` on the far one. |

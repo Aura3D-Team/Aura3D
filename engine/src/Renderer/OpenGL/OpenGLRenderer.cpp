@@ -1,23 +1,20 @@
 #include "aura/Renderer/OpenGL/OpenGLRenderer.h"
 
-#include <SDL3/SDL.h>
-#include <algorithm>
 #include <glad/glad.h>
 #include <stdexcept>
 
 #include <glm/gtc/type_ptr.hpp>
 
+#include "aura/Core/AuraMath.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
 #include "aura/Renderer/OpenGL/EmbeddedGlsl.h"
+#include "aura/Renderer/OpenGL/GlAura/GlShaderManager/GlShaderManager.h"
 #include "aura/aura.h"
 
 namespace aura3d
 {
 namespace gl
 {
-
-static_assert(sizeof(GLintptr) == sizeof(void *) && sizeof(GLsizeiptr) == sizeof(void *),
-              "OpenGL buffer offsets and sizes must retain the platform's pointer width");
 
 OpenGLRenderer::OpenGLRenderer(const wma::WindowDetails &windowDetails) : IRenderer(windowDetails)
 {
@@ -29,6 +26,19 @@ OpenGLRenderer::~OpenGLRenderer()
     cleanup();
 }
 
+namespace
+{
+
+//! gladLoadGLLoader takes a plain function pointer, so the window rides in here for the call.
+const wma::IWindowManager *loaderWindow = nullptr;
+
+void *loadGLProc(const char *name)
+{
+    return loaderWindow->getGLProcAddress(name);
+}
+
+} // namespace
+
 void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
 {
     if (_isInitialized)
@@ -39,20 +49,22 @@ void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
 
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
     loadOpenGLEntryPoints();
-    compileBuiltInShaders();
 
     _vertexMgr = std::make_unique<GlVertexBufferManager>();
     _indexMgr = std::make_unique<GlIndexBufferManager>();
     _uniformMgr = std::make_unique<GlUniformBufferManager>();
     _textureMgr = std::make_unique<GlTextureManager>();
+    _targetMgr = std::make_unique<GlTargetManager>();
+    _batchMgr = std::make_unique<GlBatchManager>();
 
-    _uniformMgr->create(_shaderProgram);
-    createBatchBuffers();
+    createSceneProgram();
+    _uniformMgr->create(_sceneProgram);
     //! Sampled by untextured batches and invalid scene bindings, as on the other backends.
     _whiteTexture = _textureMgr->createSolidColorTexture(255, 255, 255, 255);
+    _batchMgr->create(*_textureMgr, _whiteTexture);
+    _targetMgr->create();
+    handleWindowChanges();
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
     //! Only batches blend, always as straight alpha, so the factors are set once.
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -61,148 +73,29 @@ void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
 
 void OpenGLRenderer::loadOpenGLEntryPoints()
 {
-    if (!_windowManagerApi)
-    {
-        throw std::runtime_error("OpenGLRenderer: window manager not created before GLAD load");
-    }
+    //! Every wma backend creates the context with the window and leaves it current.
+    if (!_windowManagerApi || !_windowManagerApi->getWindowInstance())
+        throw std::runtime_error("OpenGLRenderer: no OpenGL window to load entry points from");
 
-    auto *window = static_cast<SDL_Window *>(_windowManagerApi->getWindowInstance());
-    if (!window)
-    {
-        throw std::runtime_error("OpenGLRenderer: SDL window handle is null");
-    }
-
-    // wma's SDL backend already creates and makes current a GL context for
-    // the OpenGL path (SdlWindowManager::createWindow), so the common case
-    // here is "reuse what's already current" -- only create + MakeCurrent
-    // ourselves if nothing is current yet. A redundant second MakeCurrent
-    // call on an already-current context fails outright under Emscripten's
-    // SDL3 port (SDL_GetError() comes back empty, unlike a real GL error).
-    SDL_GLContext context = SDL_GL_GetCurrentContext();
-    if (!context)
-    {
-        context = SDL_GL_CreateContext(window);
-        if (!context)
-        {
-            throw std::runtime_error(std::string("OpenGLRenderer: failed to create GL context: ") + SDL_GetError());
-        }
-
-        if (!SDL_GL_MakeCurrent(window, context))
-        {
-            throw std::runtime_error(std::string("OpenGLRenderer: failed to make GL context current: ") +
-                                     SDL_GetError());
-        }
-    }
-
-    if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
-    {
+    loaderWindow = _windowManagerApi.get();
+    const int loaded = gladLoadGLLoader(loadGLProc);
+    loaderWindow = nullptr;
+    if (!loaded)
         throw std::runtime_error("OpenGLRenderer: gladLoadGLLoader failed");
-    }
 
     INK_INFO << "OpenGL " << GLVersion.major << "." << GLVersion.minor << " | "
              << reinterpret_cast<const char *>(glGetString(GL_RENDERER));
-    handleWindowChanges();
 }
 
-namespace
+void OpenGLRenderer::createSceneProgram()
 {
-
-//! Compiles one stage, logging and returning 0 on failure.
-GLuint compileShaderStage(GLenum type, const char *source)
-{
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
-    glCompileShader(shader);
-
-    GLint ok = GL_FALSE;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (!ok)
-    {
-        char log[512];
-        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-        INK_ERROR << "GL shader compile error: " << log;
-        glDeleteShader(shader);
-        return 0;
-    }
-    return shader;
-}
-
-//! Compiles and links a vertex/fragment pair into a program.
-GLuint linkShaderProgram(const char *vertexSource, const char *fragmentSource)
-{
-    const GLuint vert = compileShaderStage(GL_VERTEX_SHADER, vertexSource);
-    const GLuint frag = compileShaderStage(GL_FRAGMENT_SHADER, fragmentSource);
-    if (!vert || !frag)
-    {
-        glDeleteShader(vert);
-        glDeleteShader(frag);
-        throw std::runtime_error("OpenGLRenderer: built-in shader compilation failed");
-    }
-
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vert);
-    glAttachShader(program, frag);
-    glLinkProgram(program);
-    glDeleteShader(vert);
-    glDeleteShader(frag);
-
-    GLint ok = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (!ok)
-    {
-        char log[512];
-        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        glDeleteProgram(program);
-        throw std::runtime_error(std::string("OpenGLRenderer: built-in shader link failed: ") + log);
-    }
-
-    return program;
-}
-
-} // namespace
-
-void OpenGLRenderer::compileBuiltInShaders()
-{
-    _shaderProgram = linkShaderProgram(gl_shader3d_vert, gl_shader3d_frag);
-
-    //! Both programs sample unit 0; sampler uniforms are program state, so they are set once.
-    _coverage3DLoc = glGetUniformLocation(_shaderProgram, "coverageOnly");
-    glUseProgram(_shaderProgram);
-    glUniform1i(glGetUniformLocation(_shaderProgram, "textureSampler"), 0);
-
-    _batchProgram = linkShaderProgram(gl_batch_vert, gl_batch_frag);
-    _batchTransformLoc = glGetUniformLocation(_batchProgram, "uTransform");
-    _batchCoverageLoc = glGetUniformLocation(_batchProgram, "coverageOnly");
-    glUseProgram(_batchProgram);
-    glUniform1i(glGetUniformLocation(_batchProgram, "textureSampler"), 0);
-
-    glUseProgram(_shaderProgram);
-}
-
-void OpenGLRenderer::createBatchBuffers()
-{
-    glGenVertexArrays(1, &_batchVao);
-    glGenBuffers(1, &_batchVbo);
-    glGenBuffers(1, &_batchEbo);
-    glBindVertexArray(_batchVao);
-    glBindBuffer(GL_ARRAY_BUFFER, _batchVbo);
-
-    // OpenGL requires byte offsets encoded as pointers when a VBO is bound.
-    // NOLINTBEGIN(performance-no-int-to-ptr)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gfx::BatchVertex),
-                          reinterpret_cast<void *>(offsetof(gfx::BatchVertex, pos)));
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gfx::BatchVertex),
-                          reinterpret_cast<void *>(offsetof(gfx::BatchVertex, texCoord)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(gfx::BatchVertex),
-                          reinterpret_cast<void *>(offsetof(gfx::BatchVertex, color)));
-    glEnableVertexAttribArray(2);
-    // NOLINTEND(performance-no-int-to-ptr)
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _batchEbo);
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    _sceneProgram = GlShaderManager::createProgram(gl_shader3d_vert, gl_shader3d_frag);
+    _modelLoc = glGetUniformLocation(_sceneProgram, "uModel");
+    _normalLoc = glGetUniformLocation(_sceneProgram, "uNormal");
+    _coverageLoc = glGetUniformLocation(_sceneProgram, "coverageOnly");
+    //! Sampler uniforms are program state, so unit 0 is set once.
+    glUseProgram(_sceneProgram);
+    glUniform1i(glGetUniformLocation(_sceneProgram, "textureSampler"), 0);
 }
 
 void OpenGLRenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)
@@ -213,39 +106,33 @@ void OpenGLRenderer::createWindow(const char *title, const wma::WindowBackend &w
 
 void OpenGLRenderer::handleWindowChanges()
 {
-    const wma::WindowDetails *wd = _windowManagerApi->getWindowDetails();
-    glViewport(0, 0, wd->width, wd->height);
+    if (!_targetMgr)
+        return;
+    //! Pixels, not the logical size: the two differ on HiDPI displays.
+    const wma::FramebufferSize size = _windowManagerApi->getFramebufferSize();
+    _targetMgr->resize({static_cast<u32>(size.width), static_cast<u32>(size.height)});
+    _textureMgr->invalidateBindings();
 }
 
 void OpenGLRenderer::cleanup()
 {
     clearSharedResources();
 
-    if (_shaderProgram)
-        glDeleteProgram(_shaderProgram);
-    _shaderProgram = 0;
-
-    if (_batchProgram)
-        glDeleteProgram(_batchProgram);
-    if (_batchVao)
-        glDeleteVertexArrays(1, &_batchVao);
-    for (GLuint *buffer : {&_batchVbo, &_batchEbo})
-        if (*buffer)
-            glDeleteBuffers(1, buffer);
-    _batchProgram = 0;
-    _batchVao = _batchVbo = _batchEbo = 0;
-    _batchVboBytes = _batchEboBytes = 0;
-    _batchTransformLoc = -1;
-    _batchCoverageLoc = _coverage3DLoc = -1;
-    _batchCoverage = _coverage3D = -1;
-    //! The texture pool dies with _textureMgr below, so drop the cached handle.
-    _whiteTexture = {};
-    _batchState = false;
-
+    //! The managers own the GL objects, so they go while the context is still current.
+    _batchMgr.reset();
+    _targetMgr.reset();
     _vertexMgr.reset();
     _indexMgr.reset();
     _uniformMgr.reset();
     _textureMgr.reset();
+    if (_sceneProgram)
+        glDeleteProgram(_sceneProgram);
+    _sceneProgram = 0;
+    _modelLoc = _normalLoc = _coverageLoc = _coverage = -1;
+    _modelUploaded = false;
+    _sceneState = false;
+    //! The texture pool died with _textureMgr, so drop the cached handle.
+    _whiteTexture = {};
     _windowManagerApi.reset();
     _isInitialized = false;
 }
@@ -290,6 +177,7 @@ TextureHandle OpenGLRenderer::createCoverageTexture(u32 width, u32 height)
 void OpenGLRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                                  const u8 *coverage)
 {
+    flushBatches();
     if (_textureMgr)
         _textureMgr->updateCoverageRegion(handle, x, y, width, height, coverage);
 }
@@ -297,6 +185,7 @@ void OpenGLRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u3
 void OpenGLRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                          const u8 *rgbaPixels)
 {
+    flushBatches();
     if (!_textureMgr)
         return;
     _textureMgr->updateRegion(handle, x, y, width, height, rgbaPixels);
@@ -322,51 +211,44 @@ void OpenGLRenderer::beginRenderPass()
     if (!_uniformMgr)
         return;
 
+    _targetMgr->bind();
     //! Depth writes must be on for the clear to reach the depth buffer.
     useSceneState();
     glClearColor(_clearR, _clearG, _clearB, _clearA);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    _uniformMgr->bind(_shaderProgram);
-    _uniformMgr->update(_currentTransform);
+    _uniformMgr->updateCamera(_currentTransform);
     _uniformMgr->updateLight(_light);
 }
 
 void OpenGLRenderer::endRenderPass()
 {
-    /*
-     * OpenGL has no render-pass object to close, but the pass boundary is still
-     * the point at which recorded work must be handed to the driver. Flushing
-     * here mirrors the Vulkan backend's vkCmdEndRenderPass and unbinds the VAO
-     * so state does not leak into whatever the caller does next.
-     */
     AURA_FRAME_SCOPE(FramePhase::EndPass);
 
     if (!_vertexMgr)
         return;
 
-    _vertexMgr->unbind();
-    glFlush();
+    flushBatches();
+    _targetMgr->resolve();
+    leaveSceneState();
+    _textureMgr->invalidateBindings();
 }
 
 void OpenGLRenderer::endFrame()
 {
     /*
-     * Present is where a vsynced GL frame actually spends its wall time: the
-     * driver blocks inside SDL_GL_SwapWindow until the display is ready for the
-     * buffer, so the whole pipeline's backpressure lands on this one scope and
-     * nowhere else. WaitFence/Acquire/Submit stay at zero for this backend --
-     * GL has no explicit counterpart to any of them, and reporting zero says
-     * exactly that rather than inventing an attribution.
+     * Present is where a vsynced GL frame spends its wall time, so the pipeline's
+     * backpressure lands on this one scope. WaitFence/Acquire/Submit stay at zero:
+     * GL has no counterpart to any of them. Inside run() the window manager's loop
+     * swaps right after this returns; a second swap here would show each frame
+     * twice and halve a vsynced rate.
      */
-    if (_windowManagerApi)
+    //! Batches drawn after the pass still reach this frame.
+    if (_batchMgr)
+        flushBatches();
+    if (_windowManagerApi && !_running)
     {
         AURA_FRAME_SCOPE(FramePhase::Present);
-
-        auto *window = static_cast<SDL_Window *>(_windowManagerApi->getWindowInstance());
-        if (window)
-        {
-            SDL_GL_SwapWindow(window);
-        }
+        _windowManagerApi->swapBuffers();
     }
 
     //! Outside the scope above so the present is closed and counted before the
@@ -379,14 +261,9 @@ void OpenGLRenderer::endFrame()
 void OpenGLRenderer::setTransform(const gfx::TransformUBO &ubo)
 {
     _currentTransform = ubo;
-
-    //! Callers set a new transform per object before each drawMesh (mirroring
-    //! the Vulkan backend's per-draw push constants), so this must upload
-    //! immediately, beginRenderPass's own upload only seeds the first draw
-    //! of the frame, and without this every draw call after the first reused
-    //! whatever transform was left over from the previous frame's last object.
+    //! The model reaches the program at draw time; the camera upload skips an unchanged one.
     if (_uniformMgr)
-        _uniformMgr->update(_currentTransform);
+        _uniformMgr->updateCamera(_currentTransform);
 }
 
 void OpenGLRenderer::setLight(const gfx::LightUBO &light)
@@ -403,11 +280,8 @@ void OpenGLRenderer::bindVertexBuffer(VertexBufferHandle handle)
 {
     _currentVertexBuffer = handle;
 
-    /*
-     * A VAO switch carries the element-array binding with it, so the index
-     * manager's cache stops describing reality the moment a different VAO
-     * becomes current. bind() reports exactly that case.
-     */
+    //! A VAO switch carries the element-array binding with it, so the index manager's
+    //! cache stops describing reality; bind() reports exactly that case.
     if (_vertexMgr->bind(handle) && _indexMgr)
         _indexMgr->invalidateBinding();
 }
@@ -421,8 +295,8 @@ void OpenGLRenderer::bindIndexBuffer(IndexBufferHandle handle)
 void OpenGLRenderer::bindTexture(TextureHandle handle)
 {
     _currentTexture = handle;
-    //! While batches own the program, the switch back binds it.
-    if (!_batchState)
+    //! Otherwise the switch back to scene state binds it.
+    if (_sceneState)
         bindSceneTexture();
 }
 
@@ -432,30 +306,57 @@ void OpenGLRenderer::bindSceneTexture()
     if (!data)
         data = _textureMgr->bind(_whiteTexture, 0);
     const GLint coverage = data && data->coverageOnly ? 1 : 0;
-    if (_coverage3D != coverage)
+    if (_coverage != coverage)
     {
-        glUniform1i(_coverage3DLoc, coverage);
-        _coverage3D = coverage;
+        glUniform1i(_coverageLoc, coverage);
+        _coverage = coverage;
     }
 }
 
 void OpenGLRenderer::useSceneState()
 {
-    if (!_batchState)
+    flushBatches();
+    if (_sceneState)
         return;
 
-    _batchState = false;
-    glUseProgram(_shaderProgram);
+    _sceneState = true;
+    glUseProgram(_sceneProgram);
+    glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
-    //! The batch VAO replaced the scene's, along with its element-array binding.
+    //! Another VAO replaced the scene's, along with its element-array binding.
     _vertexMgr->invalidateBinding();
     if (!_vertexMgr->bind(_currentVertexBuffer))
         _vertexMgr->unbind();
     _indexMgr->invalidateBinding();
     _indexMgr->bind(_currentIndexBuffer);
     bindSceneTexture();
+}
+
+void OpenGLRenderer::leaveSceneState()
+{
+    _sceneState = false;
+    _vertexMgr->invalidateBinding();
+    _indexMgr->invalidateBinding();
+}
+
+void OpenGLRenderer::flushBatches()
+{
+    if (_batchMgr && _batchMgr->flush())
+        leaveSceneState();
+}
+
+void OpenGLRenderer::uploadModel()
+{
+    const glm::mat4 &model = _currentTransform.model;
+    if (_modelUploaded && model == _uploadedModel)
+        return;
+
+    glUniformMatrix4fv(_modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+    glUniformMatrix3fv(_normalLoc, 1, GL_FALSE, glm::value_ptr(gfx::normalMatrixOf(model)));
+    _uploadedModel = model;
+    _modelUploaded = true;
 }
 
 void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
@@ -465,35 +366,26 @@ void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
         return;
 
     useSceneState();
+    uploadModel();
     if (instanceCount > 1)
-    {
         glDrawElementsInstanced(GL_TRIANGLES, indexCount, idxData->type, nullptr, instanceCount);
-    }
     else
-    {
         glDrawElements(GL_TRIANGLES, indexCount, idxData->type, nullptr);
-    }
 }
 
 void OpenGLRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
     useSceneState();
+    uploadModel();
     if (instanceCount > 1)
-    {
         glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
-    }
     else
-    {
         glDrawArrays(GL_TRIANGLES, 0, vertexCount);
-    }
 }
 
 glm::uvec2 OpenGLRenderer::renderTargetSize() const noexcept
 {
-    //! The size handleWindowChanges() gives glViewport, so pixels map one to one.
-    const wma::WindowDetails *wd = _windowManagerApi ? _windowManagerApi->getWindowDetails() : nullptr;
-    return wd ? glm::uvec2{static_cast<u32>(std::max(wd->width, 0)), static_cast<u32>(std::max(wd->height, 0))}
-              : glm::uvec2{0};
+    return _targetMgr ? _targetMgr->size() : glm::uvec2{0};
 }
 
 void OpenGLRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
@@ -501,46 +393,9 @@ void OpenGLRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::
 {
     AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
 
-    if (!_batchProgram || !_textureMgr || vertices.empty() || indices.empty())
-        return;
-
-    //! Entered once per run of batches; the next scene draw leaves it (useSceneState()).
-    if (!_batchState)
-    {
-        glUseProgram(_batchProgram);
-        glDepthFunc(GL_LEQUAL);
-        glDepthMask(GL_FALSE);
-        glEnable(GL_BLEND);
-        _batchState = true;
-    }
-
-    glUniformMatrix4fv(_batchTransformLoc, 1, GL_FALSE, glm::value_ptr(batchTransform(space)));
-    const GlTextureData *data = _textureMgr->bind(texture, 0);
-    if (!data)
-        data = _textureMgr->bind(_whiteTexture, 0);
-    const GLint coverage = data && data->coverageOnly ? 1 : 0;
-    if (_batchCoverage != coverage)
-    {
-        glUniform1i(_batchCoverageLoc, coverage);
-        _batchCoverage = coverage;
-    }
-
-    //! The batch owns its VAO, so the managers' bind caches stop describing reality.
-    glBindVertexArray(_batchVao);
-    _vertexMgr->invalidateBinding();
-    _indexMgr->invalidateBinding();
-
-    // Orphan the stores so uploads need not wait for preceding draws.
-    glBindBuffer(GL_ARRAY_BUFFER, _batchVbo);
-    _batchVboBytes = std::max(_batchVboBytes, vertices.size_bytes());
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(_batchVboBytes), nullptr, GL_DYNAMIC_DRAW);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(vertices.size_bytes()), vertices.data());
-
-    _batchEboBytes = std::max(_batchEboBytes, indices.size_bytes());
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(_batchEboBytes), nullptr, GL_DYNAMIC_DRAW);
-    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(indices.size_bytes()), indices.data());
-
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, nullptr);
+    if (_batchMgr && !vertices.empty() && !indices.empty() &&
+        _batchMgr->draw(vertices, indices, texture, batchTransform(space)))
+        leaveSceneState();
 }
 
 void OpenGLRenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)

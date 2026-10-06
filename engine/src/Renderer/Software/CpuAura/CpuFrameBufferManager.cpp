@@ -1,6 +1,7 @@
 #include "aura/Renderer/Software/CpuAura/CpuFrameBufferManager.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -45,7 +46,59 @@ constexpr u32 kLinePixelsPerFontSize = 8;
     return (ey == 0.0f && ex > 0.0f) || (ey < 0.0f);
 }
 
+/*
+ * The GPU backends draw into sRGB targets: colors are linear, blending happens
+ * on linear values, and the target stores them encoded. The software target
+ * does the same through tables, so every backend shows the same picture.
+ * 4096 encode steps keep every result within one code of exact rounding, the
+ * tolerance hardware sRGB conversion has too.
+ */
+constexpr u32 kEncodeSteps = 4095;
+
+struct SrgbTables
+{
+    std::array<f32, 256> decode{};
+    std::array<u8, kEncodeSteps + 1> encode{};
+};
+
+[[nodiscard]] SrgbTables makeSrgbTables() noexcept
+{
+    SrgbTables tables;
+    for (u32 i = 0; i < tables.decode.size(); ++i)
+    {
+        const f32 c = static_cast<f32>(i) / 255.0f;
+        tables.decode[i] = c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+    }
+    for (u32 i = 0; i <= kEncodeSteps; ++i)
+    {
+        const f32 l = static_cast<f32>(i) / static_cast<f32>(kEncodeSteps);
+        const f32 c = l <= 0.0031308f ? l * 12.92f : 1.055f * std::pow(l, 1.0f / 2.4f) - 0.055f;
+        tables.encode[i] = static_cast<u8>(std::lround(c * 255.0f));
+    }
+    return tables;
+}
+
+const SrgbTables kSrgb = makeSrgbTables();
+
+//! @p linear is in [0, 1]; blending can overshoot by a rounding error, hence the min.
+[[nodiscard]] u32 encodeChannel(f32 linear) noexcept
+{
+    return kSrgb.encode[static_cast<u32>(std::min(linear, 1.0f) * static_cast<f32>(kEncodeSteps) + 0.5f)];
+}
+
+//! Linear color in [0, 1] to the stored 0xAARRGGBB: RGB encoded, alpha rounded like a UNORM write.
+[[nodiscard]] u32 packLinear(const glm::vec4 &color) noexcept
+{
+    return (static_cast<u32>(std::min(color.a, 1.0f) * 255.0f + 0.5f) << 24) | (encodeChannel(color.r) << 16) |
+           (encodeChannel(color.g) << 8) | encodeChannel(color.b);
+}
+
 } // namespace
+
+u32 CpuFrameBufferManager::packLinearColor(const glm::vec4 &color) noexcept
+{
+    return packLinear(glm::clamp(color, 0.0f, 1.0f));
+}
 
 /**
  * Constructor - allocates the CPU colour/depth plane. Presentation is delegated
@@ -435,9 +488,8 @@ void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex &v0, const 
     const glm::vec4 col0w = p0->color * p0->invW, col1w = p1->color * p1->invW, col2w = p2->color * p2->invW;
     //! Canvas shapes and flat fills: every pixel takes the vertex color, so it is resolved once.
     const bool flatUntextured = !texture && p0->color == p1->color && p1->color == p2->color;
-    const glm::vec4 flatSource = glm::clamp(p0->color, 0.0f, 1.0f) * 255.0f;
-    const f32 flatAlpha = flatSource.a / 255.0f;
-    const glm::vec4 flatWeighted = flatSource * flatAlpha;
+    const glm::vec4 flatSource = glm::clamp(p0->color, 0.0f, 1.0f);
+    const u32 flatPacked = packLinear(flatSource);
 
     //! Edge i's function is dx * (py - oy) - dy * (px - ox): edge 0 runs p1 -> p2, 1 p2 -> p0, 2 p0 -> p1.
     const f32 ox0 = p1->x, oy0 = p1->y, dx0 = p2->x - p1->x, dy0 = p2->y - p1->y;
@@ -524,22 +576,26 @@ void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex &v0, const 
                     color *= w;
                 }
                 color = glm::clamp(color, 0.0f, 1.0f);
+                //! Texels are UNORM, read as linear the way the GPU backends sample them.
                 const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
-                source = color * glm::vec4{(texel >> 16) & 255u, (texel >> 8) & 255u, texel & 255u, texel >> 24};
+                source = color *
+                         glm::vec4{(texel >> 16) & 255u, (texel >> 8) & 255u, texel & 255u, texel >> 24} *
+                         (1.0f / 255.0f);
             }
-            glm::vec4 output = source;
             if constexpr (Blended)
             {
-                const f32 alpha = flatUntextured ? flatAlpha : source.a / 255.0f;
+                const f32 alpha = source.a;
                 if (alpha <= 0)
                     continue;
-                const glm::vec4 background{(dst.rgb >> 16) & 255u, (dst.rgb >> 8) & 255u, dst.rgb & 255u,
-                                           dst.rgb >> 24};
-                output = (flatUntextured ? flatWeighted : source * alpha) + background * (1.0f - alpha);
-                output.a = source.a + background.a * (1.0f - alpha);
+                const f32 keep = 1.0f - alpha;
+                const glm::vec4 background{kSrgb.decode[(dst.rgb >> 16) & 255u], kSrgb.decode[(dst.rgb >> 8) & 255u],
+                                           kSrgb.decode[dst.rgb & 255u], static_cast<f32>(dst.rgb >> 24) / 255.0f};
+                glm::vec4 output = source * alpha + background * keep;
+                output.a = alpha + background.a * keep;
+                dst.rgb = packLinear(output);
             }
-            dst.rgb = (static_cast<u32>(output.a) << 24) | (static_cast<u32>(output.r) << 16) |
-                      (static_cast<u32>(output.g) << 8) | static_cast<u32>(output.b);
+            else
+                dst.rgb = flatUntextured ? flatPacked : packLinear(source);
             if constexpr (!Blended)
                 if (settings.useDepthBuffer)
                     dst.z = z;
