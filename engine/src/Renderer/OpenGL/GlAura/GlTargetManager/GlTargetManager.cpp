@@ -35,7 +35,6 @@ void GlTargetManager::resize(glm::uvec2 size)
         glGenTextures(1, &_color);
         glGenRenderbuffers(1, &_depth);
     }
-    _size = size;
     const auto width = static_cast<GLsizei>(size.x);
     const auto height = static_cast<GLsizei>(size.y);
 
@@ -51,6 +50,8 @@ void GlTargetManager::resize(glm::uvec2 size)
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, _depth);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         throw std::runtime_error("GlTargetManager: sRGB render target is incomplete");
+    //! Only a complete target counts as this size, so a failed resize is retried.
+    _size = size;
     glViewport(0, 0, width, height);
 }
 

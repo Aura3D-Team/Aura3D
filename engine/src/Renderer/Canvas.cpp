@@ -10,12 +10,6 @@ namespace gfx
 namespace
 {
 
-//! x - x is 0 for finite x and NaN for NaN or infinity, so one comparison tests a whole vector.
-template <glm::length_t N> [[nodiscard]] bool finite(const glm::vec<N, f32> &value) noexcept
-{
-    return value - value == glm::vec<N, f32>(0.0f);
-}
-
 //! Keeps the part of [a, b] on the non-negative side of a plane, given each end's signed distance.
 [[nodiscard]] bool clipSegment(glm::vec4 &a, glm::vec4 &b, f32 da, f32 db) noexcept
 {
@@ -37,9 +31,6 @@ void Canvas::line(glm::vec2 from, glm::vec2 to, const glm::vec4 &color, f32 widt
 
 void Canvas::line(const CanvasView &view, glm::vec3 from, glm::vec3 to, const glm::vec4 &color, f32 width)
 {
-    if (!(view.target.x > 0.0f) || !(view.target.y > 0.0f))
-        return;
-
     glm::vec4 a = view.clip * glm::vec4(from, 1.0f);
     glm::vec4 b = view.clip * glm::vec4(to, 1.0f);
 
@@ -64,8 +55,6 @@ void Canvas::line(const CanvasView &view, glm::vec3 from, glm::vec3 to, const gl
 void Canvas::rect(glm::vec2 origin, glm::vec2 size, const glm::vec4 &color)
 {
     const glm::vec2 end = origin + size;
-    if (!(size.x > 0.0f) || !(size.y > 0.0f) || !(color.a > 0.0f) || !finite(glm::vec4{origin, end}) || !finite(color))
-        return;
     quad({{origin, 0.0f}, {}, color}, {{end.x, origin.y, 0.0f}, {}, color}, {{end, 0.0f}, {}, color},
          {{origin.x, end.y, 0.0f}, {}, color});
 }
@@ -77,10 +66,6 @@ void Canvas::triangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, const glm::vec4 &co
 
 void Canvas::triangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec4 &color)
 {
-    //! In double, so rounding cannot call a thin valid triangle degenerate.
-    if (!(color.a > 0.0f) || !finite(a) || !finite(b) || !finite(c) || !finite(color) ||
-        glm::cross(glm::dvec3(b) - glm::dvec3(a), glm::dvec3(c) - glm::dvec3(a)) == glm::dvec3(0.0))
-        return;
     const auto base = static_cast<u32>(_vertices.size());
     _vertices.push_back({a, {}, color});
     _vertices.push_back({b, {}, color});
@@ -122,9 +107,6 @@ void Canvas::segment(glm::vec3 from, glm::vec3 to, const glm::vec4 &color, f32 w
 {
     const glm::vec2 d{to.x - from.x, to.y - from.y};
     const f32 lengthSq = d.x * d.x + d.y * d.y;
-    if (!(width > 0.0f) || !(color.a > 0.0f) || !(lengthSq > 0.0f) || !finite(glm::vec4{from, width}) ||
-        !finite(glm::vec4{to, lengthSq}) || !finite(color))
-        return;
     const glm::vec3 normal{glm::vec2{-d.y, d.x} * (width * 0.5f / std::sqrt(lengthSq)), 0.0f};
     quad({from - normal, {}, color}, {to - normal, {}, color}, {to + normal, {}, color}, {from + normal, {}, color});
 }

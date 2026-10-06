@@ -23,8 +23,7 @@ struct CanvasView
 
 /// Unlit triangles that IRenderer::drawBatch() draws in one call. Geometry stays until
 /// clear() and capacity beyond it, so a canvas is rebuilt each frame without allocating,
-/// or built once and drawn every frame. Invalid input (nonfinite, degenerate, invisible)
-/// adds nothing.
+/// or built once and drawn every frame.
 class Canvas
 {
   public:

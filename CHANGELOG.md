@@ -55,6 +55,7 @@ All notable changes to Aura3D are documented in this file.
 - Shared font caches synchronize correctly with multiple UI renderers and retain pending glyphs when texture creation fails. Commands that disappear after pixel snapping no longer split batches.
 - Rounded widgets showed dark lines where a corner met the body: corner masks were sampled half a texel off and blended with the atlas padding. Fills, borders and clips now snap to device pixels and corner masks are rasterized at device size.
 - Icons are rasterized at device size and snapped, so they stay sharp at fractional and 2x UI scales.
+- Vulkan's per-frame camera ring holds 1024 cameras instead of 64, and a full ring ignores further camera changes instead of overwriting a slot that recorded draws still read.
 - OpenGL presented every frame twice under `IRenderer::run()`, halving a vsynced frame rate.
 - OpenGL sized its viewport from the logical window size, so a HiDPI window drew into a quarter of itself.
 - OpenGL pixel reads after `endRenderPass()` could return black: they read the window's framebuffer, undefined while the window is being mapped. They read the pass target now.

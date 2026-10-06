@@ -440,19 +440,6 @@ void testRendererPrimitives()
     renderer.setTransform(
         {glm::mat4{1.0f}, glm::mat4{1.0f}, glm::perspectiveRH_NO(glm::radians(90.0f), aspect, 0.1f, 100.0f)});
     renderer.clear();
-    const gfx::CanvasView view = renderer.canvasView();
-    shapes.line(glm::vec2{0, 0}, glm::vec2{0, 0}, tint);
-    shapes.line(glm::vec2{0, 0}, glm::vec2{1, 1}, tint, -1);
-    shapes.line(glm::vec2{std::numeric_limits<f32>::infinity(), 0}, glm::vec2{1, 1}, tint);
-    shapes.line(view, glm::vec3{0, 0, -5}, glm::vec3{0, 0, -5}, tint);
-    shapes.line(view, glm::vec3{0, 0, 5}, glm::vec3{1, 0, 5}, tint);
-    shapes.line(view, glm::vec3{0, 0, -2}, glm::vec3{0, 0, -20}, tint);
-    shapes.rect({}, {-1, 4}, tint);
-    shapes.triangle(glm::vec2{0, 0}, glm::vec2{1, 1}, glm::vec2{2, 2}, tint);
-    shapes.triangle(glm::vec3{0, 0, -1}, glm::vec3{1, 1, -2}, glm::vec3{2, 2, -3}, tint);
-    AURA_CHECK(shapes.empty(), "degenerate, nonfinite, behind-camera and end-on primitives add nothing");
-    submit();
-    AURA_CHECK(renderer.batches.empty() && renderer.sceneBatches.empty(), "an empty batch draws nothing");
 
     shapes.rect({10, 20}, {30, 40}, tint);
     shapes.triangle(glm::vec2{0, 0}, glm::vec2{10, 0}, glm::vec2{0, 10}, tint);

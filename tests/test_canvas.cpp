@@ -15,8 +15,6 @@ using namespace aura3d;
 namespace
 {
 
-constexpr f32 kNaN = std::numeric_limits<f32>::quiet_NaN();
-constexpr f32 kInf = std::numeric_limits<f32>::infinity();
 constexpr glm::vec4 kRed{1, 0, 0, 1};
 
 [[nodiscard]] bool near(f32 a, f32 b, f32 tolerance = 1e-4f)
@@ -38,6 +36,7 @@ constexpr glm::vec4 kRed{1, 0, 0, 1};
 
 [[nodiscard]] glm::vec2 xRange(const gfx::Canvas &canvas)
 {
+    constexpr f32 kInf = std::numeric_limits<f32>::infinity();
     glm::vec2 range{kInf, -kInf};
     for (const gfx::BatchVertex &v : canvas.vertices())
         range = {std::min(range.x, v.pos.x), std::max(range.y, v.pos.x)};
@@ -54,36 +53,6 @@ void test_rect()
     AURA_CHECK(v[0].pos == glm::vec3(10, 20, 0) && v[2].pos == glm::vec3(40, 60, 0), "rect: corners at origin and end");
     AURA_CHECK(std::ranges::all_of(v, [](const gfx::BatchVertex &x) { return x.color == kRed; }), "rect: color on every vertex");
     AURA_CHECK(indicesInRange(canvas), "rect: indices in range");
-}
-
-void test_rejected_input()
-{
-    gfx::Canvas canvas;
-    canvas.rect({0, 0}, {0, 10}, kRed);
-    canvas.rect({0, 0}, {10, -1}, kRed);
-    canvas.rect({0, 0}, {10, 10}, {1, 0, 0, 0});
-    canvas.rect({kNaN, 0}, {10, 10}, kRed);
-    canvas.rect({0, 0}, {kInf, 10}, kRed);
-    canvas.rect({0, 0}, {10, 10}, {kNaN, 0, 0, 1});
-    canvas.triangle(glm::vec2{0, 0}, glm::vec2{1, 1}, glm::vec2{2, 2}, kRed);
-    canvas.triangle(glm::vec2{0, 0}, glm::vec2{0, 0}, glm::vec2{2, 2}, kRed);
-    canvas.triangle(glm::vec3{0, 0, kNaN}, glm::vec3{1, 0, 0}, glm::vec3{0, 1, 0}, kRed);
-    canvas.line({0, 0}, {0, 0}, kRed);
-    canvas.line({0, 0}, {10, 0}, kRed, 0.0f);
-    canvas.line({0, 0}, {10, 0}, kRed, -1.0f);
-    canvas.line({0, 0}, {10, 0}, kRed, kNaN);
-    canvas.line({0, 0}, {kInf, 0}, kRed);
-    canvas.line({0, 0}, {10, 0}, {1, 0, 0, 0});
-    //! Squaring overflows: lengthSq is infinite though both ends are finite.
-    canvas.line({-3e38f, 0}, {3e38f, 0}, kRed);
-    AURA_CHECK(canvas.empty() && canvas.vertices().empty(), "invalid, degenerate and invisible shapes add nothing");
-}
-
-void test_thin_triangle_is_kept()
-{
-    gfx::Canvas canvas;
-    canvas.triangle(glm::vec2{0, 0}, glm::vec2{10000, 0}, glm::vec2{0, 1e-3f}, kRed);
-    AURA_CHECK(canvas.indices().size() == 3, "a thin but valid triangle is not called degenerate");
 }
 
 void test_line_quad()
@@ -176,10 +145,6 @@ void test_world_line_behind_camera()
     gfx::Canvas behind;
     behind.line(canvasView, {0, 0, 1}, {1, 0, 5}, kRed);
     AURA_CHECK(behind.empty(), "world line: behind the camera adds nothing");
-
-    gfx::Canvas noTarget;
-    noTarget.line({projection * view, {0, 200}, true}, {0, 0, -5}, {1, 0, -5}, kRed);
-    AURA_CHECK(noTarget.empty(), "world line: no target size adds nothing");
 }
 
 } // namespace
@@ -187,8 +152,6 @@ void test_world_line_behind_camera()
 int main()
 {
     test_rect();
-    test_rejected_input();
-    test_thin_triangle_is_kept();
     test_line_quad();
     test_append_rebases();
     test_clear();

@@ -20,6 +20,17 @@ namespace
 
 } // namespace
 
+void IRenderer::drawBatch(const gfx::Canvas &canvas, TextureHandle texture, gfx::BatchSpace space)
+{
+    if (!canvas.empty())
+        drawBatch(canvas.vertices(), canvas.indices(), texture, space);
+}
+
+glm::uvec2 IRenderer::renderTargetSize() const noexcept
+{
+    return {static_cast<u32>(std::max(_windowDetails.width, 0)), static_cast<u32>(std::max(_windowDetails.height, 0))};
+}
+
 gfx::CanvasView IRenderer::canvasView() const
 {
     return {batchTransform(gfx::BatchSpace::World), glm::vec2{renderTargetSize()}, depthZeroToOne(getBackendType())};
@@ -99,13 +110,7 @@ TextureHandle IRenderer::createCoverageTexture(u32 width, u32 height)
     if (isValidHandle(handle))
     {
         updateTextureRegion(handle, 0, 0, width, height, rgba.data());
-        //! A backend may reissue a destroyed texture's id; its old entry must not answer for this one.
-        std::erase_if(_coverageFallbacks,
-                      [handle](const CoverageFallback &entry)
-                      {
-                          return entry.handle == handle;
-                      });
-        _coverageFallbacks.push_back({handle, width, height});
+        _coverageFallbacks[handle] = {width, height};
     }
     return handle;
 }
@@ -113,9 +118,11 @@ TextureHandle IRenderer::createCoverageTexture(u32 width, u32 height)
 void IRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                             const u8 *coverage)
 {
-    const auto entry = std::ranges::find(_coverageFallbacks, handle, &CoverageFallback::handle);
-    if (!coverage || width == 0 || height == 0 || entry == _coverageFallbacks.end() || x >= entry->width ||
-        y >= entry->height || width > entry->width - x || height > entry->height - y)
+    const auto entry = _coverageFallbacks.find(handle);
+    if (!coverage || width == 0 || height == 0 || entry == _coverageFallbacks.end())
+        return;
+    const glm::uvec2 size = entry->second;
+    if (x >= size.x || y >= size.y || width > size.x - x || height > size.y - y)
         return;
 
     const usize count = static_cast<usize>(width) * height;

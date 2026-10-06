@@ -55,7 +55,7 @@ namespace
 }
 
 //! Camera slots per frame in flight; a frame's cameras past this overwrite the last slot.
-constexpr u32 kTransformSlots = 64;
+constexpr u32 kTransformSlots = 1024;
 
 void declareBatchInterface(VkGraphicsPipelineManager &pipeline, u32 bindlessTextureCapacity)
 {
@@ -1155,9 +1155,9 @@ void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)
 
 void VulkanRenderer::publishTransform()
 {
-    const u32 slot = std::min(_transformSlotsUsed, kTransformSlots - 1);
-    _vkUniformBufferManager->updateUniformBuffer(_currentFrame, _currentTransform, slot);
-    _transformSlotsUsed = slot + 1;
+    //! Recorded draws read their slot at GPU time, so a full ring is never reused.
+    if (_transformSlotsUsed < kTransformSlots)
+        _vkUniformBufferManager->updateUniformBuffer(_currentFrame, _currentTransform, _transformSlotsUsed++);
 }
 
 void VulkanRenderer::bindVertexBuffer(VertexBufferHandle handle)

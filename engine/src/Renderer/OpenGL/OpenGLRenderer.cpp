@@ -242,9 +242,6 @@ void OpenGLRenderer::endFrame()
      * swaps right after this returns; a second swap here would show each frame
      * twice and halve a vsynced rate.
      */
-    //! Batches drawn after the pass still reach this frame.
-    if (_batchMgr)
-        flushBatches();
     if (_windowManagerApi && !_running)
     {
         AURA_FRAME_SCOPE(FramePhase::Present);

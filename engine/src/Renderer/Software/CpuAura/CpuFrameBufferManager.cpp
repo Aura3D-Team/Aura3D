@@ -668,17 +668,10 @@ namespace
 [[nodiscard]] bool acceptable(const ScreenTriangle &triangle) noexcept
 {
     const f32 area2 = signedArea2(triangle.v0, triangle.v1, triangle.v2);
-    if (!std::isfinite(area2) || std::abs(area2) < 1e-6f)
+    if (std::abs(area2) < 1e-6f)
         return false;
-    for (const ScreenVertex *v : {&triangle.v0, &triangle.v1, &triangle.v2})
-    {
-        if (!std::isfinite(v->z) || !std::isfinite(v->invW) || v->invW <= 0)
-            return false;
-        for (int channel = 0; channel < 4; ++channel)
-            if (!std::isfinite(v->color[channel]))
-                return false;
-    }
-    return true;
+    //! Behind the camera.
+    return triangle.v0.invW > 0 && triangle.v1.invW > 0 && triangle.v2.invW > 0;
 }
 
 [[nodiscard]] glm::vec2 rowsOf(const ScreenTriangle &triangle) noexcept

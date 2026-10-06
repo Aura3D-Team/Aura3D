@@ -7,6 +7,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -477,22 +478,14 @@ class IRenderer
                            TextureHandle texture, gfx::BatchSpace space = gfx::BatchSpace::Screen) = 0;
 
     void drawBatch(const gfx::Canvas &canvas, TextureHandle texture = {},
-                   gfx::BatchSpace space = gfx::BatchSpace::Screen)
-    {
-        if (!canvas.empty())
-            drawBatch(canvas.vertices(), canvas.indices(), texture, space);
-    }
+                   gfx::BatchSpace space = gfx::BatchSpace::Screen);
 
     /// The current camera and render target, for gfx::Canvas::line() in world space.
     [[nodiscard]] gfx::CanvasView canvasView() const;
 
     /// Size of the render target in the pixels screen-space batches and line widths use.
     /// Backends report their live target; the base returns the window size it was built with.
-    [[nodiscard]] virtual glm::uvec2 renderTargetSize() const noexcept
-    {
-        return {static_cast<u32>(std::max(_windowDetails.width, 0)),
-                static_cast<u32>(std::max(_windowDetails.height, 0))};
-    }
+    [[nodiscard]] virtual glm::uvec2 renderTargetSize() const noexcept;
 
     /**
      * @brief Sets the clear color for target framebuffers.
@@ -619,13 +612,8 @@ class IRenderer
     gfx::TransformUBO _currentTransform{};
 
   private:
-    struct CoverageFallback
-    {
-        TextureHandle handle;
-        u32 width;
-        u32 height;
-    };
-    std::vector<CoverageFallback> _coverageFallbacks;
+    //! Sizes of the coverage textures the base class emulates as RGBA, for backends with no native ones.
+    std::unordered_map<TextureHandle, glm::uvec2> _coverageFallbacks;
 };
 
 } // namespace aura3d
