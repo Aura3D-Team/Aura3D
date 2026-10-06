@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = ("apps", "engine/include", "engine/src", "include", "src", "tests")
 EXTENSIONS = {".h", ".hpp", ".hxx", ".inl", ".ipp", ".c", ".cc", ".cpp", ".cxx", ".mm"}
 HEADERS = {".h", ".hpp", ".hxx", ".inl", ".ipp"}
-CLANG_FORMAT = os.environ.get("CLANG_FORMAT", "clang-format-21")
-CLANG_TIDY = os.environ.get("CLANG_TIDY", "clang-tidy-21")
+CLANG_FORMAT = os.environ.get("CLANG_FORMAT", "clang-format-22")
+CLANG_TIDY = os.environ.get("CLANG_TIDY", "clang-tidy-22")
 
 
 def git(*args):

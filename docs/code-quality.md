@@ -1,6 +1,6 @@
 # C++ checks
 
-LLVM 21: `clang-format-21` and `clang-tidy-21`. Configure with
+LLVM 22: `clang-format-22` and `clang-tidy-22`. Configure with
 `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_SCAN_FOR_MODULES=OFF` and build once
 so generated headers exist. Module scanning adds GCC flags that clang-tidy
 cannot parse. The Linux Debug preset already sets both options.
