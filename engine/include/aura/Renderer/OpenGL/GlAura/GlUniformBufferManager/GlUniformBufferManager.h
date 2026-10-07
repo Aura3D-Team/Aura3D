@@ -12,42 +12,27 @@ namespace aura3d
 namespace gl
 {
 
+/// The camera (binding 0) and light (binding 1) blocks of the scene program.
 class GlUniformBufferManager
 {
   public:
     GlUniformBufferManager();
     ~GlUniformBufferManager();
 
-    //! Allocates the transform (binding 0) and light (binding 1) blocks and
-    //! wires them to @p shaderProgram.
     void create(GLuint shaderProgram);
 
-    void update(const gfx::TransformUBO &ubo);
-
-    //! Uploads the directional light consumed by the fragment stage.
+    /// Uploads view and projection, only when they differ from the last upload.
+    void updateCamera(const gfx::TransformUBO &ubo);
     void updateLight(const gfx::LightUBO &light);
 
-    void bind(GLuint shaderProgram);
     void cleanup();
 
   private:
-    /**
-     * @brief Makes @p buffer current on GL_UNIFORM_BUFFER, skipping the call
-     *        when it already is.
-     *
-     * The uploads used to bind their buffer and then bind 0 again, so a frame's
-     * worth of per-object transform updates re-bound the same buffer once per
-     * draw. Nothing here relies on the target being left empty -- the blocks
-     * are wired to their binding points once, in create(), with
-     * glBindBufferBase, which is independent of this general binding.
-     */
-    void bindUniformBuffer(GLuint buffer);
-
-    GLuint _ubo = 0;
-    GLuint _uboSize = 0;
+    GLuint _cameraUbo = 0;
     GLuint _lightUbo = 0;
-    //! Buffer currently bound to GL_UNIFORM_BUFFER; 0 means none.
-    GLuint _boundUniformBuffer = 0;
+    glm::mat4 _view{0.0f};
+    glm::mat4 _proj{0.0f};
+    bool _cameraValid = false;
 };
 
 } // namespace gl

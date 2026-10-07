@@ -1,5 +1,8 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
+#include <algorithm>
+#include <cctype>
+
 #include <wma/wma.hpp>
 
 #include "aura/aura.h"
@@ -82,6 +85,26 @@ bool AuraSettings::getFullscreen() const
     return _settings.getPath<bool>("/window/fullscreen", _defaults.window.fullscreen);
 }
 
+wma::DecorationMode AuraSettings::getWindowDecorations() const
+{
+    std::string mode = _settings.getPath<std::string>("/window/decorations", std::string());
+    if (mode.empty())
+        return _defaults.window.decorations;
+
+    std::ranges::transform(mode, mode.begin(),
+                           [](unsigned char c)
+                           {
+                               return static_cast<char>(std::tolower(c));
+                           });
+    if (mode == "server")
+        return wma::DecorationMode::ServerSide;
+    if (mode == "client")
+        return wma::DecorationMode::ClientSide;
+
+    INK_WARN << "AuraSettings: unsupported window decorations '" << mode << "'; expected \"server\" or \"client\"";
+    return _defaults.window.decorations;
+}
+
 bool AuraSettings::getVSync() const
 {
     return _settings.getPath<bool>("/window/vsync", _defaults.window.vsync);
@@ -127,6 +150,16 @@ bool AuraSettings::getValidationLayers() const
 int AuraSettings::getMaxFramesInFlight() const
 {
     return _settings.getPath<int>("/renderer/max_frames_in_flight", _defaults.renderer.maxFramesInFlight);
+}
+
+bool AuraSettings::getGpuTiming() const
+{
+#ifdef AURA_PROFILE_FRAME
+    constexpr bool kBuildDefault = true;
+#else
+    constexpr bool kBuildDefault = false;
+#endif
+    return _settings.getPath<bool>("/renderer/gpu_timing", _defaults.renderer.gpuTiming.value_or(kBuildDefault));
 }
 
 std::string AuraSettings::getGpuPreference() const

@@ -1,29 +1,23 @@
-/*
- * Software rasteriser conventions.
- *
- * The CPU backend culls back faces at the vertex stage, which is only correct
- * if its notion of "front" matches the GPU backends' -- those cull with
- * VK_FRONT_FACE_COUNTER_CLOCKWISE, so an asset that renders solid under Vulkan
- * must render solid here. Getting the sign backwards does not crash or warn;
- * it renders every closed mesh inside-out, showing its far faces through its
- * near ones. That is exactly the kind of silent, convention-level mistake worth
- * pinning down in a test rather than in a comment.
- *
- * Ground truth here is geometric and independent of the rasteriser: a triangle
- * faces the camera when its outward face normal points back towards the eye.
- * The test asserts isFrontFacing() agrees with that on every triangle of a
- * cube, from several viewpoints.
- */
-
+// CPU winding, coverage, interpolation and ordered depth/blend behavior.
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include <glm/glm.hpp>
 
 #include "aura/Core/Camera/Camera.h"
+#include "aura/Core/JobSystem/JobSystem.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
 #include "aura/Renderer/Software/CpuAura/CpuFrameBufferManager.h"
+#ifdef AURA_HAS_CPU
+#include "aura/Renderer/Software/CPURenderer.h"
+#endif
 
 #include "TestUtils.h"
+#include "WindowTestUtils.h"
 
 using namespace aura3d;
 using aura3d::cpu::ScreenVertex;
@@ -130,6 +124,262 @@ int checkCubeFromEye(const glm::vec3 &eye, const char *label)
     return kept;
 }
 
+using Framebuffer = cpu::CpuFrameBufferManager;
+using Mode = Framebuffer::RasterMode;
+
+void queueQuad(Framebuffer &frame, f32 depth, glm::vec4 color, Mode mode, bool reverse = false)
+{
+    const ScreenVertex a{0, 0, depth, 1, {}, color}, b{16, 0, depth, 1, {}, color};
+    const ScreenVertex c{16, 16, depth, 1, {}, color}, d{0, 16, depth, 1, {}, color};
+    frame.queueTriangle(reverse ? cpu::ScreenTriangle{c, b, a} : cpu::ScreenTriangle{a, b, c}, nullptr, mode);
+    frame.queueTriangle(reverse ? cpu::ScreenTriangle{d, c, a} : cpu::ScreenTriangle{a, c, d}, nullptr, mode);
+}
+
+// An independent reference for the GPU backends' sRGB targets: linear colors and blending, stored
+// encoded. The rasterizer uses tables; hardware is allowed 0.6 of a code, so channels match within one.
+u32 encodeByte(f32 linear)
+{
+    const f32 c = linear <= 0.0031308f ? linear * 12.92f : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+    return static_cast<u32>(std::lround(c * 255.0f));
+}
+
+f32 decodeByte(u32 byte)
+{
+    const f32 c = static_cast<f32>(byte) / 255.0f;
+    return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
+
+u32 stored(glm::vec4 linear)
+{
+    return (static_cast<u32>(std::lround(linear.a * 255.0f)) << 24) | (encodeByte(linear.r) << 16) |
+           (encodeByte(linear.g) << 8) | encodeByte(linear.b);
+}
+
+//! What a straight-alpha batch of @p source leaves over the stored @p destination.
+u32 over(u32 destination, glm::vec4 source)
+{
+    const glm::vec3 background{decodeByte((destination >> 16) & 255u), decodeByte((destination >> 8) & 255u),
+                               decodeByte(destination & 255u)};
+    const f32 keep = 1.0f - source.a;
+    return stored({glm::vec3(source) * source.a + background * keep,
+                   source.a + static_cast<f32>(destination >> 24) / 255.0f * keep});
+}
+
+bool sameColor(u32 actual, u32 expected)
+{
+    for (u32 shift : {0u, 8u, 16u, 24u})
+        if (std::abs(static_cast<i32>((actual >> shift) & 255u) - static_cast<i32>((expected >> shift) & 255u)) > 1)
+            return false;
+    return true;
+}
+
+bool allPixels(const Framebuffer &frame, u32 color, f32 depth)
+{
+    for (i32 y = 0; y < 16; ++y)
+        for (i32 x = 0; x < 16; ++x)
+        {
+            const cpu::Pixel pixel = frame.getPixel({x, y});
+            if (!sameColor(pixel.rgb, color) || pixel.z != depth)
+                return false;
+        }
+    return true;
+}
+
+void checkRasterization()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 16, .height = 16}, jobs};
+    for (bool reverse : {false, true})
+    {
+        frame.clear();
+        queueQuad(frame, 0, {1, 0, 0, 0.5f}, Mode::Batch, reverse);
+        frame.flush();
+        AURA_CHECK(allPixels(frame, over(0, {1, 0, 0, 0.5f}), 1),
+                   "shared diagonal blends exactly once in either winding, preserving framebuffer alpha");
+    }
+
+    frame.clear();
+    queueQuad(frame, 0.5f, {1, 0, 0, 1}, Mode::Scene);
+    queueQuad(frame, 0.75f, {0, 1, 0, 1}, Mode::Batch);
+    queueQuad(frame, 0.5f, {0, 0, 1, 0.5f}, Mode::Batch);
+    frame.flush();
+    const u32 blueOverRed = over(stored({1, 0, 0, 1}), {0, 0, 1, 0.5f});
+    AURA_CHECK(allPixels(frame, blueOverRed, 0.5f), "batches reject hidden pixels and blend at equal scene depth");
+    queueQuad(frame, 0, {0, 1, 0, 0.5f}, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, over(blueOverRed, {0, 1, 0, 0.5f}), 0.5f),
+               "screen depth overlays the scene without modifying depth");
+
+    frame.clear();
+    queueQuad(frame, 0.1f, {1, 0, 0, 1}, Mode::Batch);
+    queueQuad(frame, 0.8f, {0, 1, 0, 1}, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, 0xFF00FF00u, 1), "batch call order wins even when the later batch is farther away");
+    queueQuad(frame, 0.5f, {0, 0, 1, 1}, Mode::Scene);
+    queueQuad(frame, 0, {1, 0, 0, 0.5f}, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, over(stored({0, 0, 1, 1}), {1, 0, 0, 0.5f}), 0.5f),
+               "scene and batch submissions retain their order across row bands");
+
+    frame.clear();
+    ScreenVertex a{0, 0, 0.5f, 1, {}, {1, 0, 0, 1}};
+    ScreenVertex b{8, 0, 0.5f, 0.5f, {}, {0, 1, 0, 1}};
+    ScreenVertex c{0, 8, 0.5f, 0.25f, {}, {0, 0, 1, 1}};
+    for (Mode mode : {Mode::Scene, Mode::Batch})
+    {
+        frame.clear();
+        frame.queueTriangle({a, b, c}, nullptr, mode);
+        frame.flush();
+        // At (2.5,2.5), screen weights are 3/8, 5/16, 5/16; reciprocal w sums to 39/64.
+        const u32 expected = stored({24.0f / 39.0f, 10.0f / 39.0f, 5.0f / 39.0f, 1.0f});
+        AURA_CHECK(sameColor(frame.getPixel({2, 2}).rgb, expected),
+                   "scene and batch colors use perspective-correct weights");
+    }
+
+    frame.clear();
+    a.x = std::numeric_limits<f32>::quiet_NaN();
+    frame.queueTriangle({a, b, c}, nullptr, Mode::Batch);
+    a.x = -1e20f;
+    b.x = 1e20f;
+    c.x = 0;
+    a.y = b.y = c.y = 1e20f;
+    frame.queueTriangle({a, b, c}, nullptr, Mode::Batch);
+    frame.flush();
+    AURA_CHECK(allPixels(frame, 0, 1), "non-finite and far-offscreen triangles leave the framebuffer unchanged");
+}
+
+//! Bilinear clamp-to-edge in float: the reference the kernels' filtering is held to.
+glm::vec4 bilinear(const cpu::Texture &texture, f32 u, f32 v)
+{
+    const f32 fx = std::clamp(u, 0.0f, 1.0f) * static_cast<f32>(texture.width) - 0.5f;
+    const f32 fy = std::clamp(v, 0.0f, 1.0f) * static_cast<f32>(texture.height) - 0.5f;
+    const i32 x = static_cast<i32>(std::floor(fx)), y = static_cast<i32>(std::floor(fy));
+    const f32 tx = fx - std::floor(fx), ty = fy - std::floor(fy);
+    const auto texel = [&](i32 tx0, i32 ty0)
+    {
+        const u32 argb = texture.texelClamped(tx0, ty0);
+        return glm::vec4{(argb >> 16) & 255u, (argb >> 8) & 255u, argb & 255u, argb >> 24} / 255.0f;
+    };
+    return glm::mix(glm::mix(texel(x, y), texel(x + 1, y), tx), glm::mix(texel(x, y + 1), texel(x + 1, y + 1), tx), ty);
+}
+
+void checkTexturedSpans()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 24, .height = 16}, jobs};
+    cpu::Texture rgba(4, 4), coverage(4, 4, true), unit(1, 1);
+    for (u32 i = 0; i < 16; ++i)
+    {
+        rgba.data[i] = 0xFF000000u | (i * 16u << 16) | ((255u - i * 16u) << 8) | ((i * 53u) & 255u);
+        coverage.coverage[i] = static_cast<u8>(i * 17u);
+    }
+    unit.data[0] = 0xFF8040FFu;
+
+    // x in [3, 19) starts and ends mid-chunk, so partial lane masks are exercised on both sides.
+    const glm::vec4 tint{1, 0.5f, 1, 1};
+    const ScreenVertex a{3, 0, 0, 1, {0, 0}, tint}, b{19, 0, 0, 1, {1, 0}, tint};
+    const ScreenVertex c{19, 16, 0, 1, {1, 1}, tint}, d{3, 16, 0, 1, {0, 1}, tint};
+    for (const cpu::Texture *texture : {&rgba, &coverage, &unit})
+    {
+        frame.clear();
+        frame.queueTriangle({a, b, c}, texture, Mode::Batch);
+        frame.queueTriangle({a, c, d}, texture, Mode::Batch);
+        frame.flush();
+        bool matches = true;
+        for (i32 y = 0; y < 16; ++y)
+            for (i32 x = 0; x < 24; ++x)
+            {
+                u32 expected = 0;
+                if (x >= 3 && x < 19)
+                {
+                    const f32 u = (static_cast<f32>(x) + 0.5f - 3.0f) / 16.0f, v = (static_cast<f32>(y) + 0.5f) / 16.0f;
+                    expected = over(0, tint * bilinear(*texture, u, v));
+                }
+                matches &= sameColor(frame.getPixel({x, y}).rgb, expected);
+            }
+        AURA_CHECK(matches, texture == &rgba       ? "RGBA spans filter like the float reference"
+                            : texture == &coverage ? "coverage spans filter like the float reference"
+                                                   : "a 1x1 texture tints like its one texel");
+    }
+}
+
+void checkDeferredClear()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 16, .height = 16}, jobs};
+    frame.clear(0xFF102030u);
+    AURA_CHECK(frame.getPixel({5, 5}).rgb == 0xFF102030u && frame.getPixel({5, 5}).z == 1,
+               "a pending clear reads back before any flush");
+    frame.setPixel({1, 1}, 0xFFFFFFFFu);
+    frame.flush();
+    AURA_CHECK(frame.getPixel({1, 1}).rgb == 0xFFFFFFFFu && frame.getPixel({2, 1}).rgb == 0xFF102030u,
+               "a direct write lands on the cleared frame and survives the flush");
+}
+
+void checkBandBoundaries()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 16, .height = 16}, jobs};
+    for (i32 height : {1, 3, 15, 16, 17, 31})
+    {
+        frame.resizeFramebuffer(16, height);
+        frame.clear();
+        for (i32 row = -2; row < height + 2; ++row)
+        {
+            const f32 y = static_cast<f32>(row);
+            const glm::vec4 color = row % 2 ? glm::vec4{0, 1, 0, 1} : glm::vec4{1, 0, 0, 1};
+            const ScreenVertex a{0, y, 0, 1, {}, color}, b{16, y, 0, 1, {}, color};
+            const ScreenVertex c{16, y + 1, 0, 1, {}, color}, d{0, y + 1, 0, 1, {}, color};
+            frame.queueTriangle({a, b, c}, nullptr, Mode::Batch);
+            frame.queueTriangle({a, c, d}, nullptr, Mode::Batch);
+        }
+        frame.flush();
+        bool correct = true;
+        for (i32 y = 0; y < height; ++y)
+            for (i32 x = 0; x < 16; ++x)
+                correct &= frame.getPixel({x, y}).rgb == (y % 2 ? 0xFF00FF00u : 0xFFFF0000u);
+        AURA_CHECK(correct, "resized and uneven row bands preserve thin strips at every boundary");
+    }
+}
+
+#ifdef AURA_HAS_CPU
+void checkSingularLighting()
+{
+    JobSystem jobs{1};
+    cpu::CPURenderer renderer(wma::WindowDetails{.width = 16, .height = 16});
+    renderer.setWindowFactory(
+        [](auto, const auto &, auto)
+        {
+            return std::make_unique<test::FakeWindow>();
+        });
+    renderer.initialize(AuraSettings::get(), &jobs);
+    renderer.bindVertexBuffer(renderer.createVertexBuffer({{{-1, -1, 0}, {}, {1, 1, 1, 1}, {0, 0, 1}},
+                                                           {{1, -1, 0}, {}, {1, 1, 1, 1}, {0, 0, 1}},
+                                                           {{-1, 1, 0}, {}, {1, 1, 1, 1}, {0, 0, 1}}}));
+    renderer.bindIndexBuffer(renderer.createIndexBuffer(std::vector<u32>{0, 1, 2}));
+    renderer.setLight({.direction = {0, 0, -1}, .intensity = 1, .ambient = 0});
+    for (f32 scale : {0.f, 1.f, 2.f})
+        for (bool indexed : {false, true})
+        {
+            gfx::TransformUBO transform{glm::mat4{1}, glm::mat4{1}, glm::mat4{1}};
+            transform.model[2][2] = scale;
+            renderer.setTransform(transform);
+            renderer.beginRenderPass();
+            if (indexed)
+                renderer.drawIndexed(3);
+            else
+                renderer.draw(3);
+            renderer.endRenderPass();
+            AURA_CHECK(renderer.getFrameBufferManager()->getPixel({2, 12}).rgb == 0xFFFFFFFFu,
+                       "indexed and direct draws keep finite lighting under nonuniform and zero scale");
+        }
+}
+#endif
+
 } // namespace
 
 int main()
@@ -150,6 +400,14 @@ int main()
     AURA_CHECK(keptCorner > 0 && keptCorner < 12, "corner view culls some but not all of the cube's 12 triangles");
     AURA_CHECK(keptFront > 0 && keptFront < 12, "front view culls some but not all of the cube's 12 triangles");
     AURA_CHECK(keptBelow > 0 && keptBelow < 12, "below-left view culls some but not all of the cube's 12 triangles");
+
+    checkRasterization();
+    checkTexturedSpans();
+    checkDeferredClear();
+    checkBandBoundaries();
+#ifdef AURA_HAS_CPU
+    checkSingularLighting();
+#endif
 
     AURA_TEST_MAIN_RETURN();
 }

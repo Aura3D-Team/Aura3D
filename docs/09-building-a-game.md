@@ -223,11 +223,12 @@ pickups, draw the arena and any remaining orbs, draw the UI text.
         }
 
         // --- UI ---
-        overlay.drawText("Orbs: " + std::to_string(score) + " / " + std::to_string(totalOrbs), 10.0f, 10.0f);
-        overlay.drawText("WASD to move, mouse to look, Esc to quit", 10.0f, 34.0f, glm::vec4(0.8f, 0.8f, 0.8f, 1));
+        overlay.addText("Orbs: " + std::to_string(score) + " / " + std::to_string(totalOrbs), 10.0f, 10.0f);
+        overlay.addText("WASD to move, mouse to look, Esc to quit", 10.0f, 34.0f, glm::vec4(0.8f, 0.8f, 0.8f, 1));
         if (score == totalOrbs)
-            overlay.drawText("You win!", 10.0f, 58.0f, glm::vec4(0.4f, 1.0f, 0.4f, 1), 1.5f);
-        overlay.drawFPS(10.0f, static_cast<float>(wd->height) - 24.0f);
+            overlay.addText("You win!", 10.0f, 58.0f, glm::vec4(0.4f, 1.0f, 0.4f, 1), 1.5f);
+        overlay.addFPS(10.0f, static_cast<float>(wd->height) - 24.0f);
+        overlay.draw();
 
         r->endRenderPass();
     });
@@ -245,7 +246,7 @@ the same handful of calls above:
   primitives, textures via `engine.resources()->loadTexture(...)` instead of
   solid colors — see [05-meshes-materials-textures.md](05-meshes-materials-textures.md).
 - **Menus / pause screen**: a second keyboard context
-  (`keyboard.createContext()`) plus a `drawBatch2D` panel — see
+  (`keyboard.createContext()`) plus a `drawBatch` panel — see
   [08-input.md](08-input.md) and [07-2d-rendering-and-text.md](07-2d-rendering-and-text.md).
 - **A different backend for comparison**: flip `renderer.backend` in
   `settings.json` to `"opengl"` or `"cpu"` — no code changes.

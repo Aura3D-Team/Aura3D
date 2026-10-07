@@ -9,7 +9,11 @@
 #include <ink/ParallelProcessor.h>
 #include <ink/ThreadPool.h>
 #include <limits>
+#include <string_view>
 #include <thread>
+#ifdef AURA_HAS_VULKAN
+#include "aura/Core/AuraException/AuraException.h"
+#endif
 #ifdef AURA_HAS_CPU
 #include "aura/Renderer/Software/CPURenderer.h"
 #endif
@@ -19,6 +23,45 @@ using namespace aura3d;
 
 int main()
 {
+#ifdef AURA_HAS_VULKAN
+    int resultCalls = 0;
+    const auto failingVulkanCall = [&]() -> VkResult
+    {
+        ++resultCalls;
+        return resultCalls == 1 ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_SUCCESS;
+    };
+    bool caughtVulkanError = false;
+    try
+    {
+        VK_RESULT_CHECK(failingVulkanCall());
+    }
+    catch (const AuraException &error)
+    {
+        caughtVulkanError = std::string_view(error.what()) == AuraException(VK_ERROR_OUT_OF_HOST_MEMORY).what();
+    }
+    AURA_CHECK(caughtVulkanError && resultCalls == 1,
+               "Vulkan failure is evaluated once and preserves the original error");
+    resultCalls = 0;
+    const auto successfulVulkanCall = [&]() -> VkResult
+    {
+        ++resultCalls;
+        return VK_SUCCESS;
+    };
+    bool elseRan = false;
+    bool threw = false;
+    try
+    {
+        if (true)
+            VK_RESULT_CHECK(successfulVulkanCall());
+        else
+            elseRan = true;
+    }
+    catch (const AuraException &)
+    {
+        threw = true;
+    }
+    AURA_CHECK(resultCalls == 1 && !elseRan && !threw, "Vulkan success is evaluated once and check is safe in if/else");
+#endif
     for (bool submissionFailure : {false, true})
     {
         std::atomic<bool> finished{false};
@@ -157,6 +200,24 @@ int main()
     renderer.updateTextureRegion(texture, 3, 3, 1, 1, pixels.data());
     renderer.updateTextureRegion(texture, 4, 4, 0, 0, pixels.data());
     AURA_CHECK(true, "texture edges and overflowing regions are handled without invalid access");
+    const auto coverageTexture = renderer.createCoverageTexture(3, 2);
+    AURA_CHECK(isValidHandle(coverageTexture), "software coverage textures allocate without a window");
+    AURA_CHECK(!isValidHandle(renderer.createCoverageTexture(0, 2)) &&
+                   !isValidHandle(renderer.createCoverageTexture(UINT32_MAX, 2)),
+               "coverage texture dimensions reject zero and integer overflow");
+    const std::array<u8, 3> coveragePixels{0, 128, 255};
+    renderer.updateCoverageTextureRegion(coverageTexture, 0, 0, 3, 1, coveragePixels.data());
+    renderer.updateCoverageTextureRegion(coverageTexture, 2, 1, 1, 1, coveragePixels.data());
+    renderer.updateCoverageTextureRegion(coverageTexture, UINT32_MAX, 0, 2, 1, coveragePixels.data());
+    renderer.updateCoverageTextureRegion(coverageTexture, 0, UINT32_MAX, 1, 2, coveragePixels.data());
+    renderer.updateCoverageTextureRegion(coverageTexture, 1, 0, UINT32_MAX, 1, coveragePixels.data());
+    renderer.updateCoverageTextureRegion(coverageTexture, 0, 1, 1, UINT32_MAX, coveragePixels.data());
+    renderer.updateCoverageTextureRegion(coverageTexture, 3, 2, 0, 0, coveragePixels.data());
+    renderer.updateCoverageTextureRegion(coverageTexture, 0, 0, 1, 1, nullptr);
+    renderer.updateCoverageTextureRegion({}, 0, 0, 1, 1, coveragePixels.data());
+    renderer.updateCoverageTextureRegion(texture, 0, 0, 1, 1, coveragePixels.data());
+    renderer.updateTextureRegion(coverageTexture, 0, 0, 1, 1, pixels.data());
+    AURA_CHECK(true, "coverage updates reject invalid handles, bounds and formats without invalid access");
     using cpu::ClipVertex;
     const ClipVertex a{{-.5f, -.5f, 0, 1}, {0, 0}, {1, 0, 0, 1}};
     const ClipVertex b{{.5f, -.5f, 0, 1}, {1, 0}, {0, 1, 0, 1}};

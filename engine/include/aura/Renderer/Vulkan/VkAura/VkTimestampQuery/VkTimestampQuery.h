@@ -8,7 +8,7 @@
 #include <vulkan/vulkan.h>
 
 #include "aura/Core/AuraCore.h"
-#include "aura/Core/DebugMode/GpuDebugStats.h"
+#include "aura/Core/Profiling/GpuTiming.h"
 
 /**
  * @file VkTimestampQuery.h
@@ -19,7 +19,8 @@
  * took to hand work over, not how long the work took, and a frame that is
  * entirely GPU-bound shows up as time spent waiting on a fence somewhere
  * else entirely. Two timestamps written into the frame's own command buffer are
- * the only way to get the other half of that.
+ * the only way to get the other half of that. VulkanRenderer creates the pool
+ * the first frame IRenderer::gpuTimingEnabled() is set.
  *
  * ## Why the results trail the CPU
  *
@@ -98,7 +99,8 @@ class VkTimestampQuery
      * Call only once the slot's fence has been waited on -- the render loop
      * already does that at the top of every frame, which is where this belongs.
      * Non-blocking: a slot whose results are not ready is counted as a dropped
-     * sample rather than waited for.
+     * sample rather than waited for. A resolved time also goes to the frame
+     * profiler.
      */
     void resolve(u32 frameSlot) noexcept;
 
@@ -126,7 +128,7 @@ class VkTimestampQuery
     //! and reading those back is what the availability bit exists to prevent.
     std::vector<u8> _slotPending;
 
-    f64 _lastFrameMillis = 0.0;
+    i64 _lastFrameNanos = 0;
     u64 _resolvedSamples = 0;
     u64 _droppedSamples = 0;
 };

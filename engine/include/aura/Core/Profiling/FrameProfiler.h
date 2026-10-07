@@ -32,7 +32,7 @@ enum class FramePhase : u32
     Acquire,       ///< vkAcquireNextImageKHR (swapchain/WSI).
     BeginPass,     ///< Command buffer begin + render pass begin.
     RecordScene,   ///< drawMeshes(): resolving and recording scene draws.
-    RecordOverlay, ///< The 2D overlay batch (text, UI).
+    RecordOverlay, ///< Screen-space batches (text, UI).
     EndPass,       ///< Replaying secondaries + ending the pass/buffer.
     Submit,        ///< vkQueueSubmit.
     Present,       ///< vkQueuePresentKHR (hands the frame to the compositor).
@@ -134,6 +134,9 @@ class FrameProfiler
     //! Call once per frame, after the last phase has closed.
     void endFrame() noexcept;
 
+    //! One retired frame's GPU time, reported beside the CPU phases it overlaps.
+    void addGpu(i64 nanos) noexcept;
+
 #ifdef AURA_ENABLE_DEBUG_MODE
     /**
      * @brief Installs @p observer, or clears it with nullptr.
@@ -180,6 +183,8 @@ class FrameProfiler
 
     std::array<i64, kFramePhaseCount> _totals{};
     u32 _frames = 0;
+    i64 _gpuTotal = 0;
+    u32 _gpuSamples = 0;
     Clock::time_point _windowStart = Clock::now();
 
 #ifdef AURA_ENABLE_DEBUG_MODE
@@ -205,10 +210,14 @@ class FrameProfiler
 //! Closes a frame for reporting purposes.
 #define AURA_FRAME_END() ::aura3d::FrameProfiler::get().endFrame()
 
+//! Records a retired frame's GPU nanoseconds; unevaluated when profiling is off.
+#define AURA_FRAME_GPU(nanos) ::aura3d::FrameProfiler::get().addGpu(nanos)
+
 #else // !AURA_PROFILE_FRAME
 
 #define AURA_FRAME_SCOPE(phase) ((void)0)
 #define AURA_FRAME_END() ((void)0)
+#define AURA_FRAME_GPU(nanos) ((void)sizeof(nanos))
 
 #endif // AURA_PROFILE_FRAME
 

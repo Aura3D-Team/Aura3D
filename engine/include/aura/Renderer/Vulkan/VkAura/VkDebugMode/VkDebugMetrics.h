@@ -11,13 +11,12 @@
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/DebugMode/GpuDebugStats.h"
 #include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkCountingAllocator.h"
-#include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkTimestampQuery.h"
 
 /**
  * @file VkDebugMetrics.h
  * @brief The Vulkan backend's implementation of aura3d::IGpuDebugSource.
  *
- * Three sources, deliberately kept apart because they measure three different
+ * Two sources, deliberately kept apart because they measure two different
  * things that are routinely conflated:
  *
  *   - VkDeviceMemoryCounters -- real VRAM, counted where vkAllocateMemory is
@@ -25,7 +24,8 @@
  *     through VMA, that is VMA's device-memory callbacks and nowhere else.
  *   - VkCountingAllocator -- the driver's host-side bookkeeping, counted
  *     through VkAllocationCallbacks.
- *   - VkTimestampQuery -- GPU wall time per frame.
+ *
+ * GPU frame time is VkTimestampQuery, owned by VulkanRenderer in every build.
  */
 
 namespace aura3d
@@ -125,12 +125,6 @@ class VkDebugMetrics final : public IGpuDebugSource
     VkDebugMetrics(const VkDebugMetrics &) = delete;
     VkDebugMetrics &operator=(const VkDebugMetrics &) = delete;
 
-    //! The GPU frame timer. See VkTimestampQuery for the resolve protocol.
-    [[nodiscard]] VkTimestampQuery &timestamps() noexcept
-    {
-        return _timestamps;
-    }
-
     /**
      * @brief Points the memory section at @p allocator for detailed statistics.
      *
@@ -145,21 +139,15 @@ class VkDebugMetrics final : public IGpuDebugSource
     }
 
     [[nodiscard]] GpuMemoryStats gpuMemoryStats() const noexcept override;
-    [[nodiscard]] GpuTimingStats gpuTimingStats() const noexcept override;
-    [[nodiscard]] const char *gpuDebugBackendName() const noexcept override
-    {
-        return "vulkan";
-    }
 
   private:
     /*
-     * Only the timestamp pool is owned here. The two allocation counters are
-     * process-wide singletons (VkCountingAllocator, VkDeviceMemoryCounters):
-     * both are called by Vulkan and by VMA at points where an object owned by
-     * the renderer may already be gone, and both must survive a backend switch
-     * so that memory retained across one is still visible.
+     * The two allocation counters are process-wide singletons
+     * (VkCountingAllocator, VkDeviceMemoryCounters): both are called by Vulkan
+     * and by VMA at points where an object owned by the renderer may already be
+     * gone, and both must survive a backend switch so that memory retained
+     * across one is still visible.
      */
-    VkTimestampQuery _timestamps;
     VmaAllocator _allocator = VK_NULL_HANDLE;
 };
 

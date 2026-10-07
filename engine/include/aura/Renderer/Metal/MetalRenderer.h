@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <semaphore>
@@ -91,7 +92,10 @@ class MetalRenderer : public IRenderer
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
     TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
     TextureHandle createDynamicTexture(u32 width, u32 height) override;
+    TextureHandle createCoverageTexture(u32 width, u32 height) override;
     void updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels) override;
+    void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                     const u8 *coverage) override;
 
     void beginFrame() override;
     [[nodiscard]] bool frameBegun() const noexcept override
@@ -120,9 +124,14 @@ class MetalRenderer : public IRenderer
     void bindTexture(TextureHandle handle) override;
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
-    void drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                     TextureHandle texture) override;
+    using IRenderer::drawBatch;
+    void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
+                   gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
+    [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
+#ifdef AURA_PROFILE_FRAME
+    [[nodiscard]] GpuTimingStats gpuTiming() const noexcept override;
+#endif
 
     wma::IWindowManager *getWindowManager() override
     {
@@ -162,9 +171,7 @@ class MetalRenderer : public IRenderer
     void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
 
   private:
-    //! Binds ESC-to-quit and the rest of the shared input wiring.
-
-    //! Builds the scene and overlay pipelines against the layer's formats.
+    //! Builds the scene and batch pipelines against the layer's formats.
     void createPipelines();
 
     /**
@@ -177,23 +184,23 @@ class MetalRenderer : public IRenderer
     void bindDrawState();
 
     /**
-     * @brief Grows this frame's overlay vertex/index buffers to fit a batch.
+     * @brief Grows this frame's batch vertex/index buffers to fit a batch.
      *
      * There is one pair per frame in flight so that writing this frame's geometry
      * cannot scribble over a batch the GPU is still reading. They only ever grow,
-     * so a steady-state overlay stops allocating after the first few frames --
-     * the same arrangement as VulkanRenderer::ensureOverlay2DCapacity().
+     * so steady-state batches stop allocating after the first few frames -- the
+     * same arrangement as VulkanRenderer::uploadBatch().
      *
      * @return false when either allocation failed, in which case the batch is
      *         skipped rather than drawn from a buffer that is too small.
      */
-    [[nodiscard]] bool ensureOverlay2DCapacity(size_t vertexBytes, size_t indexBytes);
+    [[nodiscard]] bool ensureBatchCapacity(size_t vertexBytes, size_t indexBytes);
 
     /**
      * @brief The texture a draw should sample, substituting the fallback when
      *        nothing usable is bound.
      *
-     * IRenderer lets a caller draw with no texture and lets drawBatch2D() be
+     * IRenderer lets a caller draw with no texture and lets drawBatch() be
      * handed an invalid handle, but the shaders always sample. A 1x1 opaque white
      * texel is substituted in those cases, so vertex colour comes through
      * unchanged -- the same fallback the OpenGL and Vulkan paths use.
@@ -213,8 +220,8 @@ class MetalRenderer : public IRenderer
 
     //! The lit 3D scene pipeline: depth-tested, back-face culled, no blending.
     std::unique_ptr<MtlPipelineManager> _scenePipeline;
-    //! The unlit 2D overlay pipeline: no depth, alpha blended, no culling.
-    std::unique_ptr<MtlPipelineManager> _overlayPipeline;
+    std::unique_ptr<MtlPipelineManager> _batchPipeline;
+    bool _batchPipelineBound = false; //! Whether drawBatch() left its pipeline on the encoder.
 
     /*
      * This frame's command buffer and encoder. Both are autoreleased by Metal
@@ -232,7 +239,7 @@ class MetalRenderer : public IRenderer
     /*
      * Throttles the CPU to MTL_MAX_FRAMES_IN_FLIGHT frames ahead of the GPU.
      * Acquired in beginFrame() and released from the command buffer's completion
-     * handler, which is what guarantees a frame slot's overlay buffers are no
+     * handler, which is what guarantees a frame slot's batch buffers are no
      * longer being read before the next frame writes them. Vulkan reaches the
      * same guarantee with a per-frame fence.
      *
@@ -243,23 +250,37 @@ class MetalRenderer : public IRenderer
      */
     std::shared_ptr<FrameSlots> _frameSlots;
 
+#ifdef AURA_PROFILE_FRAME
+    //! The last finished command buffer's GPU time, written from the completion handler on a
+    //! Metal thread; shared rather than captured through `this` for the reason _frameSlots is.
+    struct GpuClock
+    {
+        std::atomic<i64> frameNanos{0};
+        std::atomic<u64> resolved{0};
+        std::atomic<u64> dropped{0};
+    };
+    std::shared_ptr<GpuClock> _gpuClock;
+    //! GpuClock::resolved as last handed to the frame profiler.
+    u64 _gpuReported = 0;
+#endif
+
     template <typename T> using MtlFixedArray = std::array<T, MTL_MAX_FRAMES_IN_FLIGHT>;
 
-    MtlFixedArray<NS::SharedPtr<MTL::Buffer>> _overlayVertexBuffers{};
-    MtlFixedArray<NS::SharedPtr<MTL::Buffer>> _overlayIndexBuffers{};
-    MtlFixedArray<size_t> _overlayVertexCapacity{};
-    MtlFixedArray<size_t> _overlayIndexCapacity{};
+    MtlFixedArray<NS::SharedPtr<MTL::Buffer>> _batchVertexBuffers{};
+    MtlFixedArray<NS::SharedPtr<MTL::Buffer>> _batchIndexBuffers{};
+    MtlFixedArray<size_t> _batchVertexCapacity{};
+    MtlFixedArray<size_t> _batchIndexCapacity{};
 
     /*
-     * Bytes of this frame's overlay buffers already spoken for. Every
-     * drawBatch2D() in a frame encodes into the same render command encoder and
-     * nothing executes until the command buffer is committed, so a batch that
-     * wrote at offset 0 would be read back as whatever the frame's last batch
-     * left there. Each batch appends here and binds at its own offset -- the
-     * same fix the Vulkan backend carries, for the same reason.
+     * Bytes of this frame's batch buffers already spoken for. Every drawBatch()
+     * in a frame encodes into the same render command encoder and nothing
+     * executes until the command buffer is committed, so a batch that wrote at
+     * offset 0 would be read back as whatever the frame's last batch left
+     * there. Each batch appends here and binds at its own offset -- the same
+     * fix the Vulkan backend carries, for the same reason.
      */
-    MtlFixedArray<size_t> _overlayVertexUsed{};
-    MtlFixedArray<size_t> _overlayIndexUsed{};
+    MtlFixedArray<size_t> _batchVertexUsed{};
+    MtlFixedArray<size_t> _batchIndexUsed{};
 
     //! 1x1 opaque white, created on first use; see resolveSampledTexture().
     TextureHandle _fallbackTexture;

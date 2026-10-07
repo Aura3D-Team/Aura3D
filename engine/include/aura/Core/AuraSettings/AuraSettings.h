@@ -232,6 +232,10 @@ struct AuraConfig
         bool fullscreen = false;
         bool vsync = false;
 
+        //! ClientSide makes UIView draw the title bar. A Wayland compositor may
+        //! still choose either mode; UIView follows its choice.
+        wma::DecorationMode decorations = wma::DecorationMode::ServerSide;
+
         //! Unset derives the mode from @c vsync: Fifo when on, AutoNoVsync off.
         std::optional<VSyncMode> vsyncMode;
 
@@ -246,6 +250,9 @@ struct AuraConfig
         std::optional<bool> validationLayers;
 
         int maxFramesInFlight = 2;
+
+        //! Unset follows the build: on with AURA_PROFILE_FRAME (which debug mode implies). Ignored without it.
+        std::optional<bool> gpuTiming;
     } renderer;
 
     struct Graphics
@@ -336,6 +343,8 @@ class AuraSettings
     wma::WindowBackend getWindowBackend() const;
     bool getWindowResizable() const; //! default true
     bool getFullscreen() const;      //! default false
+    //! "server" (default) or "client"; unrecognized values warn and fall back.
+    wma::DecorationMode getWindowDecorations() const;
     bool getVSync() const;           //! default false
     VSyncMode getVSyncMode() const;  //! default: window/vsync_mode if set, else derived from getVSync()
     int getFPSLimit() const;         //! default 60
@@ -349,6 +358,7 @@ class AuraSettings
     //! memory for more CPU/GPU overlap -- check the WaitFence phase of an
     //! AURA_PROFILE_FRAME report before assuming it will help.
     int getMaxFramesInFlight() const; //! default 2
+    bool getGpuTiming() const;        //! default on in AURA_PROFILE_FRAME builds, which alone can measure it
 
     //! Graphics (device selection & visual quality; Vulkan-only)
     std::string getGpuPreference() const; //! "discrete" | "integrated" | "any", default "discrete"

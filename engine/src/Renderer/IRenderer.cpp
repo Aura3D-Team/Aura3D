@@ -1,10 +1,57 @@
 #include "aura/Renderer/IRenderer.h"
 
+#include <algorithm>
+#include <limits>
+
 #include "aura/Core/ImageLoader/ImageLoader.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
+#include "aura/Renderer/RendererFactory.h"
 
 namespace aura3d
 {
+
+namespace
+{
+
+[[nodiscard]] bool depthZeroToOne(RendererChoice backend) noexcept
+{
+    return RendererFactory::clipSpaceFor(backend) == Camera::ClipSpace::Vulkan;
+}
+
+} // namespace
+
+void IRenderer::drawBatch(const gfx::Canvas &canvas, TextureHandle texture, gfx::BatchSpace space)
+{
+    if (!canvas.empty())
+        drawBatch(canvas.vertices(), canvas.indices(), texture, space);
+}
+
+glm::uvec2 IRenderer::renderTargetSize() const noexcept
+{
+    return {static_cast<u32>(std::max(_windowDetails.width, 0)), static_cast<u32>(std::max(_windowDetails.height, 0))};
+}
+
+gfx::CanvasView IRenderer::canvasView() const
+{
+    return {batchTransform(gfx::BatchSpace::World), glm::vec2{renderTargetSize()}, depthZeroToOne(getBackendType())};
+}
+
+glm::mat4 IRenderer::batchTransform(gfx::BatchSpace space) const
+{
+    if (space == gfx::BatchSpace::World)
+        return _currentTransform.proj * _currentTransform.view * _currentTransform.model;
+
+    //! Pixels with y down and depth in [0, 1], to the y-up clip space every backend shares
+    //! (Vulkan's viewport is flipped to match) in this backend's depth range.
+    const glm::vec2 size{renderTargetSize()};
+    if (size.x <= 0.0f || size.y <= 0.0f)
+        return glm::mat4{0.0f};
+    const bool zeroToOne = depthZeroToOne(getBackendType());
+    return {{2.0f / size.x, 0.0f, 0.0f, 0.0f},
+            {0.0f, -2.0f / size.y, 0.0f, 0.0f},
+            {0.0f, 0.0f, zeroToOne ? 1.0f : 2.0f, 0.0f},
+            {-1.0f, 1.0f, zeroToOne ? 0.0f : -1.0f, 1.0f}};
+}
 
 void IRenderer::run(move_only_function<void()> onFrame)
 {
@@ -49,6 +96,40 @@ TextureHandle IRenderer::createCheckerboardTexture(u32 size)
 {
     const ImageData image = ImageLoader::makeCheckerboard(size);
     return createTextureFromPixels(image.pixels.data(), image.width, image.height);
+}
+
+TextureHandle IRenderer::createCoverageTexture(u32 width, u32 height)
+{
+    if (width == 0 || height == 0 || static_cast<u64>(width) * height > std::numeric_limits<usize>::max() / 4)
+        return {};
+
+    std::vector<u8> rgba(static_cast<usize>(width) * height * 4, 255);
+    for (usize i = 3; i < rgba.size(); i += 4)
+        rgba[i] = 0;
+    const TextureHandle handle = createDynamicTexture(width, height);
+    if (isValidHandle(handle))
+    {
+        updateTextureRegion(handle, 0, 0, width, height, rgba.data());
+        _coverageFallbacks[handle] = {width, height};
+    }
+    return handle;
+}
+
+void IRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                            const u8 *coverage)
+{
+    const auto entry = _coverageFallbacks.find(handle);
+    if (!coverage || width == 0 || height == 0 || entry == _coverageFallbacks.end())
+        return;
+    const glm::uvec2 size = entry->second;
+    if (x >= size.x || y >= size.y || width > size.x - x || height > size.y - y)
+        return;
+
+    const usize count = static_cast<usize>(width) * height;
+    std::vector<u8> rgba(count * 4, 255);
+    for (usize i = 0; i < count; ++i)
+        rgba[i * 4 + 3] = coverage[i];
+    updateTextureRegion(handle, x, y, width, height, rgba.data());
 }
 
 MeshHandle IRenderer::createMesh(const gfx::Mesh3D &mesh)
@@ -120,7 +201,8 @@ void IRenderer::drawMeshes(std::span<const DrawItem> items)
      */
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
 
-    gfx::TransformUBO transform = _currentTransform;
+    const gfx::TransformUBO caller = _currentTransform;
+    gfx::TransformUBO transform = caller;
 
     for (const DrawItem &item : items)
     {
@@ -132,6 +214,10 @@ void IRenderer::drawMeshes(std::span<const DrawItem> items)
 
         drawMesh(item.mesh);
     }
+
+    //! Later World batches and immediate draws use the caller's model, not the last item's.
+    if (!items.empty())
+        setTransform(caller);
 }
 
 MaterialHandle IRenderer::createMaterial(const Material &material)
@@ -150,6 +236,21 @@ void IRenderer::bindMaterial(MaterialHandle handle)
 
     if (isValidHandle(material->albedo))
         bindTexture(material->albedo);
+}
+
+GpuTimingStats IRenderer::gpuTiming() const noexcept
+{
+    return {};
+}
+
+void IRenderer::setGpuTimingEnabled(bool enabled) noexcept
+{
+    _gpuTimingEnabled = enabled;
+}
+
+bool IRenderer::gpuTimingEnabled() const noexcept
+{
+    return _gpuTimingEnabled;
 }
 
 void IRenderer::setLight(const gfx::LightUBO &light)
@@ -175,6 +276,7 @@ const Material *IRenderer::getMaterial(MaterialHandle handle) const
 
 void IRenderer::clearSharedResources()
 {
+    _coverageFallbacks.clear();
     _meshes.clear();
     _materials.clear();
     _currentMaterial = Material{};

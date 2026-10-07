@@ -6,7 +6,7 @@
 #include <array>
 #include <glad/glad.h>
 #include <string>
-#include <unordered_map>
+#include <vector>
 
 #include "aura/Renderer/RenderHandles.h"
 
@@ -20,6 +20,7 @@ struct GlTextureData
     GLuint texture = 0;
     u32 width = 0;
     u32 height = 0;
+    bool coverageOnly = false;
 };
 
 class GlTextureManager
@@ -40,7 +41,7 @@ class GlTextureManager
     TextureHandle createTextureFromPixels(const u8 *rgba, u32 width, u32 height, bool smooth = true);
 
     /**
-     * @brief Allocates an uninitialised RGBA8 texture meant to be refreshed in
+     * @brief Allocates a zero-initialized RGBA8 texture meant to be refreshed in
      *        place by updateRegion().
      *
      * Clamp-to-edge wrapping is used rather than the repeat the static path
@@ -51,6 +52,10 @@ class GlTextureManager
      * @param height Texture height in pixels.
      */
     TextureHandle createDynamicTexture(u32 width, u32 height);
+
+    //! Zero-initialized linear R8; shaders remap red to white RGB plus alpha.
+    TextureHandle createCoverageTexture(u32 width, u32 height);
+    void updateCoverageRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *coverage);
 
     /**
      * @brief Uploads @p rgba into the given sub-rectangle via glTexSubImage2D.
@@ -67,20 +72,30 @@ class GlTextureManager
      * The scene draws bind a texture per object, and a scene overwhelmingly
      * shares a handful of materials between many objects, so most of those
      * binds ask for the texture that is already current.
+     *
+     * @return The bound texture, or nullptr (binding nothing) for an unknown handle.
      */
-    void bind(TextureHandle handle, GLuint unit = 0);
+    const GlTextureData *bind(TextureHandle handle, GLuint unit = 0);
 
     GlTextureData *get(TextureHandle handle);
     void cleanup();
 
+    //! Forgets every cached binding and the active unit, after GL texture state changed
+    //! behind this manager (the renderer's own target) or its names died (cleanup()).
+    void invalidateBindings() noexcept;
+
   private:
+    TextureHandle createDynamic(u32 width, u32 height, bool coverageOnly);
+    void updatePixels(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *pixels, bool coverageOnly);
+
     //! Texture units this manager tracks bindings for. The renderer samples
     //! from unit 0 only; the spare slots cost nothing and keep the cache
     //! correct if a second sampler is ever added.
     static constexpr GLuint kTrackedUnits = 8;
 
-    std::unordered_map<TextureHandle, GlTextureData> _textures;
-    TextureHandle _nextHandle{1};
+    //! Indexed by handle - 1: handles are dense, so a lookup is a bounds check and a load.
+    std::vector<GlTextureData> _textures;
+    GLint _maxTextureSize = 0;
 
     //! GL texture name bound to each tracked unit; 0 means none/unknown.
     std::array<GLuint, kTrackedUnits> _boundToUnit{};
@@ -88,14 +103,9 @@ class GlTextureManager
     //! same unit issues that call once rather than per bind.
     GLuint _activeUnit = 0;
 
-    /**
-     * @brief Drops every cached binding.
-     *
-     * Called from the paths that bind a texture behind bind()'s back (creation
-     * and updateRegion(), which must make their target current to upload into
-     * it) and from cleanup(), where the names become invalid outright.
-     */
-    void invalidateBindings() noexcept;
+    //! Uploads borrow the active unit; handing back its cached texture keeps the
+    //! cache true, so a draw after an upload needs no rebind.
+    void restoreBinding() noexcept;
 };
 
 } // namespace gl

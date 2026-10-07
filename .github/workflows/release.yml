@@ -472,6 +472,7 @@ jobs:
           vulkan-headers:x64-windows-static
           vulkan-loader:x64-windows-static
           vulkan-memory-allocator:x64-windows-static
+          shaderc:x64-windows-static
 
       - name: Configure ink
         run: >

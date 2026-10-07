@@ -1,65 +1,54 @@
 # 7. 2D Rendering & Text
 
-Every backend has a second, independent pipeline dedicated to unlit,
-window-pixel-space 2D geometry — HUDs, UI, text, sprites — layered on top of
-whatever the 3D scene drew. It shares nothing with the 3D pipeline's camera,
-lighting, or depth state.
-
-## `gfx::Vertex2D` and `drawBatch2D`
+## Batches, lines and shapes
 
 ```cpp
-namespace aura3d::gfx {
-struct Vertex2D {
-    glm::vec2 pos;      // window pixels, (0,0) = top-left
-    glm::vec2 texCoord;
-    glm::vec4 color;
-};
-}
+const std::array<gfx::BatchVertex, 4> vertices{{
+    {{10, 10, 0}, {0, 0}, {1, 1, 1, 1}},
+    {{110, 10, 0}, {1, 0}, {1, 1, 1, 1}},
+    {{110, 60, 0}, {1, 1}, {1, 1, 1, 1}},
+    {{10, 60, 0}, {0, 1}, {1, 1, 1, 1}},
+}};
+constexpr std::array<u32, 6> indices{0, 1, 2, 2, 3, 0};
+r->drawBatch(vertices, indices, panelTexture);                        // screen pixels
+r->drawBatch(vertices, indices, panelTexture, gfx::BatchSpace::World); // through the transform
+
+gfx::Canvas canvas;                                                    // keeps capacity across frames
+canvas.line({16, 24}, {96, 24}, {1, 0, 0, 1}, 2);                      // 2 px on screen
+canvas.line(r->canvasView(), {0, 0, 0}, {0, 2, 0}, {0, 1, 0, 1}, 2);   // world, 2 px at any depth
+canvas.rect({16, 144}, {80, 48}, {1, 1, 0, 1});
+canvas.triangle(glm::vec2{128, 144}, {176, 144}, {128, 192}, {1, 0, 1, 1});
+r->drawBatch(canvas);                                                  // one draw call
+canvas.clear();
+
+// Any other shape: triangles through append(); indices count from the first vertex passed.
+const std::array<gfx::BatchVertex, 4> corners{{{{200, 20, 0}, {}, {1, 0, 0, 1}},
+                                               {{300, 20, 0}, {}, {0, 1, 0, 1}},
+                                               {{300, 80, 0}, {}, {0, 0, 1, 1}},
+                                               {{200, 80, 0}, {}, {1, 1, 0, 1}}}};
+constexpr std::array<u32, 6> quad{0, 1, 2, 2, 3, 0};
+canvas.append(corners, quad);                                          // a gradient rectangle
 ```
 
-```cpp
-virtual void drawBatch2D(std::span<const gfx::Vertex2D> vertices,
-                         std::span<const u32> indices,
-                         TextureHandle texture) = 0;
-```
+One pipeline draws every batch, in submission order with meshes: unlit
+`texel * color`, straight alpha, depth-tested less-or-equal, no depth writes.
+Draw opaque meshes first and UI last.
 
-Everything about this call is designed around "a whole HUD's worth of quads
-in one draw":
+Colours are linear on every backend: blending is linear and the target stores
+sRGB, so `{0.5, 0.5, 0.5, 1}` shows as 188, not 128. A hex or colour-picker
+value is sRGB; convert it to linear before passing it.
 
-- **Coordinates** are window pixels with `(0,0)` at the top-left; the
-  backend derives its own orthographic projection from the current
-  framebuffer size, so you never fold a camera in yourself.
-- **Shading is unlit**: `texel * vertexColor`. The scene light has no effect
-  on 2D content.
-- **Depth testing is off, alpha blending is on** (straight/non-premultiplied
-  source-over) — a 2D batch always composites over everything drawn so far
-  this pass.
-- **The whole batch is one draw call** — a 500-quad HUD costs the same as a
-  single quad. Vertex/index data is copied into backend-owned buffers, so
-  your arrays can be reused or discarded the instant this returns.
-- an invalid `texture` (a default-constructed `TextureHandle{}`) draws untextured, vertex-color only.
+| `gfx::BatchSpace` | Positions |
+|---|---|
+| `Screen` (default) | Render-target pixels from the top-left; `z` is depth, `0` on the near plane (in front of everything), `1` on the far one. |
+| `World` | Through the current model, view and projection. `drawMeshes()` leaves the model it was given. |
 
-Call it **between `beginRenderPass()`/`endRenderPass()`, after your 3D
-draws** — it leaves no 2D pipeline state bound, so the next 3D draw call
-rebinds its own pipeline cleanly.
+- `{}` as the texture samples white, so the vertex colour alone shows. The arrays may be reused on return.
+- Every `drawBatch` is one draw call. Put what shares a texture and space in one `gfx::Canvas`.
+- `line(r->canvasView(), ...)` projects with the camera current at that call; draw its batch in `Screen` space.
+- To move shapes, either rebuild the canvas each frame (`clear()` keeps its memory), or keep it and draw it in `World` space under a transform: `setTransform({model, view, projection})`.
 
-```cpp
-std::vector<gfx::Vertex2D> verts = {
-    {{10, 10}, {0, 0}, {1, 1, 1, 1}},
-    {{110, 10}, {1, 0}, {1, 1, 1, 1}},
-    {{110, 60}, {1, 1}, {1, 1, 1, 1}},
-    {{10, 60}, {0, 1}, {1, 1, 1, 1}},
-};
-std::vector<u32> idx = {0, 1, 2, 2, 3, 0};
-r->drawBatch2D(verts, idx, panelTexture);
-```
-
-On the CPU backend, `drawBatch2D` is backed by
-`CpuFrameBufferManager::drawTriangle2D` — the software rasterizer's
-counterpart to its 3D `drawTriangle`: affine (not perspective-correct)
-interpolation, no depth interaction, the same source-over blending.
-
-## `TextOverlay`: text on top of `drawBatch2D`
+## `TextOverlay`: text on top of `drawBatch`
 
 Writing per-glyph quads by hand is exactly what `TextOverlay`
 (`aura/Core/TextOverlay/TextOverlay.h`) exists to avoid.
@@ -75,9 +64,10 @@ desc.color       = {1, 1, 1, 1};
 TextOverlay overlay(r, desc); // built once — allocates the glyph atlas texture
 
 // per frame, between beginRenderPass()/endRenderPass():
-overlay.drawText("Score: 1200", 10.0f, 10.0f);
-overlay.drawText("Warning!", 10.0f, 40.0f, glm::vec4(1, 0.3f, 0.3f, 1)); // per-call color
-overlay.drawFPS(10.0f, 60.0f); // smoothed "FPS: <n>  (<ms> ms)"; overlay.fps() reads it back
+overlay.addText("Score: 1200", 10.0f, 10.0f);
+overlay.addText("Warning!", 10.0f, 40.0f, glm::vec4(1, 0.3f, 0.3f, 1)); // per-call color
+overlay.addFPS(10.0f, 60.0f); // smoothed "FPS: <n>  (<ms> ms)"; overlay.fps() reads it back
+overlay.draw();               // everything queued, one draw call
 ```
 
 **Font loading never fails visibly**: leave `fontPath` empty, or point it at
@@ -86,13 +76,18 @@ embedded bitmap font — which needs no asset on disk at all, so text keeps
 working on WASM/Android with nothing staged. Check
 `overlay.usingTrueType()` if you need to know which one is active.
 
+The bitmap face is drawn at 16 px. From 13 to 16 px it keeps every glyph row
+and only the line box changes, so those sizes look alike; smaller sizes give up
+the least telling rows, larger ones repeat them. Load a `.ttf` for sizes that
+must differ continuously.
+
 **Text is UTF-8** (`std::string_view` in, decoded internally); `'\n'` starts
 a new line; codepoints the font doesn't carry render as `?`.
 
 ```cpp
 glm::vec2 size = overlay.measureText("Game Over", 2.0f); // pixel bounds at this scale
 float lh = overlay.lineHeight(1.0f);                     // baseline-to-baseline distance
-overlay.setColor({1, 1, 0, 1});                            // default color for future drawText calls
+overlay.setColor({1, 1, 0, 1});                            // default color for future addText calls
 ```
 
 `measureText` is not `const` — measuring a string rasterizes any glyph in it
@@ -102,20 +97,24 @@ that isn't cached yet, same as drawing it would.
 
 Under the hood, `TextOverlay` owns a `FontAtlas` — one large GPU texture
 (`atlasSize`² by default 2048×2048), allocated once via
-`IRenderer::createDynamicTexture`. Each glyph is rasterized lazily, the
+`IRenderer::createCoverageTexture`. Each glyph is rasterized lazily, the
 first time it's actually drawn, packed in with a shelf allocator, and
-uploaded as a small sub-image via `updateTextureRegion` — a new character
+uploaded as a small sub-image via `updateCoverageTextureRegion` — a new character
 costs a few hundred bytes, never a new texture. This is what makes growing
 vocabulary (scores, chat, dynamic labels) affordable on Vulkan in particular,
 where every texture permanently consumes a descriptor-pool slot: recreating
 one per new character would exhaust the pool within minutes.
 
-Drawing a string walks it once, appends one quad per glyph into two vectors
-reused across frames, and hands the whole thing to `drawBatch2D` as a single
-draw call — a 500-character string costs one draw call, not 500.
+Coverage textures use one byte per texel (R8), sampled as white RGB plus alpha.
+A 1024×1024 sheet uses 1 MiB instead of 4 MiB, with one quarter of the upload bytes.
+The RGBA texture API remains available for images.
+
+`addText` walks the string once and appends one quad per glyph to a batch
+reused across frames; `draw()` hands the frame's text to `drawBatch` as a
+single draw call — however many strings and characters it holds.
 
 AuraUI, the engine's widget toolkit, is the other consumer of this pipeline:
-panels, buttons and sliders, drawn entirely through `drawBatch2D` and this
+panels, buttons and sliders, drawn entirely through `drawBatch` and this
 same glyph atlas — see **[14-auraui-toolkit.md](14-auraui-toolkit.md)**.
 
 Next: **[08-input.md](08-input.md)**.

@@ -14,11 +14,13 @@
  *    against the atlas' corner mask is bounded whatever the radius; a
  *    regression to per-scanline caps would be invisible until a profile.
  *
- * A stub IRenderer that records drawBatch2D() is the whole harness -- no
+ * A stub IRenderer that records drawBatch() is the whole harness -- no
  * window, no GPU, no driver.
  */
 
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -35,7 +37,7 @@ using namespace aura3d::ui;
 namespace
 {
 
-/// An IRenderer that records 2D batches and does nothing else. Texture handles
+/// An IRenderer that records batches and does nothing else. Texture handles
 /// are handed out 1-based, matching the real backends, so isValidHandle()
 /// accepts them and the UI considers itself usable.
 class RecordingRenderer final : public IRenderer
@@ -52,23 +54,41 @@ class RecordingRenderer final : public IRenderer
     {
     }
 
-    void drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                     TextureHandle texture) override
+    using IRenderer::drawBatch;
+    void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
+                   gfx::BatchSpace space = gfx::BatchSpace::Screen) override
     {
-        //! Every index must address a vertex of the slice it was submitted
-        //! with. The backend hands each batch its own vertex range and a
-        //! shared 0-based index pattern, and getting that wrong would read
-        //! out of bounds on a real driver rather than here.
         for (const u32 index : indices)
             indicesInRange &= index < vertices.size();
-
-        batches.push_back({vertices.size(), indices.size(), texture});
-        vertexTotal += vertices.size();
-
-        //! Kept so a test can ask what the backend actually covered, not just
-        //! how much it submitted.
-        quads.insert(quads.end(), vertices.begin(), vertices.end());
+        if (space == gfx::BatchSpace::Screen)
+        {
+            batches.push_back({vertices.size(), indices.size(), texture});
+            vertexTotal += vertices.size();
+            quads.insert(quads.end(), vertices.begin(), vertices.end());
+        }
+        else
+        {
+            sceneBatches.push_back({vertices.size(), indices.size(), texture});
+            scene.insert(scene.end(), vertices.begin(), vertices.end());
+        }
     }
+
+    [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override
+    {
+        return target;
+    }
+
+    //! Where @p position lands in render-target pixels and [0, 1] depth under the current transform.
+    [[nodiscard]] glm::vec3 toScreen(glm::vec3 position) const
+    {
+        const glm::vec4 clip =
+            _currentTransform.proj * _currentTransform.view * _currentTransform.model * glm::vec4(position, 1.0f);
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        return {(ndc.x + 1.0f) * 0.5f * static_cast<f32>(target.x), (1.0f - ndc.y) * 0.5f * static_cast<f32>(target.y),
+                (ndc.z + 1.0f) * 0.5f};
+    }
+
+    using IRenderer::batchTransform;
 
     struct Texture
     {
@@ -78,6 +98,8 @@ class RecordingRenderer final : public IRenderer
     std::unordered_map<TextureHandle, Texture> textures;
     TextureHandle createDynamicTexture(u32 width, u32 height) override
     {
+        if (failTextures)
+            return {};
         const auto handle = ++_next;
         textures.emplace(handle, Texture{width, height, std::vector<u8>(usize(width) * height * 4)});
         return handle;
@@ -107,7 +129,8 @@ class RecordingRenderer final : public IRenderer
                 const auto &b = quads[base + 2];
                 if (point.x < a.pos.x || point.y < a.pos.y || point.x >= b.pos.x || point.y >= b.pos.y)
                     continue;
-                const auto uv = a.texCoord + (b.texCoord - a.texCoord) * ((point - a.pos) / (b.pos - a.pos));
+                const auto uv =
+                    a.texCoord + (b.texCoord - a.texCoord) * ((point - glm::vec2(a.pos)) / glm::vec2(b.pos - a.pos));
                 const u32 x = std::min(u32(std::max(0.f, uv.x * texture.width)), texture.width - 1);
                 const u32 y = std::min(u32(std::max(0.f, uv.y * texture.height)), texture.height - 1);
                 const float coverage = texture.rgba[(usize(y) * texture.width + x) * 4 + 3] / 255.f * a.color.a;
@@ -122,6 +145,8 @@ class RecordingRenderer final : public IRenderer
     {
         batches.clear();
         quads.clear();
+        sceneBatches.clear();
+        scene.clear();
         vertexTotal = 0;
     }
 
@@ -136,8 +161,8 @@ class RecordingRenderer final : public IRenderer
 
             for (usize corner = 0; corner < 4; ++corner)
             {
-                low = glm::min(low, quads[base + corner].pos);
-                high = glm::max(high, quads[base + corner].pos);
+                low = glm::min(low, glm::vec2(quads[base + corner].pos));
+                high = glm::max(high, glm::vec2(quads[base + corner].pos));
                 alpha = std::max(alpha, quads[base + corner].color.a);
             }
 
@@ -149,10 +174,14 @@ class RecordingRenderer final : public IRenderer
     }
 
     std::vector<Batch> batches;
-    std::vector<gfx::Vertex2D> quads;
+    std::vector<gfx::BatchVertex> quads;
+    std::vector<Batch> sceneBatches;
+    std::vector<gfx::BatchVertex> scene;
+    glm::uvec2 target{200, 100};
     usize vertexTotal = 0;
     usize uploads = 0;
     bool indicesInRange = true;
+    bool failTextures = false;
 
     /// Set to act as a backend whose swapchain was rebuilt under a clean tree.
     bool frameLost = false;
@@ -174,8 +203,9 @@ class RecordingRenderer final : public IRenderer
     void endFrame() override
     {
     }
-    void setTransform(const gfx::TransformUBO &) override
+    void setTransform(const gfx::TransformUBO &ubo) override
     {
+        _currentTransform = ubo;
     }
     void bindVertexBuffer(VertexBufferHandle) override
     {
@@ -232,11 +262,13 @@ class RecordingRenderer final : public IRenderer
     }
     RendererChoice getBackendType() const override
     {
-        return RendererChoice::SOFTWARE;
+        return backend;
     }
     void createWindow(const char *, const wma::WindowBackend &) override
     {
     }
+
+    RendererChoice backend = RendererChoice::SOFTWARE;
 
   private:
     TextureHandle _next{0};
@@ -333,20 +365,239 @@ void testSingleBatch()
                "with one text command per labelled control and no more");
 }
 
-void testSecondFontSizeCostsOneMoreBatch()
+void testFontSizesShareBatch()
 {
     Harness harness;
     auto &page = harness.root.setContent<Column>();
 
-    page.add<Label>("Heading").setFontSize(28.0f);
-    page.add<Label>("Body").setFontSize(13.0f);
+    for (const f32 size : {10.f, 11.f, 12.f, 13.f, 14.f, 15.f, 16.f, 18.f, 20.f, 24.f, 28.f})
+        page.add<Label>("Heading and body").setFontSize(size);
 
     harness.frame();
 
-    //! Two rasterization sizes are two atlas pages, so two textures. What
-    //! matters is that it is two and not one per widget.
-    AURA_CHECK(harness.renderer.batches.size() <= 3, "a second text size adds a batch, not a batch per widget");
+    AURA_CHECK(harness.renderer.batches.size() == 1, "eleven requested font sizes share one draw call");
+    AURA_CHECK(harness.renderer.textures.size() == 1, "font sizes share one texture allocation");
     AURA_CHECK(harness.renderer.uploads > 0, "and its glyph page is uploaded");
+}
+
+void testCoverageCompatibility()
+{
+    RecordingRenderer renderer;
+    const auto handle = renderer.createCoverageTexture(3, 2);
+    const auto &pixels = renderer.textures.at(handle).rgba;
+    AURA_CHECK(pixels[0] == 255 && pixels[3] == 0 && pixels[23] == 0,
+               "coverage fallback initializes transparent white, preserving filtering at cell edges");
+    const std::array<u8, 3> patch{0, 127, 255};
+    renderer.updateCoverageTextureRegion(handle, 0, 1, 3, 1, patch.data());
+    AURA_CHECK(pixels[15] == 0 && pixels[19] == 127 && pixels[23] == 255 && pixels[20] == 255,
+               "odd-width coverage uploads preserve white RGB and each alpha byte");
+    const usize uploads = renderer.uploads;
+    renderer.updateCoverageTextureRegion(handle, UINT32_MAX, 0, 3, 1, patch.data());
+    renderer.updateCoverageTextureRegion(handle, 1, 0, UINT32_MAX, 1, patch.data());
+    AURA_CHECK(renderer.uploads == uploads, "invalid fallback coverage updates are rejected before reading pixels");
+}
+
+void testRendererPrimitives()
+{
+    RecordingRenderer renderer;
+    const glm::vec4 tint{.2f, .4f, .8f, .5f};
+    gfx::Canvas shapes;
+    //! Draws what was added since the last call as one batch.
+    const auto submit = [&](gfx::BatchSpace space = gfx::BatchSpace::Screen)
+    {
+        renderer.drawBatch(shapes, {}, space);
+        shapes.clear();
+    };
+
+    const std::array<std::array<glm::vec2, 2>, 3> segments{
+        {{{{10, 10}, {30, 10}}}, {{{40, 10}, {40, 30}}}, {{{30, 40}, {10, 20}}}}};
+    for (const auto &[from, to] : segments)
+        shapes.line(from, to, tint, 4);
+    submit();
+    AURA_CHECK(renderer.batches.size() == 1 && renderer.vertexTotal == 12 && renderer.indicesInRange,
+               "horizontal, vertical and reversed diagonal lines in one batch are one draw of a quad each");
+    bool geometry = renderer.quads.size() == 12;
+    for (usize i = 0; geometry && i < segments.size(); ++i)
+    {
+        const auto &a = renderer.quads[i * 4];
+        const auto &b = renderer.quads[i * 4 + 1];
+        const auto &c = renderer.quads[i * 4 + 2];
+        const auto &d = renderer.quads[i * 4 + 3];
+        geometry &= glm::length(glm::vec2(a.pos + d.pos) * .5f - segments[i][0]) < .001f &&
+                    glm::length(glm::vec2(b.pos + c.pos) * .5f - segments[i][1]) < .001f &&
+                    std::fabs(glm::length(d.pos - a.pos) - 4.0f) < .001f && a.color == tint;
+    }
+    AURA_CHECK(geometry && !isValidHandle(renderer.batches.front().texture),
+               "line quads preserve endpoints, width and straight-alpha tint without allocating textures");
+
+    renderer.clear();
+    shapes.line(glm::vec2{5, 6}, glm::vec2{15, 6}, tint);
+    submit();
+    AURA_CHECK(renderer.vertexTotal == 4 && renderer.batches.front().indexCount == 6,
+               "single lines use the portable triangle path at the default one-pixel width");
+
+    const f32 aspect = static_cast<f32>(renderer.target.x) / static_cast<f32>(renderer.target.y);
+    renderer.setTransform(
+        {glm::mat4{1.0f}, glm::mat4{1.0f}, glm::perspectiveRH_NO(glm::radians(90.0f), aspect, 0.1f, 100.0f)});
+    renderer.clear();
+
+    shapes.rect({10, 20}, {30, 40}, tint);
+    shapes.triangle(glm::vec2{0, 0}, glm::vec2{10, 0}, glm::vec2{0, 10}, tint);
+    shapes.triangle(glm::vec2{0, 10}, glm::vec2{10, 0}, glm::vec2{0, 0}, tint);
+    submit();
+    AURA_CHECK(renderer.batches.size() == 1 && renderer.vertexTotal == 10 && renderer.indicesInRange &&
+                   renderer.quads[0].pos == glm::vec3(10, 20, 0) && renderer.quads[2].pos == glm::vec3(40, 60, 0),
+               "rectangles and either triangle winding submit valid untextured geometry");
+
+    //! A segment receding from the camera stays four pixels wide at both ends, at its own depth.
+    renderer.clear();
+    shapes.line(renderer.canvasView(), glm::vec3{-1, -1, -2}, glm::vec3{1, -1, -30}, tint, 4);
+    submit();
+    bool constantWidth = renderer.batches.size() == 1 && renderer.quads.size() == 4 &&
+                         renderer.batches.front().indexCount == 6 && renderer.indicesInRange;
+    if (constantWidth)
+    {
+        const auto at = [&](usize i)
+        {
+            return renderer.quads[i].pos;
+        };
+        const glm::vec3 nearEnd = renderer.toScreen({-1, -1, -2});
+        const glm::vec3 farEnd = renderer.toScreen({1, -1, -30});
+        constantWidth = std::fabs(glm::length(glm::vec2(at(3) - at(0))) - 4.0f) < .01f &&
+                        std::fabs(glm::length(glm::vec2(at(2) - at(1))) - 4.0f) < .01f &&
+                        glm::length((at(0) + at(3)) * .5f - nearEnd) < .01f &&
+                        glm::length((at(1) + at(2)) * .5f - farEnd) < .01f && nearEnd.z > 0.0f &&
+                        nearEnd.z < farEnd.z && farEnd.z < 1.0f && renderer.quads[0].color == tint &&
+                        !isValidHandle(renderer.batches.front().texture);
+    }
+    AURA_CHECK(constantWidth, "a 3D line is one screen quad at its depth, as wide in pixels near as far");
+
+    renderer.clear();
+    gfx::TransformUBO singular{glm::mat4{1}, glm::mat4{1}, glm::mat4{1}};
+    singular.model[2][2] = 0;
+    renderer.setTransform(singular);
+    shapes.line(renderer.canvasView(), glm::vec3{-.5f, 0, 0}, glm::vec3{.5f, 0, 0}, tint, 4);
+    submit();
+    AURA_CHECK(renderer.quads.size() == 4 &&
+                   std::fabs(glm::length(glm::vec2(renderer.quads[3].pos - renderer.quads[0].pos)) - 4) < .01f,
+               "a line under a singular model transform keeps its pixel width, needing no inverse");
+    renderer.setTransform({glm::mat4{1}, glm::mat4{1}, glm::perspectiveRH_NO(glm::radians(90.0f), aspect, .1f, 100.f)});
+
+    //! Crossing the camera plane beside the eye: only the part in front survives, as a valid quad.
+    renderer.clear();
+    shapes.line(renderer.canvasView(), glm::vec3{-1, 0, -5}, glm::vec3{3, 0, 5}, tint, 2);
+    submit();
+    bool clipped = renderer.batches.size() == 1 && renderer.quads.size() == 4;
+    for (usize i = 0; clipped && i < renderer.quads.size(); ++i)
+        clipped &= std::isfinite(renderer.quads[i].pos.x) && renderer.quads[i].pos.z > -1e-4f;
+    AURA_CHECK(clipped, "a 3D line through the camera is clipped to the part in front of it");
+
+    //! Under a window-pixel orthographic transform both overloads draw the same quad.
+    const auto [width, height] = std::array{static_cast<f32>(renderer.target.x), static_cast<f32>(renderer.target.y)};
+    renderer.setTransform({glm::mat4{1.0f}, glm::mat4{1.0f}, glm::orthoRH_NO(0.0f, width, height, 0.0f, -1.0f, 1.0f)});
+    renderer.clear();
+    shapes.line(glm::vec2{30, 40}, glm::vec2{10, 20}, tint, 3);
+    shapes.line(renderer.canvasView(), glm::vec3{30, 40, 0}, glm::vec3{10, 20, 0}, tint, 3);
+    submit();
+    bool matching = renderer.quads.size() == 8;
+    for (usize i = 0; matching && i < 4; ++i)
+        matching = glm::length(glm::vec2(renderer.quads[i].pos - renderer.quads[i + 4].pos)) < .01f;
+    AURA_CHECK(matching, "the 3D overload reduces to the 2D one under a pixel-space transform");
+
+    //! drawMeshes() hands the caller's model back, so World geometry after it is not moved by the last item.
+    const glm::mat4 world = renderer.batchTransform(gfx::BatchSpace::World);
+    IRenderer::DrawItem moved{};
+    moved.model[3] = glm::vec4{100.0f, 0.0f, 0.0f, 1.0f};
+    renderer.drawMeshes(std::span{&moved, 1});
+    renderer.clear();
+    shapes.line(glm::vec2{30, 40}, glm::vec2{10, 20}, tint, 3);
+    shapes.line(renderer.canvasView(), glm::vec3{30, 40, 0}, glm::vec3{10, 20, 0}, tint, 3);
+    submit();
+    bool unmoved = renderer.batchTransform(gfx::BatchSpace::World) == world && renderer.quads.size() == 8;
+    for (usize i = 0; unmoved && i < 4; ++i)
+        unmoved = glm::length(glm::vec2(renderer.quads[i].pos - renderer.quads[i + 4].pos)) < .01f;
+    AURA_CHECK(unmoved, "World lines after drawMeshes() use the caller's model, not the last mesh's");
+
+    renderer.clear();
+    shapes.triangle(glm::vec3{0, 0, 0}, glm::vec3{10, 0, 0}, glm::vec3{0, 10, 0}, tint);
+    submit(gfx::BatchSpace::World);
+    AURA_CHECK(renderer.sceneBatches.size() == 1 && renderer.scene.size() == 3 && renderer.batches.empty() &&
+                   renderer.scene[1].pos == glm::vec3(10, 0, 0),
+               "a World batch goes through the scene path, not the screen one");
+}
+
+void testScreenSpaceSharesClipConvention()
+{
+    //! Every backend presents y-up clip space (Vulkan through its flipped viewport), so pixels
+    //! map identically; only depth differs: [-1, 1] on OpenGL and CPU, [0, 1] on Vulkan and Metal.
+    RecordingRenderer renderer;
+    const glm::vec2 size{renderer.target};
+    const auto same = [](const glm::vec4 &a, const glm::vec4 &b)
+    {
+        return glm::all(glm::lessThan(glm::abs(a - b), glm::vec4{1e-5f}));
+    };
+    bool matching = true;
+    for (const RendererChoice backend :
+         {RendererChoice::OPENGL, RendererChoice::SOFTWARE, RendererChoice::VULKAN, RendererChoice::METAL})
+    {
+        renderer.backend = backend;
+        const glm::mat4 screen = renderer.batchTransform(gfx::BatchSpace::Screen);
+        const f32 nearPlane = backend == RendererChoice::VULKAN || backend == RendererChoice::METAL ? 0.0f : -1.0f;
+        matching &= same(screen * glm::vec4{0, 0, 0, 1}, {-1, 1, nearPlane, 1}) &&
+                    same(screen * glm::vec4{size, 1, 1}, {1, -1, 1, 1});
+    }
+    AURA_CHECK(matching, "screen pixels and depth map onto each backend's y-up clip space and depth range");
+}
+
+void testSharedAtlasUploads()
+{
+    AtlasTextShaper shaper;
+    ShapedText text;
+    shaper.shape("A", TextStyle{}, kUnbounded, text);
+    DrawList list;
+    list.begin(Rect::fromSize({}, {100, 40}));
+    list.drawText(text, {}, glm::vec4{1});
+    RecordingRenderer first, second;
+    DrawListRenderer a(first, shaper), b(second, shaper);
+    a.build(list);
+    b.build(list);
+    AURA_CHECK(first.textures.begin()->second.rgba == second.textures.begin()->second.rgba,
+               "a second backend uploads glyphs whose dirty rectangle was already consumed");
+
+    shaper.shape("B", TextStyle{}, kUnbounded, text);
+    a.build(list);
+    shaper.shape("C", TextStyle{}, kUnbounded, text);
+    b.build(list);
+    a.build(list);
+    AURA_CHECK(first.textures.begin()->second.rgba == second.textures.begin()->second.rgba,
+               "interleaved atlas consumers catch up on previously consumed updates");
+    const usize uploads = first.uploads;
+    a.build(list);
+    AURA_CHECK(first.uploads == uploads, "an unchanged atlas requires no upload");
+
+    RecordingRenderer unavailable;
+    unavailable.failTextures = true;
+    DrawListRenderer retry(unavailable, shaper);
+    shaper.shape("D", TextStyle{}, kUnbounded, text);
+    retry.build(list);
+    AURA_CHECK(shaper.page(text.page)->dirty(), "failed texture creation keeps pending glyphs");
+    unavailable.failTextures = false;
+    retry.build(list);
+    a.build(list);
+    AURA_CHECK(first.textures.begin()->second.rgba == unavailable.textures.begin()->second.rgba,
+               "retrying texture creation uploads the complete atlas");
+}
+
+void testInvisibleImageKeepsBatch()
+{
+    Harness harness;
+    harness.list.begin(Rect::fromSize({}, {100, 40}));
+    harness.list.fillRect(Rect::fromSize({}, {10, 10}), glm::vec4{1});
+    harness.list.drawImage(Rect::fromSize({20.1f, 0}, {.1f, 10}), TextureHandle{99});
+    harness.list.fillRect(Rect::fromSize({30, 0}, {10, 10}), glm::vec4{1});
+    harness.backend.build(harness.list);
+    AURA_CHECK(harness.backend.quadCount() == 2 && harness.backend.batchCount() == 1,
+               "an image that snaps to zero pixels does not split visible geometry into batches");
 }
 
 void testRoundedCornersAreConstantGeometry()
@@ -534,7 +785,7 @@ void testAtlasSurvivesScaleAndFirstFrameMasks()
     harness.frame();
     const u32 pageIndex = label.shaped().page;
     FontAtlas *atlas = harness.shaper.page(pageIndex);
-    AURA_CHECK(atlas && !atlas->takeDirtyUpload(), "first-frame corner masks have already been uploaded");
+    AURA_CHECK(atlas && !atlas->dirty(), "first-frame corner masks have already been uploaded");
     harness.root.setScale(2.0f);
     harness.frame();
     AURA_CHECK(harness.shaper.page(pageIndex) == atlas, "DPI changes preserve pages referenced by retained glyph runs");
@@ -588,8 +839,8 @@ void testTranslucentFillDoesNotShowItsBorder()
 
         for (usize corner = 0; corner < 4; ++corner)
         {
-            low = glm::min(low, harness.renderer.quads[base + corner].pos);
-            high = glm::max(high, harness.renderer.quads[base + corner].pos);
+            low = glm::min(low, glm::vec2(harness.renderer.quads[base + corner].pos));
+            high = glm::max(high, glm::vec2(harness.renderer.quads[base + corner].pos));
         }
 
         const glm::vec4 color = harness.renderer.quads[base].color;
@@ -632,13 +883,53 @@ void testRoundedOutlineCoverage()
     }
 }
 
+void testGlyphsStayOnDevicePixels()
+{
+    for (const f32 scale : {1.0f, 1.25f, 1.5f, 2.0f})
+    {
+        RecordingRenderer renderer;
+        AtlasTextShaper shaper;
+        shaper.setScale(scale);
+        ShapedText text;
+        shaper.shape("Aura3D Wi", TextStyle{.pixelSize = 14.3f}, kUnbounded, text);
+        DrawList list;
+        list.begin(Rect::fromSize({}, {400, 100}));
+        list.drawText(text, {10.35f, 6.7f}, {1, 1, 1, 1});
+        DrawListRenderer backend(renderer, shaper);
+        backend.build(list, scale);
+        backend.submit();
+
+        bool aligned = !renderer.quads.empty();
+        for (const auto &vertex : renderer.quads)
+            aligned &= glm::all(glm::lessThan(glm::abs(vertex.pos - glm::round(vertex.pos)), glm::vec3{0.001f}));
+        AURA_CHECK(aligned, "fractional layout snaps glyph edges to device pixels");
+
+        const auto *atlas = shaper.page(text.page);
+        bool exact = atlas != nullptr;
+        for (usize i = 0; atlas && i + 2 < renderer.quads.size(); i += 4)
+        {
+            const auto &top = renderer.quads[i];
+            const auto &bottom = renderer.quads[i + 2];
+            const glm::vec2 texels = (bottom.texCoord - top.texCoord) * glm::vec2{atlas->width(), atlas->height()};
+            exact &= glm::all(glm::lessThan(glm::abs(glm::vec2(bottom.pos - top.pos) - texels), glm::vec2{0.001f}));
+        }
+        AURA_CHECK(exact, "each glyph atlas texel maps to one device pixel");
+    }
+}
+
 } // namespace
 
 int main()
 {
+    testRendererPrimitives();
+    testScreenSpaceSharesClipConvention();
+    testCoverageCompatibility();
+    testSharedAtlasUploads();
+    testInvisibleImageKeepsBatch();
+    testGlyphsStayOnDevicePixels();
     testClipping();
     testSingleBatch();
-    testSecondFontSizeCostsOneMoreBatch();
+    testFontSizesShareBatch();
     testRoundedCornersAreConstantGeometry();
     testIdleFrameRebuildsNothing();
     testLostFrameIsRedrawnWhileIdle();

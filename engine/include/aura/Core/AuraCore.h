@@ -69,15 +69,18 @@ struct Vertex3D
     glm::vec3 normal;   //! (nx, ny, nz)
 };
 
-/**
- * @struct Vertex2d
- * @brief Base struct for 2D geometry (Sprites, UI).
- */
-struct Vertex2D
+/// Unlit geometry for IRenderer::drawBatch(), in either BatchSpace.
+struct BatchVertex
 {
-    glm::vec2 pos;      //! (x, y)
-    glm::vec2 texCoord; //! (u, v)
-    glm::vec4 color;    //! (r, g, b, a)
+    glm::vec3 pos;
+    glm::vec2 texCoord;
+    glm::vec4 color;
+};
+
+enum class BatchSpace : u8
+{
+    Screen, ///< Render-target pixels from the top-left; z is depth, 0 on the near plane, 1 on the far.
+    World,  ///< Through the current model, view and projection.
 };
 
 /**
@@ -104,7 +107,6 @@ template <typename VertexType> struct Mesh
     }
 };
 
-using Mesh2D = Mesh<Vertex2D>;
 using Mesh3D = Mesh<Vertex3D>;
 
 /**

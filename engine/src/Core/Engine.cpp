@@ -74,6 +74,7 @@ void Engine::_configureWindow()
     _windowDetails.height = config->getWindowHeight();
     _windowDetails.resizable = config->getWindowResizable();
     _windowDetails.fullscreen = config->getFullscreen();
+    _windowDetails.decorationMode = config->getWindowDecorations();
     _windowDetails.vsync = config->getVSync();
     _windowDetails.targetFPS = config->getFPSLimit();
 
@@ -151,6 +152,7 @@ void Engine::_adoptRenderer(aura3d::RendererChoice choice)
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
 
     _renderer->setWindowFactory(_windowFactory);
+    _renderer->setGpuTimingEnabled(aura3d::AuraSettings::get()->getGpuTiming());
     _renderer->initialize(aura3d::AuraSettings::get(), _jobs.get());
 
     if (_resources)

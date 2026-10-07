@@ -138,10 +138,5 @@ GpuMemoryStats VkDebugMetrics::gpuMemoryStats() const noexcept
     return stats;
 }
 
-GpuTimingStats VkDebugMetrics::gpuTimingStats() const noexcept
-{
-    return _timestamps.stats();
-}
-
 } // namespace vk
 } // namespace aura3d

@@ -1,8 +1,12 @@
-#include "aura/Renderer/Vulkan/VkAura/VkDebugMode/VkTimestampQuery.h"
+#include "aura/Renderer/Vulkan/VkAura/VkTimestampQuery/VkTimestampQuery.h"
+
+#ifdef AURA_PROFILE_FRAME
 
 #include <array>
 
 #include <ink/Inkogger.h>
+
+#include "aura/Core/Profiling/FrameProfiler.h"
 
 namespace aura3d
 {
@@ -88,7 +92,7 @@ bool VkTimestampQuery::initialize(VkDevice device, VkPhysicalDevice physicalDevi
     _nanosPerTick = static_cast<f64>(properties.limits.timestampPeriod);
     _slotPending.assign(frameSlots, 0);
 
-    _lastFrameMillis = 0.0;
+    _lastFrameNanos = 0;
     _resolvedSamples = 0;
     _droppedSamples = 0;
 
@@ -188,8 +192,9 @@ void VkTimestampQuery::resolve(u32 frameSlot) noexcept
         return;
     }
 
-    _lastFrameMillis = static_cast<f64>(end - begin) * _nanosPerTick / 1.0e6;
+    _lastFrameNanos = static_cast<i64>(static_cast<f64>(end - begin) * _nanosPerTick);
     ++_resolvedSamples;
+    AURA_FRAME_GPU(_lastFrameNanos);
 }
 
 GpuTimingStats VkTimestampQuery::stats() const noexcept
@@ -197,7 +202,7 @@ GpuTimingStats VkTimestampQuery::stats() const noexcept
     GpuTimingStats timing;
 
     timing.available = isReady() && _resolvedSamples > 0;
-    timing.frameMillis = _lastFrameMillis;
+    timing.frameMillis = static_cast<f64>(_lastFrameNanos) / 1.0e6;
     timing.droppedSamples = _droppedSamples;
 
     return timing;
@@ -205,3 +210,5 @@ GpuTimingStats VkTimestampQuery::stats() const noexcept
 
 } // namespace vk
 } // namespace aura3d
+
+#endif // AURA_PROFILE_FRAME

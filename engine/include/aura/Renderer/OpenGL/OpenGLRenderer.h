@@ -4,12 +4,15 @@
 #pragma once
 
 #include <memory>
-#include <unordered_map>
 
-#include "aura/Renderer/EmbeddedShaders.h"
 #include "aura/Renderer/IRenderer.h"
+#include "aura/Renderer/OpenGL/GlAura/GlBatchManager/GlBatchManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlIndexBufferManager/GlIndexBufferManager.h"
+#include "aura/Renderer/OpenGL/GlAura/GlTargetManager/GlTargetManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlTextureManager/GlTextureManager.h"
+#ifdef AURA_PROFILE_FRAME
+#include "aura/Renderer/OpenGL/GlAura/GlTimerQuery/GlTimerQuery.h"
+#endif
 #include "aura/Renderer/OpenGL/GlAura/GlUniformBufferManager/GlUniformBufferManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlVertexBufferManager/GlVertexBufferManager.h"
 
@@ -34,7 +37,10 @@ class OpenGLRenderer : public IRenderer
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
     TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
     TextureHandle createDynamicTexture(u32 width, u32 height) override;
+    TextureHandle createCoverageTexture(u32 width, u32 height) override;
     void updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels) override;
+    void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                     const u8 *coverage) override;
 
     void beginFrame() override;
     void beginRenderPass() override;
@@ -48,9 +54,14 @@ class OpenGLRenderer : public IRenderer
     void bindTexture(TextureHandle handle) override;
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
-    void drawBatch2D(std::span<const gfx::Vertex2D> vertices, std::span<const u32> indices,
-                     TextureHandle texture) override;
+    using IRenderer::drawBatch;
+    void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
+                   gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
+    [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
+#ifdef AURA_PROFILE_FRAME
+    [[nodiscard]] GpuTimingStats gpuTiming() const noexcept override;
+#endif
 
     wma::IWindowManager *getWindowManager() override
     {
@@ -66,46 +77,44 @@ class OpenGLRenderer : public IRenderer
 
   private:
     void loadOpenGLEntryPoints();
-    void compileBuiltInShaders();
+    void createSceneProgram();
 
-    /**
-     * @brief Creates the overlay pipeline's persistent VAO and dynamic buffers.
-     *
-     * One VAO/VBO/EBO triple serves every drawBatch2D() call for the renderer's
-     * whole life. The buffers only ever grow, so a steady-state overlay stops
-     * reallocating after the first few frames.
-     */
-    void createOverlay2DBuffers();
+    //! Scene state is the scene program, depth test and writes, no blending, and the scene's
+    //! VAO and texture. Batches and the resolve replace it; the next scene draw restores it.
+    void useSceneState();
+    void leaveSceneState();
+    //! Draws the staged batches; call before anything that must see them.
+    void flushBatches();
+    //! Binds _currentTexture, white for an invalid handle, and the scene's coverage flag.
+    void bindSceneTexture();
+    //! Gives the scene program the current model and its normal matrix, if they changed.
+    void uploadModel();
 
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
     std::unique_ptr<GlVertexBufferManager> _vertexMgr;
     std::unique_ptr<GlIndexBufferManager> _indexMgr;
     std::unique_ptr<GlUniformBufferManager> _uniformMgr;
     std::unique_ptr<GlTextureManager> _textureMgr;
+    std::unique_ptr<GlTargetManager> _targetMgr;
+    std::unique_ptr<GlBatchManager> _batchMgr;
+#ifdef AURA_PROFILE_FRAME
+    //! Created by the first pass that runs with GPU timing on.
+    std::unique_ptr<GlTimerQuery> _gpuTimer;
+    bool _gpuTimerUnsupported = false;
+#endif
 
-    GLuint _shaderProgram = 0;
     bool _isInitialized = false;
+    bool _sceneState = false;
 
-    //! Dedicated unlit 2D overlay pipeline, independent of the 3D program above.
-    GLuint _overlay2DProgram = 0;
-    GLint _overlay2DProjLoc = -1;    //! Cached uniform location of uProj.
-    GLint _overlay2DSamplerLoc = -1; //! Cached uniform location of textureSampler.
-
-    /*
-     * Location of the 3D program's textureSampler, resolved once at link time.
-     * Queried per bindTexture() before -- glGetUniformLocation hashes the name
-     * string inside the driver on every call, which is a real cost when it
-     * happens once per textured object per frame. The value it sets (unit 0)
-     * is program state and never changes, so nothing re-writes it per draw.
-     */
-    GLint _sampler3DLoc = -1;
-    GLuint _overlay2DVao = 0;
-    GLuint _overlay2DVbo = 0;
-    GLuint _overlay2DEbo = 0;
-    size_t _overlay2DVboBytes = 0; //! Current VBO allocation, in bytes.
-    size_t _overlay2DEboBytes = 0; //! Current EBO allocation, in bytes.
-    //! 1x1 opaque white, substituted when a batch asks for no texture.
-    TextureHandle _white2DTexture;
+    GLuint _sceneProgram = 0;
+    GLint _modelLoc = -1;
+    GLint _normalLoc = -1;
+    GLint _coverageLoc = -1;
+    //! What the scene program last received; unset until the first draw.
+    glm::mat4 _uploadedModel{0.0f};
+    bool _modelUploaded = false;
+    GLint _coverage = -1;
+    TextureHandle _whiteTexture;
 
     VertexBufferHandle _currentVertexBuffer;
     IndexBufferHandle _currentIndexBuffer;

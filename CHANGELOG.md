@@ -2,6 +2,42 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.4.0]
+
+### Added
+
+- Client-side window decorations: a dark `DefaultWindowDecoration` with native minimize, maximize and close, dragging and edge resize, on every WMA backend. Replace it with an `IWindowDecoration` or `nullptr`; `UIRoot::setDecoration()` frames any content.
+- `window.decorations` (`"server"` / `"client"`) and `AuraConfig::Window::decorations`.
+- `OverlayLayer::hasLightDismissible()`.
+- `gfx::Canvas`: lines, rectangles and triangles in one `drawBatch(canvas)` call, with depth-tested world lines (`IRenderer::canvasView()`).
+- `IRenderer::gpuTiming()`: GPU frame time on Vulkan, OpenGL and Metal in `AURA_PROFILE_FRAME` builds; unavailable elsewhere.
+- `benchmark_runtime` modes `raster` and `canvas`, and `AURA_BENCH_WINDOW` to pick the window backend.
+
+### Changed
+
+- Software rasterizer 6–14× faster at 1080p, using AVX2, SSE2 and NEON.
+- Linear blending with sRGB storage on every backend, so colours match everywhere. Colours are linear; convert hex values.
+- OpenGL runs on SDL3, X11, Wayland and GLFW, with batched uploads and draws, a camera uniform block, and a split into `GlTargetManager`, `GlBatchManager` and `GlShaderManager`.
+- Vulkan: faster parallel recording, batch buffers in system memory, one bindless texture table, a lazily built recording pool, and a dynamic-offset camera ring.
+- Built-in shaders embedded at build time from `resources/shaders`; the generated headers and scripts are gone. Vulkan builds need `glslc` or `glslangValidator`.
+- Font atlases use single-channel coverage; new rounded, proportional bitmap font, also used by the software `drawText()`.
+- Requires WMA 0.5 and ink 0.6.
+- **Breaking:** `drawBatch2D()` and `gfx::Vertex2D` became `drawBatch()` and `gfx::BatchVertex` with a `gfx::BatchSpace`.
+- **Breaking:** `TextOverlay::drawText()` and `drawFPS()` became `addText()` and `addFPS()`.
+- **Breaking:** `FontAtlas::takeUpload(revision)` replaces `takeDirtyUpload()` and returns R8 coverage.
+- **Breaking:** `IGpuDebugSource` reports memory only; GPU time is `IRenderer::gpuTiming()`.
+- **Breaking:** removed `gfx::Mesh2D`, `RENDERER_MODE_LIST` and `CpuFrameBufferManager`'s `drawTriangle()`, `drawTriangle2D()`, `submitTriangles()` and `submitTriangles2D()`; use `queueTriangle()`.
+
+### Fixed
+
+- Vulkan meshes used a stale camera when `setTransform()` followed `beginRenderPass()`.
+- World-space batches after `drawMeshes()` used the last item's model matrix on every backend.
+- Vulkan camera ring overflow (now 1024 cameras), a double-evaluated `VK_RESULT_CHECK`, a per-frame exception reading settings, and batch-buffer growth failures.
+- OpenGL: double present under `run()`, wrong HiDPI viewport, black pixel reads, and lost state after a batch.
+- Software renderer: lighting under singular model transforms, per-present allocation, and destination alpha.
+- Font caches shared by several UI renderers, rounded-widget corner artifacts, and icon sharpness at fractional UI scales.
+- Sandbox's FPS counter drawing under the client-side title bar.
+
 ## [0.3.0]
 
 ### Added

@@ -1,4 +1,5 @@
 #include "RuntimeAudioDevice.h"
+#include "aura/Core/Camera/Camera.h"
 #include "aura/Core/Engine.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
 #include "aura/UI/UI.hpp"
@@ -6,11 +7,20 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <new>
 #include <thread>
+
+#include <glm/gtc/matrix_transform.hpp>
+#ifdef AURA_HAS_OPENGL
+#include <glad/glad.h>
+#endif
+#ifdef AURA_HAS_CPU
+#include "aura/Renderer/Software/CPURenderer.h"
+#endif
 
 namespace
 {
@@ -98,8 +108,555 @@ int main(int argc, char **argv)
         config.graphics.gpuPreference = "any";
         config.audio.backend = wma::AudioBackend::Null;
         config.logging.level = ink::LogLevel::ERROR;
+        const bool raster = argc > 2 && std::string_view(argv[2]) == "raster";
+        if (raster)
+        {
+            config.window.width = 1920;
+            config.window.height = 1080;
+            config.graphics.cpuThreads = 0;
+        }
+        // AURA_BENCH_WINDOW=sdl3|x11|wayland|glfw runs any mode through that window backend.
+        if (const char *window = std::getenv("AURA_BENCH_WINDOW");
+            window && !WindowBackendFromString(window, config.window.backend))
+            return 1;
         Engine engine(config);
         auto &renderer = *engine.getRenderer();
+        if (argc > 2 && std::string_view(argv[2]) == "primitives")
+        {
+            struct Probe
+            {
+                i32 x;
+                i32 y;
+                std::array<u8, 3> rgb;
+            };
+            // Interior, outside-edge and flat-end probes also catch double
+            // blending where a translucent line's two triangles meet. Every
+            // backend blends in linear and stores sRGB: a 50% blend reads 188.
+            const std::array probes{
+                Probe{48, 24, {255, 0, 0}}, Probe{15, 24, {0, 0, 0}}, Probe{96, 24, {0, 0, 0}},
+                Probe{48, 19, {0, 0, 0}}, Probe{48, 28, {0, 0, 0}}, Probe{128, 40, {0, 255, 0}},
+                Probe{128, 15, {0, 0, 0}}, Probe{128, 72, {0, 0, 0}}, Probe{200, 40, {0, 0, 255}},
+                Probe{193, 47, {0, 0, 0}}, Probe{48, 56, {0, 255, 255}}, Probe{15, 56, {0, 0, 0}},
+                Probe{96, 56, {0, 0, 0}}, Probe{48, 95, {188, 188, 188}}, Probe{48, 96, {188, 188, 188}},
+                Probe{200, 112, {188, 0, 188}}, Probe{48, 120, {188, 188, 0}}, Probe{32, 160, {255, 255, 0}},
+                Probe{15, 160, {0, 0, 0}}, Probe{96, 160, {0, 0, 0}}, Probe{136, 152, {255, 0, 255}},
+                Probe{172, 184, {0, 0, 0}}, Probe{248, 152, {0, 255, 255}}, Probe{284, 184, {0, 0, 0}},
+                Probe{280, 40, {188, 0, 188}}, Probe{280, 20, {0, 0, 188}}, Probe{264, 40, {255, 0, 0}},
+                // Scene depth: the mesh hides the red batch triangle behind it, the
+                // blue 3D line in front of it shows, and the triangle shows beside it.
+                Probe{180, 215, {0, 255, 0}}, Probe{155, 215, {255, 0, 0}}, Probe{185, 222, {0, 0, 255}},
+                Probe{210, 215, {0, 0, 0}},
+                // A second camera in the same pass moves only the mesh drawn after it.
+                Probe{285, 215, {0, 255, 0}}, Probe{265, 215, {0, 0, 0}}};
+            struct Segment
+            {
+                glm::vec2 from;
+                glm::vec2 to;
+                glm::vec4 color;
+            };
+            const std::array segments{
+                Segment{{128, 16}, {128, 72}, {0, 1, 0, 1}},    Segment{{176, 16}, {224, 64}, {0, 0, 1, 1}},
+                Segment{{96, 56}, {16, 56}, {0, 1, 1, 1}},      Segment{{16, 96}, {96, 96}, {1, 1, 1, .5f}},
+                Segment{{176, 88}, {224, 136}, {1, 0, 1, .5f}}, Segment{{96, 120}, {16, 120}, {1, 1, 0, .5f}}};
+            const auto emptyCoverage = renderer.createCoverageTexture(1, 1);
+            if (!isValidHandle(emptyCoverage))
+                return 1;
+
+            //! Window pixels with depth, in the backend's clip-space convention: z = 0.5 is
+            //! nearer than z = -0.5.
+            const bool depthZeroToOne = renderer.getBackendType() == RendererChoice::VULKAN ||
+                                        renderer.getBackendType() == RendererChoice::METAL;
+            const glm::mat4 pixels = depthZeroToOne ? glm::orthoRH_ZO(0.0f, 320.0f, 240.0f, 0.0f, -1.0f, 1.0f)
+                                                    : glm::orthoRH_NO(0.0f, 320.0f, 240.0f, 0.0f, -1.0f, 1.0f);
+            renderer.setLight({.intensity = 0.0f, .ambient = 1.0f});
+            const auto white = renderer.createSolidColorTexture(255, 255, 255, 255);
+            gfx::Mesh3D occluder;
+            for (const glm::vec2 corner :
+                 {glm::vec2{170, 205}, glm::vec2{200, 205}, glm::vec2{200, 225}, glm::vec2{170, 225}})
+                occluder.vertices.push_back({{corner, 0.5f}, {}, {0, 1, 0, 1}, {0, 0, 1}});
+            //! Both windings, so culling cannot hide it on any backend.
+            occluder.indices = {0, 1, 2, 2, 3, 0, 0, 2, 1, 2, 0, 3};
+            const MeshHandle occluderMesh = renderer.createMesh(std::move(occluder));
+            if (!isValidHandle(occluderMesh) || !isValidHandle(white))
+                return 1;
+            const std::array<gfx::BatchVertex, 3> textured{{{{0, 0, 0}, {.5f, .5f}, {1, 0, 1, 1}},
+                                                            {{8, 0, 0}, {.5f, .5f}, {1, 0, 1, 1}},
+                                                            {{0, 8, 0}, {.5f, .5f}, {1, 0, 1, 1}}}};
+            constexpr std::array<u32, 3> texturedIndices{0, 1, 2};
+            //! Built once and drawn every frame; each is one draw call.
+            gfx::Canvas behind;
+            behind.triangle(glm::vec3{150, 200, -0.5f}, glm::vec3{230, 200, -0.5f}, glm::vec3{150, 236, -0.5f},
+                            {1, 0, 0, 1});
+            gfx::Canvas shapes;
+            shapes.line({16, 24}, {96, 24}, {1, 0, 0, 1}, 8);
+            for (const Segment &segment : segments)
+                shapes.line(segment.from, segment.to, segment.color, 8);
+            shapes.rect({16, 144}, {80, 48}, {1, 1, 0, 1});
+            shapes.triangle(glm::vec2{128, 144}, glm::vec2{176, 144}, glm::vec2{128, 192}, {1, 0, 1, 1});
+            shapes.triangle(glm::vec2{240, 192}, glm::vec2{288, 144}, glm::vec2{240, 144}, {0, 1, 1, 1});
+            shapes.rect({256, 24}, {48, 48}, {1, 0, 0, 1});
+            shapes.line({280, 16}, {280, 80}, {0, 0, 1, .5f}, 16);
+            gfx::Canvas inFront;
+            renderer.setClearColor(0, 0, 0, 1);
+            u32 rendered = 0;
+            u32 checkedPixels = 0;
+            for (u32 frame = 0; frame < 12; ++frame)
+            {
+                renderer.beginFrame();
+                if (!renderer.frameBegun())
+                    continue;
+                renderer.beginRenderPass();
+                renderer.setTransform({glm::mat4{1.0f}, glm::mat4{1.0f}, pixels});
+                renderer.drawMesh(occluderMesh, white);
+                renderer.drawBatch(behind, {}, gfx::BatchSpace::World);
+                //! Projected with this frame's camera, so rebuilt each frame.
+                inFront.clear();
+                inFront.line(renderer.canvasView(), glm::vec3{172, 222, 0.9f}, glm::vec3{198, 222, 0.9f}, {0, 0, 1, 1},
+                             2);
+                renderer.drawBatch(inFront);
+                // Primitives must select the white fallback after a coverage draw.
+                renderer.drawBatch(textured, texturedIndices, emptyCoverage);
+                renderer.drawBatch(shapes);
+                glm::mat4 shifted{1.0f};
+                shifted[3].x = 100.0f;
+                renderer.setTransform({glm::mat4{1.0f}, shifted, pixels});
+                renderer.drawMesh(occluderMesh, white);
+                renderer.endRenderPass();
+                for (const auto &probe : probes)
+                {
+                    std::array<u8, 4> actual{};
+                    bool readable = false;
+#ifdef AURA_HAS_OPENGL
+                    if (renderer.getBackendType() == RendererChoice::OPENGL)
+                    {
+                        glReadPixels(probe.x, 239 - probe.y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, actual.data());
+                        readable = true;
+                    }
+#endif
+#ifdef AURA_HAS_CPU
+                    if (renderer.getBackendType() == RendererChoice::SOFTWARE)
+                    {
+                        const u32 pixel = static_cast<cpu::CPURenderer &>(renderer)
+                                              .getFrameBufferManager()
+                                              ->getPixel({probe.x, probe.y})
+                                              .rgb;
+                        actual = {static_cast<u8>(pixel >> 16), static_cast<u8>(pixel >> 8), static_cast<u8>(pixel),
+                                  static_cast<u8>(pixel >> 24)};
+                        readable = true;
+                    }
+#endif
+                    if (!readable)
+                        continue;
+                    for (usize c = 0; c < 3; ++c)
+                        if (std::abs(int(actual[c]) - int(probe.rgb[c])) > 1)
+                        {
+                            std::fprintf(stderr, "PRIMITIVES frame %u pixel (%d,%d): got %u,%u,%u expected %u,%u,%u\n",
+                                         frame, probe.x, probe.y, actual[0], actual[1], actual[2], probe.rgb[0],
+                                         probe.rgb[1], probe.rgb[2]);
+                            return 2;
+                        }
+                    ++checkedPixels;
+                }
+#ifdef AURA_HAS_OPENGL
+                if (renderer.getBackendType() == RendererChoice::OPENGL && glGetError() != GL_NO_ERROR)
+                    return 2;
+#endif
+                renderer.endFrame();
+                ++rendered;
+            }
+            std::printf("PRIMITIVES backend=%s rendered_frames=%u checked_pixels=%u\n", argv[1], rendered,
+                        checkedPixels);
+            return rendered == 12 ? 0 : 1;
+        }
+        if (argc > 2 && std::string_view(argv[2]) == "canvas")
+        {
+            //! A particle field moved and rebuilt every frame: the Canvas path end to end.
+            constexpr u32 kRects = 20000;
+            constexpr u32 kLines = 5000;
+            constexpr glm::vec2 kArea{318.0f, 238.0f};
+            struct Particle
+            {
+                glm::vec2 position;
+                glm::vec2 velocity;
+                glm::vec4 color;
+            };
+            std::vector<Particle> particles(kRects + kLines);
+            for (u32 i = 0; i < particles.size(); ++i)
+            {
+                const auto n = static_cast<f32>(i);
+                particles[i] = {{std::fmod(n * 7.3f, kArea.x), std::fmod(n * 3.1f, kArea.y)},
+                                {20.0f + static_cast<f32>(i % 50), 13.0f - static_cast<f32>(i % 37)},
+                                {static_cast<f32>(i % 255) / 255.0f, .5f, 1.0f, i < kRects ? 1.0f : .6f}};
+            }
+            const auto update = [&]
+            {
+                for (Particle &particle : particles)
+                {
+                    particle.position += particle.velocity * (1.0f / 60.0f);
+                    for (int axis = 0; axis < 2; ++axis)
+                    {
+                        if (particle.position[axis] < 0.0f)
+                            particle.position[axis] += kArea[axis];
+                        else if (particle.position[axis] >= kArea[axis])
+                            particle.position[axis] -= kArea[axis];
+                    }
+                }
+            };
+            gfx::Canvas canvas;
+            const auto build = [&]
+            {
+                update();
+                canvas.clear();
+                for (u32 i = 0; i < kRects; ++i)
+                    canvas.rect(particles[i].position, {2, 2}, particles[i].color);
+                for (u32 i = kRects; i < particles.size(); ++i)
+                    canvas.line(particles[i].position, particles[i].position + particles[i].velocity * 0.25f,
+                                particles[i].color, 1.5f);
+            };
+            measure("canvas_update", 120, update);
+            measure("canvas_build", 120, build);
+            const auto frame = [&](bool draw)
+            {
+                renderer.beginFrame();
+                renderer.beginRenderPass();
+                if (draw)
+                {
+                    build();
+                    renderer.drawBatch(canvas);
+                }
+                renderer.endRenderPass();
+                renderer.endFrame();
+            };
+            measure("canvas_empty_frame", 120,
+                    [&]
+                    {
+                        frame(false);
+                    });
+            measure("canvas_frame", 120,
+                    [&]
+                    {
+                        frame(true);
+                    });
+            return 0;
+        }
+        if (argc > 2 && std::string_view(argv[2]) == "lighting")
+        {
+            // A lit quad under a rotation and then a non-uniform scale: the normal is the inverse
+            // transpose of the model, not the model, so a wrong normal matrix shows in the colour.
+            const glm::mat4 model = glm::scale(glm::mat4{1.0f}, {2.0f, 1.0f, 1.0f}) *
+                                    glm::rotate(glm::mat4{1.0f}, glm::radians(60.0f), glm::vec3{0, 1, 0});
+            gfx::LightUBO light;
+            light.direction = glm::normalize(glm::vec3{-1.0f, 0.2f, -1.0f});
+            light.intensity = 0.6f;
+            light.ambient = 0.1f;
+            light.color = {1.0f, 0.5f, 0.25f, 1.0f};
+            const glm::vec3 normal = glm::normalize(glm::transpose(glm::inverse(glm::mat3(model))) * glm::vec3{0, 0, 1});
+            const f32 lighting = light.ambient + std::max(glm::dot(normal, -light.direction), 0.0f) * light.intensity;
+            const auto encode = [](f32 linear)
+            {
+                linear = std::min(linear, 1.0f);
+                const f32 encoded = linear <= 0.0031308f ? linear * 12.92f : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+                return static_cast<int>(std::lround(encoded * 255.0f));
+            };
+            //! The quad's centre after the model, in pixels of the 320x240 window.
+            const glm::vec4 centre = model * glm::vec4{0, 0, 0.5f, 1};
+            const i32 probeX = static_cast<i32>((centre.x + 1.0f) * 0.5f * 320.0f);
+            const i32 probeY = static_cast<i32>((1.0f - centre.y) * 0.5f * 240.0f);
+            const std::array<int, 3> expected{encode(light.color.r * lighting), encode(light.color.g * lighting),
+                                              encode(light.color.b * lighting)};
+
+            gfx::Mesh3D quad;
+            for (const glm::vec2 corner : {glm::vec2{-.5f, -.5f}, {.5f, -.5f}, {.5f, .5f}, {-.5f, .5f}})
+                quad.vertices.push_back({{corner, 0.5f}, {}, {1, 1, 1, 1}, {0, 0, 1}});
+            quad.indices = {0, 1, 2, 2, 3, 0, 0, 2, 1, 2, 0, 3};
+            const MeshHandle mesh = renderer.createMesh(std::move(quad));
+            const auto white = renderer.createSolidColorTexture(255, 255, 255, 255);
+            renderer.setLight(light);
+            renderer.setClearColor(0, 0, 0, 1);
+            std::array<u8, 4> actual{};
+            bool readable = false;
+            for (u32 frame = 0; frame < 3; ++frame)
+            {
+                renderer.beginFrame();
+                if (!renderer.frameBegun())
+                    continue;
+                renderer.beginRenderPass();
+                renderer.setTransform({model, glm::mat4{1.0f}, glm::mat4{1.0f}});
+                renderer.drawMesh(mesh, white);
+                renderer.endRenderPass();
+#ifdef AURA_HAS_OPENGL
+                if (renderer.getBackendType() == RendererChoice::OPENGL)
+                {
+                    glReadPixels(probeX, 239 - probeY, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, actual.data());
+                    readable = true;
+                }
+#endif
+#ifdef AURA_HAS_CPU
+                if (renderer.getBackendType() == RendererChoice::SOFTWARE)
+                {
+                    const u32 pixel =
+                        static_cast<cpu::CPURenderer &>(renderer).getFrameBufferManager()->getPixel({probeX, probeY}).rgb;
+                    actual = {static_cast<u8>(pixel >> 16), static_cast<u8>(pixel >> 8), static_cast<u8>(pixel), 255};
+                    readable = true;
+                }
+#endif
+                renderer.endFrame();
+            }
+            // Other backends are read from a screenshot at the probe pixel.
+            std::printf("LIGHTING backend=%s probe=%d,%d expected=%d,%d,%d", argv[1], probeX, probeY, expected[0],
+                        expected[1], expected[2]);
+            if (!readable)
+                return std::printf("\n"), 0;
+            std::printf(" got=%u,%u,%u\n", actual[0], actual[1], actual[2]);
+            for (usize c = 0; c < 3; ++c)
+                if (std::abs(int(actual[c]) - expected[c]) > 1)
+                    return 2;
+            return 0;
+        }
+        if (argc > 2 && std::string_view(argv[2]) == "coverage")
+        {
+            // Screenshot swatches: black, black, half-green (188: linear blend, sRGB storage), green, magenta;
+            // the second row samples a large atlas after upload-slot rotation.
+            const auto untouched = renderer.createCoverageTexture(7, 3);
+            const auto coverage = renderer.createCoverageTexture(7, 3);
+            const auto rgba = renderer.createDynamicTexture(1, 1);
+            const auto large = renderer.createCoverageTexture(2048, 2048);
+            if (!isValidHandle(untouched) || !isValidHandle(coverage) || !isValidHandle(rgba) || !isValidHandle(large))
+                return 1;
+            const std::array<u8, 3> patch{0, 128, 255};
+            const std::array<u8, 4> magenta{255, 0, 255, 255};
+            const std::vector<u8> full(usize{2048} * 2048, 255);
+            const std::vector<u8> edge(2045, 255);
+            const std::array<u32, 6> indices{0, 1, 2, 2, 3, 0};
+#ifdef AURA_HAS_OPENGL
+            VertexBufferHandle sceneVertices;
+            IndexBufferHandle sceneIndices;
+            if (renderer.getBackendType() == RendererChoice::OPENGL)
+            {
+                // The lower middle swatch is a scene draw after the UI, with
+                // its texture bound before the UI overwrites texture unit 0.
+                std::vector<gfx::Vertex3D> vertices;
+                for (const glm::vec2 p : {glm::vec2{88, 112}, {136, 112}, {136, 160}, {136, 160}, {88, 160}, {88, 112}})
+                    vertices.push_back({{p.x / 160 - 1, 1 - p.y / 120, 0}, {.5f, .5f}, {1, 1, 1, 1}, {0, 0, 1}});
+                sceneVertices = renderer.createVertexBuffer(std::move(vertices));
+                sceneIndices = renderer.createIndexBuffer(std::vector<u32>{0, 1, 2, 3, 4, 5});
+                auto light = renderer.getLight();
+                light.intensity = 0;
+                light.ambient = 1;
+                renderer.setLight(light);
+                renderer.setTransform({glm::mat4{1}, glm::mat4{1}, glm::mat4{1}});
+            }
+#endif
+            const auto swatch = [&](TextureHandle texture, f32 x, f32 y, glm::vec2 uv, glm::vec4 color)
+            {
+                const std::array<gfx::BatchVertex, 4> quad{{{{x, y, 0}, uv, color},
+                                                            {{x + 48, y, 0}, uv, color},
+                                                            {{x + 48, y + 48, 0}, uv, color},
+                                                            {{x, y + 48, 0}, uv, color}}};
+                renderer.drawBatch(quad, indices, texture);
+            };
+            renderer.setClearColor(0, 0, 0, 1);
+            u32 rendered = 0;
+            for (u32 frame = 0; frame < 12; ++frame)
+            {
+                renderer.beginFrame();
+                if (!renderer.frameBegun())
+                    continue;
+                for (u32 batch = 0; batch < 4; ++batch)
+                {
+                    renderer.updateCoverageTextureRegion(coverage, 1, 1, 3, 1, patch.data());
+                    renderer.updateTextureRegion(rgba, 0, 0, 1, 1, magenta.data());
+                    renderer.updateCoverageTextureRegion(large, 0, 0, 2048, 2048, full.data());
+                }
+                // 4 MiB minus three bytes, then a one-byte copy whose alignment
+                // padding must rotate the staging slot instead of exceeding it.
+                renderer.updateCoverageTextureRegion(large, 0, 0, 2048, 2047, full.data());
+                renderer.updateCoverageTextureRegion(large, 0, 2047, 2045, 1, edge.data());
+                renderer.updateCoverageTextureRegion(coverage, 3, 1, 1, 1, &patch[2]);
+                renderer.updateTextureRegion(rgba, 0, 0, 1, 1, magenta.data());
+                if (std::getenv("AURA_BENCH_INVALID_REGIONS"))
+                {
+                    renderer.updateCoverageTextureRegion(coverage, UINT32_MAX, 0, 1, 1, patch.data());
+                    renderer.updateCoverageTextureRegion(coverage, 1, 0, UINT32_MAX, 1, patch.data());
+                    renderer.updateCoverageTextureRegion(coverage, 0, 0, 7, UINT32_MAX, patch.data());
+                }
+                renderer.beginRenderPass();
+#ifdef AURA_HAS_OPENGL
+                if (renderer.getBackendType() == RendererChoice::OPENGL)
+                    renderer.bindTexture(rgba);
+#endif
+                swatch(untouched, 16, 32, {.5f, .5f}, {0, 1, 0, 1});
+                for (u32 i = 0; i < 3; ++i)
+                    swatch(coverage, 72 + 56 * static_cast<f32>(i), 32, {(1.5f + static_cast<f32>(i)) / 7.0f, .5f},
+                           {0, 1, 0, 1});
+                swatch(rgba, 240, 32, {.5f, .5f}, {1, 1, 1, 1});
+                swatch(large, 16, 112, {.5f, .5f}, {0, 1, 0, 1});
+#ifdef AURA_HAS_OPENGL
+                if (renderer.getBackendType() == RendererChoice::OPENGL)
+                {
+                    renderer.bindVertexBuffer(sceneVertices);
+                    renderer.bindIndexBuffer(sceneIndices);
+                    if (frame % 2 == 0)
+                        renderer.drawIndexed(6);
+                    else
+                        renderer.draw(6);
+
+                    const auto checkPixel = [&](i32 x, i32 y, std::array<u8, 3> expected)
+                    {
+                        std::array<u8, 4> actual{};
+                        glReadPixels(x, 239 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, actual.data());
+                        for (usize c = 0; c < 3; ++c)
+                            if (std::abs(int(actual[c]) - int(expected[c])) > 1)
+                            {
+                                std::fprintf(stderr, "COVERAGE pixel (%d,%d): got %u,%u,%u expected %u,%u,%u\n", x, y,
+                                             actual[0], actual[1], actual[2], expected[0], expected[1], expected[2]);
+                                return false;
+                            }
+                        return true;
+                    };
+                    if (!checkPixel(40, 56, {0, 0, 0}) || !checkPixel(96, 56, {0, 0, 0}) ||
+                        !checkPixel(152, 56, {0, 188, 0}) || !checkPixel(208, 56, {0, 255, 0}) ||
+                        !checkPixel(264, 56, {255, 0, 255}) || !checkPixel(40, 136, {0, 255, 0}) ||
+                        !checkPixel(112, 136, {255, 0, 255}) || glGetError() != GL_NO_ERROR)
+                        return 2;
+                }
+#endif
+                renderer.endRenderPass();
+                renderer.endFrame();
+                ++rendered;
+            }
+            std::printf("COVERAGE backend=%s rendered_frames=%u\n", argv[1], rendered);
+            return rendered == 12 ? 0 : 1;
+        }
+        if (raster)
+        {
+            // The Sandbox's load at 1080p: a lit floor, textured cubes and a sphere, then a
+            // blended UI panel and a coverage-textured text strip.
+            // Run with: SDL_VIDEODRIVER=dummy benchmark_runtime software raster
+            // AURA_BENCH_DUMP=<file.ppm> writes the software backend's last frame for A/B comparison.
+            // AURA_BENCH_OBJECTS=<n> adds a grid of n spheres; GPU backends also report GPU time.
+            const auto checker = [&](u32 size, std::array<u8, 4> a, std::array<u8, 4> b)
+            {
+                std::vector<u8> pixels(usize{size} * size * 4);
+                for (u32 y = 0; y < size; ++y)
+                    for (u32 x = 0; x < size; ++x)
+                        std::copy_n(((x / 16 + y / 16) % 2 ? a : b).data(), 4, &pixels[(usize{y} * size + x) * 4]);
+                return renderer.createTextureFromPixels(pixels.data(), size, size);
+            };
+            const auto floor =
+                renderer.createMaterial(Material{.albedo = renderer.createSolidColorTexture(255, 255, 255)});
+            const auto crate =
+                renderer.createMaterial(Material{.albedo = checker(256, {200, 140, 60, 255}, {90, 60, 30, 255})});
+            const auto orb =
+                renderer.createMaterial(Material{.albedo = checker(128, {60, 120, 220, 255}, {220, 230, 255, 255})});
+            const auto cube = renderer.createMesh(MeshLoader::createCube());
+            const auto sphere = renderer.createMesh(MeshLoader::createSphere(3));
+            const auto plane = renderer.createMesh(MeshLoader::createPlane());
+            const glm::vec3 spin{0.3f, 1, 0.1f};
+            std::vector<IRenderer::DrawItem> items{
+                {plane, floor, glm::scale(glm::translate(glm::mat4{1}, {0, -0.75f, 0}), {8, 1, 8})},
+                {cube, crate, glm::rotate(glm::translate(glm::mat4{1}, {-1.5f, 0, 0}), 0.6f, spin)},
+                {sphere, orb, glm::scale(glm::mat4{1}, glm::vec3{1.2f})},
+                {cube, crate, glm::rotate(glm::translate(glm::mat4{1}, {1.5f, 0, 0}), -0.6f, spin)},
+            };
+            const char *objects = std::getenv("AURA_BENCH_OBJECTS");
+            const int extra =
+                objects ? static_cast<int>(std::clamp(std::strtol(objects, nullptr, 10), 0L, 1L << 20)) : 0;
+            const int perRow = std::max(1, static_cast<int>(std::sqrt(static_cast<f32>(extra))));
+            for (int i = 0; i < extra; ++i)
+            {
+                const int column = i % perRow - perRow / 2, row = i / perRow;
+                const glm::vec3 at{static_cast<f32>(column) * 0.6f, -0.4f, -2.0f - static_cast<f32>(row) * 0.6f};
+                items.push_back({sphere, orb, glm::scale(glm::translate(glm::mat4{1}, at), glm::vec3{0.25f})});
+            }
+            renderer.setGpuTimingEnabled(true);
+            Camera camera =
+                Camera::perspective({.fovDeg = 60, .aspect = 1920.0f / 1080.0f, .nearZ = 0.1f, .farZ = 100});
+            camera.setPosition({0, 0.8f, 4.5f});
+            camera.setRotation(-90, -8);
+            renderer.setLight({});
+            renderer.setClearColor(0.1f, 0.1f, 0.3f);
+
+            constexpr u32 kAtlasWidth = 512, kAtlasHeight = 64;
+            const auto atlas = renderer.createCoverageTexture(kAtlasWidth, kAtlasHeight);
+            std::vector<u8> coverage(usize{kAtlasWidth} * kAtlasHeight);
+            for (usize i = 0; i < coverage.size(); ++i)
+                coverage[i] = static_cast<u8>((i * 2654435761u) >> 24);
+            renderer.updateCoverageTextureRegion(atlas, 0, 0, kAtlasWidth, kAtlasHeight, coverage.data());
+
+            std::vector<gfx::BatchVertex> ui, text;
+            std::vector<u32> uiIndices, textIndices;
+            const auto quad = [](std::vector<gfx::BatchVertex> &vertices, std::vector<u32> &indices, glm::vec2 min,
+                                 glm::vec2 max, glm::vec2 uvMin, glm::vec2 uvMax, glm::vec4 color)
+            {
+                const u32 base = static_cast<u32>(vertices.size());
+                vertices.push_back({{min.x, min.y, 0}, uvMin, color});
+                vertices.push_back({{max.x, min.y, 0}, {uvMax.x, uvMin.y}, color});
+                vertices.push_back({{max.x, max.y, 0}, uvMax, color});
+                vertices.push_back({{min.x, max.y, 0}, {uvMin.x, uvMax.y}, color});
+                indices.insert(indices.end(), {base, base + 1, base + 2, base + 2, base + 3, base});
+            };
+            quad(ui, uiIndices, {0, 0}, {360, 1080}, {}, {}, {0.05f, 0.05f, 0.08f, 0.85f});
+            for (int i = 0; i < 30; ++i)
+            {
+                const f32 y = 24.0f + static_cast<f32>(i) * 34.0f;
+                quad(ui, uiIndices, {16, y}, {344, y + 28}, {}, {}, {0.2f, 0.25f, 0.4f, i % 3 ? 1.0f : 0.6f});
+            }
+            for (int line = 0; line < 30; ++line)
+                for (int glyph = 0; glyph < 24; ++glyph)
+                {
+                    const glm::vec2 at{24.0f + static_cast<f32>(glyph) * 12.0f, 29.0f + static_cast<f32>(line) * 34.0f};
+                    const glm::vec2 uv{static_cast<f32>(glyph % 32) / 32.0f, 0};
+                    quad(text, textIndices, at, at + glm::vec2{11, 18}, uv, uv + glm::vec2{1.0f / 32, 1}, glm::vec4{1});
+                }
+            const TextureHandle white = renderer.createSolidColorTexture(255, 255, 255);
+
+            const auto frame = [&]
+            {
+                renderer.beginFrame();
+                renderer.setTransform(camera.buildUBO());
+                renderer.beginRenderPass();
+                renderer.drawMeshes(items);
+                renderer.drawBatch(ui, uiIndices, white);
+                renderer.drawBatch(text, textIndices, atlas);
+                renderer.endRenderPass();
+                renderer.endFrame();
+            };
+            measure(argv[1], 300, frame);
+            std::vector<f64> gpu;
+            gpu.reserve(300);
+            for (int i = 0; i < 300; ++i)
+            {
+                frame();
+                if (const GpuTimingStats timing = renderer.gpuTiming(); timing.available)
+                    gpu.push_back(timing.frameMillis);
+            }
+            if (!gpu.empty())
+            {
+                std::sort(gpu.begin(), gpu.end());
+                std::printf("GPU %s objects=%zu n=%zu p50_us=%.3f p95_us=%.3f dropped=%llu\n", argv[1], items.size(),
+                            gpu.size(), gpu[gpu.size() / 2] * 1000.0, gpu[gpu.size() * 95 / 100] * 1000.0,
+                            static_cast<unsigned long long>(renderer.gpuTiming().droppedSamples));
+            }
+#ifdef AURA_HAS_CPU
+            if (const char *dump = std::getenv("AURA_BENCH_DUMP"))
+                if (auto *cpu = dynamic_cast<cpu::CPURenderer *>(&renderer))
+                {
+                    const cpu::CpuFrameBufferManager &frameBuffer = *cpu->getFrameBufferManager();
+                    std::ofstream out(dump, std::ios::binary);
+                    out << "P6\n" << frameBuffer.getWidth() << ' ' << frameBuffer.getHeight() << "\n255\n";
+                    for (i32 y = 0; y < frameBuffer.getHeight(); ++y)
+                        for (i32 x = 0; x < frameBuffer.getWidth(); ++x)
+                        {
+                            const u32 rgb = frameBuffer.getPixel({x, y}).rgb;
+                            const std::array<char, 3> bytes{static_cast<char>(rgb >> 16), static_cast<char>(rgb >> 8),
+                                                            static_cast<char>(rgb)};
+                            out.write(bytes.data(), bytes.size());
+                        }
+                }
+#endif
+            return 0;
+        }
         if (argc > 2 && std::string_view(argv[2]) == "cache")
         {
             // Sparse indexed draws alternate buffer sizes without raster work.
@@ -215,17 +772,17 @@ int main(int argc, char **argv)
                         // Integer division selects the overlay's grid row.
                         // NOLINTNEXTLINE(bugprone-integer-division)
                         const f32 y = static_cast<f32>(i / 80) * 4;
-                        std::array<gfx::Vertex2D, 4> quad{{{{x, y}, {0, 0}, {0, 0, 1, 1}},
-                                                           {{x + 3, y}, {1, 0}, {0, 0, 1, 1}},
-                                                           {{x + 3, y + 3}, {1, 1}, {0, 0, 1, 1}},
-                                                           {{x, y + 3}, {0, 1}, {0, 0, 1, 1}}}};
+                        std::array<gfx::BatchVertex, 4> quad{{{{x, y, 0}, {0, 0}, {0, 0, 1, 1}},
+                                                              {{x + 3, y, 0}, {1, 0}, {0, 0, 1, 1}},
+                                                              {{x + 3, y + 3, 0}, {1, 1}, {0, 0, 1, 1}},
+                                                              {{x, y + 3, 0}, {0, 1}, {0, 0, 1, 1}}}};
                         if (check && (i == 0 || i == 8))
                             for (auto &vertex : quad)
                             {
                                 vertex.texCoord = glm::vec2(i == 0 ? .75f : .25f);
                                 vertex.color = glm::vec4{1};
                             }
-                        renderer.drawBatch2D(quad, indices, textures[i % 8]);
+                        renderer.drawBatch(quad, indices, textures[i % 8]);
                     }
                     renderer.endRenderPass();
                     renderer.endFrame();

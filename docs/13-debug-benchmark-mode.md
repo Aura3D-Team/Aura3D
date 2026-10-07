@@ -47,7 +47,7 @@ No recompilation and no config edit: the environment variables below override
 | `aura3d::FrameProfiler` | Per-phase CPU wall time, per frame | all (Vulkan, OpenGL, software) |
 | `vk::VkDeviceMemoryCounters` | Real VRAM, hooked at VMA's device-memory callbacks | Vulkan |
 | `vk::VkCountingAllocator` | The driver's *host* bookkeeping, via `VkAllocationCallbacks` | Vulkan |
-| `vk::VkTimestampQuery` | GPU wall time per frame, via a `VkQueryPool` | Vulkan |
+| `IRenderer::gpuTiming()` | GPU wall time per frame: a `VkQueryPool`, `GL_TIME_ELAPSED` queries, or `MTLCommandBuffer` GPU start/end. Compiled only with `AURA_PROFILE_FRAME`, which debug mode implies | Vulkan, OpenGL, Metal |
 
 Two of those distinctions matter more than they look:
 
@@ -181,12 +181,14 @@ because nothing was allocated.
 ### `gpu`
 
 `"available": false` with a `reason` is the honest answer from the software
-rasteriser (no device) and from OpenGL (no timestamp queries wired up yet). On
-Vulkan you get:
+rasteriser, which has no device. Vulkan, OpenGL and Metal report:
 
 - `gpu.timing.frame_ms` — the GPU's own frame time distribution. It trails the
   CPU by the number of frames in flight, because reading a query for the frame
   just recorded would mean stalling the pipeline to measure it.
+
+Vulkan adds `gpu.memory`; elsewhere it reports `"available": false`.
+
 - `gpu.memory.device` — real VRAM. `reserved_bytes` is what the suballocator is
   holding but not handing out; a large value is fragmentation, which is a
   different problem from allocating too much.
@@ -359,18 +361,19 @@ Two things make that reliable:
 ## Platform notes
 
 - **Linux (native)** — everything: CPU allocation tracking, `FrameProfiler` on
-  all three backends, Vulkan device/host memory and GPU timestamps.
+  all three backends, GPU time on Vulkan and OpenGL, Vulkan device/host memory.
 - **Windows** — same as Linux.
 - **WebAssembly (Emscripten)** — CPU allocation tracking and `FrameProfiler`
-  work on the software and WebGL backends. There is no Vulkan path, so the
-  `gpu` section reports unavailable. Wall-clock precision depends on the
+  work on the WebGL backend. GPU time needs the browser to expose
+  `EXT_disjoint_timer_query_webgl2`, which most withhold; GPU memory is never
+  reported. Wall-clock precision depends on the
   browser: `performance.now()` is deliberately coarsened against timing attacks,
   so treat sub-millisecond phase numbers there as indicative rather than exact.
 - **Android** — CPU tracking and `FrameProfiler` on whichever backend is
   active; the full Vulkan section when `AURA_ENABLE_VULKAN` is on and the
   device's graphics queue family reports non-zero `timestampValidBits`.
-- **Apple (Metal)** — CPU tracking and `FrameProfiler` only; the Metal backend
-  does not implement `IGpuDebugSource`.
+- **Apple (Metal)** — CPU tracking, `FrameProfiler` and GPU time; the Metal
+  backend does not implement `IGpuDebugSource`, so no GPU memory.
 
 ---
 

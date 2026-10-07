@@ -32,8 +32,7 @@ namespace mtl
 
 /*
  * Argument-table slots. These are the contract with resources/shaders/metal/*:
- * a change here is a change to the MSL and a re-run of
- * scripts/gen_embedded_metallib.sh.
+ * a change here is a change to the MSL, which the build re-embeds by itself.
  *
  * Vertex and fragment stages have independent argument tables in Metal, which
  * is why the geometry buffer and the light buffer can both sit at slot 0
@@ -42,9 +41,9 @@ namespace mtl
 
 //! Vertex stage, slot 0: the geometry, read via [[vertex_id]].
 inline constexpr NS::UInteger kVertexGeometrySlot = 0;
-//! Vertex stage, slot 1: TransformUniforms (3D) or Overlay2DUniforms (2D).
+//! Vertex stage, slot 1: TransformUniforms (meshes) or BatchUniforms (batches).
 inline constexpr NS::UInteger kVertexUniformSlot = 1;
-//! Fragment stage, slot 0: LightUniforms. Unused by the overlay pipeline.
+//! Fragment stage, slot 0: LightUniforms. Unused by the batch pipelines.
 inline constexpr NS::UInteger kFragmentLightSlot = 0;
 //! Fragment stage texture/sampler slot 0: the albedo map.
 inline constexpr NS::UInteger kFragmentAlbedoSlot = 0;
@@ -52,21 +51,19 @@ inline constexpr NS::UInteger kFragmentAlbedoSlot = 0;
 //! MSL entry points, as named in resources/shaders/metal/*.metal.
 inline constexpr const char *kVertexFunction3D = "aura_vertex_3d";
 inline constexpr const char *kFragmentFunction3D = "aura_fragment_3d";
-inline constexpr const char *kVertexFunction2D = "aura_vertex_2d";
-inline constexpr const char *kFragmentFunction2D = "aura_fragment_2d";
+inline constexpr const char *kVertexFunctionBatch = "aura_vertex_batch";
+inline constexpr const char *kFragmentFunctionBatch = "aura_fragment_batch";
 
 /// Formats
 
 /**
  * @brief Colour format of the drawable, and therefore of every pipeline.
  *
- * BGRA8Unorm is CAMetalLayer's own default and the only format guaranteed
- * present on both macOS and iOS. Deliberately not the _sRGB variant: the
- * GLSL/CPU backends write linear values straight to an UNORM target, so
- * picking sRGB here would make the Metal backend the one outlier whose output
- * is gamma-encoded twice.
+ * sRGB, as on every backend: shaders output linear values, blending is linear
+ * and storage encoded (Vulkan's swapchain, the GL target, the CPU rasteriser),
+ * so all of them show the same pixels. CAMetalLayer accepts it on macOS and iOS.
  */
-inline constexpr MTL::PixelFormat kColorFormat = MTL::PixelFormatBGRA8Unorm;
+inline constexpr MTL::PixelFormat kColorFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
 
 /**
  * @brief Depth format of the scene pass.
@@ -117,14 +114,14 @@ struct TransformUniforms
 };
 
 /**
- * @struct Overlay2DUniforms
- * @brief Per-batch projection handed to the overlay vertex stage.
+ * @struct BatchUniforms
+ * @brief Per-batch transform handed to the batch vertex stages.
  *
- * Layout must match the MSL struct of the same name in mtl_shader2d.metal.
+ * Layout must match the MSL struct of the same name in mtl_batch.metal.
  */
-struct Overlay2DUniforms
+struct BatchUniforms
 {
-    glm::mat4 proj{1.0f};
+    glm::mat4 transform{1.0f};
 };
 
 /*
@@ -141,10 +138,10 @@ static_assert(offsetof(gfx::Vertex3D, texCoord) == 12, "MSL Vertex3D::texCoord o
 static_assert(offsetof(gfx::Vertex3D, color) == 20, "MSL Vertex3D::color offset drifted");
 static_assert(offsetof(gfx::Vertex3D, normal) == 36, "MSL Vertex3D::normal offset drifted");
 
-static_assert(sizeof(gfx::Vertex2D) == 32, "MSL Vertex2D expects 32 tightly packed bytes");
-static_assert(offsetof(gfx::Vertex2D, pos) == 0, "MSL Vertex2D::pos offset drifted");
-static_assert(offsetof(gfx::Vertex2D, texCoord) == 8, "MSL Vertex2D::texCoord offset drifted");
-static_assert(offsetof(gfx::Vertex2D, color) == 16, "MSL Vertex2D::color offset drifted");
+static_assert(sizeof(gfx::BatchVertex) == 36, "MSL BatchVertex expects 36 tightly packed bytes");
+static_assert(offsetof(gfx::BatchVertex, pos) == 0, "MSL BatchVertex::pos offset drifted");
+static_assert(offsetof(gfx::BatchVertex, texCoord) == 12, "MSL BatchVertex::texCoord offset drifted");
+static_assert(offsetof(gfx::BatchVertex, color) == 20, "MSL BatchVertex::color offset drifted");
 
 static_assert(sizeof(gfx::LightUBO) == 48, "MSL LightUniforms expects 48 bytes including tail padding");
 static_assert(offsetof(gfx::LightUBO, direction) == 0, "MSL LightUniforms::direction offset drifted");
@@ -153,7 +150,7 @@ static_assert(offsetof(gfx::LightUBO, color) == 16, "MSL LightUniforms::color of
 static_assert(offsetof(gfx::LightUBO, ambient) == 32, "MSL LightUniforms::ambient offset drifted");
 
 static_assert(sizeof(TransformUniforms) == 256, "MSL TransformUniforms expects four contiguous mat4s");
-static_assert(sizeof(Overlay2DUniforms) == 64, "MSL Overlay2DUniforms expects one mat4");
+static_assert(sizeof(BatchUniforms) == 64, "MSL BatchUniforms expects one mat4");
 
 /// Helpers
 

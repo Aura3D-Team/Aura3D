@@ -3,17 +3,22 @@
 // the RGBA expansion handed to the renderer. None of it needs a window or a
 // graphics device, so it runs anywhere CTest does.
 
+#include <algorithm>
+#include <bit>
 #include <cmath>
 #include <string>
 #include <vector>
 
 #include "TestUtils.h"
 
+#include "aura/Core/AuraFont/AuraBitmapFont.h"
 #include "aura/Core/AuraFont/FontAtlas.h"
 
+using aura3d::AuraBitmapFont;
 using aura3d::decodeUtf8;
 using aura3d::FontAtlas;
 using aura3d::FontAtlasDesc;
+using aura3d::GetDefaultBitmapFont;
 using aura3d::GlyphInfo;
 
 namespace
@@ -57,6 +62,72 @@ void testUtf8Decoding()
                "decodeUtf8 rejects a truncated sequence without overrunning");
 }
 
+void testUtf8RejectsInvalidScalars()
+{
+    for (std::string_view invalid : {"\xC0\x80", "\xE0\x80\xAF", "\xED\xA0\x80", "\xF4\x90\x80\x80"})
+    {
+        usize offset = 0;
+        AURA_CHECK(decodeUtf8(invalid, offset) == 0xFFFDu && offset == 1,
+                   "overlong encodings, surrogates and out-of-range scalars consume one invalid byte");
+    }
+}
+
+void testSharedCoverageStorage()
+{
+    auto atlas = FontAtlas::builtinBitmap(smallAtlas());
+    const auto *small = atlas->glyph(U'A');
+    const GlyphInfo retained = *small;
+    const auto solid = atlas->solidTexelUv();
+    const auto *corner = atlas->cornerMask(8);
+    auto larger = atlas->createSharedSize(24);
+    AURA_CHECK(larger->storageIdentity() == atlas->storageIdentity(), "size views share one coverage sheet");
+    AURA_CHECK(larger->solidTexelUv() == solid && larger->cornerMask(8) == corner,
+               "solid and shape masks are reused across sizes");
+    const auto *large = larger->glyph(U'A');
+    AURA_CHECK(large && large->size.y == 24 && large->uvMin != retained.uvMin,
+               "each size retains its own raster and cells");
+    AURA_CHECK(small->uvMin == retained.uvMin && small->uvMax == retained.uvMax,
+               "adding a size preserves old glyph UVs");
+    const u64 revision = atlas->coverageRevision();
+    AURA_CHECK(revision > 0 && revision == larger->coverageRevision(),
+               "coverage revisions include every shared view's writes");
+
+    //! Two textures of one sheet: the first takes the dirty rectangle, the other the whole sheet.
+    u64 first = 0, second = 0;
+    const auto upload = larger->takeUpload(first);
+    const FontAtlas::DirtyRegion region = upload ? upload->region : FontAtlas::DirtyRegion{};
+    const std::vector<u8> packed =
+        upload ? std::vector<u8>(upload->coverage.begin(), upload->coverage.end()) : std::vector<u8>{};
+    AURA_CHECK(upload && region.width < atlas->width() && packed.size() == usize(region.width) * region.height &&
+                   first == revision && !atlas->dirty() && !atlas->takeUpload(first),
+               "the first texture takes the tightly packed dirty rectangle once");
+    const auto whole = atlas->takeUpload(second);
+    bool equal = whole && whole->region.width == atlas->width() && whole->region.height == atlas->height() &&
+                 second == revision && !packed.empty();
+    for (u32 y = 0; equal && y < region.height; ++y)
+        for (u32 x = 0; equal && x < region.width; ++x)
+            equal &= packed[usize(y) * region.width + x] ==
+                     whole->coverage[usize(region.y + y) * atlas->width() + region.x + x];
+    AURA_CHECK(equal, "a texture that missed the rectangle gets the whole sheet, matching the packed copy");
+    (void)atlas->glyph(U'Z');
+    const auto next = atlas->takeUpload(second);
+    AURA_CHECK(next && next->region.width < atlas->width() && atlas->takeUpload(first)->region.width == atlas->width(),
+               "the dirty rectangle follows whichever texture took the last clean state");
+    atlas.reset();
+    AURA_CHECK(larger->glyph(U'B') != nullptr && larger->dirty(),
+               "a size view owns its storage after its creator is destroyed");
+}
+
+void testFailedReservationPreservesShelf()
+{
+    auto atlas = FontAtlas::builtinBitmap(FontAtlasDesc{.width = 20, .height = 20, .pixelHeight = 8});
+    AURA_CHECK(atlas->cornerMask(8) && atlas->cornerMask(6), "fixture fills most of its first shelf");
+    AURA_CHECK(!atlas->cornerMask(15) && atlas->takeAllocationFailure(), "oversized remaining placement fails");
+    const auto *small = atlas->cornerMask(2);
+    AURA_CHECK(small && small->min.y == 0 && small->min.x == 16.0f / 20.0f,
+               "a failed wrap leaves the previous shelf available for smaller cells");
+}
+
 void testBitmapFallbackMetrics()
 {
     auto atlas = FontAtlas::builtinBitmap(smallAtlas());
@@ -98,6 +169,110 @@ void testBitmapFallbackMetrics()
     }
 }
 
+void testBitmapRasterSizeAndCoverage()
+{
+    for (const float height : {12.0f, 14.0f, 16.0f, 18.0f, 20.0f, 32.0f})
+    {
+        auto desc = smallAtlas();
+        desc.pixelHeight = height;
+        auto atlas = FontAtlas::builtinBitmap(desc);
+        const auto *wide = atlas->glyph(U'W');
+        const auto *narrow = atlas->glyph(U'i');
+        AURA_CHECK(wide && narrow && narrow->advance < wide->advance,
+                   "bitmap glyphs use proportional spacing");
+        AURA_CHECK(wide && narrow && wide->advance == std::round(wide->advance) &&
+                       narrow->advance == std::round(narrow->advance),
+                   "bitmap advances are whole pixels, so gaps between letters stay even");
+        AURA_CHECK(wide && wide->size.y == height && atlas->lineHeight() == height,
+                   "bitmap raster and line box match the requested device size");
+        for (char32_t cp = U'!'; cp <= U'~'; ++cp)
+            (void)atlas->glyph(cp);
+        u64 revision = 0;
+        const auto upload = atlas->takeUpload(revision);
+        bool binary = upload.has_value();
+        if (upload)
+            for (const u8 coverage : upload->coverage)
+                binary &= coverage == 0 || coverage == 255;
+        AURA_CHECK(binary, "embedded glyphs retain one-bit coverage at every raster size");
+    }
+}
+
+void testBitmapFaceAtNativeSize()
+{
+    const AuraBitmapFont &font = GetDefaultBitmapFont();
+    const auto native = font.layout(16);
+    bool identity = native.rows.size() == 16 && native.ascent == 13;
+    for (u32 row = 0; identity && row < 16; ++row)
+        identity &= native.rows[row] == row && native.glyphs['B'].rows[row] == row;
+    AURA_CHECK(identity, "at 16 px the face is drawn row for row");
+
+    const auto &space = native.glyphs[' '];
+    const auto &wide = native.glyphs['W'];
+    AURA_CHECK(space.columns.empty() && space.advance == 4 &&
+                   wide.columns.size() == static_cast<usize>(font.ink(font.data['W']).width) &&
+                   native.glyphs['i'].advance < wide.advance,
+               "blank glyphs advance half a cell and narrow glyphs advance less than wide ones");
+}
+
+/// Whether every horizontal bar of @p glyphChar -- a row of three or more pixels
+/// unlike both neighbours -- keeps at least one row at @p height.
+bool keepsEveryStroke(char glyphChar, u32 height)
+{
+    const AuraBitmapFont &font = GetDefaultBitmapFont();
+    const auto &glyph = font.data[static_cast<unsigned char>(glyphChar)];
+    const std::vector<u8> rows = font.layout(height).glyphs[static_cast<unsigned char>(glyphChar)].rows;
+    for (u32 row = 0; row < 16; ++row)
+    {
+        const u8 above = row > 0 ? glyph[row - 1] : u8{0};
+        const u8 below = row < 15 ? glyph[row + 1] : u8{0};
+        if (std::popcount(glyph[row]) < 3 || glyph[row] == above || glyph[row] == below)
+            continue;
+        if (std::ranges::find(rows, row) == rows.end())
+            return false;
+    }
+    return true;
+}
+
+void testBitmapSmallSizesKeepStrokes()
+{
+    bool kept = true;
+    for (const u32 height : {13u, 14u, 15u})
+        for (const char c : {'T', 'f', '7', 'E', 'e', 'a', 'g', 'B', '3', '8'})
+            kept &= keepsEveryStroke(c, height);
+    AURA_CHECK(kept, "13-15 px keep every horizontal bar: padding goes before cap lines and crossbars");
+
+    const std::vector<u8> rows = GetDefaultBitmapFont().layout(12).glyphs['i'].rows;
+    AURA_CHECK(keepsEveryStroke('4', 12) && std::ranges::find(rows, u8{4}) != rows.end() && rows.size() == 12,
+               "12 px keeps both the 4's crossbar and the gap under the i's dot");
+
+    bool descenders = true;
+    for (const u32 height : {9u, 10u, 11u, 12u})
+    {
+        const auto layout = GetDefaultBitmapFont().layout(height);
+        descenders &= std::ranges::count_if(layout.rows,
+                                            [](u8 row)
+                                            {
+                                                return row >= AuraBitmapFont::baseline;
+                                            }) >= 2;
+    }
+    AURA_CHECK(descenders, "small sizes keep two descender rows, so g, p and y stay legible");
+
+    const auto grown = GetDefaultBitmapFont().layout(18);
+    bool strokesSingle = true;
+    for (const char c : {'E', 'e', 'H'})
+    {
+        const auto &glyph = GetDefaultBitmapFont().data[static_cast<unsigned char>(c)];
+        for (u32 row = 0; row < 16; ++row)
+        {
+            const u8 above = row > 0 ? glyph[row - 1] : u8{0};
+            const u8 below = row < 15 ? glyph[row + 1] : u8{0};
+            if (glyph[row] != 0 && glyph[row] != above && glyph[row] != below)
+                strokesSingle &= std::ranges::count(grown.rows, row) == 1;
+        }
+    }
+    AURA_CHECK(strokesSingle, "growing to 18 px repeats redundant rows, so one-row strokes stay one row");
+}
+
 void testGlyphCachingIsStable()
 {
     auto atlas = FontAtlas::builtinBitmap(smallAtlas());
@@ -113,7 +288,8 @@ void testGlyphCachingIsStable()
 
     // Re-requesting must hit the cache: same cell, no second rasterization, and
     // therefore nothing newly dirty once the first upload has been taken.
-    (void)atlas->takeDirtyUpload();
+    u64 revision = 0;
+    (void)atlas->takeUpload(revision);
     const GlyphInfo *second = atlas->glyph(U'M');
     AURA_CHECK(second != nullptr && second->uvMin == copy.uvMin && second->uvMax == copy.uvMax,
                "a cached glyph keeps its atlas cell");
@@ -139,21 +315,16 @@ void testSolidTexelReservation()
     // What the UV is *for*: a quad sampling it must come out fully opaque, so
     // that a solid rectangle drawn through the glyph atlas looks like a solid
     // rectangle rather than a faint one.
-    const auto pending = atlas->takeDirtyUpload();
+    u64 revision = 0;
+    const auto pending = atlas->takeUpload(revision);
     AURA_CHECK(pending.has_value(), "the reserved cell arrives as an upload");
     if (pending)
-    {
-        bool allOpaque = !pending->rgba.empty();
-        for (std::size_t i = 3; i < pending->rgba.size(); i += 4)
-        {
-            if (pending->rgba[i] != 255)
-            {
-                allOpaque = false;
-                break;
-            }
-        }
-        AURA_CHECK(allOpaque, "every texel of the reserved cell is fully opaque");
-    }
+        AURA_CHECK(!pending->coverage.empty() && std::ranges::all_of(pending->coverage,
+                                                                     [](u8 coverage)
+                                                                     {
+                                                                         return coverage == 255;
+                                                                     }),
+                   "every texel of the reserved cell is fully opaque");
 
     // The reservation happens once: a 2D batcher asks for this every frame, and
     // handing out a fresh cell each time would fill the atlas within seconds.
@@ -177,15 +348,16 @@ void testDirtyRegionTracking()
         return;
 
     AURA_CHECK(!atlas->dirty(), "a fresh atlas has nothing pending");
-    AURA_CHECK(!atlas->takeDirtyUpload().has_value(), "takeDirtyUpload yields nothing when nothing changed");
+    u64 revision = 0;
+    AURA_CHECK(!atlas->takeUpload(revision).has_value(), "takeUpload yields nothing when nothing changed");
 
     const GlyphInfo *g0 = atlas->glyph(U'W');
     const GlyphInfo *g1 = atlas->glyph(U'i');
     AURA_CHECK(g0 && g1, "two distinct glyphs rasterize");
     AURA_CHECK(atlas->dirty(), "rasterizing marks the atlas dirty");
 
-    const auto pending = atlas->takeDirtyUpload();
-    AURA_CHECK(pending.has_value(), "takeDirtyUpload yields the pending rectangle");
+    const auto pending = atlas->takeUpload(revision);
+    AURA_CHECK(pending.has_value(), "takeUpload yields the pending rectangle");
     if (pending)
     {
         const auto &region = pending->region;
@@ -195,27 +367,14 @@ void testDirtyRegionTracking()
 
         // One rectangle must cover both glyphs: that union is what lets a whole
         // string's new characters travel in a single sub-image upload.
-        const std::size_t expectedBytes = static_cast<std::size_t>(region.width) * region.height * 4u;
-        AURA_CHECK(pending->rgba.size() == expectedBytes,
-                   "the upload is a tightly packed RGBA8 expansion of the rectangle");
-
-        // Coverage lives in alpha with RGB left white, so vertex colour alone
-        // decides the text's colour at draw time.
-        bool rgbAllWhite = true;
-        bool anyCoverage = false;
-        for (std::size_t i = 0; i < pending->rgba.size(); i += 4)
-        {
-            if (pending->rgba[i] != 0xFF || pending->rgba[i + 1] != 0xFF || pending->rgba[i + 2] != 0xFF)
-            {
-                rgbAllWhite = false;
-            }
-            if (pending->rgba[i + 3] != 0)
-            {
-                anyCoverage = true;
-            }
-        }
-        AURA_CHECK(rgbAllWhite, "the atlas stores white RGB");
-        AURA_CHECK(anyCoverage, "the atlas stores glyph coverage in alpha");
+        AURA_CHECK(pending->coverage.size() == static_cast<std::size_t>(region.width) * region.height,
+                   "the upload is the tightly packed R8 coverage of the rectangle");
+        AURA_CHECK(std::ranges::any_of(pending->coverage,
+                                       [](u8 coverage)
+                                       {
+                                           return coverage != 0;
+                                       }),
+                   "the atlas stores glyph coverage");
     }
 
     AURA_CHECK(!atlas->dirty(), "taking the upload clears the dirty flag");
@@ -259,7 +418,8 @@ void testPackerRejectsOversizedAndExhaustedAtlases()
     }
     AURA_CHECK(exhausted, "the shelf packer reports exhaustion instead of overrunning");
 
-    const auto pending = crowded->takeDirtyUpload();
+    u64 revision = 0;
+    const auto pending = crowded->takeUpload(revision);
     if (pending)
     {
         AURA_CHECK(pending->region.x + pending->region.width <= crowded->width() &&
@@ -292,6 +452,12 @@ void testTrueTypeLoadFailureIsReported()
 
 int main()
 {
+    testUtf8RejectsInvalidScalars();
+    testSharedCoverageStorage();
+    testFailedReservationPreservesShelf();
+    testBitmapRasterSizeAndCoverage();
+    testBitmapFaceAtNativeSize();
+    testBitmapSmallSizesKeepStrokes();
     testUtf8Decoding();
     testBitmapFallbackMetrics();
     testGlyphCachingIsStable();

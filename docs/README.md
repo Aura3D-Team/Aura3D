@@ -19,8 +19,8 @@ straight to whatever you need — each chapter links to the ones it builds on.
    caching, the `Material` model, handles.
 6. **[Lighting](06-lighting.md)** — the single-directional-light model and
    the ambient/intensity knobs.
-7. **[2D Rendering & Text](07-2d-rendering-and-text.md)** — the batched 2D
-   overlay pipeline, `TextOverlay`, how the glyph atlas stays cheap.
+7. **[2D Rendering & Text](07-2d-rendering-and-text.md)** — batches, lines
+   and shapes, `TextOverlay`, how the glyph atlas stays cheap.
 8. **[Input](08-input.md)** — keyboard/mouse contexts, held-key patterns,
    per-frame timing.
 9. **[Building a Game](09-building-a-game.md)** — capstone: a small
@@ -41,7 +41,7 @@ straight to whatever you need — each chapter links to the ones it builds on.
 14. **[AuraUI — The Widget Toolkit](14-auraui-toolkit.md)** — the widget tree:
     measure/arrange layout with flex and grid, shaped text with carets and
     wrapping, signals and properties, animation, accessibility, and how it
-    stays one draw call. Builds on chapter 7's 2D pipeline.
+    stays one draw call. Builds on chapter 7's batches.
 
 See also the [top-level README](../README.md) for the repository layout and
 CMake option reference, and `apps/Sandbox/main.cpp` / `apps/OrgLogo/main.cpp` /

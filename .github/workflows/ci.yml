@@ -575,7 +575,8 @@ jobs:
         # static triplet builds these ports against the static CRT (/MT), which
         # is why every Configure step below also passes
         # CMAKE_MSVC_RUNTIME_LIBRARY: CMake otherwise defaults the project
-        # itself to /MD and the link fails with LNK2038.
+        # itself to /MD and the link fails with LNK2038. shaderc provides the
+        # glslc the Vulkan backend compiles its shaders with at build time.
         run: >
           vcpkg install
           nlohmann-json:x64-windows-static
@@ -585,6 +586,7 @@ jobs:
           vulkan-headers:x64-windows-static
           vulkan-loader:x64-windows-static
           vulkan-memory-allocator:x64-windows-static
+          shaderc:x64-windows-static
 
       - name: Configure ink
         run: >

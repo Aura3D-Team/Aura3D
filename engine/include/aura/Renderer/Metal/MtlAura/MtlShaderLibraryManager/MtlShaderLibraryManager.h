@@ -23,15 +23,15 @@ namespace mtl
  * Two embedded forms exist, and which one is in play is decided at compile time
  * by AURA_METAL_HAS_EMBEDDED_METALLIB in the generated EmbeddedMetalLib.h:
  *
- *  - A precompiled `.metallib`, loaded straight into an MTLLibrary. Preferred,
- *    and what a release build should ship: no compiler runs at startup.
- *  - The MSL source, compiled at construction time. This is what a header
- *    regenerated off an Apple host carries, since only Xcode's Metal toolchain
- *    can produce the compiled form (see scripts/gen_embedded_metallib.sh).
- *    Costs one compile of ~150 lines of MSL during initialize().
+ *  - A precompiled `.metallib`, loaded straight into an MTLLibrary: no compiler
+ *    runs at startup. Built with -DAURA_METAL_PRECOMPILE=ON, which needs
+ *    Xcode's Metal toolchain (see cmake/EmbedShaders.cmake).
+ *  - The MSL source, compiled at construction time. The default, since it
+ *    builds anywhere; costs one compile of ~200 lines of MSL during
+ *    initialize().
  *
- * Both paths yield the same four entry points, so nothing downstream can tell
- * them apart.
+ * Both paths yield the same entry points, so nothing downstream can tell them
+ * apart.
  */
 class MtlShaderLibraryManager
 {
@@ -55,7 +55,7 @@ class MtlShaderLibraryManager
      * @brief Looks up one shader entry point by its MSL function name.
      *
      * @param[in] functionName One of MtlAuraCore.h's kVertexFunction3D,
-     *        kFragmentFunction3D, kVertexFunction2D, kFragmentFunction2D.
+     *        kFragmentFunction3D, kVertexFunctionBatch, kFragmentFunctionBatch.
      * @return An owning handle to the function.
      * @throws AuraException if the library holds no function by that name,
      *         which means the MSL and the C++ constants have drifted apart.
@@ -66,8 +66,8 @@ class MtlShaderLibraryManager
      * @brief Whether the library came from a precompiled .metallib rather than
      *        from MSL compiled at startup.
      *
-     * Reported once at initialize() time, so a slow start on a machine whose
-     * EmbeddedMetalLib.h was regenerated off-Apple is self-explanatory in the log.
+     * Reported once at initialize() time, so a slow start from a build without
+     * AURA_METAL_PRECOMPILE is self-explanatory in the log.
      */
     [[nodiscard]] bool isPrecompiled() const noexcept
     {

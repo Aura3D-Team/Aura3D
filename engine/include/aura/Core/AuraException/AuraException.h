@@ -88,9 +88,14 @@ static const std::unordered_map<i64, const char *> vkResultToString = {
     {VK_ERROR_COMPRESSION_EXHAUSTED_EXT, "Compression exhausted"},
     {VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT, "Incompatible shader binary"}};
 
-#define VK_RESULT_CHECK(result)                                                                                        \
-    if ((result) != VK_SUCCESS)                                                                                        \
+inline void checkVkResult(VkResult result)
+{
+    if (result != VK_SUCCESS)
         throw AuraException(result);
+}
+
+// Keep existing call sites while evaluating API calls exactly once, including failures.
+#define VK_RESULT_CHECK(result) ::aura3d::checkVkResult((result))
 
 #endif // AURA_HAS_VULKAN
 

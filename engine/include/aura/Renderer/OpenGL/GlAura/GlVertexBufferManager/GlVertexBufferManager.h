@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <unordered_map>
+#include <vector>
 #include <vector>
 
 #include "aura/Core/AuraCore.h"
@@ -58,8 +58,8 @@ class GlVertexBufferManager
     void cleanup();
 
   private:
-    std::unordered_map<VertexBufferHandle, GlVertexBufferData> _buffers;
-    VertexBufferHandle _nextHandle{1};
+    //! Indexed by handle - 1: handles are dense, so a lookup is a bounds check and a load.
+    std::vector<GlVertexBufferData> _buffers;
 
     //! VAO name currently bound in the context, as last set by this manager;
     //! 0 means "none". Lets bind() drop a redundant glBindVertexArray, which

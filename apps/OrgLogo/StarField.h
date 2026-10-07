@@ -30,7 +30,7 @@ namespace orglogo
  * occasionally swell, whiten and throw longer spikes before settling back.
  *
  * The whole field -- every star, its white-hot core and any meteor in flight --
- * leaves as a single drawBatch2D() call, because all of it samples one sprite
+ * leaves as a single drawBatch() call, because all of it samples one sprite
  * atlas. Cost therefore scales with the number of stars, not with the screen.
  */
 class StarField
@@ -97,7 +97,7 @@ class StarField
     std::vector<Star> _stars;
     std::vector<Meteor> _meteors;
 
-    std::vector<aura3d::gfx::Vertex2D> _vertices;
+    std::vector<aura3d::gfx::BatchVertex> _vertices;
     std::vector<u32> _indices;
 
     aura3d::TextureHandle _atlas;

@@ -12,7 +12,6 @@
 
 #include "aura/Core/AuraFont/FontAtlas.h"
 #include "aura/Renderer/IRenderer.h"
-#include "aura/Utils/AlignedVector.h"
 
 namespace aura3d
 {
@@ -38,19 +37,19 @@ struct TextOverlayDesc
 };
 
 /**
- * @brief Draws text over the current frame through the renderer's dedicated
- * unlit 2D pipeline. Behaves identically on every backend.
+ * @brief Draws text over the current frame through the renderer's unlit batch
+ * pipeline. Behaves identically on every backend.
  *
  * Glyphs are cached in a @ref FontAtlas (one GPU texture, allocated once);
  * each character rasterizes on first use, costing a small sub-image upload
- * rather than a new texture. A whole draw call's text is one
- * IRenderer::drawBatch2D() call regardless of length.
+ * rather than a new texture. addText() queues; draw() submits everything
+ * queued as one IRenderer::drawBatch() call.
  *
  * Positions are window pixels, (0,0) top-left; no camera is involved. Text is
  * UTF-8, unsupported codepoints render as '?', '\n' starts a new line.
  *
- * @note Draw calls must be issued between beginRenderPass() and endRenderPass(),
- *       after the scene's own draws.
+ * @note Call draw() between beginRenderPass() and endRenderPass(), after the
+ *       scene's own draws.
  * @note Not thread-safe: the glyph cache and the batch buffers are mutable state.
  */
 class TextOverlay
@@ -68,7 +67,7 @@ class TextOverlay
     explicit TextOverlay(IRenderer *renderer, const TextOverlayDesc &desc = TextOverlayDesc{});
 
     /**
-     * @brief Draws @p text with its top-left corner at window pixel (x, y).
+     * @brief Queues @p text with its top-left corner at window pixel (x, y).
      *
      * @param text UTF-8 text; '\n' starts a new line.
      * @param x Left edge, in window pixels.
@@ -77,17 +76,13 @@ class TextOverlay
      *        1.0 magnify or minify an already-rasterized bitmap, so prefer
      *        raising TextOverlayDesc::pixelHeight for permanently larger text.
      */
-    void drawText(std::string_view text, float x, float y, float scale = 1.0f);
+    void addText(std::string_view text, float x, float y, float scale = 1.0f);
 
     /// As above, overriding the default colour for this call only.
-    void drawText(std::string_view text, float x, float y, const glm::vec4 &color, float scale = 1.0f);
+    void addText(std::string_view text, float x, float y, const glm::vec4 &color, float scale = 1.0f);
 
     /**
-     * @brief Convenience: formats and draws "FPS: <n>" from the renderer's live
-     * frame timing (wma::WindowFlags::fps) at window pixel (x, y).
-     */
-    /**
-     * @brief Draws the live frame rate as @c "FPS: <n>  (<ms> ms)".
+     * @brief Queues the live frame rate as @c "FPS: <n>  (<ms> ms)".
      *
      * Smoothed, deliberately: wma reports 1000/deltaTime for the frame that
      * just ended, which on an unlocked loop swings by tens of frames between
@@ -102,9 +97,12 @@ class TextOverlay
      *       show the same figure somewhere else, read @ref fps() rather than
      *       calling this again.
      */
-    void drawFPS(float x, float y, float scale = 1.0f);
+    void addFPS(float x, float y, float scale = 1.0f);
 
-    /// The smoothed frame rate @ref drawFPS last computed; zero before the
+    /// Draws everything queued since the last call in one batch, then empties the queue.
+    void draw();
+
+    /// The smoothed frame rate @ref addFPS last computed; zero before the
     /// first call. For showing the same number in a UI panel or a HUD.
     [[nodiscard]] float fps() const noexcept
     {
@@ -140,10 +138,9 @@ class TextOverlay
     }
 
   private:
-    //! Fills the reusable vertex/index buffers with @p text's quads.
-    //! Rasterizes any glyph not yet in the atlas, so the atlas upload must
-    //! follow this rather than precede it.
-    void buildBatch(std::string_view text, float x, float y, const glm::vec4 &color, float scale);
+    //! Appends @p text's quads to the queue. Rasterizes any glyph not yet in
+    //! the atlas, so the atlas upload must follow this rather than precede it.
+    void appendText(std::string_view text, float x, float y, const glm::vec4 &color, float scale);
 
     /// Pushes the atlas' pending dirty rectangle to the GPU, if any.
     void uploadAtlasChanges();
@@ -151,23 +148,17 @@ class TextOverlay
     IRenderer *_renderer;
     std::unique_ptr<FontAtlas> _atlas;
     TextureHandle _atlasTexture;
+    u64 _atlasRevision = 0; //! FontAtlas::takeUpload()'s cursor for _atlasTexture.
     glm::vec4 _color{1.0f};
     bool _usingTrueType = false;
 
-    //! Smoothed frame rate; see drawFPS(), which is the only thing that
+    //! Smoothed frame rate; see addFPS(), which is the only thing that
     //! advances it.
     float _fps = 0.0f;
     char _cachedFpsString[48] = "FPS: 0  (0.00 ms)";
 
-    //! Retained across calls (no reallocation in steady state) and over-aligned
-    //! rather than plain std::vector: the batch is memcpy'd/glBufferSubData'd
-    //! every frame, and a 32-byte-aligned base keeps every 32-byte Vertex2D
-    //! individually aligned for that copy, not just the array's first element.
-    static_assert(sizeof(gfx::Vertex2D) == 32, "Vertex2D must stay 32 bytes for the aligned batch storage "
-                                               "below to align every vertex, not merely the array's base.");
-
-    AlignedVector<gfx::Vertex2D> _vertices;
-    AlignedVector<u32> _indices;
+    //! Queued text; keeps its capacity, so a steady frame does not allocate.
+    gfx::Canvas _batch;
 };
 
 } // namespace aura3d

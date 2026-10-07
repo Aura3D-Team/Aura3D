@@ -47,6 +47,7 @@ nothing, so this doc is deliberately exact about which is which.
         "backend": "SDL3",
         "resizable": true,
         "fullscreen": false,
+        "decorations": "server",
         "vsync": true,
         "vsync_mode": "Fifo",
         "fps_limit": 60
@@ -107,6 +108,7 @@ nothing, so this doc is deliberately exact about which is which.
 | `backend` | string | `"SDL3"` | Windowing library `wma` creates the window through: `"SDL3"`, `"GLFW"`, `"X11"`, or `"WAYLAND"` (case-insensitive). SDL3 is the only one exercised by all three renderer backends on every platform this engine targets — pick another only if you have a specific reason to (e.g. testing wma's X11/Wayland backends directly). An unrecognized value falls back to SDL3 with a warning, the same pattern `renderer.backend` uses. |
 | `resizable` | bool | `true` | |
 | `fullscreen` | bool | `false` | |
+| `decorations` | string | `"server"` | `"client"` makes `UIView` draw the title bar — see [03-engine-and-renderer.md](03-engine-and-renderer.md#window-decorations). A Wayland compositor may override the request either way. |
 | `vsync` | bool | `false` | Legacy on/off switch. When `true` and `vsync_mode` is absent, resolves to `Fifo`. Also zeroes `fps_limit` (the display is the limiter). |
 | `vsync_mode` | string | derived from `vsync` | One of `AutoVsync`, `AutoNoVsync`, `Fifo`, `FifoRelaxed`, `Immediate`, `Mailbox`. Vulkan-only — see [03-engine-and-renderer.md](03-engine-and-renderer.md#present-modes-vulkan). Falls back to `Fifo` if the surface doesn't support the requested mode. |
 | `fps_limit` | int | 60 | Ignored when `vsync` is `true`. |
@@ -117,6 +119,7 @@ nothing, so this doc is deliberately exact about which is which.
 |---|---|---|---|
 | `backend` | string | `"vulkan"` | `"vulkan"`, `"opengl"`, or `"cpu"` (also accepts `"software"`). An unsupported value or a backend not compiled in falls back through Vulkan → OpenGL → Software with a warning — see [03-engine-and-renderer.md](03-engine-and-renderer.md#backend-resolution--fallback). |
 | `validation_layers` | bool | `true` in debug builds, `false` in release | Vulkan only. Enables `VK_LAYER_KHRONOS_validation`. |
+| `gpu_timing` | bool | `true` in `AURA_PROFILE_FRAME` builds | Measures each frame's GPU time for `IRenderer::gpuTiming()` — see [03-engine-and-renderer.md](03-engine-and-renderer.md). Ignored in builds without `AURA_PROFILE_FRAME`. Vulkan, OpenGL and Metal. |
 
 ## `graphics` — live
 
@@ -145,7 +148,7 @@ with no audio API, so the two settings never constrain each other. See
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `shaders` | string | `./resources/shaders/` | Read by `AuraSettings::getShadersPath()`; not currently consumed by the built-in pipelines (they embed their SPIR-V/GLSL — see [10-platform-builds.md](10-platform-builds.md)), but available for your own shader loading. |
+| `shaders` | string | `./resources/shaders/` | Read by `AuraSettings::getShadersPath()`; not currently consumed by the built-in pipelines (the build embeds them from `resources/shaders`), but available for your own shader loading. |
 | `textures` | string | `./resources/textures/` | Convention used by `ResourceManager::loadTexture` callers — see `apps/Sandbox/main.cpp`'s `settings->getTexturesPath() + "crate.png"`. |
 | `models` | string | `./resources/models/` | Same convention for `ResourceManager::loadMesh`. |
 | `audio` | string | `./resources/audio/` | Same convention for `ResourceManager::loadSound` — see `apps/Sandbox/main.cpp`'s `settings->getAudioPath() + "orb_hum.wav"`. Generate the Sandbox's own audio with `scripts/gen_sandbox_audio.py`. |
@@ -232,13 +235,14 @@ config.paths.textures  = "./art/";
 Engine engine(config);   // ships as one binary; no settings.json to lose
 ```
 
-Four fields are `std::optional`, because "unset" is a real state distinct from
+Five fields are `std::optional`, because "unset" is a real state distinct from
 any value they could hold:
 
 | Field | Unset means |
 |---|---|
 | `window.vsyncMode` | derive from `window.vsync` |
 | `renderer.validationLayers` | on in a debug build, off under `NDEBUG` |
+| `renderer.gpuTiming` | on in an `AURA_PROFILE_FRAME` build |
 | `audio.backend` | `wma::getDefaultAudioBackend()` — what `"auto"` means in JSON |
 | `logging.level` | `TRACE` in a debug build, `INFO` under `NDEBUG` |
 

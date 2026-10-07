@@ -13,7 +13,6 @@ GlIndexBufferManager::~GlIndexBufferManager()
 
 IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u16> &&indices)
 {
-    auto handle = _nextHandle++;
     GlIndexBufferData data;
     data.indexCount = static_cast<u32>(indices.size());
     data.type = GL_UNSIGNED_SHORT;
@@ -26,13 +25,12 @@ IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u16> &&ind
     //! that rather than letting it claim a buffer that is no longer current.
     _boundEbo = 0;
 
-    _buffers[handle] = data;
-    return handle;
+    _buffers.push_back(data);
+    return IndexBufferHandle{static_cast<u32>(_buffers.size())};
 }
 
 IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u32> &&indices)
 {
-    auto handle = _nextHandle++;
     GlIndexBufferData data;
     data.indexCount = static_cast<u32>(indices.size());
     data.type = GL_UNSIGNED_INT;
@@ -45,17 +43,17 @@ IndexBufferHandle GlIndexBufferManager::createIndexBuffer(std::vector<u32> &&ind
     //! that rather than letting it claim a buffer that is no longer current.
     _boundEbo = 0;
 
-    _buffers[handle] = data;
-    return handle;
+    _buffers.push_back(data);
+    return IndexBufferHandle{static_cast<u32>(_buffers.size())};
 }
 
 void GlIndexBufferManager::bind(IndexBufferHandle handle)
 {
-    auto it = _buffers.find(handle);
-    if (it == _buffers.end())
+    const GlIndexBufferData *data = get(handle);
+    if (!data)
         return;
 
-    const GLuint ebo = it->second.ebo;
+    const GLuint ebo = data->ebo;
     if (ebo == _boundEbo)
         return;
 
@@ -65,18 +63,17 @@ void GlIndexBufferManager::bind(IndexBufferHandle handle)
 
 GlIndexBufferData *GlIndexBufferManager::get(IndexBufferHandle handle)
 {
-    auto it = _buffers.find(handle);
-    return (it != _buffers.end()) ? &it->second : nullptr;
+    const usize index = usize{handle.value()} - 1; // 0 wraps out of range
+    return index < _buffers.size() ? &_buffers[index] : nullptr;
 }
 
 void GlIndexBufferManager::cleanup()
 {
-    for (auto &[handle, data] : _buffers)
+    for (auto &data : _buffers)
     {
         glDeleteBuffers(1, &data.ebo);
     }
     _buffers.clear();
-    _nextHandle = IndexBufferHandle{1};
     _boundEbo = 0;
 }
 

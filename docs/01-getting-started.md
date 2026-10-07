@@ -8,7 +8,9 @@ the smallest possible Aura3D program.
 - CMake 4.3.3+, Ninja
 - A C++23 compiler (GCC 15 / Clang 22+)
 - Vulkan SDK (for the Vulkan backend), an OpenGL driver (for the OpenGL
-  backend) — both are optional; see below
+  backend) — both are optional; see below. The Vulkan backend compiles its
+  shaders during the build, so its `glslc` (or `glslangValidator`) must be
+  found; the Android NDK's own is picked up automatically
 - `libink` and `libwma` built and installed (Aura3D depends on both; see
   their own READMEs)
 

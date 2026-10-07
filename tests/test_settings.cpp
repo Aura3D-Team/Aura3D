@@ -49,6 +49,32 @@ void testBuiltInDefaultsWithNoFile()
     AURA_CHECK(settings->getWindowHeight() == 720, "an unconfigured engine is 720 tall");
     AURA_CHECK(settings->getRendererBackend() == "vulkan", "the default backend is vulkan");
     AURA_CHECK(settings->getWindowBackend() == wma::WindowBackend::SDL3, "the default window backend is SDL3");
+    AURA_CHECK(settings->getWindowDecorations() == wma::DecorationMode::ServerSide,
+               "an unconfigured window asks for server-side decorations");
+}
+
+void testWindowDecorations()
+{
+    reset();
+
+    AuraConfig config;
+    config.window.decorations = wma::DecorationMode::ClientSide;
+    AuraSettings::get()->setDefaults(config);
+    const AuraSettings *settings = AuraSettings::get();
+    AURA_CHECK(settings->getWindowDecorations() == wma::DecorationMode::ClientSide,
+               "a code default selects client-side decorations");
+
+    std::string path = writeConfig("decorations", R"({ "window": { "decorations": "Server" } })");
+    AuraSettings::get()->reload(path);
+    AURA_CHECK(settings->getWindowDecorations() == wma::DecorationMode::ServerSide,
+               "the file overrides the decoration mode, case-insensitively");
+    std::remove(path.c_str());
+
+    path = writeConfig("decorations", R"({ "window": { "decorations": "titlebar" } })");
+    AuraSettings::get()->reload(path);
+    AURA_CHECK(settings->getWindowDecorations() == wma::DecorationMode::ClientSide,
+               "an unrecognized decoration mode keeps the code default");
+    std::remove(path.c_str());
 }
 
 void testCodeDefaultsReplaceTheBuiltIns()
@@ -63,6 +89,7 @@ void testCodeDefaultsReplaceTheBuiltIns()
     config.window.vsyncMode = VSyncMode::Mailbox;
     config.renderer.backend = "opengl";
     config.renderer.validationLayers = false;
+    config.renderer.gpuTiming = true;
     config.graphics.msaaSamples = 4;
     config.audio.maxVoices = 8;
     config.paths.textures = "./art/";
@@ -80,6 +107,7 @@ void testCodeDefaultsReplaceTheBuiltIns()
                "a code default sets the present mode without a vsync flag to derive it from");
     AURA_CHECK(settings->getRendererBackend() == "opengl", "a code default sets the renderer");
     AURA_CHECK(!settings->getValidationLayers(), "a code default turns validation layers off in a debug build");
+    AURA_CHECK(settings->getGpuTiming(), "a code default turns GPU timing on");
     AURA_CHECK(settings->getMsaaSamples() == 4, "a code default sets MSAA");
     AURA_CHECK(settings->getAudioMaxVoices() == 8, "a code default sets the voice count");
     AURA_CHECK(settings->getTexturesPath() == "./art/", "a code default sets an asset path");
@@ -156,6 +184,7 @@ void testAudioBackendAutoStillMeansThePlatformDefault()
 int main()
 {
     testBuiltInDefaultsWithNoFile();
+    testWindowDecorations();
     testCodeDefaultsReplaceTheBuiltIns();
     testTheFileOverridesCodeKeyByKey();
     testReloadKeepsTheCodeDefaults();

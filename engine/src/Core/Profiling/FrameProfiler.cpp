@@ -57,9 +57,24 @@ void FrameProfiler::endFrame() noexcept
 
     INK_INFO << "    [unscoped]: " << (frameMicros - accountedMicros) << " us";
 
+    if (_gpuSamples > 0)
+    {
+        const f64 gpuMicros = static_cast<f64>(_gpuTotal) / 1000.0 / static_cast<f64>(_gpuSamples);
+        INK_INFO << "    [gpu]: " << gpuMicros << " us (" << (100.0 * gpuMicros / frameMicros)
+                 << "% of the frame) over " << _gpuSamples << " frames";
+    }
+
     _totals.fill(0);
     _frames = 0;
+    _gpuTotal = 0;
+    _gpuSamples = 0;
     _windowStart = now;
+}
+
+void FrameProfiler::addGpu(i64 nanos) noexcept
+{
+    _gpuTotal += nanos;
+    ++_gpuSamples;
 }
 
 } // namespace aura3d

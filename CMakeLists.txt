@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.3.3)
 
 project(Aura3D
-    VERSION 0.3.0
+    VERSION 0.4.0
     DESCRIPTION "Aura3D Multi Backend Engine"
     LANGUAGES C CXX
 )
@@ -30,11 +30,7 @@ option(AURA_ENABLE_CPU    "Compile the software (CPU) backend"    ON)
 # ON for APPLE (and forces it back OFF elsewhere if someone passes -D).
 option(AURA_ENABLE_METAL  "Compile the Metal backend (Apple only)" OFF)
 
-# The built-in immediate-mode UI (aura3d::ui). Backend-agnostic -- it is built
-# entirely on IRenderer::drawBatch2D and the glyph atlas, so it needs no
-# per-backend code and no third-party dependency. ON by default because it costs
-# one small translation unit; switch it off for a UI-free library.
-option(AURA_ENABLE_UI     "Compile the built-in immediate-mode UI" ON)
+option(AURA_ENABLE_UI     "Compile the retained AuraUI toolkit"   ON)
 
 option(AURA_ENABLE_LTO      "Enable link-time optimization"       ON)
 option(AURA_NATIVE_OPTIMIZE "Tune codegen for the host CPU"       ON)
@@ -75,6 +71,7 @@ message(STATUS "Aura3D: installing as Aura3D_${AURA_PLATFORM_SUFFIX}")
 include(cmake/Platform.cmake)
 include(cmake/Dependencies.cmake)
 include(cmake/Assets.cmake)
+include(cmake/EmbedShaders.cmake)
 
 ################################################################################
 # Engine library
@@ -307,6 +304,9 @@ endif()
 if(AURA_ENABLE_CPU)
     target_compile_definitions(Aura3D PUBLIC AURA_HAS_CPU)
 endif()
+
+# Each enabled GPU backend's shaders, generated from resources/shaders at build time.
+aura_embed_shaders(Aura3D)
 
 # PUBLIC so an application can guard its UI code on the same switch that decided
 # whether the module is in the library at all.

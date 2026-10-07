@@ -45,6 +45,8 @@ class VkTextureManager
         VkSampler sampler = VK_NULL_HANDLE;
         u32 width = 0;
         u32 height = 0;
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        u32 bytesPerTexel = 0;
     };
 
     VkTextureManager(VulkanMemoryManager *memoryManager, VkDevice *device, VkCommandPool commandPool,
@@ -92,6 +94,9 @@ class VkTextureManager
      */
     TextureId createDynamicTexture(u32 width, u32 height);
 
+    //! Linear R8 coverage, sampled as white RGB with coverage in alpha.
+    TextureId createCoverageTexture(u32 width, u32 height);
+
     /**
      * @brief Uploads RGBA8 texels into a sub-rectangle of an existing texture.
      *
@@ -107,6 +112,7 @@ class VkTextureManager
      * @param rgba Tightly packed @p width * @p height * 4 bytes.
      */
     void updateRegion(TextureId id, u32 x, u32 y, u32 width, u32 height, const u8 *rgba);
+    void updateCoverageRegion(TextureId id, u32 x, u32 y, u32 width, u32 height, const u8 *coverage);
 
     /**
      * @brief Retrieves a texture by id.
@@ -146,6 +152,9 @@ class VkTextureManager
     void flushUploads();
 
   private:
+    TextureId createTexture(u32 width, u32 height, VkFormat format, const u8 *pixels = nullptr);
+    void updateRegion(TextureId id, u32 x, u32 y, u32 width, u32 height, const u8 *pixels, VkFormat format);
+
     /**
      * @brief One in-flight upload batch: its staging memory, command buffer
      *        and the fence that says the GPU is done reading both.

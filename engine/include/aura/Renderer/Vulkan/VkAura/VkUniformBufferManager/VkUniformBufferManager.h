@@ -36,24 +36,27 @@ class VkUniformBufferManager
      * @param count Number of buffers to create (typically matches swapchain image count)
      * @param elementSize Bytes per buffer. Defaults to a TransformUBO, but any
      *        blob works, which lets the same manager back the light UBO.
+     * @param slots Elements per buffer, each starting on @p alignment, for a
+     *        dynamic-offset descriptor (minUniformBufferOffsetAlignment).
      */
     void createUniformBuffers(VkSharingMode sharingMode, u32 count,
-                              VkDeviceSize elementSize = sizeof(gfx::TransformUBO));
+                              VkDeviceSize elementSize = sizeof(gfx::TransformUBO), u32 slots = 1,
+                              VkDeviceSize alignment = 1);
+
+    void updateUniformBuffer(u32 currentImage, const gfx::TransformUBO &ubo, u32 slot = 0);
 
     /**
-     * @brief Updates a uniform buffer with new transform data
-     *
-     * @param currentImage Index of the current swapchain image
-     * @param ubo Transform UBO data to upload
-     */
-    void updateUniformBuffer(u32 currentImage, gfx::TransformUBO &ubo);
-
-    /**
-     * @brief Uploads @p size bytes of @p data into buffer @p currentImage.
+     * @brief Uploads @p size bytes of @p data into element @p slot of buffer @p currentImage.
      *
      * Writes are rejected when they would overrun the configured element size.
      */
-    void updateUniformBufferRaw(u32 currentImage, const void *data, VkDeviceSize size);
+    void updateUniformBufferRaw(u32 currentImage, const void *data, VkDeviceSize size, u32 slot = 0);
+
+    //! Byte distance between slots: the dynamic offset of slot i is i * stride.
+    [[nodiscard]] VkDeviceSize getSlotStride() const noexcept
+    {
+        return _slotStride;
+    }
 
     /**
      * @brief Gets a uniform buffer handle
@@ -96,6 +99,8 @@ class VkUniformBufferManager
     VkDevice *_vkDevice;
     std::vector<AllocatedBuffer> _buffers;
     VkDeviceSize _elementSize = sizeof(gfx::TransformUBO);
+    VkDeviceSize _slotStride = sizeof(gfx::TransformUBO);
+    u32 _slots = 1;
 };
 
 } // namespace vk

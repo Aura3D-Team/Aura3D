@@ -12,7 +12,7 @@
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
 
-#define MAX_ATTRIBUTE_DESCRIPTION_2D 3
+#define MAX_ATTRIBUTE_DESCRIPTION_BATCH 3
 #define MAX_ATTRIBUTE_DESCRIPTION_3D 4
 #define MAX_ATTRIBUTE_DESCRIPTION MAX_ATTRIBUTE_DESCRIPTION_3D
 #define MAX_SHADER_MODULES 8
@@ -120,25 +120,15 @@ struct PushConstantBlock
 static_assert(sizeof(PushConstantBlock) == 128,
               "PushConstantBlock must fit the guaranteed 128-byte push-constant budget");
 
-/**
- * @brief Per-draw push constant for the unlit 2D overlay pipeline.
- *
- * Mirrors PushConstantBlock's "fits the guaranteed budget, no capability
- * check needed" reasoning: 68 of the 128 guaranteed bytes are used.
- */
-struct Overlay2DPushConstants
+//! The batch shader uses 68 bytes of the guaranteed 128-byte push-constant budget.
+struct BatchPushConstants
 {
-    glm::mat4 projection{1.0f};
+    glm::mat4 transform{1.0f};
     u32 textureIndex = 0;
 };
 
 /**
- * @brief The fixed-function state that actually differs between the engine's
- *        graphics pipelines.
- *
- * The defaults describe the unlit 2D overlay: no depth interaction, straight
- * source-over blending, and no culling (screen-space quads have no meaningful
- * facing). The 3D scene pipeline flips all three.
+ * @brief The fixed-function state that differs between the engine's graphics pipelines.
  *
  * At namespace scope rather than nested in VkGraphicsPipelineManager because a
  * nested class' default member initializers are not usable inside the enclosing
@@ -147,7 +137,9 @@ struct Overlay2DPushConstants
  */
 struct PipelineOptions
 {
-    bool depthTest = false;     //! Enables both the depth test and depth writes.
+    bool depthTest = false; //! Enables the depth test, and writes unless depthWrite is off.
+    bool depthWrite = true;
+    VkCompareOp depthCompare = VK_COMPARE_OP_LESS;
     bool alphaBlend = false;    //! src*srcAlpha + dst*(1-srcAlpha).
     bool cullBackFaces = false; //! Discards clockwise-wound back faces.
 

@@ -62,7 +62,8 @@ MtlTextureManager::~MtlTextureManager()
     INK_DEBUG << "MtlTextureManager destroyed";
 }
 
-NS::SharedPtr<MTL::Texture> MtlTextureManager::allocate(u32 width, u32 height, const char *label) const
+NS::SharedPtr<MTL::Texture> MtlTextureManager::allocate(u32 width, u32 height, const char *label,
+                                                        bool coverageOnly) const
 {
     if (width == 0 || height == 0)
     {
@@ -73,7 +74,10 @@ NS::SharedPtr<MTL::Texture> MtlTextureManager::allocate(u32 width, u32 height, c
     NS::SharedPtr<MTL::TextureDescriptor> descriptor = adopt(MTL::TextureDescriptor::alloc()->init());
 
     descriptor->setTextureType(MTL::TextureType2D);
-    descriptor->setPixelFormat(kTextureFormat);
+    descriptor->setPixelFormat(coverageOnly ? MTL::PixelFormatR8Unorm : kTextureFormat);
+    if (coverageOnly)
+        descriptor->setSwizzle(MTL::TextureSwizzleChannels::Make(MTL::TextureSwizzleOne, MTL::TextureSwizzleOne,
+                                                                 MTL::TextureSwizzleOne, MTL::TextureSwizzleRed));
     descriptor->setWidth(width);
     descriptor->setHeight(height);
     descriptor->setMipmapLevelCount(1);
@@ -141,6 +145,30 @@ TextureHandle MtlTextureManager::createDynamic(u32 width, u32 height)
 
 bool MtlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *rgbaPixels)
 {
+    return updatePixels(handle, x, y, width, height, rgbaPixels, false);
+}
+
+TextureHandle MtlTextureManager::createCoverage(u32 width, u32 height)
+{
+    NS::SharedPtr<MTL::Texture> texture = allocate(width, height, "Aura3D coverage texture", true);
+    if (!texture)
+        return {};
+
+    const std::vector<u8> zeros(static_cast<size_t>(width) * height, 0u);
+    texture->replaceRegion(MTL::Region::Make2D(0, 0, width, height), 0, zeros.data(), width);
+    _textures.push_back(std::move(texture));
+    return static_cast<TextureHandle>(_textures.size());
+}
+
+bool MtlTextureManager::updateCoverageRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
+                                             const u8 *coverage)
+{
+    return updatePixels(handle, x, y, width, height, coverage, true);
+}
+
+bool MtlTextureManager::updatePixels(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *pixels,
+                                     bool coverageOnly)
+{
     MTL::Texture *texture = resolve(handle);
     if (!texture)
     {
@@ -148,9 +176,15 @@ bool MtlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 wid
         return false;
     }
 
-    if (!rgbaPixels)
+    if (!pixels)
     {
         INK_ERROR << "MtlTextureManager: updateRegion was given a null pixel pointer";
+        return false;
+    }
+
+    if (texture->pixelFormat() != (coverageOnly ? MTL::PixelFormatR8Unorm : kTextureFormat))
+    {
+        INK_ERROR << "MtlTextureManager: update format does not match texture format";
         return false;
     }
 
@@ -175,7 +209,8 @@ bool MtlTextureManager::updateRegion(TextureHandle handle, u32 x, u32 y, u32 wid
         return false;
     }
 
-    texture->replaceRegion(MTL::Region::Make2D(x, y, width, height), 0, rgbaPixels, rowBytes(width));
+    texture->replaceRegion(MTL::Region::Make2D(x, y, width, height), 0, pixels,
+                           coverageOnly ? static_cast<NS::UInteger>(width) : rowBytes(width));
     return true;
 }
 

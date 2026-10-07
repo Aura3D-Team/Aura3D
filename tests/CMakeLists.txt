@@ -18,6 +18,7 @@ set(AURA_TEST_SUITES
     test_audio_engine
     test_audio_realtime
     test_benchmark_stats
+    test_canvas
     test_cpu_raster
     test_debug_mode_report
     test_font_atlas
@@ -40,7 +41,9 @@ if(AURA_ENABLE_UI)
         test_aui_signal
         test_aui_text
         test_aui_paint
-        test_aui_overlay)
+        test_aui_overlay
+        test_aui_raster
+        test_aui_window_decoration)
 endif()
 
 foreach(_aura_test_name IN LISTS AURA_TEST_SUITES)
@@ -56,6 +59,9 @@ foreach(_aura_test_name IN LISTS AURA_TEST_SUITES)
 
     add_test(NAME ${_aura_test_name} COMMAND ${_aura_test_name})
 endforeach()
+
+# Includes a generated header, so it must not compile before the engine's are written.
+add_dependencies(test_shader_loader aura3d_embedded_shaders)
 
 # Explicit benchmark executable; requires a display only when a backend is passed.
 if(AURA_ENABLE_UI AND NOT CMAKE_CROSSCOMPILING)

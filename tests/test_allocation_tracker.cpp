@@ -125,7 +125,7 @@ void testHooksCountRealAllocations()
 {
     AllocationTracker &tracker = AllocationTracker::get();
 
-    constexpr usize kBlockBytes = 1u << 20; // 1 MiB, far above any incidental noise
+    constexpr usize kBlockBytes = INK_MIB_TO_BYTES(1); // far above any incidental noise
 
     if constexpr (!AllocationTracker::isHooked())
     {
@@ -179,7 +179,7 @@ void testScopedMuteExcludesItsOwnAllocations()
         return;
     }
 
-    constexpr usize kBlockBytes = 1u << 20;
+    constexpr usize kBlockBytes = INK_MIB_TO_BYTES(1);
 
     //! Half the block. Wide enough to absorb whatever libink's and libwma's
     //! threads allocate in the microseconds this takes, and far narrower than

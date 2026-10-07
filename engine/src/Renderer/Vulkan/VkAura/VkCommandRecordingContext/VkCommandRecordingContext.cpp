@@ -44,36 +44,28 @@ void bindDrawState(VkCommandBuffer cmd, RecordedState &state, const SceneBinding
         state.viewportSet = true;
     }
 
-    //! sets 0 (view/projection), 1 (bindless textures) and 2 (light): fixed
-    //! for the whole pass.
+    //! sets 0 (view/projection), 1 (bindless textures) and 2 (light). Only set 0's
+    //! dynamic offset moves within a pass, when setTransform() changes the camera.
     if (!state.staticSetsBound)
     {
-        if (bindings.transformSet != VK_NULL_HANDLE)
-        {
-            bindings.pipeline->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &bindings.transformSet,
-                                                     0, nullptr);
-        }
-
-        if (bindings.textureTable != VK_NULL_HANDLE)
-        {
-            bindings.pipeline->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 1, 1, &bindings.textureTable,
-                                                     0, nullptr);
-        }
-
-        if (bindings.lightSet != VK_NULL_HANDLE)
-        {
-            bindings.pipeline->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 2, 1, &bindings.lightSet, 0,
-                                                     nullptr);
-        }
+        bindings.pipeline->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0,
+                                                 static_cast<u32>(bindings.descriptorSets.size()),
+                                                 bindings.descriptorSets.data(), 1, &bindings.transformOffset);
 
         state.staticSetsBound = true;
+        state.transformOffset = bindings.transformOffset;
+    }
+    else if (state.transformOffset != bindings.transformOffset)
+    {
+        bindings.pipeline->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1,
+                                                 bindings.descriptorSets.data(), 1, &bindings.transformOffset);
+        state.transformOffset = bindings.transformOffset;
     }
 
     /*
      * Per-draw transform. The model matrix travels as a push constant rather
-     * than in the UBO, because the UBO is only written once per frame: pushing
-     * here is what lets several objects with different transforms share a
-     * single render pass.
+     * than in the UBO, whose slots change only with the camera: pushing here is
+     * what lets several objects with different transforms share one slot.
      *
      * normalMatrix's 4th column is always (0,0,0,1) -- normalMatrixOf()
      * returns a mat3, widened to mat4 only to match std430/push-constant
@@ -107,30 +99,17 @@ void bindDrawState(VkCommandBuffer cmd, RecordedState &state, const SceneBinding
     }
 }
 
-void VkCommandRecordingContext::recordChunk(VkCommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer,
-                                            const SceneBindings &bindings, std::span<const ResolvedDraw> draws)
+void recordChunk(VkCommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer, const SceneBindings &bindings,
+                 std::span<const ResolvedDraw> draws)
 {
     VkCommandManager::beginSecondaryCommandBuffer(cmd, renderPass, framebuffer);
 
-    //! A freshly begun secondary buffer inherits render pass state and nothing
-    //! else -- no pipeline, no sets, no viewport -- so the cache starts empty
-    //! regardless of what this context recorded on a previous frame or chunk.
-    _recorded.reset();
-
+    // A secondary buffer inherits no bindings; the cache belongs to this recording only.
+    RecordedState recorded;
     for (const ResolvedDraw &draw : draws)
     {
-        if (draw.vertexBuffer == VK_NULL_HANDLE)
-            continue;
-
-        bindDrawState(cmd, _recorded, bindings, draw);
-
-        //! Viewport and scissor are already recorded for this buffer by
-        //! bindDrawState(), so the draw is issued directly rather than through
-        //! cmdIndexedDraw()/cmdDraw(), which would re-set them every time.
-        if (draw.indexBuffer != VK_NULL_HANDLE)
-            vkCmdDrawIndexed(cmd, draw.indexCount, 1, 0, 0, 0);
-        else if (draw.vertexCount > 0)
-            vkCmdDraw(cmd, draw.vertexCount, 1, 0, 0);
+        bindDrawState(cmd, recorded, bindings, draw);
+        vkCmdDrawIndexed(cmd, draw.indexCount, 1, 0, 0, 0);
     }
 
     VkCommandManager::endCommandBuffer(cmd);

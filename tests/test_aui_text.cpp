@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "aura/Core/AuraFont/FontAtlas.h"
 #include "aura/UI/Text/TextEngine.h"
 #include "aura/UI/Text/Utf8.h"
 
@@ -64,6 +65,83 @@ void testFontSizeScales()
 
     AURA_CHECK(large.size.x > small.size.x && large.size.y > small.size.y, "a bigger em size produces bigger text");
     AURA_CHECK(large.page != small.page, "and rasterizes on its own page rather than scaling the small one");
+}
+
+void testSizesShareTextureStorage()
+{
+    AtlasTextShaper shaper(TextShaperDesc{.maxPages = 12});
+    const void *storage = nullptr;
+    for (u32 pixels = 12; pixels <= 32; pixels += 2)
+    {
+        ShapedText text;
+        shaper.shape("Aura3D", TextStyle{.pixelSize = f32(pixels)}, kUnbounded, text);
+        auto *atlas = shaper.page(text.page);
+        if (!storage)
+            storage = atlas->storageIdentity();
+        AURA_CHECK(atlas->pixelHeight() == f32(pixels) && atlas->storageIdentity() == storage,
+                   "eleven exact raster sizes share one texture sheet");
+    }
+}
+
+void testFullSharedSheetPreservesRetainedRuns()
+{
+    AtlasTextShaper shaper(TextShaperDesc{.pageSize = 64, .maxPages = 2});
+    ShapedText retained;
+    shaper.shape("A", TextStyle{.pixelSize = 16}, kUnbounded, retained);
+    const auto oldUv = retained.glyphs.front().uvMin;
+    auto *oldAtlas = shaper.page(retained.page);
+    for (char32_t cp = U'!'; cp <= U'~'; ++cp)
+        (void)oldAtlas->glyph(cp);
+
+    ShapedText large;
+    shaper.shape("AB", TextStyle{.pixelSize = 24}, kUnbounded, large);
+    auto *newAtlas = shaper.page(large.page);
+    AURA_CHECK(large.glyphs.size() == 2 && large.glyphs.front().bounds.height() == 24 &&
+                   newAtlas->storageIdentity() != oldAtlas->storageIdentity(),
+               "a full shared sheet retries the run at its exact size in a new sheet");
+    AURA_CHECK(shaper.page(retained.page) == oldAtlas && oldAtlas->glyph(U'A')->uvMin == oldUv,
+               "spilling keeps retained page indices and glyph UVs alive");
+    const u32 pageCount = shaper.pageCount();
+    ShapedText again;
+    shaper.shape("AB", TextStyle{.pixelSize = 24}, kUnbounded, again);
+    AURA_CHECK(again.page == large.page && shaper.pageCount() == pageCount, "subsequent runs reuse the new size view");
+    shaper.shape("A", TextStyle{.pixelSize = 20}, kUnbounded, again);
+    AURA_CHECK(shaper.pageCount() == pageCount && near(again.lineHeight, 25),
+               "the size cap still scales the nearest raster to the requested logical metrics");
+}
+
+void testDedicatedSheetOverflow()
+{
+    AtlasTextShaper shaper(TextShaperDesc{.pageSize = 64, .maxPages = 6});
+    const TextStyle style{.pixelSize = 16};
+    ShapedText retained;
+    shaper.shape("A", style, kUnbounded, retained);
+    auto *oldAtlas = shaper.page(retained.page);
+    char missing = 0;
+    for (char32_t cp = U'!'; cp <= U'~'; ++cp)
+    {
+        (void)oldAtlas->glyph(cp);
+        if (oldAtlas->takeAllocationFailure())
+        {
+            missing = static_cast<char>(cp);
+            break;
+        }
+    }
+    AURA_CHECK(missing != 0, "fixture exhausts its single-size sheet");
+    ShapedText fresh;
+    shaper.shape(std::string(1, missing), style, kUnbounded, fresh);
+    AURA_CHECK(fresh.glyphs.size() == 1 && fresh.glyphs.front().bounds.height() == 16 &&
+                   shaper.page(fresh.page)->storageIdentity() != oldAtlas->storageIdentity(),
+               "a short new run spills when previous strings filled a dedicated sheet");
+    AURA_CHECK(shaper.page(retained.page) == oldAtlas, "a dedicated spill also preserves retained runs");
+
+    std::string oversized;
+    for (char c = '!'; c <= '~'; ++c)
+        oversized.push_back(c);
+    const u32 before = shaper.pageCount();
+    shaper.shape(oversized, style, kUnbounded, fresh);
+    AURA_CHECK(shaper.pageCount() == before + 1,
+               "an oversized run attempts at most one fresh sheet instead of exhausting the cap");
 }
 
 void testExplicitLineBreaks()
@@ -279,6 +357,9 @@ void testSoftWrapAffinity()
 
 int main()
 {
+    testSizesShareTextureStorage();
+    testFullSharedSheetPreservesRetainedRuns();
+    testDedicatedSheetOverflow();
     testSoftWrapAffinity();
     testMeasurement();
     testFontSizeScales();

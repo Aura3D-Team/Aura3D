@@ -13,7 +13,7 @@
 // Layering, and why each layer is drawn the way it is:
 //   1. The sky is a screen-filling textured quad through the 3D path -- it is
 //      opaque, it never changes, and it is what everything else composites on.
-//   2. The stars and the orb go through IRenderer::drawBatch2D(), the unlit
+//   2. The stars and the orb go through IRenderer::drawBatch(), the unlit
 //      overlay path: it blends, it takes window-pixel coordinates, and it turns
 //      a whole layer into a single draw call. The 3D path does neither of the
 //      first two.
@@ -192,7 +192,7 @@ int main()
     FrameClock clock;
     float elapsed = 0.0f;
 
-    std::vector<gfx::Vertex2D> orbVertices;
+    std::vector<gfx::BatchVertex> orbVertices;
     std::vector<u32> orbIndices;
     orbVertices.reserve(4);
     orbIndices.reserve(6);
@@ -223,7 +223,7 @@ int main()
             orbIndices.clear();
             appendQuad(orbVertices, orbIndices, layout.center, {layout.orbHalfExtent, layout.orbHalfExtent}, 0.0f,
                        UvRect{}, glm::vec4(1.0f));
-            renderer->drawBatch2D(orbVertices, orbIndices, flameTexture);
+            renderer->drawBatch(orbVertices, orbIndices, flameTexture);
 
             renderer->endRenderPass();
         });

@@ -22,10 +22,8 @@ namespace mtl
  * The Metal counterpart of VkTextureManager + VkDescriptorManager, and much the
  * smaller of the two: Metal binds a texture straight to a fragment argument
  * slot, so there is no descriptor set to allocate, no pool to size and no
- * bindless table to index. The whole apparatus VulkanRenderer needed to stop a
- * 256-descriptor pool from running out around the 42nd texture (see its
- * _bindlessTextureSet3D comment) has no counterpart here -- MetalRenderer's
- * bindTexture() is one setFragmentTexture() call.
+ * bindless table to index (VulkanRenderer's _bindlessTextureSet) --
+ * MetalRenderer's bindTexture() is one setFragmentTexture() call.
  *
  * Handles are 1-based and dense, matching the vertex/index managers.
  */
@@ -70,6 +68,10 @@ class MtlTextureManager
      * @return A 1-based handle, or an invalid handle on failure.
      */
     [[nodiscard]] TextureHandle createDynamic(u32 width, u32 height);
+
+    //! Zero-initialized linear R8 coverage, sampled as (1, 1, 1, coverage).
+    [[nodiscard]] TextureHandle createCoverage(u32 width, u32 height);
+    bool updateCoverageRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *coverage);
 
     /**
      * @brief Overwrites a sub-rectangle of an existing texture in place.
@@ -120,7 +122,9 @@ class MtlTextureManager
      * @brief Allocates a shared-storage RGBA8 texture.
      * @return The texture, or an empty handle on failure (logged).
      */
-    [[nodiscard]] NS::SharedPtr<MTL::Texture> allocate(u32 width, u32 height, const char *label) const;
+    [[nodiscard]] NS::SharedPtr<MTL::Texture> allocate(u32 width, u32 height, const char *label,
+                                                       bool coverageOnly = false) const;
+    bool updatePixels(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *pixels, bool coverageOnly);
 
     MTL::Device *_device = nullptr; //! Borrowed; owned by MtlDeviceManager.
 

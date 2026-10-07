@@ -220,9 +220,8 @@ AtlasTextShaper::AtlasTextShaper(const TextShaperDesc &desc) : _desc(desc)
         return;
 
     /*
-     * Read once, copy per page: every page rasterizes the same face at a
-     * different size, and stb_truetype keeps pointing at the bytes it was
-     * handed, so FontAtlas::fromMemory() has to own its copy.
+     * Read once. Size views share the FontAtlas face bytes; a new physical
+     * sheet is only needed when a shared sheet fills.
      */
     if (std::FILE *file = std::fopen(_desc.fontPath.c_str(), "rb"))
     {
@@ -279,39 +278,42 @@ AtlasTextShaper::Page *AtlasTextShaper::_pageFor(const TextStyle &style)
 {
     const u32 wanted = _devicePixelsFor(style);
 
-    for (Page &page : _pages)
+    for (auto it = _pages.rbegin(); it != _pages.rend(); ++it)
     {
-        if (page.devicePixels == wanted)
-            return &page;
+        if (it->devicePixels == wanted)
+            return &*it;
     }
 
-    if (_pages.size() >= _desc.maxPages)
+    if (_distinctSizes >= _desc.maxPages)
     {
-        /*
-         * Cap reached. Serving the request from the nearest existing size
-         * scales the glyphs a little, which is far better than the two
-         * alternatives: evicting a page still on screen (every label that used
-         * it re-rasterizes on the same frame) or refusing to draw.
-         */
-        Page *nearest = &_pages.front();
-        for (Page &page : _pages)
+        Page *nearest = &_pages.back();
+        for (auto it = _pages.rbegin(); it != _pages.rend(); ++it)
         {
-            const u32 delta = page.devicePixels > wanted ? page.devicePixels - wanted : wanted - page.devicePixels;
+            const u32 delta = it->devicePixels > wanted ? it->devicePixels - wanted : wanted - it->devicePixels;
             const u32 best =
                 nearest->devicePixels > wanted ? nearest->devicePixels - wanted : wanted - nearest->devicePixels;
             if (delta < best)
-                nearest = &page;
+                nearest = &*it;
         }
         return nearest;
     }
 
+    ++_distinctSizes;
+    return _appendPage(wanted, !_pages.empty());
+}
+
+AtlasTextShaper::Page *AtlasTextShaper::_appendPage(u32 wanted, bool shareStorage)
+{
     const FontAtlasDesc desc{
         .width = _desc.pageSize, .height = _desc.pageSize, .pixelHeight = static_cast<f32>(wanted)};
 
     Page page{};
     page.devicePixels = wanted;
 
-    if (!_fontData.empty())
+    if (shareStorage)
+        page.atlas = _pages.back().atlas->createSharedSize(static_cast<f32>(wanted));
+
+    if (!page.atlas && !_fontData.empty())
     {
         if (auto atlas = FontAtlas::fromMemory(_fontData, desc))
             page.atlas = std::move(*atlas);
@@ -322,10 +324,13 @@ AtlasTextShaper::Page *AtlasTextShaper::_pageFor(const TextStyle &style)
 
     if (!page.atlas)
         return nullptr;
+    if (!shareStorage)
+        ++_storagePages;
 
-    //! Placed now, while the page is empty and placement cannot fail: the
+    //! Reserve on the first view; other sizes reuse the same solid cell. The
     //! backend needs it for every solid rectangle it draws.
     (void)page.atlas->solidTexelUv();
+    page.initialRevision = shareStorage ? 0 : page.atlas->coverageRevision();
 
     const f32 unit = 1.0f / static_cast<f32>(wanted);
     page.lineHeight = page.atlas->lineHeight() * unit;
@@ -355,6 +360,12 @@ f32 AtlasTextShaper::ascent(const TextStyle &style)
 
 void AtlasTextShaper::shape(std::string_view utf8, const TextStyle &style, f32 maxWidth, ShapedText &out)
 {
+    _shape(utf8, style, maxWidth, out, true);
+}
+
+void AtlasTextShaper::_shape(std::string_view utf8, const TextStyle &style, f32 maxWidth, ShapedText &out,
+                             bool allowNewSheet)
+{
     out.clear();
 
     Page *page = _pageFor(style);
@@ -362,6 +373,8 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle &style, f32 m
         return;
 
     FontAtlas &atlas = *page->atlas;
+    const bool hadContent = atlas.coverageRevision() > page->initialRevision;
+    (void)atlas.takeAllocationFailure();
 
     //! Atlas metrics are in the page's device pixels; this converts them to the
     //! logical pixels layout works in, and absorbs the rounding that snapping
@@ -512,6 +525,29 @@ void AtlasTextShaper::shape(std::string_view utf8, const TextStyle &style, f32 m
 
         penX += advance;
         previous = codepoint;
+    }
+
+    if (atlas.takeAllocationFailure())
+    {
+        const void *storage = atlas.storageIdentity();
+        const u32 devicePixels = page->devicePixels;
+        bool retry = false;
+        if (_pages.back().atlas->storageIdentity() != storage)
+        {
+            // Another size already opened a newer sheet; try its remaining room.
+            retry = _appendPage(devicePixels, true) != nullptr;
+        }
+        else if (allowNewSheet && hadContent && _storagePages < _desc.maxPages)
+        {
+            // Retry once with an empty sheet; a larger run cannot fit by retrying again.
+            retry = _appendPage(devicePixels, false) != nullptr;
+            allowNewSheet = false;
+        }
+        if (retry)
+        {
+            _shape(utf8, style, maxWidth, out, allowNewSheet);
+            return;
+        }
     }
 
     closeLine(static_cast<u32>(out.glyphs.size()), static_cast<u32>(utf8.size()), penX);

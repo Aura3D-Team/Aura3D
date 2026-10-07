@@ -18,7 +18,7 @@
  * @file Overlay.h
  * @brief Screen-space layout and quad emission for the engine's 2D overlay.
  *
- * Every animated layer of the logo is drawn through IRenderer::drawBatch2D(),
+ * Every animated layer of the logo is drawn through IRenderer::drawBatch(),
  * which takes window-pixel coordinates with the origin at the top-left corner
  * and needs no camera. Sizes are expressed as fractions of SceneLayout::unit so
  * the composition is identical at any window size.
@@ -76,8 +76,9 @@ struct SceneLayout
  * @param uv Sub-rectangle of the batch texture to sample.
  * @param color Multiplied into the texel; alpha carries the layer's intensity.
  */
-inline void appendQuad(std::vector<aura3d::gfx::Vertex2D> &vertices, std::vector<u32> &indices, const glm::vec2 &center,
-                       const glm::vec2 &halfExtent, float rotation, const UvRect &uv, const glm::vec4 &color)
+inline void appendQuad(std::vector<aura3d::gfx::BatchVertex> &vertices, std::vector<u32> &indices,
+                       const glm::vec2 &center, const glm::vec2 &halfExtent, float rotation, const UvRect &uv,
+                       const glm::vec4 &color)
 {
     const auto base = static_cast<u32>(vertices.size());
 
@@ -100,9 +101,9 @@ inline void appendQuad(std::vector<aura3d::gfx::Vertex2D> &vertices, std::vector
     };
 
     for (std::size_t i = 0; i < corners.size(); ++i)
-        vertices.push_back(aura3d::gfx::Vertex2D{corners[i], texCoords[i], color});
+        vertices.push_back(aura3d::gfx::BatchVertex{{corners[i], 0}, texCoords[i], color});
 
-    //! Winding is irrelevant here: the overlay pipeline disables culling on
+    //! Winding is irrelevant here: the batch pipeline disables culling on
     //! every backend, exactly so UI quads need not agree on one.
     indices.insert(indices.end(), {base, base + 1u, base + 2u, base + 2u, base + 3u, base});
 }

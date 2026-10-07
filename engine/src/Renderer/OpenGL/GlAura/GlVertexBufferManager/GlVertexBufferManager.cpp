@@ -32,7 +32,6 @@ static void setupVertexAttributes()
 
 VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices)
 {
-    auto handle = _nextHandle++;
     GlVertexBufferData data;
     data.vertexCount = static_cast<u32>(vertices.size());
 
@@ -46,17 +45,17 @@ VertexBufferHandle GlVertexBufferManager::createVertexBuffer(std::vector<gfx::Ve
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    _buffers[handle] = data;
-    return handle;
+    _buffers.push_back(data);
+    return VertexBufferHandle{static_cast<u32>(_buffers.size())};
 }
 
 bool GlVertexBufferManager::bind(VertexBufferHandle handle)
 {
-    auto it = _buffers.find(handle);
-    if (it == _buffers.end())
+    const GlVertexBufferData *data = get(handle);
+    if (!data)
         return false;
 
-    const u32 vao = it->second.vao;
+    const u32 vao = data->vao;
     if (vao == _boundVao)
         return false;
 
@@ -73,19 +72,18 @@ void GlVertexBufferManager::unbind()
 
 GlVertexBufferData *GlVertexBufferManager::get(VertexBufferHandle handle)
 {
-    auto it = _buffers.find(handle);
-    return (it != _buffers.end()) ? &it->second : nullptr;
+    const usize index = usize{handle.value()} - 1; // 0 wraps out of range
+    return index < _buffers.size() ? &_buffers[index] : nullptr;
 }
 
 void GlVertexBufferManager::cleanup()
 {
-    for (auto &[handle, data] : _buffers)
+    for (auto &data : _buffers)
     {
         glDeleteVertexArrays(1, &data.vao);
         glDeleteBuffers(1, &data.vbo);
     }
     _buffers.clear();
-    _nextHandle = VertexBufferHandle{1};
     _boundVao = 0;
 }
 

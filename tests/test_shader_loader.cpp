@@ -21,7 +21,7 @@ using namespace aura3d;
 // Covers only the parts of each backend's shader-loading path that don't
 // need a live GL context / VkDevice, so this suite runs on any CI runner
 // with no GPU: GL's source-file reading, and Vulkan's SPIR-V byte-file
-// reading plus the embedded SPIR-V modules baked into EmbeddedSpirv.h.
+// reading plus the embedded SPIR-V modules generated into EmbeddedSpirv.h.
 // Actual shader-module compilation (glCompileShader / vkCreateShaderModule)
 // needs a real context/device and is exercised manually via the Sandbox app.
 
@@ -103,10 +103,9 @@ void test_vk_spirv_extractor()
 
 void test_embedded_spirv_well_formed()
 {
-    // Regression guard for exactly the bug this suite exists because of:
-    // EmbeddedSpirv.h silently going stale relative to the GLSL sources
-    // (see scripts/gen_embedded_spirv.sh). Every embedded module must at
-    // least be structurally valid SPIR-V: correct magic number, and a
+    // EmbeddedSpirv.h is generated at build time (cmake/EmbedShaders.cmake), so
+    // it cannot go stale; this guards the generator itself. Every embedded
+    // module must be structurally valid SPIR-V: correct magic number, and a
     // length that's a whole number of 32-bit words.
     constexpr std::uint32_t kSpirvMagic = 0x07230203u;
 
@@ -124,10 +123,10 @@ void test_embedded_spirv_well_formed()
         AURA_CHECK(magic == kSpirvMagic, name + ": starts with the SPIR-V magic number");
     };
 
-    checkModule(vk::vk_vert_2d, vk::vk_vert_2d_len, "EmbeddedSpirv.h: vk_vert_2d");
-    checkModule(vk::vk_frag_2d, vk::vk_frag_2d_len, "EmbeddedSpirv.h: vk_frag_2d");
-    checkModule(vk::vk_vert_3d, vk::vk_vert_3d_len, "EmbeddedSpirv.h: vk_vert_3d");
-    checkModule(vk::vk_frag_3d, vk::vk_frag_3d_len, "EmbeddedSpirv.h: vk_frag_3d");
+    checkModule(vk::vk_batch_vert, vk::vk_batch_vert_len, "EmbeddedSpirv.h: vk_batch_vert");
+    checkModule(vk::vk_batch_frag, vk::vk_batch_frag_len, "EmbeddedSpirv.h: vk_batch_frag");
+    checkModule(vk::vk_shader3d_vert, vk::vk_shader3d_vert_len, "EmbeddedSpirv.h: vk_shader3d_vert");
+    checkModule(vk::vk_shader3d_frag, vk::vk_shader3d_frag_len, "EmbeddedSpirv.h: vk_shader3d_frag");
 }
 #endif // AURA_HAS_VULKAN
 

@@ -33,9 +33,11 @@ struct ClipVertex
 /// @param a, b, c  Triangle corners in clip space. A non-finite corner rejects the triangle.
 /// @param width    Framebuffer width in pixels, for the viewport transform.
 /// @param height   Framebuffer height in pixels.
-/// @param emit     Called once per front-facing `ScreenTriangle` produced; zero to seven calls.
+/// @param emit     Called once per `ScreenTriangle` produced; zero to seven calls.
+/// @param cullBackFaces  Drops fan triangles facing away; batches pass false, like their GPU pipelines.
 template <class Emit>
-void clipTriangle(const ClipVertex &a, const ClipVertex &b, const ClipVertex &c, f32 width, f32 height, Emit &&emit)
+void clipTriangle(const ClipVertex &a, const ClipVertex &b, const ClipVertex &c, f32 width, f32 height, Emit &&emit,
+                  bool cullBackFaces = true)
 {
     std::array<ClipVertex, 12> front{a, b, c}, back{};
     usize count = 3;
@@ -106,7 +108,7 @@ void clipTriangle(const ClipVertex &a, const ClipVertex &b, const ClipVertex &c,
         v.color = front[i].color;
     }
     for (usize i = 1; i + 1 < count; ++i)
-        if (isFrontFacing(screen[0], screen[i], screen[i + 1]))
+        if (!cullBackFaces || isFrontFacing(screen[0], screen[i], screen[i + 1]))
             emit(ScreenTriangle{screen[0], screen[i], screen[i + 1]});
 }
 

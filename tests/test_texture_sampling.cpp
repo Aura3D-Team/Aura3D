@@ -13,6 +13,7 @@
  */
 
 #include <cstdio>
+#include <limits>
 
 #include "aura/Renderer/Software/CpuAura/CpuFrameBufferManager.h"
 
@@ -100,6 +101,48 @@ void test_offgrid_samples_across_an_edge_differ()
     AURA_CHECK(a1 != a2, "adjacent off-grid samples straddling an AA edge are not identical");
 }
 
+void test_extreme_uvs_clamp_before_integer_conversion()
+{
+    Texture tex(2, 2);
+    tex.data[0] = 0xFF112233u;
+    tex.data[1] = 0xFF445566u;
+    tex.data[2] = 0xFF778899u;
+    tex.data[3] = 0xFFAABBCCu;
+    const f32 huge = std::numeric_limits<f32>::max();
+    const f32 inf = std::numeric_limits<f32>::infinity();
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    AURA_CHECK(tex.sample(-huge, huge) == tex.data[2], "finite UV extremes clamp without an out-of-range integer cast");
+    AURA_CHECK(tex.sample(inf, -inf) == tex.data[1], "infinite UVs clamp to their respective texture edges");
+    AURA_CHECK(tex.sample(nan, nan) == tex.data[0], "NaN UVs select the first texel deterministically");
+    AURA_CHECK(Texture(0, 0).sample(0, 0) == 0, "empty textures sample transparent black");
+}
+
+void test_coverage_storage_and_filter_match_rgba()
+{
+    Texture coverage(3, 2, true);
+    AURA_CHECK(coverage.data.empty() && coverage.coverage.size() == 6,
+               "coverage textures store one byte per texel without an RGBA allocation");
+    AURA_CHECK(coverage.sample(0.5f, 0.5f) == argb(0, 255, 255, 255), "new coverage textures sample transparent white");
+
+    const u8 alpha[] = {0, 64, 255, 217, 128, 0};
+    Texture rgba(3, 2);
+    for (size_t i = 0; i < 6; ++i)
+    {
+        coverage.coverage[i] = alpha[i];
+        rgba.data[i] = argb(alpha[i], 255, 255, 255);
+    }
+
+    bool equivalent = true;
+    for (int row = -4; row <= 20; ++row)
+        for (int col = -4; col <= 20; ++col)
+        {
+            const f32 u = static_cast<f32>(col) / 16.0f;
+            const f32 v = static_cast<f32>(row) / 16.0f;
+            equivalent &= coverage.sample(u, v) == rgba.sample(u, v);
+        }
+    AURA_CHECK(equivalent, "R8 coverage matches white RGBA through bilinear filtering and edge clamping");
+}
+
 } // namespace
 
 int main()
@@ -108,6 +151,8 @@ int main()
     test_midpoint_blends_evenly();
     test_uniform_texture_is_unaffected_by_uv();
     test_offgrid_samples_across_an_edge_differ();
+    test_coverage_storage_and_filter_match_rgba();
+    test_extreme_uvs_clamp_before_integer_conversion();
 
     AURA_TEST_MAIN_RETURN();
 }
