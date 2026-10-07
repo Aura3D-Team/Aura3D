@@ -1,6 +1,7 @@
 #include "aura/Core/DebugMode/DebugMode.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <ctime>
 #include <string>
@@ -254,11 +255,8 @@ void DebugMode::onFrameSample(const FrameSample &sample) noexcept
 
     if (_renderer != nullptr)
     {
-        if (const IGpuDebugSource *gpu = _renderer->gpuDebugSource(); gpu != nullptr)
-        {
-            const GpuTimingStats timing = gpu->gpuTimingStats();
-            record.gpuMillis = timing.available ? timing.frameMillis : 0.0;
-        }
+        const GpuTimingStats timing = _renderer->gpuTiming();
+        record.gpuMillis = timing.available ? timing.frameMillis : 0.0;
     }
 
     if (_capturedFrames == 0)
@@ -511,17 +509,23 @@ ink::EnhancedJson DebugMode::buildGpuSection(const std::vector<FrameRecord> &ord
     ink::EnhancedJson gpu = ink::EnhancedJson::object();
 
     const IGpuDebugSource *source = _renderer != nullptr ? _renderer->gpuDebugSource() : nullptr;
-    if (source == nullptr)
+    const GpuTimingStats timing = _renderer != nullptr ? _renderer->gpuTiming() : GpuTimingStats{};
+    if (source == nullptr && !timing.available)
     {
         gpu["available"] = false;
-        gpu["reason"] = "backend exposes no GPU debug source";
+        gpu["reason"] = "backend measures neither GPU time nor GPU memory";
         return gpu;
     }
 
     gpu["available"] = true;
-    gpu["backend"] = source->gpuDebugBackendName();
-
-    const GpuTimingStats timing = source->gpuTimingStats();
+    //! Lower case, as the section has always named its backend ("vulkan").
+    std::string backend = RendererChoiceToString(_renderer->getBackendType());
+    std::ranges::transform(backend, backend.begin(),
+                           [](unsigned char c)
+                           {
+                               return static_cast<char>(std::tolower(c));
+                           });
+    gpu["backend"] = backend;
 
     ink::EnhancedJson timingJson = ink::EnhancedJson::object();
     timingJson["available"] = timing.available;
@@ -539,7 +543,7 @@ ink::EnhancedJson DebugMode::buildGpuSection(const std::vector<FrameRecord> &ord
 
     gpu["timing"] = std::move(timingJson);
 
-    const GpuMemoryStats memory = source->gpuMemoryStats();
+    const GpuMemoryStats memory = source != nullptr ? source->gpuMemoryStats() : GpuMemoryStats{};
 
     ink::EnhancedJson memoryJson = ink::EnhancedJson::object();
     memoryJson["available"] = memory.available;

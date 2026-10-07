@@ -17,6 +17,7 @@
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Core/Profiling/GpuTiming.h"
 #include "aura/Renderer/Canvas.h"
 #include "aura/Renderer/Material.h"
 #include "aura/Renderer/RenderHandles.h"
@@ -547,6 +548,20 @@ class IRenderer
         return nullptr;
     }
 
+    /**
+     * @brief GPU time of the last frame the GPU finished; see GpuTimingStats.
+     *
+     * Vulkan, OpenGL and Metal measure it in AURA_PROFILE_FRAME builds, once
+     * setGpuTimingEnabled(true) or `renderer.gpu_timing` turns it on. Every other
+     * build, and the software rasteriser, always report it unavailable, so
+     * callers need no #ifdef.
+     */
+    [[nodiscard]] virtual GpuTimingStats gpuTiming() const noexcept;
+
+    /// Off by default: reading a frame's queries back costs about a microsecond of CPU.
+    void setGpuTimingEnabled(bool enabled) noexcept;
+    [[nodiscard]] bool gpuTimingEnabled() const noexcept;
+
   public:
     using WindowFactory = std::function<std::unique_ptr<wma::IWindowManager>(
         wma::WindowBackend, const wma::WindowDetails &, wma::GraphicsAPI)>;
@@ -597,6 +612,8 @@ class IRenderer
 
     wma::WindowDetails _windowDetails; //! Copy of current platform dimension attributes
     bool _running = false;             //! Control status tracker managing main loop life
+    //! Backends create their queries lazily, on the first frame that sees this set.
+    bool _gpuTimingEnabled = false;
 
     std::vector<MeshRecord> _meshes;  //! Mesh registry; handle == index + 1
     std::vector<Material> _materials; //! Material registry; handle == index + 1

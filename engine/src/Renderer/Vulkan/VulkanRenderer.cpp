@@ -241,17 +241,6 @@ void VulkanRenderer::createCoreObjects(bool enableValidation)
         throw std::runtime_error("Vulkan device cannot present to this window surface");
 
 #ifdef AURA_ENABLE_DEBUG_MODE
-    /*
-     * After the queue family is known, because timestamp support is per family
-     * (VkQueueFamilyProperties::timestampValidBits) rather than per device --
-     * a transfer-only family on some hardware writes no timestamps at all.
-     *
-     * A device that cannot timestamp is not an error: initialize() reports it
-     * and GPU timing is simply marked unavailable in the report.
-     */
-    (void)_debugMetrics.timestamps().initialize(*_vkDeviceManager->getDevice(), *_vkDeviceManager->getPhysicalDevice(),
-                                                _graphicsIndexFamily, GetMaxFramesInFlight());
-
     //! The raw device-memory counters come from VMA's callbacks regardless;
     //! this is what adds the suballocation and heap-budget detail.
     _debugMetrics.setAllocator(_memoryManager->getAllocator());
@@ -697,16 +686,20 @@ void VulkanRenderer::cleanup()
     _frameBegun = false;
     _fallbackTexture = {};
 
+#ifdef AURA_PROFILE_FRAME
+    //! A device object, so it goes before the device does.
+    _gpuTimer.destroy();
+    _gpuTimerUnsupported = false;
+#endif
+
 #ifdef AURA_ENABLE_DEBUG_MODE
     /*
-     * The query pool is a device object, so it has to go before the device
-     * does; the allocator handle has to be dropped before vmaDestroyAllocator
-     * below, since a report built afterwards would call vmaCalculateStatistics
-     * on a destroyed allocator. The cumulative counters survive both -- they
-     * live in VkDeviceMemoryCounters, not here, which is what lets a report
-     * written after teardown still show what the run allocated.
+     * The allocator handle has to be dropped before vmaDestroyAllocator below,
+     * since a report built afterwards would call vmaCalculateStatistics on a
+     * destroyed allocator. The cumulative counters survive -- they live in
+     * VkDeviceMemoryCounters, not here, which is what lets a report written
+     * after teardown still show what the run allocated.
      */
-    _debugMetrics.timestamps().destroy();
     _debugMetrics.setAllocator(VK_NULL_HANDLE);
 #endif
 
@@ -972,16 +965,22 @@ void VulkanRenderer::beginFrame()
         _vkRenderSyncManager->waitForFences(_currentFrame);
     }
 
-#ifdef AURA_ENABLE_DEBUG_MODE
     /*
      * Immediately after the fence wait and nowhere else. This slot's previous
      * submission has just been proven complete, so its two timestamps are
      * guaranteed readable and the read costs nothing; asking for them any
      * earlier would mean blocking the CPU on the GPU purely to measure it.
-     * The reported GPU time therefore trails by the frames in flight, which
-     * over a benchmark's thousands of frames is not a distinction that matters.
+     * The reported GPU time therefore trails by the frames in flight.
      */
-    _debugMetrics.timestamps().resolve(_currentFrame);
+#ifdef AURA_PROFILE_FRAME
+    _gpuTimer.resolve(_currentFrame);
+    if (_gpuTimingEnabled && !_gpuTimer.isReady() && !_gpuTimerUnsupported)
+    {
+        //! Per queue family: a family reporting no timestampValidBits cannot write them at all.
+        _gpuTimerUnsupported =
+            !_gpuTimer.initialize(*_vkDeviceManager->getDevice(), *_vkDeviceManager->getPhysicalDevice(),
+                                  _graphicsIndexFamily, GetMaxFramesInFlight());
+    }
 #endif
 
     u32 imageIndex = 0;
@@ -1011,10 +1010,11 @@ void VulkanRenderer::beginFrame()
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
     VkCommandManager::beginCommandBuffer(cmd);
 
-#ifdef AURA_ENABLE_DEBUG_MODE
+#ifdef AURA_PROFILE_FRAME
     //! The first command in the frame's primary buffer, so the opening
     //! timestamp brackets everything the GPU does for this frame.
-    _debugMetrics.timestamps().writeBegin(cmd, _currentFrame);
+    if (_gpuTimingEnabled)
+        _gpuTimer.writeBegin(cmd, _currentFrame);
 #endif
 
     //! A reset pool discards every recorded bind, so nothing may be assumed
@@ -1103,10 +1103,11 @@ void VulkanRenderer::endFrame()
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
 
-#ifdef AURA_ENABLE_DEBUG_MODE
+#ifdef AURA_PROFILE_FRAME
     //! The last command before the buffer closes: paired with the one in
-    //! beginFrame(), the difference is the frame's GPU wall time.
-    _debugMetrics.timestamps().writeEnd(cmd, _currentFrame);
+    //! beginFrame(), the difference is the frame's GPU wall time. A no-op when
+    //! this slot wrote no opening timestamp.
+    _gpuTimer.writeEnd(cmd, _currentFrame);
 #endif
 
     VkCommandManager::endCommandBuffer(cmd);
@@ -1595,6 +1596,13 @@ VkFixedArray<VkCommandBuffer> &VulkanRenderer::getCommandBuffers()
 {
     return _cmdBuffers;
 }
+#ifdef AURA_PROFILE_FRAME
+GpuTimingStats VulkanRenderer::gpuTiming() const noexcept
+{
+    return _gpuTimingEnabled ? _gpuTimer.stats() : GpuTimingStats{};
+}
+#endif
+
 u32 VulkanRenderer::getCurrentFrame() const
 {
     return _currentFrame;

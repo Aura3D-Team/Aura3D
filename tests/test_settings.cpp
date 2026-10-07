@@ -89,6 +89,7 @@ void testCodeDefaultsReplaceTheBuiltIns()
     config.window.vsyncMode = VSyncMode::Mailbox;
     config.renderer.backend = "opengl";
     config.renderer.validationLayers = false;
+    config.renderer.gpuTiming = true;
     config.graphics.msaaSamples = 4;
     config.audio.maxVoices = 8;
     config.paths.textures = "./art/";
@@ -106,6 +107,7 @@ void testCodeDefaultsReplaceTheBuiltIns()
                "a code default sets the present mode without a vsync flag to derive it from");
     AURA_CHECK(settings->getRendererBackend() == "opengl", "a code default sets the renderer");
     AURA_CHECK(!settings->getValidationLayers(), "a code default turns validation layers off in a debug build");
+    AURA_CHECK(settings->getGpuTiming(), "a code default turns GPU timing on");
     AURA_CHECK(settings->getMsaaSamples() == 4, "a code default sets MSAA");
     AURA_CHECK(settings->getAudioMaxVoices() == 8, "a code default sets the voice count");
     AURA_CHECK(settings->getTexturesPath() == "./art/", "a code default sets an asset path");

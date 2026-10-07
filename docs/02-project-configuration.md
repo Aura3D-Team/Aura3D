@@ -119,6 +119,7 @@ nothing, so this doc is deliberately exact about which is which.
 |---|---|---|---|
 | `backend` | string | `"vulkan"` | `"vulkan"`, `"opengl"`, or `"cpu"` (also accepts `"software"`). An unsupported value or a backend not compiled in falls back through Vulkan → OpenGL → Software with a warning — see [03-engine-and-renderer.md](03-engine-and-renderer.md#backend-resolution--fallback). |
 | `validation_layers` | bool | `true` in debug builds, `false` in release | Vulkan only. Enables `VK_LAYER_KHRONOS_validation`. |
+| `gpu_timing` | bool | `true` in `AURA_PROFILE_FRAME` builds | Measures each frame's GPU time for `IRenderer::gpuTiming()` — see [03-engine-and-renderer.md](03-engine-and-renderer.md). Ignored in builds without `AURA_PROFILE_FRAME`. Vulkan, OpenGL and Metal. |
 
 ## `graphics` — live
 
@@ -234,13 +235,14 @@ config.paths.textures  = "./art/";
 Engine engine(config);   // ships as one binary; no settings.json to lose
 ```
 
-Four fields are `std::optional`, because "unset" is a real state distinct from
+Five fields are `std::optional`, because "unset" is a real state distinct from
 any value they could hold:
 
 | Field | Unset means |
 |---|---|
 | `window.vsyncMode` | derive from `window.vsync` |
 | `renderer.validationLayers` | on in a debug build, off under `NDEBUG` |
+| `renderer.gpuTiming` | on in an `AURA_PROFILE_FRAME` build |
 | `audio.backend` | `wma::getDefaultAudioBackend()` — what `"auto"` means in JSON |
 | `logging.level` | `TRACE` in a debug build, `INFO` under `NDEBUG` |
 

@@ -10,6 +10,9 @@
 #include "aura/Renderer/OpenGL/GlAura/GlIndexBufferManager/GlIndexBufferManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlTargetManager/GlTargetManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlTextureManager/GlTextureManager.h"
+#ifdef AURA_PROFILE_FRAME
+#include "aura/Renderer/OpenGL/GlAura/GlTimerQuery/GlTimerQuery.h"
+#endif
 #include "aura/Renderer/OpenGL/GlAura/GlUniformBufferManager/GlUniformBufferManager.h"
 #include "aura/Renderer/OpenGL/GlAura/GlVertexBufferManager/GlVertexBufferManager.h"
 
@@ -56,6 +59,9 @@ class OpenGLRenderer : public IRenderer
                    gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
     [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
+#ifdef AURA_PROFILE_FRAME
+    [[nodiscard]] GpuTimingStats gpuTiming() const noexcept override;
+#endif
 
     wma::IWindowManager *getWindowManager() override
     {
@@ -91,6 +97,11 @@ class OpenGLRenderer : public IRenderer
     std::unique_ptr<GlTextureManager> _textureMgr;
     std::unique_ptr<GlTargetManager> _targetMgr;
     std::unique_ptr<GlBatchManager> _batchMgr;
+#ifdef AURA_PROFILE_FRAME
+    //! Created by the first pass that runs with GPU timing on.
+    std::unique_ptr<GlTimerQuery> _gpuTimer;
+    bool _gpuTimerUnsupported = false;
+#endif
 
     bool _isInitialized = false;
     bool _sceneState = false;

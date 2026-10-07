@@ -1,4 +1,5 @@
 #include "RuntimeAudioDevice.h"
+#include "aura/Core/Camera/Camera.h"
 #include "aura/Core/Engine.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
 #include "aura/UI/UI.hpp"
@@ -107,6 +108,13 @@ int main(int argc, char **argv)
         config.graphics.gpuPreference = "any";
         config.audio.backend = wma::AudioBackend::Null;
         config.logging.level = ink::LogLevel::ERROR;
+        const bool raster = argc > 2 && std::string_view(argv[2]) == "raster";
+        if (raster)
+        {
+            config.window.width = 1920;
+            config.window.height = 1080;
+            config.graphics.cpuThreads = 0;
+        }
         // AURA_BENCH_WINDOW=sdl3|x11|wayland|glfw runs any mode through that window backend.
         if (const char *window = std::getenv("AURA_BENCH_WINDOW");
             window && !WindowBackendFromString(window, config.window.backend))
@@ -519,6 +527,135 @@ int main(int argc, char **argv)
             }
             std::printf("COVERAGE backend=%s rendered_frames=%u\n", argv[1], rendered);
             return rendered == 12 ? 0 : 1;
+        }
+        if (raster)
+        {
+            // The Sandbox's load at 1080p: a lit floor, textured cubes and a sphere, then a
+            // blended UI panel and a coverage-textured text strip.
+            // Run with: SDL_VIDEODRIVER=dummy benchmark_runtime software raster
+            // AURA_BENCH_DUMP=<file.ppm> writes the software backend's last frame for A/B comparison.
+            // AURA_BENCH_OBJECTS=<n> adds a grid of n spheres; GPU backends also report GPU time.
+            const auto checker = [&](u32 size, std::array<u8, 4> a, std::array<u8, 4> b)
+            {
+                std::vector<u8> pixels(usize{size} * size * 4);
+                for (u32 y = 0; y < size; ++y)
+                    for (u32 x = 0; x < size; ++x)
+                        std::copy_n(((x / 16 + y / 16) % 2 ? a : b).data(), 4, &pixels[(usize{y} * size + x) * 4]);
+                return renderer.createTextureFromPixels(pixels.data(), size, size);
+            };
+            const auto floor =
+                renderer.createMaterial(Material{.albedo = renderer.createSolidColorTexture(255, 255, 255)});
+            const auto crate =
+                renderer.createMaterial(Material{.albedo = checker(256, {200, 140, 60, 255}, {90, 60, 30, 255})});
+            const auto orb =
+                renderer.createMaterial(Material{.albedo = checker(128, {60, 120, 220, 255}, {220, 230, 255, 255})});
+            const auto cube = renderer.createMesh(MeshLoader::createCube());
+            const auto sphere = renderer.createMesh(MeshLoader::createSphere(3));
+            const auto plane = renderer.createMesh(MeshLoader::createPlane());
+            const glm::vec3 spin{0.3f, 1, 0.1f};
+            std::vector<IRenderer::DrawItem> items{
+                {plane, floor, glm::scale(glm::translate(glm::mat4{1}, {0, -0.75f, 0}), {8, 1, 8})},
+                {cube, crate, glm::rotate(glm::translate(glm::mat4{1}, {-1.5f, 0, 0}), 0.6f, spin)},
+                {sphere, orb, glm::scale(glm::mat4{1}, glm::vec3{1.2f})},
+                {cube, crate, glm::rotate(glm::translate(glm::mat4{1}, {1.5f, 0, 0}), -0.6f, spin)},
+            };
+            const char *objects = std::getenv("AURA_BENCH_OBJECTS");
+            const int extra =
+                objects ? static_cast<int>(std::clamp(std::strtol(objects, nullptr, 10), 0L, 1L << 20)) : 0;
+            const int perRow = std::max(1, static_cast<int>(std::sqrt(static_cast<f32>(extra))));
+            for (int i = 0; i < extra; ++i)
+            {
+                const int column = i % perRow - perRow / 2, row = i / perRow;
+                const glm::vec3 at{static_cast<f32>(column) * 0.6f, -0.4f, -2.0f - static_cast<f32>(row) * 0.6f};
+                items.push_back({sphere, orb, glm::scale(glm::translate(glm::mat4{1}, at), glm::vec3{0.25f})});
+            }
+            renderer.setGpuTimingEnabled(true);
+            Camera camera =
+                Camera::perspective({.fovDeg = 60, .aspect = 1920.0f / 1080.0f, .nearZ = 0.1f, .farZ = 100});
+            camera.setPosition({0, 0.8f, 4.5f});
+            camera.setRotation(-90, -8);
+            renderer.setLight({});
+            renderer.setClearColor(0.1f, 0.1f, 0.3f);
+
+            constexpr u32 kAtlasWidth = 512, kAtlasHeight = 64;
+            const auto atlas = renderer.createCoverageTexture(kAtlasWidth, kAtlasHeight);
+            std::vector<u8> coverage(usize{kAtlasWidth} * kAtlasHeight);
+            for (usize i = 0; i < coverage.size(); ++i)
+                coverage[i] = static_cast<u8>((i * 2654435761u) >> 24);
+            renderer.updateCoverageTextureRegion(atlas, 0, 0, kAtlasWidth, kAtlasHeight, coverage.data());
+
+            std::vector<gfx::BatchVertex> ui, text;
+            std::vector<u32> uiIndices, textIndices;
+            const auto quad = [](std::vector<gfx::BatchVertex> &vertices, std::vector<u32> &indices, glm::vec2 min,
+                                 glm::vec2 max, glm::vec2 uvMin, glm::vec2 uvMax, glm::vec4 color)
+            {
+                const u32 base = static_cast<u32>(vertices.size());
+                vertices.push_back({{min.x, min.y, 0}, uvMin, color});
+                vertices.push_back({{max.x, min.y, 0}, {uvMax.x, uvMin.y}, color});
+                vertices.push_back({{max.x, max.y, 0}, uvMax, color});
+                vertices.push_back({{min.x, max.y, 0}, {uvMin.x, uvMax.y}, color});
+                indices.insert(indices.end(), {base, base + 1, base + 2, base + 2, base + 3, base});
+            };
+            quad(ui, uiIndices, {0, 0}, {360, 1080}, {}, {}, {0.05f, 0.05f, 0.08f, 0.85f});
+            for (int i = 0; i < 30; ++i)
+            {
+                const f32 y = 24.0f + static_cast<f32>(i) * 34.0f;
+                quad(ui, uiIndices, {16, y}, {344, y + 28}, {}, {}, {0.2f, 0.25f, 0.4f, i % 3 ? 1.0f : 0.6f});
+            }
+            for (int line = 0; line < 30; ++line)
+                for (int glyph = 0; glyph < 24; ++glyph)
+                {
+                    const glm::vec2 at{24.0f + static_cast<f32>(glyph) * 12.0f, 29.0f + static_cast<f32>(line) * 34.0f};
+                    const glm::vec2 uv{static_cast<f32>(glyph % 32) / 32.0f, 0};
+                    quad(text, textIndices, at, at + glm::vec2{11, 18}, uv, uv + glm::vec2{1.0f / 32, 1}, glm::vec4{1});
+                }
+            const TextureHandle white = renderer.createSolidColorTexture(255, 255, 255);
+
+            const auto frame = [&]
+            {
+                renderer.beginFrame();
+                renderer.setTransform(camera.buildUBO());
+                renderer.beginRenderPass();
+                renderer.drawMeshes(items);
+                renderer.drawBatch(ui, uiIndices, white);
+                renderer.drawBatch(text, textIndices, atlas);
+                renderer.endRenderPass();
+                renderer.endFrame();
+            };
+            measure(argv[1], 300, frame);
+            std::vector<f64> gpu;
+            gpu.reserve(300);
+            for (int i = 0; i < 300; ++i)
+            {
+                frame();
+                if (const GpuTimingStats timing = renderer.gpuTiming(); timing.available)
+                    gpu.push_back(timing.frameMillis);
+            }
+            if (!gpu.empty())
+            {
+                std::sort(gpu.begin(), gpu.end());
+                std::printf("GPU %s objects=%zu n=%zu p50_us=%.3f p95_us=%.3f dropped=%llu\n", argv[1], items.size(),
+                            gpu.size(), gpu[gpu.size() / 2] * 1000.0, gpu[gpu.size() * 95 / 100] * 1000.0,
+                            static_cast<unsigned long long>(renderer.gpuTiming().droppedSamples));
+            }
+#ifdef AURA_HAS_CPU
+            if (const char *dump = std::getenv("AURA_BENCH_DUMP"))
+                if (auto *cpu = dynamic_cast<cpu::CPURenderer *>(&renderer))
+                {
+                    const cpu::CpuFrameBufferManager &frameBuffer = *cpu->getFrameBufferManager();
+                    std::ofstream out(dump, std::ios::binary);
+                    out << "P6\n" << frameBuffer.getWidth() << ' ' << frameBuffer.getHeight() << "\n255\n";
+                    for (i32 y = 0; y < frameBuffer.getHeight(); ++y)
+                        for (i32 x = 0; x < frameBuffer.getWidth(); ++x)
+                        {
+                            const u32 rgb = frameBuffer.getPixel({x, y}).rgb;
+                            const std::array<char, 3> bytes{static_cast<char>(rgb >> 16), static_cast<char>(rgb >> 8),
+                                                            static_cast<char>(rgb)};
+                            out.write(bytes.data(), bytes.size());
+                        }
+                }
+#endif
+            return 0;
         }
         if (argc > 2 && std::string_view(argv[2]) == "cache")
         {

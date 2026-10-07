@@ -238,6 +238,21 @@ void IRenderer::bindMaterial(MaterialHandle handle)
         bindTexture(material->albedo);
 }
 
+GpuTimingStats IRenderer::gpuTiming() const noexcept
+{
+    return {};
+}
+
+void IRenderer::setGpuTimingEnabled(bool enabled) noexcept
+{
+    _gpuTimingEnabled = enabled;
+}
+
+bool IRenderer::gpuTimingEnabled() const noexcept
+{
+    return _gpuTimingEnabled;
+}
+
 void IRenderer::setLight(const gfx::LightUBO &light)
 {
     _light = light;

@@ -56,6 +56,9 @@ void MetalRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
 
     _frameSlots = std::make_shared<FrameSlots>(MTL_MAX_FRAMES_IN_FLIGHT);
+#ifdef AURA_PROFILE_FRAME
+    _gpuClock = std::make_shared<GpuClock>();
+#endif
     _deviceManager = std::make_unique<MtlDeviceManager>();
 
     _layerManager =
@@ -417,6 +420,21 @@ void MetalRenderer::endRenderPass()
     _renderPassActive = false;
 }
 
+#ifdef AURA_PROFILE_FRAME
+GpuTimingStats MetalRenderer::gpuTiming() const noexcept
+{
+    if (!_gpuTimingEnabled || !_gpuClock)
+        return {};
+
+    GpuTimingStats timing;
+    timing.available = _gpuClock->resolved.load(std::memory_order_acquire) > 0;
+    timing.frameMillis = static_cast<f64>(_gpuClock->frameNanos.load(std::memory_order_relaxed)) / 1.0e6;
+    timing.droppedSamples = _gpuClock->dropped.load(std::memory_order_relaxed);
+
+    return timing;
+}
+#endif
+
 void MetalRenderer::endFrame()
 {
     //! Before any scope opens, matching beginFrame()/beginRenderPass()'s own
@@ -447,14 +465,40 @@ void MetalRenderer::endFrame()
          * does.
          */
         const std::shared_ptr<FrameSlots> slots = _frameSlots;
+#ifdef AURA_PROFILE_FRAME
+        //! Null while timing is off, so the handler then only releases the slot.
+        const std::shared_ptr<GpuClock> clock = _gpuTimingEnabled ? _gpuClock : nullptr;
+        _commandBuffer->addCompletedHandler(
+            [slots, clock](MTL::CommandBuffer *buffer)
+            {
+                if (clock && buffer->status() == MTL::CommandBufferStatusCompleted)
+                {
+                    const f64 seconds = buffer->GPUEndTime() - buffer->GPUStartTime();
+                    clock->frameNanos.store(static_cast<i64>(seconds * 1.0e9), std::memory_order_relaxed);
+                    clock->resolved.fetch_add(1, std::memory_order_release);
+                }
+                else if (clock)
+                    clock->dropped.fetch_add(1, std::memory_order_relaxed);
+                slots->release();
+            });
+#else
         _commandBuffer->addCompletedHandler(
             [slots](MTL::CommandBuffer *)
             {
                 slots->release();
             });
+#endif
 
         _commandBuffer->commit();
     }
+
+#ifdef AURA_PROFILE_FRAME
+    if (const u64 resolved = _gpuClock->resolved.load(std::memory_order_acquire); resolved != _gpuReported)
+    {
+        _gpuReported = resolved;
+        AURA_FRAME_GPU(_gpuClock->frameNanos.load(std::memory_order_relaxed));
+    }
+#endif
 
     /*
      * Metal keeps its own reference to the drawable and to every resource the

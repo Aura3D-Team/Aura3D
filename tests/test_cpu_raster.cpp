@@ -1,4 +1,5 @@
 // CPU winding, coverage, interpolation and ordered depth/blend behavior.
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -248,6 +249,76 @@ void checkRasterization()
     AURA_CHECK(allPixels(frame, 0, 1), "non-finite and far-offscreen triangles leave the framebuffer unchanged");
 }
 
+//! Bilinear clamp-to-edge in float: the reference the kernels' filtering is held to.
+glm::vec4 bilinear(const cpu::Texture &texture, f32 u, f32 v)
+{
+    const f32 fx = std::clamp(u, 0.0f, 1.0f) * static_cast<f32>(texture.width) - 0.5f;
+    const f32 fy = std::clamp(v, 0.0f, 1.0f) * static_cast<f32>(texture.height) - 0.5f;
+    const i32 x = static_cast<i32>(std::floor(fx)), y = static_cast<i32>(std::floor(fy));
+    const f32 tx = fx - std::floor(fx), ty = fy - std::floor(fy);
+    const auto texel = [&](i32 tx0, i32 ty0)
+    {
+        const u32 argb = texture.texelClamped(tx0, ty0);
+        return glm::vec4{(argb >> 16) & 255u, (argb >> 8) & 255u, argb & 255u, argb >> 24} / 255.0f;
+    };
+    return glm::mix(glm::mix(texel(x, y), texel(x + 1, y), tx), glm::mix(texel(x, y + 1), texel(x + 1, y + 1), tx), ty);
+}
+
+void checkTexturedSpans()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 24, .height = 16}, jobs};
+    cpu::Texture rgba(4, 4), coverage(4, 4, true), unit(1, 1);
+    for (u32 i = 0; i < 16; ++i)
+    {
+        rgba.data[i] = 0xFF000000u | (i * 16u << 16) | ((255u - i * 16u) << 8) | ((i * 53u) & 255u);
+        coverage.coverage[i] = static_cast<u8>(i * 17u);
+    }
+    unit.data[0] = 0xFF8040FFu;
+
+    // x in [3, 19) starts and ends mid-chunk, so partial lane masks are exercised on both sides.
+    const glm::vec4 tint{1, 0.5f, 1, 1};
+    const ScreenVertex a{3, 0, 0, 1, {0, 0}, tint}, b{19, 0, 0, 1, {1, 0}, tint};
+    const ScreenVertex c{19, 16, 0, 1, {1, 1}, tint}, d{3, 16, 0, 1, {0, 1}, tint};
+    for (const cpu::Texture *texture : {&rgba, &coverage, &unit})
+    {
+        frame.clear();
+        frame.queueTriangle({a, b, c}, texture, Mode::Batch);
+        frame.queueTriangle({a, c, d}, texture, Mode::Batch);
+        frame.flush();
+        bool matches = true;
+        for (i32 y = 0; y < 16; ++y)
+            for (i32 x = 0; x < 24; ++x)
+            {
+                u32 expected = 0;
+                if (x >= 3 && x < 19)
+                {
+                    const f32 u = (static_cast<f32>(x) + 0.5f - 3.0f) / 16.0f, v = (static_cast<f32>(y) + 0.5f) / 16.0f;
+                    expected = over(0, tint * bilinear(*texture, u, v));
+                }
+                matches &= sameColor(frame.getPixel({x, y}).rgb, expected);
+            }
+        AURA_CHECK(matches, texture == &rgba       ? "RGBA spans filter like the float reference"
+                            : texture == &coverage ? "coverage spans filter like the float reference"
+                                                   : "a 1x1 texture tints like its one texel");
+    }
+}
+
+void checkDeferredClear()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 16, .height = 16}, jobs};
+    frame.clear(0xFF102030u);
+    AURA_CHECK(frame.getPixel({5, 5}).rgb == 0xFF102030u && frame.getPixel({5, 5}).z == 1,
+               "a pending clear reads back before any flush");
+    frame.setPixel({1, 1}, 0xFFFFFFFFu);
+    frame.flush();
+    AURA_CHECK(frame.getPixel({1, 1}).rgb == 0xFFFFFFFFu && frame.getPixel({2, 1}).rgb == 0xFF102030u,
+               "a direct write lands on the cleared frame and survives the flush");
+}
+
 void checkBandBoundaries()
 {
     test::FakeWindow window;
@@ -331,6 +402,8 @@ int main()
     AURA_CHECK(keptBelow > 0 && keptBelow < 12, "below-left view culls some but not all of the cube's 12 triangles");
 
     checkRasterization();
+    checkTexturedSpans();
+    checkDeferredClear();
     checkBandBoundaries();
 #ifdef AURA_HAS_CPU
     checkSingularLighting();

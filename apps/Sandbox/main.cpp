@@ -744,6 +744,11 @@ int main()
 
     sceneCard.add<ui::Label>(std::string{RendererChoiceToString(r->getBackendType())});
     auto &fpsLabel = sceneCard.add<ui::Label>("0 FPS");
+    //! renderer.gpu_timing in settings.json; averaged over half a second so it reads steadily.
+    auto &gpuLabel = sceneCard.add<ui::Label>("GPU timing off");
+    f64 gpuMillisSum = 0.0;
+    u32 gpuSamples = 0;
+    f32 gpuLabelAge = 0.0f;
 
     sceneCard.add<ui::Separator>();
 
@@ -1274,6 +1279,25 @@ int main()
             char fps[32];
             std::snprintf(fps, sizeof(fps), "%.0f FPS", static_cast<double>(overlay.fps()));
             fpsLabel.text = fps;
+
+            if (const GpuTimingStats gpu = r->gpuTiming(); gpu.available)
+            {
+                gpuMillisSum += gpu.frameMillis;
+                ++gpuSamples;
+            }
+            gpuLabelAge += dt;
+            if (gpuLabelAge >= 0.5f)
+            {
+                char gpuText[48] = "GPU timing unavailable";
+                if (gpuSamples > 0)
+                    std::snprintf(gpuText, sizeof(gpuText), "GPU %.3f ms", gpuMillisSum / static_cast<f64>(gpuSamples));
+                else if (!r->gpuTimingEnabled())
+                    std::snprintf(gpuText, sizeof(gpuText), "GPU timing off");
+                gpuLabel.text = gpuText;
+                gpuMillisSum = 0.0;
+                gpuSamples = 0;
+                gpuLabelAge = 0.0f;
+            }
 
             //! Drawn only while the sidebar is down, so it stops being clutter the
             //! moment it has done its job.

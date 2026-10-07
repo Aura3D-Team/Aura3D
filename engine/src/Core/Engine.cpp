@@ -152,6 +152,7 @@ void Engine::_adoptRenderer(aura3d::RendererChoice choice)
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
 
     _renderer->setWindowFactory(_windowFactory);
+    _renderer->setGpuTimingEnabled(aura3d::AuraSettings::get()->getGpuTiming());
     _renderer->initialize(aura3d::AuraSettings::get(), _jobs.get());
 
     if (_resources)

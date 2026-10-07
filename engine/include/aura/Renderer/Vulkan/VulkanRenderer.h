@@ -27,6 +27,9 @@
 #include "aura/Renderer/Vulkan/VkAura/VkSurfaceManager/VkSurfaceManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkSwapChainManager/VkSwapChainManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkTextureManager/VkTextureManager.h"
+#ifdef AURA_PROFILE_FRAME
+#include "aura/Renderer/Vulkan/VkAura/VkTimestampQuery/VkTimestampQuery.h"
+#endif
 #include "aura/Renderer/Vulkan/VkAura/VkUniformBufferManager/VkUniformBufferManager.h"
 #include "aura/Renderer/Vulkan/VkAura/VkVertexBufferManager/VkVertexBufferManager.h"
 
@@ -125,12 +128,16 @@ class VulkanRenderer : public IRenderer
     u32 getCurrentFrame() const;
     void advanceFrame();
 
+#ifdef AURA_PROFILE_FRAME
+    [[nodiscard]] GpuTimingStats gpuTiming() const noexcept override;
+#endif
+
 #ifdef AURA_ENABLE_DEBUG_MODE
     /**
      * @brief This backend's GPU counters, for aura3d::DebugMode's report.
      *
      * The only backend that answers this today. See VkDebugMetrics for what
-     * each of the three sources behind it actually measures.
+     * each of the two sources behind it actually measures.
      */
     [[nodiscard]] const IGpuDebugSource *gpuDebugSource() const noexcept override
     {
@@ -269,6 +276,11 @@ class VulkanRenderer : public IRenderer
      * away while any such handle is still alive.
      */
     VkDebugMetrics _debugMetrics;
+#endif
+#ifdef AURA_PROFILE_FRAME
+    VkTimestampQuery _gpuTimer;
+    //! The device cannot timestamp on the graphics family; stops a retry every frame.
+    bool _gpuTimerUnsupported = false;
 #endif
 
     VkInstanceData _vkInstanceData;

@@ -119,6 +119,10 @@ void OpenGLRenderer::cleanup()
     clearSharedResources();
 
     //! The managers own the GL objects, so they go while the context is still current.
+#ifdef AURA_PROFILE_FRAME
+    _gpuTimer.reset();
+    _gpuTimerUnsupported = false;
+#endif
     _batchMgr.reset();
     _targetMgr.reset();
     _vertexMgr.reset();
@@ -211,6 +215,19 @@ void OpenGLRenderer::beginRenderPass()
     if (!_uniformMgr)
         return;
 
+#ifdef AURA_PROFILE_FRAME
+    if (_gpuTimingEnabled && !_gpuTimer && !_gpuTimerUnsupported)
+    {
+        auto timer = std::make_unique<GlTimerQuery>();
+        _gpuTimerUnsupported = !timer->create();
+        if (!_gpuTimerUnsupported)
+            _gpuTimer = std::move(timer);
+    }
+    //! Before the target bind, so the clear is part of the measured frame.
+    if (_gpuTimingEnabled && _gpuTimer)
+        _gpuTimer->begin();
+#endif
+
     _targetMgr->bind();
     //! Depth writes must be on for the clear to reach the depth buffer.
     useSceneState();
@@ -231,6 +248,10 @@ void OpenGLRenderer::endRenderPass()
     _targetMgr->resolve();
     leaveSceneState();
     _textureMgr->invalidateBindings();
+#ifdef AURA_PROFILE_FRAME
+    if (_gpuTimer)
+        _gpuTimer->end();
+#endif
 }
 
 void OpenGLRenderer::endFrame()
@@ -254,6 +275,13 @@ void OpenGLRenderer::endFrame()
     //! sample stream on a backend that is shutting down.
     AURA_FRAME_END();
 }
+
+#ifdef AURA_PROFILE_FRAME
+GpuTimingStats OpenGLRenderer::gpuTiming() const noexcept
+{
+    return _gpuTimingEnabled && _gpuTimer ? _gpuTimer->stats() : GpuTimingStats{};
+}
+#endif
 
 void OpenGLRenderer::setTransform(const gfx::TransformUBO &ubo)
 {

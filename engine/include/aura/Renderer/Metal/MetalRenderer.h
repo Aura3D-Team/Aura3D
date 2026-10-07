@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <semaphore>
@@ -128,6 +129,9 @@ class MetalRenderer : public IRenderer
                    gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
     [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;
     void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) override;
+#ifdef AURA_PROFILE_FRAME
+    [[nodiscard]] GpuTimingStats gpuTiming() const noexcept override;
+#endif
 
     wma::IWindowManager *getWindowManager() override
     {
@@ -245,6 +249,20 @@ class MetalRenderer : public IRenderer
      * this renderer would otherwise release a semaphore that no longer exists.
      */
     std::shared_ptr<FrameSlots> _frameSlots;
+
+#ifdef AURA_PROFILE_FRAME
+    //! The last finished command buffer's GPU time, written from the completion handler on a
+    //! Metal thread; shared rather than captured through `this` for the reason _frameSlots is.
+    struct GpuClock
+    {
+        std::atomic<i64> frameNanos{0};
+        std::atomic<u64> resolved{0};
+        std::atomic<u64> dropped{0};
+    };
+    std::shared_ptr<GpuClock> _gpuClock;
+    //! GpuClock::resolved as last handed to the frame profiler.
+    u64 _gpuReported = 0;
+#endif
 
     template <typename T> using MtlFixedArray = std::array<T, MTL_MAX_FRAMES_IN_FLIGHT>;
 

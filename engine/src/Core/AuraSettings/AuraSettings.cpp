@@ -152,6 +152,16 @@ int AuraSettings::getMaxFramesInFlight() const
     return _settings.getPath<int>("/renderer/max_frames_in_flight", _defaults.renderer.maxFramesInFlight);
 }
 
+bool AuraSettings::getGpuTiming() const
+{
+#ifdef AURA_PROFILE_FRAME
+    constexpr bool kBuildDefault = true;
+#else
+    constexpr bool kBuildDefault = false;
+#endif
+    return _settings.getPath<bool>("/renderer/gpu_timing", _defaults.renderer.gpuTiming.value_or(kBuildDefault));
+}
+
 std::string AuraSettings::getGpuPreference() const
 {
     return _settings.getPath<std::string>("/graphics/gpu_preference", _defaults.graphics.gpuPreference);

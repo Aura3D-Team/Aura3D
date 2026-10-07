@@ -110,6 +110,17 @@ r->setClearColor(r, g, b, a);                  // linear, like every colour (doc
 r->setLight(lightUBO);                         // see doc 6
 ```
 
+**GPU time**
+```cpp
+r->setGpuTimingEnabled(true);                  // profile builds; or "renderer": { "gpu_timing": true }
+if (const GpuTimingStats gpu = r->gpuTiming(); gpu.available)
+    INK_INFO << "GPU " << gpu.frameMillis << " ms";
+```
+The last frame the GPU finished, a few frames behind the CPU: Vulkan, OpenGL
+and Metal, in `AURA_PROFILE_FRAME` builds only, where it is on by default and
+logged as `[gpu]` beside the CPU phases. Any other build, and the software
+backend, report it unavailable, so the call needs no `#ifdef`.
+
 Handles (`MeshHandle`, `TextureHandle`, `MaterialHandle`, ...) are opaque,
 type-safe wrappers around a `u32` (`aura3d::Handle<Tag>`, one instantiation per
 resource kind, so a `TextureHandle` cannot be passed where a `MeshHandle` is
@@ -226,8 +237,9 @@ const TextureHandle tex = engine.resources()->loadTexture("crate.png"); // reloa
 The CPU backend is a real rasterizer, not a stub: perspective-correct
 barycentric interpolation, a depth buffer, Gouraud shading identical in
 spirit to the GPU backends' lighting model. Rasterization is parallel — a
-frame's triangles are split into row-bands, one per worker thread — and it
-presents through the window manager's software-framebuffer path
+frame's triangles are binned into row bands, about four per worker, which
+workers take as they finish, shading 8 pixels at a time with AVX2 (4 with SSE2
+or NEON) — and it presents through the window manager's software-framebuffer path
 (`wma::IWindowManager::lockFramebuffer`/`presentFramebuffer`), so it works
 with any `window.backend` wma supports (see
 [02-project-configuration.md](02-project-configuration.md#window--live)), not
@@ -236,6 +248,6 @@ just one.
 Because it has no GPU descriptor limits or pipeline objects, `graphics.gpu_preference`,
 `graphics.msaa_samples`, and `renderer.validation_layers` don't apply to it —
 those are Vulkan-specific knobs. `graphics.cpu_threads` is the one `graphics.*`
-key it *does* read: it pins the row-band worker count (`0` auto-detects).
+key it *does* read: it pins the worker count (`0` auto-detects).
 
 Next: **[04-camera.md](04-camera.md)**.

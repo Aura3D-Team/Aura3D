@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -24,131 +25,56 @@ namespace
 //! of 2 draws the face at its native 16 px.
 constexpr u32 kLinePixelsPerFontSize = 8;
 
-/**
- * @brief Whether the directed edge @p a -> @p b is a top or left edge of a
- *        positive-area triangle, in this rasteriser's Y-down screen space.
- *
- * The fill rule's classification, derived from the same edge function the
- * rasteriser uses, @c edgeFn(A,B,P) = (B-A) x (P-A):
- *
- *  - A horizontal edge (@c ey == 0) has the interior below it exactly when
- *    @c ex > 0, which makes it the triangle's *top* edge.
- *  - A non-horizontal edge has the interior to its right exactly when
- *    @c ey < 0, which makes it a *left* edge.
- *
- * Note this is the mirror of the classification usually quoted for Y-up
- * rasterisers: flipping the Y axis reverses every winding with it.
- */
-[[nodiscard]] constexpr bool isTopLeftEdge(const ScreenVertex &a, const ScreenVertex &b) noexcept
-{
-    const f32 ex = b.x - a.x;
-    const f32 ey = b.y - a.y;
-    return (ey == 0.0f && ex > 0.0f) || (ey < 0.0f);
-}
-
-/*
- * The GPU backends draw into sRGB targets: colors are linear, blending happens
- * on linear values, and the target stores them encoded. The software target
- * does the same through tables, so every backend shows the same picture.
- * 4096 encode steps keep every result within one code of exact rounding, the
- * tolerance hardware sRGB conversion has too.
- */
-constexpr u32 kEncodeSteps = 4095;
-
-struct SrgbTables
-{
-    std::array<f32, 256> decode{};
-    std::array<u8, kEncodeSteps + 1> encode{};
-};
-
-[[nodiscard]] SrgbTables makeSrgbTables() noexcept
-{
-    SrgbTables tables;
-    for (u32 i = 0; i < tables.decode.size(); ++i)
-    {
-        const f32 c = static_cast<f32>(i) / 255.0f;
-        tables.decode[i] = c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
-    }
-    for (u32 i = 0; i <= kEncodeSteps; ++i)
-    {
-        const f32 l = static_cast<f32>(i) / static_cast<f32>(kEncodeSteps);
-        const f32 c = l <= 0.0031308f ? l * 12.92f : 1.055f * std::pow(l, 1.0f / 2.4f) - 0.055f;
-        tables.encode[i] = static_cast<u8>(std::lround(c * 255.0f));
-    }
-    return tables;
-}
-
-const SrgbTables kSrgb = makeSrgbTables();
-
-//! @p linear is in [0, 1]; blending can overshoot by a rounding error, hence the min.
-[[nodiscard]] u32 encodeChannel(f32 linear) noexcept
-{
-    return kSrgb.encode[static_cast<u32>(std::min(linear, 1.0f) * static_cast<f32>(kEncodeSteps) + 0.5f)];
-}
-
-//! Linear color in [0, 1] to the stored 0xAARRGGBB: RGB encoded, alpha rounded like a UNORM write.
-[[nodiscard]] u32 packLinear(const glm::vec4 &color) noexcept
-{
-    return (static_cast<u32>(std::min(color.a, 1.0f) * 255.0f + 0.5f) << 24) | (encodeChannel(color.r) << 16) |
-           (encodeChannel(color.g) << 8) | encodeChannel(color.b);
-}
+//! Bands per worker, and the band height's bounds: thinner balances better, taller splits fewer
+//! small triangles across band boundaries, where each piece pays the full setup.
+constexpr i32 kBandsPerWorker = 4;
+constexpr i32 kMinBandRows = 4;
+constexpr i32 kMaxBandRows = 64;
+//! Below this many queued triangles one thread bins faster than a pool wake-up.
+constexpr u32 kParallelBinning = 16384;
 
 } // namespace
 
-u32 CpuFrameBufferManager::packLinearColor(const glm::vec4 &color) noexcept
+i32 CpuFrameBufferManager::paddedStride(i32 width) noexcept
 {
-    return packLinear(glm::clamp(color, 0.0f, 1.0f));
+    return (std::max(width, 0) + kRowAlignment - 1) / kRowAlignment * kRowAlignment;
 }
 
-/**
- * Constructor - allocates the CPU colour/depth plane. Presentation is delegated
- * to the wma window manager, so no backend (SDL/X11/Wayland) objects are owned
- * here; wma::IWindowManager::lockFramebuffer() hands us the surface each frame.
- * @param windowManager wma window created with GraphicsAPI::CPU.
- * @param config        Width, height and depth-buffer settings.
- * @param jobs          Engine-wide worker pool this manager dispatches
- *                       rasterisation and presentation across; see _jobs.
- */
 CpuFrameBufferManager::CpuFrameBufferManager(wma::IWindowManager &windowManager, Config config, const JobSystem &jobs)
-    : settings(config),
-      // Initialize framebuffer with Pixel objects: black color (0) and max depth (1.0f)
-      framebuffer(static_cast<size_t>(config.width) * static_cast<size_t>(config.height), Pixel{0, 1.0f}),
-      _windowManager(&windowManager), _jobs(&jobs), _workerCount(jobs.workerCount()), _font(GetDefaultBitmapFont())
+    : settings(config), _stride(paddedStride(config.width)),
+      _color(static_cast<size_t>(_stride) * static_cast<size_t>(std::max(config.height, 0)), 0),
+      _depth(_color.size(), 1.0f), _windowManager(&windowManager), _jobs(&jobs), _workerCount(jobs.workerCount()),
+      _font(GetDefaultBitmapFont())
 {
+    updateBandRows();
 }
 
-/**
- * Clears the framebuffer to a specific color and resets depth
- * @param color 32-bit color value (0xRRGGBB format, alpha is ignored)
- */
 void CpuFrameBufferManager::clear(u32 color)
 {
-    // Create a pixel with the specified color and maximum depth (1.0f)
-    const Pixel clearPixel(color, 1.0f);
-
-    // Use std::fill for a clean and efficient way to clear the entire framebuffer
-    std::fill(framebuffer.begin(), framebuffer.end(), clearPixel);
+    _clearColor = color;
+    _clearPending = true;
 }
 
-/**
- * Presents the colour plane through wma's software-render contract.
- *
- * Process:
- * 1. Acquire the backend's CPU-writable surface via lockFramebuffer().
- * 2. Copy our packed ARGB8888 colours into it — honouring the surface pitch —
- *    in parallel row-bands across the engine's shared worker pool (the same
- *    one flush() rasterises with; see _jobs), the software analogue of a GPU
- *    spreading pixel work across its execution units.
- * 3. Hand the surface back with presentFramebuffer(), which blits it to screen.
- *
- * wma's role here is purely the raw surface handoff (lockFramebuffer() /
- * presentFramebuffer()) -- the parallel fill itself used to run through wma's
- * own parallelFill() helper, backed by a second, separate process-wide pool
- * of wma's own. wma is the window manager, not the renderer; the renderer is
- * this class, so the parallelism the renderer needs belongs to it too.
- * parallelFill() and the pool behind it are gone from wma entirely now --
- * this class was its only real consumer.
- */
+void CpuFrameBufferManager::clearRows(i32 yStart, i32 yEnd) noexcept
+{
+    const size_t first = static_cast<size_t>(yStart) * static_cast<size_t>(_stride);
+    const size_t count = static_cast<size_t>(yEnd - yStart) * static_cast<size_t>(_stride);
+    std::fill_n(_color.data() + first, count, _clearColor);
+    std::fill_n(_depth.data() + first, count, 1.0f);
+}
+
+void CpuFrameBufferManager::resolvePendingClear()
+{
+    if (!_clearPending)
+        return;
+    _clearPending = false;
+    dispatchRowBands(
+        [this](i32, i32 yStart, i32 yEnd)
+        {
+            clearRows(yStart, yEnd);
+        });
+}
+
 bool CpuFrameBufferManager::renderFramebuffer()
 {
     if (_windowManager == nullptr)
@@ -157,32 +83,24 @@ bool CpuFrameBufferManager::renderFramebuffer()
     const wma::SoftwareFramebuffer target = _windowManager->lockFramebuffer();
     if (!target.valid())
         return false;
+    resolvePendingClear();
 
-    // Our plane and the locked surface can momentarily disagree on size (a
-    // resize event not yet propagated through handleWindowChanges), so bound
-    // every sample to the plane we actually own.
+    // The surface can briefly disagree with the plane after a resize; the excess is black.
     const i32 planeWidth = settings.width;
     const i32 planeHeight = settings.height;
-    const Pixel *plane = framebuffer.data();
-
-    void *const dstPixels = target.pixels;
-    const i32 dstPitch = target.pitch;
-    const i32 dstWidth = target.width;
+    const size_t copyWidth = static_cast<size_t>(std::clamp(std::min(planeWidth, target.width), 0, target.width));
+    const size_t surfaceWidth = static_cast<size_t>(target.width);
+    const u32 *plane = _color.data();
 
     const auto copyRows = [&](i32 yStart, i32 yEnd)
     {
         for (i32 y = yStart; y < yEnd; ++y)
         {
-            auto *row = reinterpret_cast<u32 *>(static_cast<u8 *>(dstPixels) + static_cast<size_t>(y) * dstPitch);
-            const bool rowInPlane = y < planeHeight;
-
-            for (i32 x = 0; x < dstWidth; ++x)
-            {
-                row[x] =
-                    (rowInPlane && x < planeWidth)
-                        ? plane[static_cast<size_t>(y) * static_cast<size_t>(planeWidth) + static_cast<size_t>(x)].rgb
-                        : 0u;
-            }
+            auto *row =
+                reinterpret_cast<u32 *>(static_cast<u8 *>(target.pixels) + static_cast<size_t>(y) * target.pitch);
+            const size_t copied = y < planeHeight ? copyWidth : 0;
+            std::memcpy(row, plane + static_cast<size_t>(y) * static_cast<size_t>(_stride), copied * sizeof(u32));
+            std::fill(row + copied, row + surfaceWidth, 0u);
         }
     };
     //! By reference: dispatch() joins before returning, and a std::ref fits std::function without allocating.
@@ -192,33 +110,23 @@ bool CpuFrameBufferManager::renderFramebuffer()
     return true;
 }
 
-/**
- * Resizes the CPU framebuffer to new dimensions. The backend surface tracks the
- * window on its own (lockFramebuffer() always returns the current size), so
- * only our own colour/depth plane needs reallocating here.
- * @param width New width in pixels
- * @param height New height in pixels
- */
+//! Only the planes: lockFramebuffer() already returns the surface at the window's current size.
 void CpuFrameBufferManager::resizeFramebuffer(int width, int height)
 {
-    // Validate input dimensions
     if (width <= 0 || height <= 0)
     {
         INK_ERROR << "Error: Invalid framebuffer dimensions (" << width << "x" << height << ")";
         return;
     }
-
-    // Check if resize is actually needed
     if (width == settings.width && height == settings.height)
-    {
         return;
-    }
 
     settings.width = width;
     settings.height = height;
-
-    // Resize the framebuffer vector, initializing new pixels to black with max depth
-    framebuffer.assign(static_cast<size_t>(width) * static_cast<size_t>(height), Pixel{0, 1.0f});
+    _stride = paddedStride(width);
+    _color.assign(static_cast<size_t>(_stride) * static_cast<size_t>(height), 0);
+    _depth.assign(_color.size(), 1.0f);
+    updateBandRows();
 }
 
 /**
@@ -238,31 +146,29 @@ bool CpuFrameBufferManager::isInsideBounds(Point p) const
  */
 void CpuFrameBufferManager::setPixel(Point p, u32 color)
 {
-    if (isInsideBounds(p))
-    {
-        framebuffer[p.y * settings.width + p.x].rgb = color;
-    }
+    if (!isInsideBounds(p))
+        return;
+    if (_clearPending)
+        resolvePendingClear();
+    _color[static_cast<size_t>(p.y) * static_cast<size_t>(_stride) + static_cast<size_t>(p.x)] = color;
 }
 
 /**
- * Sets a pixel color and its depth value.
+ * Sets a pixel color and its depth value, without a depth test.
  * @param p Point coordinates
  * @param z Depth value (smaller values are closer to camera)
  * @param color 32-bit color value (0xRRGGBB format)
  */
 void CpuFrameBufferManager::setPixelWithDepth(Point p, f32 z, u32 color)
 {
-    if (isInsideBounds(p))
-    {
-        const int index = p.y * settings.width + p.x;
-        // NOTE: A proper depth test would be `if (z < framebuffer[index].z)`
-        // This function just sets the values unconditionally.
-        framebuffer[index].rgb = color;
-        if (settings.useDepthBuffer)
-        {
-            framebuffer[index].z = z; // Update depth buffer value
-        }
-    }
+    if (!isInsideBounds(p))
+        return;
+    if (_clearPending)
+        resolvePendingClear();
+    const size_t index = static_cast<size_t>(p.y) * static_cast<size_t>(_stride) + static_cast<size_t>(p.x);
+    _color[index] = color;
+    if (settings.useDepthBuffer)
+        _depth[index] = z;
 }
 
 /**
@@ -288,11 +194,12 @@ void CpuFrameBufferManager::plotPixel(Point p, f32 intensity, u32 color)
  */
 Pixel CpuFrameBufferManager::getPixel(Point p) const
 {
-    if (isInsideBounds(p))
-    {
-        return framebuffer[p.y * settings.width + p.x];
-    }
-    return Pixel{0, 1.0f}; // Return black, max-depth pixel
+    if (!isInsideBounds(p))
+        return Pixel{0, 1.0f};
+    if (_clearPending)
+        return Pixel{_clearColor, 1.0f};
+    const size_t index = static_cast<size_t>(p.y) * static_cast<size_t>(_stride) + static_cast<size_t>(p.x);
+    return Pixel{_color[index], _depth[index]};
 }
 
 /**
@@ -455,210 +362,39 @@ void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point> &points, 
     }
 }
 
-template <bool Blended>
-void CpuFrameBufferManager::rasterizeTriangleSpan(const ScreenVertex &v0, const ScreenVertex &v1,
-                                                  const ScreenVertex &v2, const Texture *texture, i32 yStart, i32 yEnd)
+i32 CpuFrameBufferManager::bandCount() const noexcept
 {
-    //! queueTriangle() rejected degenerate and nonfinite triangles once, not once per band.
-    f32 area2 = signedArea2(v0, v1, v2);
-
-    const f32 minX = std::min({v0.x, v1.x, v2.x}), maxX = std::max({v0.x, v1.x, v2.x});
-    const f32 minY = std::min({v0.y, v1.y, v2.y}), maxY = std::max({v0.y, v1.y, v2.y});
-    if (minX >= settings.width || maxX < 0 || minY >= yEnd || maxY < yStart)
-        return;
-    // Clamp before converting: offscreen screen-space batches may exceed the integer range.
-    const i32 xmin = static_cast<i32>(std::max(0.0f, std::floor(minX)));
-    const i32 xmax = static_cast<i32>(std::min(static_cast<f32>(settings.width - 1), std::ceil(maxX)));
-    const i32 ymin = static_cast<i32>(std::max(static_cast<f32>(yStart), std::floor(minY)));
-    const i32 ymax = static_cast<i32>(std::min(static_cast<f32>(yEnd - 1), std::ceil(maxY)));
-
-    const ScreenVertex *p0 = &v0, *p1 = &v1, *p2 = &v2;
-    if (area2 < 0)
-    {
-        std::swap(p1, p2);
-        area2 = -area2;
-    }
-    const f32 invArea2 = 1.0f / area2;
-    // A shared edge belongs to one triangle, so transparent quads have no diagonal seam.
-    const bool topLeft0 = isTopLeftEdge(*p1, *p2);
-    const bool topLeft1 = isTopLeftEdge(*p2, *p0);
-    const bool topLeft2 = isTopLeftEdge(*p0, *p1);
-    const bool affine = p0->invW == 1 && p1->invW == 1 && p2->invW == 1;
-    const glm::vec2 uv0w = p0->uv * p0->invW, uv1w = p1->uv * p1->invW, uv2w = p2->uv * p2->invW;
-    const glm::vec4 col0w = p0->color * p0->invW, col1w = p1->color * p1->invW, col2w = p2->color * p2->invW;
-    //! Canvas shapes and flat fills: every pixel takes the vertex color, so it is resolved once.
-    const bool flatUntextured = !texture && p0->color == p1->color && p1->color == p2->color;
-    const glm::vec4 flatSource = glm::clamp(p0->color, 0.0f, 1.0f);
-    const u32 flatPacked = packLinear(flatSource);
-
-    //! Edge i's function is dx * (py - oy) - dy * (px - ox): edge 0 runs p1 -> p2, 1 p2 -> p0, 2 p0 -> p1.
-    const f32 ox0 = p1->x, oy0 = p1->y, dx0 = p2->x - p1->x, dy0 = p2->y - p1->y;
-    const f32 ox1 = p2->x, oy1 = p2->y, dx1 = p0->x - p2->x, dy1 = p0->y - p2->y;
-    const f32 ox2 = p0->x, oy2 = p0->y, dx2 = p1->x - p0->x, dy2 = p1->y - p0->y;
-    //! Narrow boxes keep the plain scan: there a row's span costs more than it skips.
-    constexpr i32 kMinSpanWidth = 16;
-    const bool walkSpans = xmax - xmin >= kMinSpanWidth;
-
-    for (i32 y = ymin; y <= ymax; ++y)
-    {
-        const f32 py = static_cast<f32>(y) + 0.5f;
-        const f32 row0 = dx0 * (py - oy0), row1 = dx1 * (py - oy1), row2 = dx2 * (py - oy2);
-
-        i32 xFirst = xmin;
-        i32 xLast = xmax;
-        if (walkSpans)
-        {
-            /*
-             * Walk only the row's span: a thin diagonal (every drawLine() quad)
-             * covers a sliver of its box. Each edge bounds px on one side where
-             * its function crosses zero; the bound carries a pixel of slack plus
-             * the edge function's float error, so the exact test below still
-             * decides every pixel it decided over the whole box.
-             */
-            f32 lo = static_cast<f32>(xmin);
-            f32 hi = static_cast<f32>(xmax);
-            bool rowEmpty = false;
-            const auto bound = [&](f32 row, f32 ox, f32 dy, bool topLeft)
-            {
-                if (dy == 0.0f)
-                {
-                    rowEmpty |= row < 0 || (row == 0 && !topLeft);
-                    return;
-                }
-                constexpr f32 kEpsilon = std::numeric_limits<f32>::epsilon();
-                const f32 offset = row / dy;
-                const f32 slack = 1.0f + 4.0f * kEpsilon * (std::abs(offset) + std::abs(ox));
-                //! Pixel x is centred on x + 0.5. A NaN bound leaves lo and hi as they were.
-                const f32 crossing = ox + offset - 0.5f;
-                if (dy > 0)
-                    hi = std::min(hi, crossing + slack);
-                else
-                    lo = std::max(lo, crossing - slack);
-            };
-            bound(row0, ox0, dy0, topLeft0);
-            bound(row1, ox1, dy1, topLeft1);
-            bound(row2, ox2, dy2, topLeft2);
-            if (rowEmpty || !(lo <= hi))
-                continue;
-            xFirst = static_cast<i32>(std::ceil(lo));
-            xLast = static_cast<i32>(std::floor(hi));
-        }
-
-        for (i32 x = xFirst; x <= xLast; ++x)
-        {
-            const f32 px = static_cast<f32>(x) + 0.5f;
-            const f32 w0 = row0 - dy0 * (px - ox0);
-            const f32 w1 = row1 - dy1 * (px - ox1);
-            const f32 w2 = row2 - dy2 * (px - ox2);
-            if (w0 < 0 || (w0 == 0 && !topLeft0) || w1 < 0 || (w1 == 0 && !topLeft1) || w2 < 0 ||
-                (w2 == 0 && !topLeft2))
-                continue;
-
-            const f32 b0 = w0 * invArea2, b1 = w1 * invArea2, b2 = w2 * invArea2;
-            const f32 z = b0 * p0->z + b1 * p1->z + b2 * p2->z;
-            Pixel &dst = framebuffer[static_cast<usize>(y) * settings.width + x];
-            if (settings.useDepthBuffer && (Blended ? z > dst.z : z >= dst.z))
-                continue;
-
-            glm::vec4 source = flatSource;
-            if (!flatUntextured)
-            {
-                glm::vec2 uv = b0 * uv0w + b1 * uv1w + b2 * uv2w;
-                glm::vec4 color = b0 * col0w + b1 * col1w + b2 * col2w;
-                // Orthographic batches avoid a reciprocal and perspective correction per fragment.
-                if (!affine)
-                {
-                    const f32 invW = b0 * p0->invW + b1 * p1->invW + b2 * p2->invW;
-                    if (!(invW > 0))
-                        continue;
-                    const f32 w = 1.0f / invW;
-                    uv *= w;
-                    color *= w;
-                }
-                color = glm::clamp(color, 0.0f, 1.0f);
-                //! Texels are UNORM, read as linear the way the GPU backends sample them.
-                const u32 texel = texture ? texture->sample(uv.x, uv.y) : 0xFFFFFFFFu;
-                source = color *
-                         glm::vec4{(texel >> 16) & 255u, (texel >> 8) & 255u, texel & 255u, texel >> 24} *
-                         (1.0f / 255.0f);
-            }
-            if constexpr (Blended)
-            {
-                const f32 alpha = source.a;
-                if (alpha <= 0)
-                    continue;
-                const f32 keep = 1.0f - alpha;
-                const glm::vec4 background{kSrgb.decode[(dst.rgb >> 16) & 255u], kSrgb.decode[(dst.rgb >> 8) & 255u],
-                                           kSrgb.decode[dst.rgb & 255u], static_cast<f32>(dst.rgb >> 24) / 255.0f};
-                glm::vec4 output = source * alpha + background * keep;
-                output.a = alpha + background.a * keep;
-                dst.rgb = packLinear(output);
-            }
-            else
-                dst.rgb = flatUntextured ? flatPacked : packLinear(source);
-            if constexpr (!Blended)
-                if (settings.useDepthBuffer)
-                    dst.z = z;
-        }
-    }
+    return (std::max(settings.height, 0) + _bandRows - 1) / _bandRows;
 }
 
-void CpuFrameBufferManager::updateBandRanges()
+void CpuFrameBufferManager::updateBandRows() noexcept
 {
-    _bandRanges.clear();
-
-    if (settings.height <= 0)
+    const i32 bands = std::max(_workerCount, 1) * kBandsPerWorker;
+    const i32 rows = std::clamp((std::max(settings.height, 0) + bands - 1) / bands, kMinBandRows, kMaxBandRows);
+    if (rows == _bandRows)
         return;
-
-    /*
-     * One band per worker, not several: dispatchRowBands() now runs every
-     * band through JobSystem::dispatch(), which statically partitions
-     * [0, bandCount) into contiguous per-worker chunks ahead of time rather
-     * than handing tasks out through a shared queue. Splitting finer than the
-     * worker count used to help exactly because that queue let an idle
-     * worker steal the next outstanding band from a busy one; a static
-     * partition has nothing to steal from, so the extra bands would only add
-     * more (now-pointless) dispatch overhead without recovering any of the
-     * load-balance they used to buy. See the JobSystem/CpuFrameBufferManager
-     * pool-consolidation notes for the trade this made: dynamic load
-     * balancing traded for roughly a 4x cut in per-frame task submissions,
-     * which measurement showed mattered far more for typical scene sizes.
-     */
-    const i32 bands = std::min(_workerCount, settings.height);
-    const i32 rowsPerBand = settings.height / bands;
-    const i32 remainder = settings.height % bands;
-
-    _bandRanges.reserve(static_cast<size_t>(bands));
-
-    i32 y = 0;
-    for (i32 b = 0; b < bands; ++b)
-    {
-        //! Distribute the remainder across the first `remainder` bands rather
-        //! than dumping it all on the last one, so no single thread is left
-        //! with a visibly taller slice than its neighbours.
-        const i32 bandRows = rowsPerBand + (b < remainder ? 1 : 0);
-        _bandRanges.push_back({y, y + bandRows});
-        y += bandRows;
-    }
+    _bandRows = rows;
+    for (u32 t = 0; t < _queuedCount; ++t)
+        if (_queuedBands[t].first <= _queuedBands[t].last)
+            _queuedBands[t] = bandsOf(_queuedTriangles[t]);
 }
 
 void CpuFrameBufferManager::dispatchRowBands(const std::function<void(i32 band, i32 yStart, i32 yEnd)> &rasterizeBand)
 {
-    if (_bandRanges.empty())
+    const i32 bands = bandCount();
+    if (bands == 0)
         return;
 
-    //! JobSystem::dispatch() itself splits [0, bandCount) across the shared
-    //! pool and blocks until every worker's slice is done; this just walks
-    //! whichever contiguous slice of _bandRanges a given worker was handed.
-    _jobs->dispatch(static_cast<i32>(_bandRanges.size()),
-                    [this, &rasterizeBand](i32 begin, i32 end)
-                    {
-                        for (i32 band = begin; band < end; ++band)
-                        {
-                            const BandRange range = _bandRanges[static_cast<size_t>(band)];
-                            rasterizeBand(band, range.yStart, range.yEnd);
-                        }
-                    });
+    const i32 height = settings.height;
+    std::atomic<i32> nextBand{0};
+    const auto work = [&](i32, i32)
+    {
+        for (i32 band = nextBand.fetch_add(1, std::memory_order_relaxed); band < bands;
+             band = nextBand.fetch_add(1, std::memory_order_relaxed))
+            rasterizeBand(band, band * _bandRows, std::min(height, (band + 1) * _bandRows));
+    };
+    //! One item per worker; each then drains the shared counter. By reference, so nothing allocates.
+    _jobs->dispatch(std::min(_workerCount, bands), std::ref(work));
 }
 
 namespace
@@ -668,22 +404,27 @@ namespace
 [[nodiscard]] bool acceptable(const ScreenTriangle &triangle) noexcept
 {
     const f32 area2 = signedArea2(triangle.v0, triangle.v1, triangle.v2);
-    if (std::abs(area2) < 1e-6f)
+    if (!(std::abs(area2) >= 1e-6f))
         return false;
     //! Behind the camera.
     return triangle.v0.invW > 0 && triangle.v1.invW > 0 && triangle.v2.invW > 0;
 }
 
-[[nodiscard]] glm::vec2 rowsOf(const ScreenTriangle &triangle) noexcept
-{
-    return {std::min({triangle.v0.y, triangle.v1.y, triangle.v2.y}),
-            std::max({triangle.v0.y, triangle.v1.y, triangle.v2.y})};
-}
-
-//! A row extent no band reaches: the slot of a rejected triangle in a bulk-queued list.
-constexpr glm::vec2 kNoRows{std::numeric_limits<f32>::infinity(), -std::numeric_limits<f32>::infinity()};
-
 } // namespace
+
+CpuFrameBufferManager::BandSpan CpuFrameBufferManager::bandsOf(const ScreenTriangle &triangle) const noexcept
+{
+    //! Truncation is floor for the non-negative rows kept; rows above the frame and NaN map to band 0.
+    const f32 perRow = 1.0f / static_cast<f32>(_bandRows);
+    const auto bandOf = [perRow](f32 y)
+    {
+        constexpr f32 kLastBand = static_cast<f32>(1 << 20);
+        const f32 band = y * perRow;
+        return band > 0 ? static_cast<i32>(std::min(band, kLastBand)) : 0;
+    };
+    return {bandOf(std::min({triangle.v0.y, triangle.v1.y, triangle.v2.y})),
+            bandOf(std::max({triangle.v0.y, triangle.v1.y, triangle.v2.y}))};
+}
 
 void CpuFrameBufferManager::queueTriangle(const ScreenTriangle &triangle, const Texture *texture, RasterMode mode)
 {
@@ -695,10 +436,10 @@ void CpuFrameBufferManager::queueTriangle(const ScreenTriangle &triangle, const 
     if (_queuedCount == _queuedTriangles.size())
     {
         _queuedTriangles.emplace_back();
-        _queuedRows.emplace_back();
+        _queuedBands.emplace_back();
     }
     _queuedTriangles[_queuedCount] = triangle;
-    _queuedRows[_queuedCount] = rowsOf(triangle);
+    _queuedBands[_queuedCount] = bandsOf(triangle);
     ++_queuedCount;
     ++_queuedBatches.back().count;
 }
@@ -714,7 +455,7 @@ void CpuFrameBufferManager::queueScreenTriangles(std::span<const gfx::BatchVerte
     if (_queuedTriangles.size() < first + count)
     {
         _queuedTriangles.resize(first + count);
-        _queuedRows.resize(first + count);
+        _queuedBands.resize(first + count);
     }
     if (_queuedBatches.empty() || _queuedBatches.back().texture != texture ||
         _queuedBatches.back().mode != RasterMode::Batch)
@@ -733,14 +474,14 @@ void CpuFrameBufferManager::queueScreenTriangles(std::span<const gfx::BatchVerte
         {
             const u32 i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
             ScreenTriangle &triangle = _queuedTriangles[first + t];
-            glm::vec2 &rows = _queuedRows[first + t];
+            BandSpan &bands = _queuedBands[first + t];
             if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())
             {
-                rows = kNoRows;
+                bands = {};
                 continue;
             }
             triangle = {toScreen(vertices[i0]), toScreen(vertices[i1]), toScreen(vertices[i2])};
-            rows = acceptable(triangle) ? rowsOf(triangle) : kNoRows;
+            bands = acceptable(triangle) ? bandsOf(triangle) : BandSpan{};
         }
     };
 
@@ -756,44 +497,97 @@ void CpuFrameBufferManager::queueScreenTriangles(std::span<const gfx::BatchVerte
                         });
 }
 
+void CpuFrameBufferManager::binTriangles(i32 bands)
+{
+    const u32 count = _queuedCount;
+    const i32 slices = count >= kParallelBinning ? std::max(_workerCount, 1) : 1;
+    const auto bandCountU = static_cast<size_t>(bands);
+    _binCursors.assign(static_cast<size_t>(slices) * bandCountU, 0);
+
+    const auto sliceBegin = [count, slices](i32 slice)
+    {
+        return static_cast<u32>(static_cast<u64>(count) * static_cast<u64>(slice) / static_cast<u64>(slices));
+    };
+    // Per slice, so a slice's entries land contiguously and in order within each band.
+    const auto countSlice = [&](i32 slice)
+    {
+        u32 *counts = _binCursors.data() + static_cast<size_t>(slice) * bandCountU;
+        for (u32 t = sliceBegin(slice), end = sliceBegin(slice + 1); t < end; ++t)
+            for (i32 band = _queuedBands[t].first, last = std::min(_queuedBands[t].last, bands - 1); band <= last;
+                 ++band)
+                ++counts[band];
+    };
+    const auto fillSlice = [&](i32 slice)
+    {
+        u32 *cursors = _binCursors.data() + static_cast<size_t>(slice) * bandCountU;
+        for (u32 t = sliceBegin(slice), end = sliceBegin(slice + 1); t < end; ++t)
+            for (i32 band = _queuedBands[t].first, last = std::min(_queuedBands[t].last, bands - 1); band <= last;
+                 ++band)
+                _binned[cursors[band]++] = t;
+    };
+    const auto forEachSlice = [&](const auto &body)
+    {
+        const auto run = [&](i32 begin, i32 end)
+        {
+            for (i32 slice = begin; slice < end; ++slice)
+                body(slice);
+        };
+        if (slices == 1)
+            run(0, 1);
+        else
+            _jobs->dispatch(slices, std::ref(run));
+    };
+
+    forEachSlice(countSlice);
+    //! Band-major prefix sum: band b's entries are slice 0's, then slice 1's, and so on.
+    _bandFirst.resize(bandCountU + 1);
+    u32 total = 0;
+    for (size_t band = 0; band < bandCountU; ++band)
+    {
+        _bandFirst[band] = total;
+        for (size_t slice = 0; slice < static_cast<size_t>(slices); ++slice)
+        {
+            u32 &cursor = _binCursors[slice * bandCountU + band];
+            const u32 entries = cursor;
+            cursor = total;
+            total += entries;
+        }
+    }
+    _bandFirst[bandCountU] = total;
+    if (_binned.size() < total)
+        _binned.resize(total);
+    forEachSlice(fillSlice);
+}
+
 void CpuFrameBufferManager::flush()
 {
-    if (_queuedCount == 0)
+    if (_queuedCount == 0 || bandCount() == 0)
     {
+        _queuedCount = 0;
         _queuedBatches.clear();
+        resolvePendingClear();
         return;
     }
 
-    updateBandRanges();
-
+    binTriangles(bandCount());
+    const bool clearFirst = _clearPending;
+    _clearPending = false;
     dispatchRowBands(
-        [this](i32, i32 yStart, i32 yEnd)
+        [this, clearFirst](i32 band, i32 yStart, i32 yEnd)
         {
-            /*
-             * Every band walks the whole queue in submission order -- which is
-             * what keeps blended batches compositing over earlier draws -- but
-             * reads a triangle only when its 8-byte row extent reaches the band,
-             * the same test rasterizeTriangleSpan() would make from all 144 bytes.
-             */
-            for (const QueuedBatch &batch : _queuedBatches)
+            if (clearFirst)
+                clearRows(yStart, yEnd);
+            //! Entries ascend, so the batch holding each one is found by walking the batch list once.
+            const QueuedBatch *batch = _queuedBatches.data();
+            bool depthCleared = clearFirst;
+            for (u32 entry = _bandFirst[static_cast<size_t>(band)], end = _bandFirst[static_cast<size_t>(band) + 1];
+                 entry < end; ++entry)
             {
-                for (u32 index = batch.first, end = batch.first + batch.count; index < end; ++index)
-                {
-                    const glm::vec2 rows = _queuedRows[index];
-                    if (rows.x >= static_cast<f32>(yEnd) || rows.y < static_cast<f32>(yStart))
-                        continue;
-
-                    const ScreenTriangle &tri = _queuedTriangles[index];
-                    switch (batch.mode)
-                    {
-                    case RasterMode::Scene:
-                        rasterizeTriangleSpan<false>(tri.v0, tri.v1, tri.v2, batch.texture, yStart, yEnd);
-                        break;
-                    case RasterMode::Batch:
-                        rasterizeTriangleSpan<true>(tri.v0, tri.v1, tri.v2, batch.texture, yStart, yEnd);
-                        break;
-                    }
-                }
+                const u32 index = _binned[entry];
+                while (index >= batch->first + batch->count)
+                    ++batch;
+                rasterizeTriangle(_queuedTriangles[index], batch->texture, batch->mode, yStart, yEnd, depthCleared);
+                depthCleared &= batch->mode != RasterMode::Scene;
             }
         });
 

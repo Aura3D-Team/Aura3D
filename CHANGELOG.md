@@ -12,14 +12,17 @@ All notable changes to Aura3D are documented in this file.
 - `window.decorations` (`"server"` / `"client"`) and `AuraConfig::Window::decorations` request client-side decorations without a custom window factory.
 - `OverlayLayer::hasLightDismissible()`: whether a press outside would close something.
 - `gfx::Canvas`: lines, rectangles and triangles drawn by one `drawBatch(canvas)` call. World lines take `IRenderer::canvasView()` and keep their pixel width at any depth, depth-tested. A batch built once can be drawn every frame.
+- `IRenderer::gpuTiming()`: the last finished frame's GPU time on Vulkan, OpenGL and Metal. The timers exist only in `AURA_PROFILE_FRAME` builds (debug mode implies it); other builds compile none of it and report it unavailable. There it defaults on; `setGpuTimingEnabled()` or `renderer.gpu_timing` turns it off. The frame profiler logs it as `[gpu]`, the debug report's `gpu.timing` now covers OpenGL and Metal, and Sandbox shows it in its scene card.
+- `benchmark_runtime <backend> raster`: a 1080p Sandbox-like frame with UI and text. GPU backends report GPU time; `AURA_BENCH_OBJECTS=<n>` adds n spheres and `AURA_BENCH_DUMP=<file.ppm>` writes the software frame. On an RTX 4060 Ti: 54 µs of GPU per frame on Vulkan, 780 µs with 2,000 spheres.
 
 ### Changed
 
+- The software rasterizer shades 8 pixels at a time with AVX2 (4 with SSE2 or NEON, one elsewhere), keeps color and depth in separate planes, clears each band as it rasterizes it, and bins triangles into about four row bands per worker that workers take as they finish. 1×1 textures shade as a constant color. At 1080p on 24 threads, `benchmark_runtime software raster`: 9.8 to 0.87 ms; Sandbox: 109 to 1,840 fps on Wayland, 88 to 393 fps on X11. 50,000 triangles of 2–4 px on 4 threads (`canvas`): 3% slower, 2.28 to 2.35 ms.
 - Vulkan reuses the allocation-free parallel executor for recording, keeps chunk state local, and binds scene descriptors together. CPU triangle binning skips untouched row bands and screen batches skip the world transform.
 - The software rasterizer walks each row's covered span instead of the triangle's bounding box, so lines and thin triangles cost the pixels they cover.
 - Vulkan keeps up to 64 cameras per frame in a dynamic-offset uniform ring.
 - Vulkan batch buffers live in system memory: the CPU copy no longer crosses PCIe as it is written. 25,000 moving canvas shapes: 900 to 575 µs per frame on an RTX 4060 Ti.
-- The software rasterizer resolves flat untextured triangles once per triangle, validates at queue time, drops its binning pass, and converts large screen batches across its workers: 2,880 to 2,050 µs for the same scene.
+- The software rasterizer resolves flat untextured triangles once per triangle, validates at queue time, and converts large screen batches across its workers: 2,880 to 2,050 µs for the same scene.
 - `benchmark_runtime <backend> canvas` measures that scene; `AURA_BENCH_WINDOW=sdl3|x11|wayland|glfw` runs any mode through that window backend.
 - Every backend blends in linear and stores sRGB, as Vulkan did: OpenGL renders each pass into an sRGB target and encodes it to the window, the software rasterizer encodes what it stores, and Metal draws to `BGRA8Unorm_sRGB`. A colour now shows the same pixels everywhere; on OpenGL and software, mid-tones are lighter than before (a 50% blend reads 188, not 128). Colours are linear; convert hex values.
 - OpenGL runs on every WMA backend (SDL3, X11, Wayland, GLFW): it loads through `IWindowManager::getGLProcAddress()` and presents through `swapBuffers()`.
@@ -29,6 +32,7 @@ All notable changes to Aura3D are documented in this file.
 - **Breaking:** `drawBatch2D()` and `gfx::Vertex2D` became `drawBatch()` and `gfx::BatchVertex`, with a `gfx::BatchSpace`: `Screen` (default; `z` is depth, 0 on the near plane) or `World`. Each backend draws every batch through one pipeline, in submission order with meshes.
 - **Breaking:** `TextOverlay::drawText()` and `drawFPS()` became `addText()` and `addFPS()`, which queue; `draw()` submits the frame's text as one batch.
 - **Breaking:** `FontAtlas::takeUpload(revision)` replaces `takeDirtyUpload()` and returns R8 coverage; each texture of a shared sheet keeps its own revision.
+- **Breaking:** `IGpuDebugSource` reports memory only: GPU time is `IRenderer::gpuTiming()`, `GpuTimingStats` lives in `aura/Core/Profiling/GpuTiming.h`, and `VkTimestampQuery` in `VkAura/VkTimestampQuery/`.
 - **Breaking:** removed the unused `gfx::Mesh2D` and `RENDERER_MODE_LIST`, and `CpuFrameBufferManager`'s `drawTriangle()`, `drawTriangle2D()`, `submitTriangles()` and `submitTriangles2D()`; `queueTriangle()` with a `RasterMode` replaces them.
 - Vulkan's scene and batch pipelines share one bindless texture table, and consecutive batches bind the frame's batch buffers once.
 - Vulkan builds its command-recording worker pool on the first `drawMeshes()` large enough to use it (512 draws), instead of one thread per core at startup. A default Sandbox runs 8 threads instead of 32.

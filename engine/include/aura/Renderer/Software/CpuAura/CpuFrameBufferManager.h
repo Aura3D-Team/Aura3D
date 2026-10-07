@@ -253,7 +253,8 @@ class CpuFrameBufferManager
     CpuFrameBufferManager(wma::IWindowManager &windowManager, Config config, const JobSystem &jobs);
     ~CpuFrameBufferManager() = default;
 
-    // Core rendering
+    /// Deferred: flush() clears each band just before rasterizing it, so the frame is written once
+    /// while its rows are in cache. Direct pixel writes resolve it first; reads see it either way.
     void clear(u32 color = 0);
 
     /// Present the color plane by locking the backend's software framebuffer
@@ -279,22 +280,12 @@ class CpuFrameBufferManager
     /**
      * @brief Rasterises everything queued this frame, then empties the queue.
      *
-     * The framebuffer is split into horizontal row-bands and each band is
-     * rasterised by a worker thread. Because bands own disjoint rows there is
-     * no shared mutable state and no locking: two threads never write the same
-     * pixel.
+     * Triangles are binned by band first, then workers take bands from a shared
+     * counter, so a band of empty sky costs nothing and nobody waits on a fixed
+     * share of the floor. Bands own disjoint rows: no locking, and each replays
+     * its triangles in submission order, which blending depends on.
      *
-     * Within a band, batches are replayed in submission order, so the result is
-     * pixel-identical to having rasterised each draw call as it arrived -- the
-     * property blended batches depend on, since blending is not commutative.
-     *
-     * Each band rasterises only the triangles that actually reach its rows:
-     * a binning pass buckets triangles by the bands their bounding boxes span
-     * first, so a band no longer scans the whole frame's triangle list to
-     * discover that most of it lies elsewhere.
-     *
-     * Blocks until every band has finished, so the framebuffer is complete
-     * when this returns. Safe to call with an empty queue.
+     * Blocks until every band has finished. Safe to call with an empty queue.
      */
     void flush();
 
@@ -335,10 +326,7 @@ class CpuFrameBufferManager
     {
         return settings.height;
     }
-    //! Worker count flush() and renderFramebuffer() dispatch across -- the
-    //! engine's shared JobSystem::workerCount(), cached at construction. One
-    //! row-band per worker (see updateBandRanges()), so this is also the band
-    //! count.
+    //! The engine's JobSystem::workerCount(), cached at construction.
     i32 getWorkerCount() const noexcept
     {
         return _workerCount;
@@ -355,29 +343,34 @@ class CpuFrameBufferManager
     T interpolate(const T &a, const T &b, float t_param, InterpolationMethod method = InterpolationMethod::Linear);
 
   private:
+    //! Bands a triangle's rows reach, before clamping to the frame; empty when first > last.
+    struct BandSpan
+    {
+        i32 first = 1;
+        i32 last = 0;
+    };
+
     float get_eased_time(float t_param, InterpolationMethod method);
 
-    // Row bands own disjoint pixels; only Scene writes depth.
-    template <bool Blended>
-    void rasterizeTriangleSpan(const ScreenVertex &v0, const ScreenVertex &v1, const ScreenVertex &v2,
-                               const Texture *texture, i32 yStart, i32 yEnd);
+    /// Rows [yStart, yEnd) of one queued triangle; defined with the SIMD kernels in CpuRasterizer.cpp.
+    /// @p depthCleared: the band's depth is still all 1.0, so a flat batch at z <= 1 cannot fail its test.
+    void rasterizeTriangle(const ScreenTriangle &triangle, const Texture *texture, RasterMode mode, i32 yStart,
+                           i32 yEnd, bool depthCleared);
 
-    //! Splits [0, settings.height) into row-bands and runs @p rasterizeBand(band,
-    //! yStart, yEnd) on each, blocking until all complete. Band boundaries come
-    //! from _bandRanges.
+    //! Runs @p rasterizeBand(band, yStart, yEnd) over every band, blocking until all complete.
     void dispatchRowBands(const std::function<void(i32 band, i32 yStart, i32 yEnd)> &rasterizeBand);
+    [[nodiscard]] i32 bandCount() const noexcept;
+    //! Recomputes _bandRows for the current height, re-spanning anything already queued.
+    void updateBandRows() noexcept;
+    [[nodiscard]] BandSpan bandsOf(const ScreenTriangle &triangle) const noexcept;
+    //! Counting-sorts the queue into per-band index lists, in submission order within each band.
+    void binTriangles(i32 bands);
 
-    //! Recomputes _bandRanges for the current height and worker count. Cheap,
-    //! and called once per flush() so a resize cannot leave stale boundaries.
-    void updateBandRanges();
+    [[nodiscard]] static i32 paddedStride(i32 width) noexcept;
+    void clearRows(i32 yStart, i32 yEnd) noexcept;
+    void resolvePendingClear();
 
-    /**
-     * @brief One draw call's worth of queued triangles.
-     *
-     * `first`/`count` name a contiguous range of _queuedTriangles; batches
-     * partition that array in submission order, which is what lets a band walk
-     * its (ascending) bin and its batch list together in one linear pass.
-     */
+    //! A contiguous range of _queuedTriangles in submission order, one per draw call.
     struct QueuedBatch
     {
         const Texture *texture = nullptr;
@@ -386,16 +379,21 @@ class CpuFrameBufferManager
         u32 count = 0;
     };
 
-    //! Half-open row range [yStart, yEnd) owned by one band.
-    struct BandRange
-    {
-        i32 yStart = 0;
-        i32 yEnd = 0;
-    };
-
   private:
+    //! Rows are padded to this many pixels so a SIMD chunk never reaches into a row another band owns.
+    static constexpr i32 kRowAlignment = 8;
+
     Config settings;
-    AlignedVector<Pixel> framebuffer;
+    //! Pixels per plane row: settings.width rounded up to kRowAlignment.
+    i32 _stride = 0;
+    //! Rows per band: a few bands per worker, so the frame balances without splitting small
+    //! triangles across more band boundaries than the pool can use.
+    i32 _bandRows = 8;
+    //! Separate planes: present copies color rows verbatim and a kernel loads a whole chunk of depths.
+    AlignedVector<u32> _color;
+    AlignedVector<f32> _depth;
+    u32 _clearColor = 0;
+    bool _clearPending = false;
 
     //! Non-owning handle to the presenting window; the CPURenderer owns it and
     //! guarantees it outlives this manager.
@@ -417,8 +415,7 @@ class CpuFrameBufferManager
      */
     const JobSystem *_jobs;
 
-    //! JobSystem::workerCount(), cached at construction so getWorkerCount()
-    //! and updateBandRanges() don't re-derive it every frame.
+    //! JobSystem::workerCount(), cached at construction.
     i32 _workerCount = 1;
 
     /*
@@ -432,17 +429,15 @@ class CpuFrameBufferManager
     //! Every triangle queued this frame, in submission order: the first _queuedCount entries.
     //! Both arrays keep their high-water size, so a frame never constructs triangles it overwrites.
     std::vector<ScreenTriangle> _queuedTriangles;
-    //! Each queued triangle's y extent, so a band tests 8 bytes per triangle rather than 144.
-    std::vector<glm::vec2> _queuedRows;
+    std::vector<BandSpan> _queuedBands;
     u32 _queuedCount = 0;
     //! Contiguous, ordered partition of _queuedTriangles; one per draw call.
     std::vector<QueuedBatch> _queuedBatches;
-    //! Row range owned by each band. One band
-    //! per worker (see updateBandRanges()) -- JobSystem::dispatch() statically
-    //! partitions its item range across the pool, so oversplitting into more
-    //! bands than workers no longer buys anything: there is no shared task
-    //! queue left for an idle worker to steal extra bands from.
-    std::vector<BandRange> _bandRanges;
+    //! binTriangles() output: band b rasterizes _binned[_bandFirst[b] .. _bandFirst[b + 1]).
+    //! _binCursors holds one counter per (slice, band) while the bins fill in parallel.
+    std::vector<u32> _binned;
+    std::vector<u32> _bandFirst;
+    std::vector<u32> _binCursors;
 
     // Aura Font
     const AuraBitmapFont &_font;
