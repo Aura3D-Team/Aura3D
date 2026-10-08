@@ -92,7 +92,11 @@ bool GlBatchManager::draw(std::span<const gfx::BatchVertex> vertices, std::span<
     const auto first = static_cast<u32>(_indices.size());
     _vertices.insert(_vertices.end(), vertices.begin(), vertices.end());
     _indices.resize(first + count);
-    std::ranges::transform(indices, _indices.begin() + first, [base](u32 index) { return base + index; });
+    std::ranges::transform(indices, _indices.begin() + first,
+                           [base](u32 index)
+                           {
+                               return base + index;
+                           });
 
     if (!_runs.empty() && _runs.back().texture == texture && _runs.back().transform == transform)
         _runs.back().indexCount += count;
@@ -142,9 +146,10 @@ void GlBatchManager::submit(std::span<const gfx::BatchVertex> vertices, std::spa
             glUniform1i(_coverageLoc, coverage);
             _coverage = coverage;
         }
-        // NOLINTNEXTLINE(performance-no-int-to-ptr)
+        // NOLINTBEGIN(performance-no-int-to-ptr)
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(run.indexCount), GL_UNSIGNED_INT,
                        reinterpret_cast<void *>(usize{run.firstIndex} * sizeof(u32)));
+        // NOLINTEND(performance-no-int-to-ptr)
     }
 }
 

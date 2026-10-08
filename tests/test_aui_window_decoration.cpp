@@ -226,8 +226,8 @@ void iconGeometry()
     {
         const glm::vec2 size = command.bounds.size();
         const glm::vec2 center = command.bounds.center();
-        dash |= command.type == DrawCommandType::Rect && minimize.contains(center) && near(size.x, 12) &&
-                near(size.y, 1);
+        dash |=
+            command.type == DrawCommandType::Rect && minimize.contains(center) && near(size.x, 12) && near(size.y, 1);
         square |= command.type == DrawCommandType::Rect && maximize.contains(center) && near(size.x, 12) &&
                   near(size.y, 12) && near(command.borderWidth, 1);
         crossStrokes += command.type == DrawCommandType::Mask && close.contains(center) && near(size.x, 12);
@@ -280,15 +280,16 @@ void resizeBorder()
 {
     Harness h;
     const Rect inner = h.root.contentBounds();
-    AURA_CHECK(near(inner.min.x, 1.5f) && near(inner.min.y, 34) && near(inner.max.x, 478.5f) && near(inner.max.y, 238.5f),
+    AURA_CHECK(near(inner.min.x, 1.5f) && near(inner.min.y, 34) && near(inner.max.x, 478.5f) &&
+                   near(inner.max.y, 238.5f),
                "a resizable window frames its content with the title bar and a thin border");
 
     h.paint();
     const glm::vec4 barColor = h.decoration->resolvedStyle().surface.normal;
     bool framed = false;
     for (const auto &command : h.list.commands())
-        framed |= command.type == DrawCommandType::Rect && command.color == barColor &&
-                  near(command.bounds.min.x, 0) && near(command.bounds.max.x, 1.5f) && near(command.bounds.min.y, 34);
+        framed |= command.type == DrawCommandType::Rect && command.color == barColor && near(command.bounds.min.x, 0) &&
+                  near(command.bounds.max.x, 1.5f) && near(command.bounds.min.y, 34);
     AURA_CHECK(framed, "the border is painted in the title bar's colour");
 
     h.window.maximized = true;

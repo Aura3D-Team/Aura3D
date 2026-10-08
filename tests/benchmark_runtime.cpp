@@ -350,12 +350,14 @@ int main(int argc, char **argv)
             light.intensity = 0.6f;
             light.ambient = 0.1f;
             light.color = {1.0f, 0.5f, 0.25f, 1.0f};
-            const glm::vec3 normal = glm::normalize(glm::transpose(glm::inverse(glm::mat3(model))) * glm::vec3{0, 0, 1});
+            const glm::vec3 normal =
+                glm::normalize(glm::transpose(glm::inverse(glm::mat3(model))) * glm::vec3{0, 0, 1});
             const f32 lighting = light.ambient + std::max(glm::dot(normal, -light.direction), 0.0f) * light.intensity;
             const auto encode = [](f32 linear)
             {
                 linear = std::min(linear, 1.0f);
-                const f32 encoded = linear <= 0.0031308f ? linear * 12.92f : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+                const f32 encoded =
+                    linear <= 0.0031308f ? linear * 12.92f : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
                 return static_cast<int>(std::lround(encoded * 255.0f));
             };
             //! The quad's centre after the model, in pixels of the 320x240 window.
@@ -394,8 +396,10 @@ int main(int argc, char **argv)
 #ifdef AURA_HAS_CPU
                 if (renderer.getBackendType() == RendererChoice::SOFTWARE)
                 {
-                    const u32 pixel =
-                        static_cast<cpu::CPURenderer &>(renderer).getFrameBufferManager()->getPixel({probeX, probeY}).rgb;
+                    const u32 pixel = static_cast<cpu::CPURenderer &>(renderer)
+                                          .getFrameBufferManager()
+                                          ->getPixel({probeX, probeY})
+                                          .rgb;
                     actual = {static_cast<u8>(pixel >> 16), static_cast<u8>(pixel >> 8), static_cast<u8>(pixel), 255};
                     readable = true;
                 }

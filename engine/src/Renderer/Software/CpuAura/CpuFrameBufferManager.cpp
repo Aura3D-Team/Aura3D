@@ -472,7 +472,8 @@ void CpuFrameBufferManager::queueScreenTriangles(std::span<const gfx::BatchVerte
         };
         for (u32 t = begin; t < end; ++t)
         {
-            const u32 i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
+            const usize corner = usize{t} * 3;
+            const u32 i0 = indices[corner], i1 = indices[corner + 1], i2 = indices[corner + 2];
             ScreenTriangle &triangle = _queuedTriangles[first + t];
             BandSpan &bands = _queuedBands[first + t];
             if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size())

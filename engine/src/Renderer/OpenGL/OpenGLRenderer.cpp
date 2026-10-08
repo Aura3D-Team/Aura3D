@@ -392,20 +392,22 @@ void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 
     useSceneState();
     uploadModel();
+    const auto count = static_cast<GLsizei>(indexCount);
     if (instanceCount > 1)
-        glDrawElementsInstanced(GL_TRIANGLES, indexCount, idxData->type, nullptr, instanceCount);
+        glDrawElementsInstanced(GL_TRIANGLES, count, idxData->type, nullptr, static_cast<GLsizei>(instanceCount));
     else
-        glDrawElements(GL_TRIANGLES, indexCount, idxData->type, nullptr);
+        glDrawElements(GL_TRIANGLES, count, idxData->type, nullptr);
 }
 
 void OpenGLRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
     useSceneState();
     uploadModel();
+    const auto count = static_cast<GLsizei>(vertexCount);
     if (instanceCount > 1)
-        glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, count, static_cast<GLsizei>(instanceCount));
     else
-        glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+        glDrawArrays(GL_TRIANGLES, 0, count);
 }
 
 glm::uvec2 OpenGLRenderer::renderTargetSize() const noexcept
