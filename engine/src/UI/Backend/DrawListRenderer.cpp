@@ -368,8 +368,8 @@ void DrawListRenderer::_text(const DrawCommand &command)
         const Rect placed = glyph.bounds.translated(command.origin);
         // Align both origin and size so fractional layout cannot resample an
         // otherwise sharp glyph between device pixels.
-        const Rect quad = Rect::fromSize(glm::round(placed.min * _scale) / _scale,
-                                         glm::round(placed.size() * _scale) / _scale);
+        const Rect quad =
+            Rect::fromSize(glm::round(placed.min * _scale) / _scale, glm::round(placed.size() * _scale) / _scale);
 
         //! Whole glyphs outside the clip are dropped here rather than inside
         //! _quad, so a long string scrolled out of view costs one rejection

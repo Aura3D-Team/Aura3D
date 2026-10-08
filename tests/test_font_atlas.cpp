@@ -111,7 +111,8 @@ void testSharedCoverageStorage()
     AURA_CHECK(equal, "a texture that missed the rectangle gets the whole sheet, matching the packed copy");
     (void)atlas->glyph(U'Z');
     const auto next = atlas->takeUpload(second);
-    AURA_CHECK(next && next->region.width < atlas->width() && atlas->takeUpload(first)->region.width == atlas->width(),
+    const auto firstAgain = atlas->takeUpload(first);
+    AURA_CHECK(next && firstAgain && next->region.width < atlas->width() && firstAgain->region.width == atlas->width(),
                "the dirty rectangle follows whichever texture took the last clean state");
     atlas.reset();
     AURA_CHECK(larger->glyph(U'B') != nullptr && larger->dirty(),
@@ -178,8 +179,7 @@ void testBitmapRasterSizeAndCoverage()
         auto atlas = FontAtlas::builtinBitmap(desc);
         const auto *wide = atlas->glyph(U'W');
         const auto *narrow = atlas->glyph(U'i');
-        AURA_CHECK(wide && narrow && narrow->advance < wide->advance,
-                   "bitmap glyphs use proportional spacing");
+        AURA_CHECK(wide && narrow && narrow->advance < wide->advance, "bitmap glyphs use proportional spacing");
         AURA_CHECK(wide && narrow && wide->advance == std::round(wide->advance) &&
                        narrow->advance == std::round(narrow->advance),
                    "bitmap advances are whole pixels, so gaps between letters stay even");

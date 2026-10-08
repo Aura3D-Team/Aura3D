@@ -4,7 +4,6 @@
 #pragma once
 
 #include <vector>
-#include <vector>
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Renderer/RenderHandles.h"

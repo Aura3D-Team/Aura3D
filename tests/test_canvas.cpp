@@ -24,14 +24,20 @@ constexpr glm::vec4 kRed{1, 0, 0, 1};
 
 [[nodiscard]] bool indicesInRange(const gfx::Canvas &canvas)
 {
-    return std::ranges::all_of(canvas.indices(), [&](u32 i) { return i < canvas.vertices().size(); });
+    return std::ranges::all_of(canvas.indices(),
+                               [&](u32 i)
+                               {
+                                   return i < canvas.vertices().size();
+                               });
 }
 
 [[nodiscard]] bool allFinite(const gfx::Canvas &canvas)
 {
     return std::ranges::all_of(canvas.vertices(),
                                [](const gfx::BatchVertex &v)
-                               { return std::isfinite(v.pos.x) && std::isfinite(v.pos.y) && std::isfinite(v.pos.z); });
+                               {
+                                   return std::isfinite(v.pos.x) && std::isfinite(v.pos.y) && std::isfinite(v.pos.z);
+                               });
 }
 
 [[nodiscard]] glm::vec2 xRange(const gfx::Canvas &canvas)
@@ -51,7 +57,12 @@ void test_rect()
     const auto i = canvas.indices();
     AURA_CHECK(v.size() == 4 && i.size() == 6, "rect: four vertices, two triangles");
     AURA_CHECK(v[0].pos == glm::vec3(10, 20, 0) && v[2].pos == glm::vec3(40, 60, 0), "rect: corners at origin and end");
-    AURA_CHECK(std::ranges::all_of(v, [](const gfx::BatchVertex &x) { return x.color == kRed; }), "rect: color on every vertex");
+    AURA_CHECK(std::ranges::all_of(v,
+                                   [](const gfx::BatchVertex &x)
+                                   {
+                                       return x.color == kRed;
+                                   }),
+               "rect: color on every vertex");
     AURA_CHECK(indicesInRange(canvas), "rect: indices in range");
 }
 
@@ -105,7 +116,11 @@ void test_world_line_zero_to_one()
     AURA_CHECK(v.size() == 4, "world line: one quad");
     AURA_CHECK(near(xRange(canvas).x, 25) && near(xRange(canvas).y, 75), "world line: x maps NDC to pixels");
     AURA_CHECK(near(v[0].pos.y, 49) && near(v[3].pos.y, 51), "world line: width in pixels around y = 50");
-    AURA_CHECK(std::ranges::all_of(v, [](const gfx::BatchVertex &x) { return near(x.pos.z, 0.5f); }),
+    AURA_CHECK(std::ranges::all_of(v,
+                                   [](const gfx::BatchVertex &x)
+                                   {
+                                       return near(x.pos.z, 0.5f);
+                                   }),
                "world line: [0, 1] depth passes through");
 
     //! z = -1 .. 1 crosses the near plane z = 0 halfway, at x = 0.
@@ -140,7 +155,8 @@ void test_world_line_behind_camera()
 
     gfx::Canvas crossing;
     crossing.line(canvasView, {0, 0, -5}, {1, 0, 5}, kRed);
-    AURA_CHECK(crossing.indices().size() == 6 && allFinite(crossing), "world line: through the camera plane stays finite");
+    AURA_CHECK(crossing.indices().size() == 6 && allFinite(crossing),
+               "world line: through the camera plane stays finite");
 
     gfx::Canvas behind;
     behind.line(canvasView, {0, 0, 1}, {1, 0, 5}, kRed);

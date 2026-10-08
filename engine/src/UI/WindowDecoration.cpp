@@ -48,7 +48,8 @@ class DecorationIcon final : public Widget
     {
         const ClipScope clip(out, bounds());
         const glm::vec4 color = parent()->resolvedStyle().text;
-        const Rect box = Rect::fromSize(glm::floor(bounds().center() - glm::vec2{kIconSize * 0.5f}), glm::vec2{kIconSize});
+        const Rect box =
+            Rect::fromSize(glm::floor(bounds().center() - glm::vec2{kIconSize * 0.5f}), glm::vec2{kIconSize});
         switch (_icon)
         {
         case WindowIcon::Minimize:
