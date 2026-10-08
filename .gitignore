@@ -5,6 +5,7 @@ tests/build
 /out/
 .qtcreator
 .claude
+.zed
 
 # Ignore compiled object files
 *.o
@@ -42,4 +43,3 @@ CMakeLists.txt.user
 # Ignore Windows system files
 Thumbs.db
 Desktop.ini
-

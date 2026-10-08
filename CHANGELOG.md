@@ -2,6 +2,12 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.4.1]
+
+### Fixed
+
+- Software renderer kept its first frame size after a resize: the rest of the window stayed black and the client-side title bar drew clipped. It now follows the window, in pixels on HiDPI, and `needsFrame()` reports a pending resize.
+
 ## [0.4.0]
 
 ### Added

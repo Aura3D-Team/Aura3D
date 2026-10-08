@@ -124,8 +124,9 @@ void CpuFrameBufferManager::resizeFramebuffer(int width, int height)
     settings.width = width;
     settings.height = height;
     _stride = paddedStride(width);
-    _color.assign(static_cast<size_t>(_stride) * static_cast<size_t>(height), 0);
-    _depth.assign(_color.size(), 1.0f);
+    const size_t count = static_cast<size_t>(_stride) * static_cast<size_t>(height);
+    _color.resize(count, 0);
+    _depth.resize(count, 1.0f);
     updateBandRows();
 }
 

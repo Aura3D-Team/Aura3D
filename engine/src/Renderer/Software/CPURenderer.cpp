@@ -75,8 +75,9 @@ void CPURenderer::handleWindowChanges()
     if (!_frameBufferManager)
         return;
 
-    auto *wd = _windowManagerApi->getWindowDetails();
-    _frameBufferManager->resizeFramebuffer(wd->width, wd->height);
+    //! Pixels, not logical units: the surface lockFramebuffer() returns is a HiDPI window's backing store.
+    const wma::FramebufferSize size = _windowManagerApi->getFramebufferSize();
+    _frameBufferManager->resizeFramebuffer(size.width, size.height);
 }
 
 void CPURenderer::cleanup()
@@ -244,7 +245,19 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 wi
 
 void CPURenderer::beginFrame()
 {
-    // Empty
+    //! Every window backend reallocates its surface on resize; the planes follow here, before the frame records.
+    wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
+    if (flags && flags->resized)
+    {
+        flags->resized = false;
+        handleWindowChanges();
+    }
+}
+
+bool CPURenderer::needsFrame() const noexcept
+{
+    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
+    return _presentDropped || (flags && flags->resized);
 }
 
 void CPURenderer::beginRenderPass()

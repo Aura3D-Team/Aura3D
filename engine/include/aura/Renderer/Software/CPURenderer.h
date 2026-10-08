@@ -36,10 +36,7 @@ class CPURenderer : public IRenderer
                                      const u8 *coverage) override;
 
     void beginFrame() override;
-    [[nodiscard]] bool needsFrame() const noexcept override
-    {
-        return _presentDropped;
-    }
+    [[nodiscard]] bool needsFrame() const noexcept override;
     void beginRenderPass() override;
     void endRenderPass() override;
     void endFrame() override;
