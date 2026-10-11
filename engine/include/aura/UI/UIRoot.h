@@ -178,8 +178,10 @@ class UIRoot
     /// @return True when the UI consumed the event and the application should
     ///         not also act on it.
     bool pointerMoved(glm::vec2 position);
-    bool pointerDown(glm::vec2 position, PointerButton button = PointerButton::Left, Modifiers mods = {});
-    bool pointerUp(glm::vec2 position, PointerButton button = PointerButton::Left, Modifiers mods = {});
+    bool pointerDown(glm::vec2 position, PointerButton button = PointerButton::Left, Modifiers mods = {},
+                     PointerKind kind = PointerKind::Mouse);
+    bool pointerUp(glm::vec2 position, PointerButton button = PointerButton::Left, Modifiers mods = {},
+                   PointerKind kind = PointerKind::Mouse);
     bool wheel(glm::vec2 delta, glm::vec2 position, Modifiers mods = {});
 
     /// The cursor left the surface: drops the hover chain. A drag in progress
@@ -253,6 +255,12 @@ class UIRoot
 
     /// Editable theme. Every widget resolves its style per paint, so an edit
     /// here shows up on the next frame with nothing to invalidate by hand.
+    /// Seconds of update() time so far. What a gesture measures its speed against.
+    [[nodiscard]] f32 time() const noexcept
+    {
+        return _time;
+    }
+
     [[nodiscard]] Theme &theme() noexcept
     {
         _requestLayout();
@@ -330,6 +338,10 @@ class UIRoot
     template <class Event, class Handler> bool _bubble(Widget *target, Event &event, Handler &&handler);
 
     void _updateHover(glm::vec2 position);
+
+    /// Offers the press in progress to its ancestors; true when one took it.
+    bool _offerIntercept(const PointerEvent &event);
+    void _endPress() noexcept;
     void _dropHover();
 
     [[nodiscard]] bool _runShortcuts(const KeyEvent &event, bool beforeWidget);
@@ -378,6 +390,11 @@ class UIRoot
 
     glm::vec2 _pointer{0.0f};
     bool _pointerInside = false;
+
+    //! The press in progress: its ancestors, offered the gesture on every move until it is taken or released.
+    std::vector<WidgetRef> _pressChain;
+    glm::vec2 _pressPosition{0.0f};
+    PointerKind _pressKind = PointerKind::Mouse;
     PointerButton _lastPressButton = PointerButton::Left;
     WidgetRef _lastPressTarget;
 

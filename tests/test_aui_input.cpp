@@ -14,6 +14,7 @@
  *    whatever is painted behind it.
  */
 
+#include <array>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -54,6 +55,58 @@ struct Harness
         root.pointerMoved(at);
         root.pointerDown(at);
         root.pointerUp(at);
+    }
+
+    /// A finger, as UIView reports it: hover first, then the press, with time passing between moves so a
+    /// gesture can measure its speed.
+    void touchDown(glm::vec2 at)
+    {
+        root.pointerMoved(at);
+        root.pointerDown(at, PointerButton::Left, {}, PointerKind::Touch);
+    }
+    void touchMove(glm::vec2 at, f32 seconds = 0.016f)
+    {
+        root.update(seconds);
+        root.pointerMoved(at);
+    }
+    void touchUp(glm::vec2 at)
+    {
+        root.pointerUp(at, PointerButton::Left, {}, PointerKind::Touch);
+        root.pointerLeft();
+    }
+};
+
+/// A 200x100 viewport onto ten 30 px rows, each a button, so a drag starts on something that wants the press.
+struct ButtonList
+{
+    Harness harness{{200.0f, 100.0f}};
+    ScrollView *scroll = nullptr;
+    std::array<int, 10> clicks{};
+
+    ButtonList()
+    {
+        scroll = &harness.root.setContent<ScrollView>();
+        scroll->setSmooth(false);
+        auto &column = scroll->setContent<Column>();
+        for (usize i = 0; i < clicks.size(); ++i)
+        {
+            auto &row = column.add<Button>("Row");
+            row.layout().height = Length::px(30.0f);
+            row.clicked.connect(
+                [this, i]
+                {
+                    ++clicks[i];
+                });
+        }
+        harness.layout();
+    }
+
+    [[nodiscard]] int totalClicks() const
+    {
+        int total = 0;
+        for (const int count : clicks)
+            total += count;
+        return total;
     }
 };
 
@@ -497,6 +550,205 @@ void testWheelReachesTheScrollView()
                "and a wheel at the end of travel is declined, so a parent can take it");
 }
 
+void testTouchDragScrollsInsteadOfClicking()
+{
+    ButtonList list;
+
+    list.harness.touchDown({50.0f, 85.0f});
+    AURA_CHECK(list.harness.root.pointerCapture() != list.scroll, "a press on a button is the button's until it moves");
+
+    list.harness.touchMove({50.0f, 75.0f});
+    AURA_CHECK(list.harness.root.pointerCapture() == list.scroll, "past the slop, the scroll view takes the finger");
+
+    list.harness.touchMove({50.0f, 35.0f});
+    list.harness.touchUp({50.0f, 35.0f});
+    list.harness.layout();
+
+    AURA_CHECK(near(list.scroll->offset().y, 40.0f), "the content follows the finger from where it was taken");
+    AURA_CHECK(list.totalClicks() == 0, "and the button under the finger is not clicked when it lifts");
+}
+
+void testTouchSlopKeepsATapATap()
+{
+    ButtonList list;
+
+    list.harness.touchDown({50.0f, 85.0f});
+    list.harness.touchMove({50.0f, 81.0f});
+    list.harness.touchUp({50.0f, 81.0f});
+
+    AURA_CHECK(list.clicks[2] == 1 && near(list.scroll->offset().y, 0.0f),
+               "a wobble inside the slop is still a click, and scrolls nothing");
+}
+
+void testMouseDragDoesNotScroll()
+{
+    ButtonList list;
+
+    list.harness.root.pointerMoved({50.0f, 85.0f});
+    list.harness.root.pointerDown({50.0f, 85.0f});
+    list.harness.root.pointerMoved({50.0f, 35.0f});
+    list.harness.root.pointerUp({50.0f, 35.0f});
+
+    AURA_CHECK(near(list.scroll->offset().y, 0.0f), "a mouse drag over the content is left to what is under it");
+}
+
+void testTouchDragNeedsSomewhereToGo()
+{
+    Harness harness({200.0f, 400.0f});
+    auto &scroll = harness.root.setContent<ScrollView>();
+    auto &button = scroll.setContent<Column>().add<Button>("Fits");
+    button.layout().height = Length::px(30.0f);
+    harness.layout();
+
+    harness.touchDown({50.0f, 15.0f});
+    harness.touchMove({50.0f, 60.0f});
+
+    AURA_CHECK(harness.root.pointerCapture() == &button, "a view whose content fits does not take the finger");
+}
+
+void testTouchDragDirection()
+{
+    Harness harness({200.0f, 100.0f});
+    auto &scroll = harness.root.setContent<ScrollView>();
+    scroll.setSmooth(false);
+    auto &column = scroll.setContent<Column>();
+    auto &slider = column.add<Slider>(0.0f, 100.0f);
+    slider.layout().height = Length::px(30.0f);
+    for (int i = 0; i < 8; ++i)
+        column.add<Widget>().layout().height = Length::px(30.0f);
+    harness.layout();
+
+    harness.touchDown({20.0f, 15.0f});
+    harness.touchMove({90.0f, 17.0f});
+    harness.touchUp({90.0f, 17.0f});
+    harness.layout();
+
+    AURA_CHECK(near(scroll.offset().y, 0.0f) && slider.value.get() > 0.0f,
+               "a horizontal drag on a slider stays the slider's, in a view that only scrolls vertically");
+
+    harness.touchDown({20.0f, 15.0f});
+    harness.touchMove({20.0f, 5.0f});
+    AURA_CHECK(harness.root.pointerCapture() == &scroll, "while a vertical one is the view's, even from the slider");
+    harness.touchUp({20.0f, 5.0f});
+}
+
+void testTouchDragHandsOverAtTheEnd()
+{
+    Harness harness({200.0f, 100.0f});
+    auto &outer = harness.root.setContent<ScrollView>();
+    outer.setSmooth(false);
+    auto &page = outer.setContent<Column>();
+    page.add<Widget>().layout().height = Length::px(100.0f);
+    auto &inner = page.add<ScrollView>();
+    inner.setSmooth(false);
+    inner.layout().height = Length::px(100.0f);
+    auto &rows = inner.setContent<Column>();
+    for (int i = 0; i < 6; ++i)
+        rows.add<Widget>().layout().height = Length::px(40.0f);
+    harness.layout();
+
+    outer.scrollTo({0.0f, 100.0f});
+    harness.layout();
+
+    //! The inner view is at its top, so a finger moving down (content moving up) cannot scroll it.
+    harness.touchDown({50.0f, 40.0f});
+    harness.touchMove({50.0f, 70.0f});
+    AURA_CHECK(harness.root.pointerCapture() == &outer, "a drag the inner view cannot follow goes to the outer one");
+    harness.touchMove({50.0f, 90.0f});
+    harness.touchUp({50.0f, 90.0f});
+    harness.layout();
+    AURA_CHECK(outer.offset().y < 100.0f && near(inner.offset().y, 0.0f), "which scrolls instead");
+}
+
+void testTouchFling()
+{
+    ButtonList list;
+
+    list.harness.touchDown({50.0f, 90.0f});
+    for (int step = 1; step <= 4; ++step)
+        list.harness.touchMove({50.0f, 90.0f - 6.0f * static_cast<f32>(step)});
+    list.harness.touchUp({50.0f, 66.0f});
+    list.harness.layout();
+
+    const f32 lifted = list.scroll->offset().y;
+    list.harness.root.update(0.016f);
+    list.harness.root.update(0.016f);
+    AURA_CHECK(list.scroll->offset().y > lifted, "a quick flick carries on after the finger lifted");
+
+    f32 previous = -1.0f;
+    for (int frame = 0; frame < 600 && list.scroll->offset().y != previous; ++frame)
+    {
+        previous = list.scroll->offset().y;
+        list.harness.root.update(0.016f);
+    }
+    AURA_CHECK(list.scroll->offset().y == previous, "and slows to a stop");
+    AURA_CHECK(list.scroll->offset().y <= list.scroll->maxOffset().y, "without leaving the content");
+}
+
+void testTouchRestBeforeLiftingDoesNotFling()
+{
+    ButtonList list;
+
+    list.harness.touchDown({50.0f, 90.0f});
+    for (int step = 1; step <= 4; ++step)
+        list.harness.touchMove({50.0f, 90.0f - 6.0f * static_cast<f32>(step)});
+    list.harness.root.update(0.3f);
+    list.harness.touchUp({50.0f, 66.0f});
+
+    const f32 lifted = list.scroll->offset().y;
+    for (int frame = 0; frame < 30; ++frame)
+        list.harness.root.update(0.016f);
+    AURA_CHECK(near(list.scroll->offset().y, lifted),
+               "a finger that rested before it lifted leaves the content where it is");
+}
+
+void testTouchStopsAFling()
+{
+    ButtonList list;
+
+    list.harness.touchDown({50.0f, 90.0f});
+    for (int step = 1; step <= 4; ++step)
+        list.harness.touchMove({50.0f, 90.0f - 6.0f * static_cast<f32>(step)});
+    list.harness.touchUp({50.0f, 66.0f});
+    list.harness.root.update(0.016f);
+
+    list.harness.touchDown({50.0f, 50.0f});
+    const f32 held = list.scroll->offset().y;
+    for (int frame = 0; frame < 20; ++frame)
+        list.harness.root.update(0.016f);
+    AURA_CHECK(near(list.scroll->offset().y, held), "putting a finger down on a coasting view stops it");
+    list.harness.touchUp({50.0f, 50.0f});
+}
+
+void testTouchTapFocusesATextField()
+{
+    Harness harness({200.0f, 100.0f});
+    auto &scroll = harness.root.setContent<ScrollView>();
+    scroll.setSmooth(false);
+    auto &column = scroll.setContent<Column>();
+    auto &field = column.add<TextField>("hello");
+    for (int i = 0; i < 8; ++i)
+        column.add<Widget>().layout().height = Length::px(30.0f);
+    harness.layout();
+
+    const glm::vec2 at = field.bounds().center();
+
+    harness.touchDown(at);
+    AURA_CHECK(!field.hasFocus(), "a finger on a field does not focus it yet");
+    harness.touchMove(at + glm::vec2{0.0f, -20.0f});
+    harness.touchMove(at + glm::vec2{0.0f, -40.0f});
+    harness.touchUp(at + glm::vec2{0.0f, -40.0f});
+    AURA_CHECK(!field.hasFocus() && scroll.offset().y > 0.0f,
+               "a drag that began on a field scrolls the page and leaves the keyboard down");
+
+    scroll.scrollTo({0.0f, 0.0f});
+    harness.layout();
+    const glm::vec2 now = field.bounds().center();
+    harness.touchDown(now);
+    harness.touchUp(now);
+    AURA_CHECK(field.hasFocus(), "a tap focuses it, when the finger lifts");
+}
+
 void testAccessibilityTree()
 {
     Harness harness;
@@ -597,6 +849,16 @@ int main()
     testTextFieldObscured();
     testTextFieldReadOnly();
     testWheelReachesTheScrollView();
+    testTouchDragScrollsInsteadOfClicking();
+    testTouchSlopKeepsATapATap();
+    testMouseDragDoesNotScroll();
+    testTouchDragNeedsSomewhereToGo();
+    testTouchDragDirection();
+    testTouchDragHandsOverAtTheEnd();
+    testTouchFling();
+    testTouchRestBeforeLiftingDoesNotFling();
+    testTouchStopsAFling();
+    testTouchTapFocusesATextField();
     testAccessibilityTree();
     testSignalLifetime();
 

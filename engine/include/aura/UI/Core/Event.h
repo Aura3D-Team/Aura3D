@@ -36,6 +36,14 @@ enum class PointerButton : u8
     Middle
 };
 
+/// What produced a pointer event. A finger is the same stream of presses and moves as a mouse, but
+/// it has no hover and it scrolls: a widget that cares reads this.
+enum class PointerKind : u8
+{
+    Mouse,
+    Touch
+};
+
 /// Why a widget gained focus. A field selects all its text when tabbed into
 /// but not when clicked, which is the whole reason this is carried.
 enum class FocusReason : u8
@@ -64,6 +72,11 @@ struct PointerEvent
     /// 1 for a single click, 2 for the second of a double click, and so on.
     /// Meaningful on press events only.
     u32 clickCount = 1;
+
+    PointerKind kind = PointerKind::Mouse;
+
+    /// Where the press in progress began, in surface pixels. Meaningful while a button is down.
+    glm::vec2 pressPosition{0.0f};
 };
 
 struct WheelEvent

@@ -12,6 +12,9 @@ Label::Label(std::string value) : text(std::move(value))
     _part = Part::Label;
     setHitTestVisible(false);
 
+    //! TextStyle's own default is 14 px; zero is what means "the theme's size".
+    _textStyle.pixelSize = 0.0f;
+
     //! Text drives the widget's size, so a change is a layout change, not a
     //! repaint. Wired here rather than in a setter so an assignment through
     //! the property behaves the same way.

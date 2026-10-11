@@ -307,6 +307,16 @@ class Widget
     virtual bool onTextInput(const TextEvent &event);
     /// @}
 
+    /**
+     * @brief Offered a press that landed on a descendant, before the descendant sees what follows.
+     *
+     * Called on the press itself (with @c position equal to @c pressPosition) and on every move while the
+     * button stays down, on each ancestor of the pressed widget, deepest first. Return true to take the
+     * gesture: call capturePointer() first, which cancels the widget that had it. A scroll view takes a
+     * finger drag this way, so the button under the finger is not clicked when it lifts.
+     */
+    virtual bool onPointerIntercept(const PointerEvent &event);
+
     /// @{
     /// Notifications, not events: they cannot be refused and do not bubble.
     virtual void onPointerEnter();

@@ -22,9 +22,8 @@
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
 
         <!--
-            MainActivity (extends SDL3's org.libsdl.app.SDLActivity, copied in
-            from SDL 3.4.10's android-project template; see
-            android/app/src/main/java/org/libsdl/app/) bootstraps the native
+            MainActivity (extends SDL3's org.libsdl.app.SDLActivity, which comes
+            from the SDL3 install's jar; see android/app/build.gradle) bootstraps the native
             library (libmain.so): it handles the surface lifecycle, touch
             input, and calls SDL_main(). The override only exists because
             Aura3D links SDL3 statically into libmain.so rather than as a

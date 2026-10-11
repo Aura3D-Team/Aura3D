@@ -2,6 +2,25 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.5.0]
+
+Needs libwma 0.6.0.
+
+### Added
+
+- Finger drags scroll. `ScrollView` takes a touch drag past an 8 px slop, from anywhere in its content, and cancels the button or field under the finger so it does not click when it lifts. It carries on after a quick flick and slows to a stop; touching it stops it. A drag it cannot follow (it fits, or it is at that end) goes to an outer scroll view. A mouse drag still does not scroll.
+- `Widget::onPointerIntercept()`, offered a press and its moves before the widget that has the pointer sees them, deepest ancestor first. `PointerKind` and `PointerEvent::kind` / `pressPosition`; `UIRoot::pointerDown()` and `pointerUp()` take the kind, and `UIRoot::time()` is the clock a gesture measures speed by.
+
+### Changed
+
+- `UIView` uses `IWindowManager::getContentScale()`. The tree is laid out in units that many times larger than the window's, and every position the window reports is divided by it, so a phone's density is no longer ignored: AuraUI drew at 1x on Android. Nothing changes where the scale is 1.
+- On touch, `TextField` focuses when the finger lifts, not when it lands, so a drag that starts on a field scrolls the page instead of raising the keyboard.
+
+### Fixed
+
+- `Label` started at a fixed 14 px instead of `Metrics::fontSize`, against its own documentation, so changing the theme's font size or scaling it for density skipped every label that had not set a size. A default label now follows the theme; `fontSize()` reports 0 until one is set.
+- The Android project carried SDL's Java half at 3.4.10 while the native library is whatever SDL3 is installed, and SDL refuses to start on a mismatch. The Java now comes from the SDL3 install's jar.
+
 ## [0.4.1]
 
 ### Fixed

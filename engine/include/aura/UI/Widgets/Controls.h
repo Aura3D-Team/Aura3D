@@ -444,11 +444,16 @@ class TextField final : public Control
 
     void onFocusIn(FocusReason reason) override;
     void onFocusOut() override;
+    void onPointerCancel() override;
 
     bool onTick(f32 deltaSeconds) override;
 
   private:
     void _reshape();
+
+    /// Focuses the field and puts the caret under the press: on a mouse press at once, on a finger when it
+    /// lifts, so a drag that scrolls the page past the field neither focuses it nor raises the keyboard.
+    void _beginEdit(const PointerEvent &event, u32 clickCount);
 
     /// Replaces the selection (or inserts at the caret) with @p insertion.
     void _replaceSelection(std::string_view insertion);
@@ -494,6 +499,8 @@ class TextField final : public Control
     bool _readOnly = false;
     bool _obscured = false;
     bool _dragging = false;
+    bool _touchPress = false; //! A finger is down and has not decided between tap and drag yet.
+    u32 _touchClicks = 1;
     std::vector<Rect> _selectionRects;
 };
 

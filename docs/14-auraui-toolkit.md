@@ -122,7 +122,7 @@ row.add<Button>("Cancel").layout().width = Length::fill();   // an even split
 | `Grid` | Tracks of `Length`; `setColumns({automatic(), fill()})`, `addAt<W>(row, col)` |
 | `Stack` | Children overlaid, each aligned in the same rectangle |
 | `Spacer` | `Spacer{}` eats the leftover; `Spacer{24.0f}` is a gap along the parent's axis |
-| `ScrollView` | Measures its child unbounded on the scrolling axes; wheel, draggable bars, `scrollIntoView()` |
+| `ScrollView` | Measures its child unbounded on the scrolling axes; wheel, draggable bars, finger drags with a fling, `scrollIntoView()` |
 
 A container draws nothing by default — every palette leaves `Part::Container`
 transparent. Give it a surface by styling it:
@@ -136,7 +136,7 @@ card.layout().padding = Thickness::all(20.0f);
 
 | Widget | State | Signals |
 |---|---|---|
-| `Label` | `text`, `setFontSize`, `setWrap`, `setAlign` | — |
+| `Label` | `text`, `setFontSize` (0 follows `Metrics::fontSize`), `setWrap`, `setAlign` | — |
 | `Image` | `setTexture`, `setFit`, `setTint`, `setRadius` | — |
 | `Separator` | — | — |
 | `Button` | `setText`, `label()` | `clicked` |
@@ -318,6 +318,34 @@ Capture is what makes a drag survive leaving the control. A disabled subtree is
 inert *and* opaque: a click on a greyed-out button does not fall through to the
 panel behind it.
 
+### Touch
+
+A finger is the same press, move and release as a mouse, with `event.kind ==
+PointerKind::Touch` and no hover. `UIView` reports it that way; driving a `UIRoot`
+yourself, pass the kind:
+
+```cpp
+root.pointerDown(at, PointerButton::Left, {}, PointerKind::Touch);
+```
+
+| Behaviour | Where |
+|---|---|
+| A drag past 8 px scrolls the nearest `ScrollView` that can move that way, from anywhere in its content; the button under the finger is cancelled, not clicked | `ScrollView` |
+| A quick flick coasts and slows to a stop; a finger down stops it | `ScrollView` |
+| A tap focuses a `TextField` when the finger lifts, so a drag that starts on one scrolls the page and leaves the keyboard down | `TextField` |
+| A mouse drag over scrolling content is left to the widget under it | |
+
+A widget that wants a gesture of its own takes it from the press, before the pressed widget sees the moves:
+
+```cpp
+bool onPointerIntercept(const PointerEvent& e) override {
+    if (e.kind != PointerKind::Touch || glm::distance(e.position, e.pressPosition) < 8.0f)
+        return false;
+    capturePointer();           // cancels the widget that had the press
+    return hasPointerCapture(); // later moves arrive in onPointerMove
+}
+```
+
 ### Focus and shortcuts
 
 ```cpp
@@ -374,8 +402,11 @@ Automation bridge consumes it, and so does a test.
 Layout is in logical pixels at every scale: a 48-unit button is 48 units on a
 200% display. Only two things use the ratio — the shaper rasterizes at
 `pixelSize * scale`, and the backend multiplies vertex positions by it.
-`UIView` derives it from the framebuffer and window sizes; set it yourself with
-`root.setScale()`.
+`UIView` sets it to the framebuffer-to-window ratio times
+`IWindowManager::getContentScale()`, and sizes the tree to the window over the
+content scale, so an Android phone at 2.625x gets a 411-unit-wide tree and
+positions are divided by 2.625 on the way in. Driving a `UIRoot` yourself, set
+it with `root.setScale()`.
 
 ## What it costs
 

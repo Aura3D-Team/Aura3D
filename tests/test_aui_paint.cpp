@@ -20,7 +20,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
+#include <memory>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -30,6 +32,7 @@
 #include "aura/UI/UI.hpp"
 
 #include "TestUtils.h"
+#include "WindowTestUtils.h"
 
 using namespace aura3d;
 using namespace aura3d::ui;
@@ -225,9 +228,12 @@ class RecordingRenderer final : public IRenderer
     void setClearColor(f32, f32, f32, f32) override
     {
     }
+    //! Null unless a test wants a UIView to see a window.
+    wma::IWindowManager *window = nullptr;
+
     wma::IWindowManager *getWindowManager() override
     {
-        return nullptr;
+        return window;
     }
 
     TextureHandle createSolidColorTexture(u8, u8, u8, u8) override
@@ -668,6 +674,93 @@ void testLostFrameIsRedrawnWhileIdle()
     AURA_CHECK(!view.needsDraw(), "and the view idles once the frame reaches the screen");
 }
 
+[[nodiscard]] bool near(f32 a, f32 b)
+{
+    return std::fabs(a - b) < 0.01f;
+}
+
+/// A 100x50 button at the top-left of a view over @p window, counting its clicks.
+struct ScaledView
+{
+    RecordingRenderer renderer;
+    std::unique_ptr<UIView> view;
+    Button *button = nullptr;
+    int clicks = 0;
+
+    explicit ScaledView(aura3d::test::FakeWindow &window)
+    {
+        window.details.decorationMode = wma::DecorationMode::ServerSide;
+        renderer.window = &window;
+        view = std::make_unique<UIView>(renderer);
+        view->attachInput(window);
+
+        button = &view->root().setContent<Column>().add<Button>("Hit");
+        button->layout() = {.width = Length::px(100.0f), .height = Length::px(50.0f), .hAlign = Alignment::Start};
+        button->clicked.connect(
+            [this]
+            {
+                ++clicks;
+            });
+        view->update(0.0f);
+    }
+};
+
+void testContentScaleSizesTheTreeAndMapsInput()
+{
+    aura3d::test::FakeWindow window;
+    window.details.width = 1000;
+    window.details.height = 500;
+    window.contentScale = 2.5f;
+    ScaledView ui(window);
+
+    AURA_CHECK(ui.view->root().size() == glm::vec2(400.0f, 200.0f),
+               "the tree is as many units wide as the window is pixels, over the display's scale");
+    AURA_CHECK(ui.view->root().scale() == 2.5f, "and each unit is that many pixels");
+
+    //! (200, 100) in the window is (80, 40) in the tree, inside the 100x50 button. Taken as it came it is outside.
+    window.mouse.move(200.0, 100.0);
+    ui.view->update(0.0f);
+    window.mouse.press();
+    window.mouse.release();
+    AURA_CHECK(ui.clicks == 1, "a mouse position is divided by the scale on its way in");
+
+    window.touch.down(1, 200.0, 100.0);
+    window.touch.up(1, 200.0, 100.0);
+    AURA_CHECK(ui.clicks == 2, "and so is a finger's");
+
+    window.mouse.move(300.0, 100.0);
+    ui.view->update(0.0f);
+    window.mouse.press();
+    window.mouse.release();
+    AURA_CHECK(ui.clicks == 2, "while a point outside the scaled button misses it");
+}
+
+void testContentScaleMultipliesTheBackingRatio()
+{
+    aura3d::test::FakeWindow window;
+    window.details.width = 400;
+    window.details.height = 200;
+    window.pixelRatio = 2;
+    window.contentScale = 1.5f;
+    ScaledView ui(window);
+
+    AURA_CHECK(near(ui.view->root().scale(), 3.0f), "the backing ratio and the display scale multiply");
+    AURA_CHECK(near(ui.view->root().size().x, 400.0f / 1.5f), "the tree is sized by the display scale alone");
+
+    window.touch.down(1, 120.0, 60.0);
+    window.touch.up(1, 120.0, 60.0);
+    AURA_CHECK(ui.clicks == 1, "and input follows it");
+}
+
+void testContentScaleIsClamped()
+{
+    aura3d::test::FakeWindow window;
+    window.contentScale = 0.0f;
+    ScaledView broken(window);
+    AURA_CHECK(std::isfinite(broken.view->root().scale()) && broken.view->root().scale() > 0.0f,
+               "a window that reports no scale does not collapse the tree");
+}
+
 void testInvalidationTriggersRepaint()
 {
     Harness harness;
@@ -933,6 +1026,9 @@ int main()
     testRoundedCornersAreConstantGeometry();
     testIdleFrameRebuildsNothing();
     testLostFrameIsRedrawnWhileIdle();
+    testContentScaleSizesTheTreeAndMapsInput();
+    testContentScaleMultipliesTheBackingRatio();
+    testContentScaleIsClamped();
     testInvalidationTriggersRepaint();
     testScrolledContentIsClipped();
     testDisabledIsDrawnFaded();

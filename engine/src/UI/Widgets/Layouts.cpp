@@ -1,6 +1,9 @@
 #include "aura/UI/Widgets/Layouts.h"
 
 #include <algorithm>
+#include <cmath>
+
+#include "aura/UI/UIRoot.h"
 
 namespace aura3d::ui
 {
@@ -533,11 +536,124 @@ void ScrollView::scrollIntoView(const Rect &rect)
         _setOffset(_offset.target() + delta, true);
 }
 
+namespace
+{
+
+/// Logical pixels a finger must travel before it is a drag and not a slightly sloppy tap.
+constexpr f32 kTouchSlop = 8.0f;
+
+/// A release slower than this, or after the finger rested this long, does not fling.
+constexpr f32 kFlingMinSpeed = 120.0f;
+constexpr f32 kFlingMaxSpeed = 6000.0f;
+constexpr f32 kFlingRestSeconds = 0.08f;
+
+/// Per second: the speed left after a second is e^-kFlingFriction of it.
+constexpr f32 kFlingFriction = 3.2f;
+constexpr f32 kFlingStopSpeed = 20.0f;
+
+} // namespace
+
 bool ScrollView::onTick(f32 deltaSeconds)
 {
-    const bool running = _offset.tick(deltaSeconds);
+    bool running = _offset.tick(deltaSeconds);
+
+    if (_fling != glm::vec2{0.0f})
+    {
+        const glm::vec2 limit = maxOffset();
+        _setOffset(_offset.target() + _fling * deltaSeconds, false);
+        const glm::vec2 after = _offset.target();
+
+        //! An axis that ran into its edge has nothing left to carry. Tested against the edge itself: a
+        //! frame of zero length moves nothing, and that is not the same as being stopped.
+        if ((_fling.x < 0.0f && after.x <= 0.0f) || (_fling.x > 0.0f && after.x >= limit.x))
+            _fling.x = 0.0f;
+        if ((_fling.y < 0.0f && after.y <= 0.0f) || (_fling.y > 0.0f && after.y >= limit.y))
+            _fling.y = 0.0f;
+
+        _fling *= std::exp(-kFlingFriction * deltaSeconds);
+        if (glm::length(_fling) < kFlingStopSpeed)
+            _fling = glm::vec2{0.0f};
+
+        running = running || _fling != glm::vec2{0.0f};
+    }
+
     invalidateLayout();
     return running;
+}
+
+bool ScrollView::onPointerIntercept(const PointerEvent &event)
+{
+    if (event.kind != PointerKind::Touch || _panActive || _dragActive)
+        return false;
+
+    const glm::vec2 moved = event.position - event.pressPosition;
+
+    //! A finger going down on a coasting view stops it, as it would on a real surface.
+    if (moved == glm::vec2{0.0f})
+    {
+        _fling = glm::vec2{0.0f};
+        return false;
+    }
+
+    const bool vertical = std::abs(moved.y) >= std::abs(moved.x);
+    if (std::abs(vertical ? moved.y : moved.x) < kTouchSlop)
+        return false;
+
+    //! Content follows the finger, so the offset moves the other way. When this view cannot move that way
+    //! (it fits, or it is already at that end) the drag is left for an outer view to take.
+    const glm::vec2 limit = maxOffset();
+    const glm::vec2 target = _offset.target();
+    const f32 wanted = vertical ? target.y - moved.y : target.x - moved.x;
+    const f32 current = vertical ? target.y : target.x;
+    const f32 range = vertical ? limit.y : limit.x;
+    if (range <= 0.0f || std::clamp(wanted, 0.0f, range) == current)
+        return false;
+
+    _panActive = true;
+    _panOrigin = event.position;
+    _panStart = target;
+    _panLast = event.position;
+    _panLastTime = root() != nullptr ? root()->time() : 0.0f;
+    _velocity = glm::vec2{0.0f};
+    _fling = glm::vec2{0.0f};
+
+    const WidgetRef alive(this);
+    capturePointer();
+    if (!alive.get() || !hasPointerCapture())
+    {
+        _panActive = false;
+        return false;
+    }
+
+    invalidatePaint();
+    return true;
+}
+
+void ScrollView::_pan(const PointerEvent &event)
+{
+    glm::vec2 offset = _panStart - (event.position - _panOrigin);
+    _setOffset(offset, false);
+
+    //! Where the edge stopped it, the finger's travel past that is forgotten: pushing back the other way
+    //! moves the content at once, instead of first undoing distance that never scrolled anything.
+    const glm::vec2 actual = _offset.target();
+    if (actual.x != offset.x)
+    {
+        _panStart.x = actual.x;
+        _panOrigin.x = event.position.x;
+    }
+    if (actual.y != offset.y)
+    {
+        _panStart.y = actual.y;
+        _panOrigin.y = event.position.y;
+    }
+
+    const f32 now = root() != nullptr ? root()->time() : _panLastTime;
+    const f32 elapsed = std::max(now - _panLastTime, 1.0f / 240.0f);
+    const glm::vec2 instant = -(event.position - _panLast) / elapsed;
+    _velocity = glm::mix(_velocity, instant, 0.5f);
+    _panLast = event.position;
+    _panLastTime = now;
 }
 
 bool ScrollView::onWheel(const WheelEvent &event)
@@ -671,6 +787,12 @@ bool ScrollView::onPointerDown(const PointerEvent &event)
 
 bool ScrollView::onPointerMove(const PointerEvent &event)
 {
+    if (_panActive && hasPointerCapture())
+    {
+        _pan(event);
+        return true;
+    }
+
     if (!_dragActive || !hasPointerCapture())
         return false;
 
@@ -702,6 +824,30 @@ bool ScrollView::onPointerMove(const PointerEvent &event)
 
 bool ScrollView::onPointerUp(const PointerEvent &event)
 {
+    if (_panActive && event.button == PointerButton::Left)
+    {
+        _panActive = false;
+
+        const f32 rested = root() != nullptr ? root()->time() - _panLastTime : 0.0f;
+        const f32 speed = glm::length(_velocity);
+        const glm::vec2 carried = rested <= kFlingRestSeconds && speed >= kFlingMinSpeed
+                                      ? _velocity * (std::min(speed, kFlingMaxSpeed) / speed)
+                                      : glm::vec2{0.0f};
+
+        //! After the release: letting go of capture tells this widget its press was cancelled, which clears
+        //! any fling it already had.
+        const WidgetRef alive(this);
+        releasePointer();
+        if (!alive.get())
+            return true;
+
+        _fling = carried;
+        if (_fling != glm::vec2{0.0f})
+            setAnimating(true);
+        invalidatePaint();
+        return true;
+    }
+
     if (!_dragActive || event.button != PointerButton::Left)
         return false;
 
@@ -720,6 +866,8 @@ void ScrollView::accessibility(AccessibilityInfo &out) const
 void ScrollView::onPointerCancel()
 {
     _dragActive = false;
+    _panActive = false;
+    _fling = glm::vec2{0.0f};
     invalidatePaint();
 }
 

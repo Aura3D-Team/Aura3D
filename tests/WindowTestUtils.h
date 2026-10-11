@@ -33,6 +33,23 @@ class FakeMouse final : public wma::MouseListener
     }
 };
 
+class FakeTouch final : public wma::TouchListener
+{
+  public:
+    void down(wma::TouchFingerId finger, f64 x, f64 y)
+    {
+        dispatchDown({finger, x, y});
+    }
+    void move(wma::TouchFingerId finger, f64 x, f64 y)
+    {
+        dispatchMove({finger, x, y});
+    }
+    void up(wma::TouchFingerId finger, f64 x, f64 y)
+    {
+        dispatchUp({finger, x, y});
+    }
+};
+
 class FakeWindow final : public wma::IWindowManager
 {
   public:
@@ -50,6 +67,11 @@ class FakeWindow final : public wma::IWindowManager
     wma::WindowFlags flags; // Starts focused.
     wma::KeyboardListener keyboard;
     FakeMouse mouse;
+    FakeTouch touch;
+
+    //! Backing-store pixels per window unit (Retina), and the display's own scale (an Android phone).
+    i32 pixelRatio = 1;
+    f32 contentScale = 1.0f;
 
     wma::HitTest hitTest;
 
@@ -132,6 +154,18 @@ class FakeWindow final : public wma::IWindowManager
     wma::MouseListener &getMouseListener() noexcept override
     {
         return mouse;
+    }
+    wma::TouchListener &getTouchListener() noexcept override
+    {
+        return touch;
+    }
+    wma::FramebufferSize getFramebufferSize() noexcept override
+    {
+        return {details.width * pixelRatio, details.height * pixelRatio};
+    }
+    f32 getContentScale() noexcept override
+    {
+        return contentScale;
     }
     void setTextInputEnabled(bool enabled) noexcept override
     {
