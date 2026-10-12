@@ -8,7 +8,7 @@ Needs libwma 0.6.0.
 
 ### Added
 
-- Finger drags scroll. `ScrollView` takes a touch drag past an 8 px slop, from anywhere in its content, and cancels the button or field under the finger so it does not click when it lifts. It carries on after a quick flick and slows to a stop; touching it stops it. A drag it cannot follow (it fits, or it is at that end) goes to an outer scroll view. A mouse drag still does not scroll.
+- Finger drags scroll. `ScrollView` takes a touch drag past an 8 px slop, from anywhere in its content, and cancels the button or field under the finger so it does not click when it lifts. It carries on after a quick flick and slows to a stop; touching it stops it, and that touch does not click what is under the finger. A drag it cannot follow (it fits, or it is at that end) goes to an outer scroll view. A mouse drag still does not scroll.
 - `Widget::onPointerIntercept()`, offered a press and its moves before the widget that has the pointer sees them, deepest ancestor first. `PointerKind` and `PointerEvent::kind` / `pressPosition`; `UIRoot::pointerDown()` and `pointerUp()` take the kind, and `UIRoot::time()` is the clock a gesture measures speed by.
 
 ### Changed

@@ -410,6 +410,10 @@ bool UIRoot::_offerIntercept(const PointerEvent &event)
     //! Deepest first, so the scroll view nearest the finger gets the first claim.
     for (usize i = _pressChain.size(); i-- > 0;)
     {
+        //! A handler further down may end the press, and that empties the chain under this loop.
+        if (i >= _pressChain.size())
+            continue;
+
         Widget *node = _pressChain[i].get();
         if (node == nullptr || node == _capture || node->root() != this || !node->effectivelyEnabled() ||
             !node->effectivelyVisible())
@@ -502,7 +506,11 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
         _pressKind = kind;
         for (Widget *node : _hoverChain)
             _pressChain.emplace_back(node);
-        _offerIntercept(event);
+
+        //! A widget that takes the press itself (a coasting scroll view caught by a finger) keeps it from
+        //! the one under the finger, so that one is not clicked when the finger lifts.
+        if (_offerIntercept(event))
+            return true;
     }
 
     const bool handled = _bubble(target, event,

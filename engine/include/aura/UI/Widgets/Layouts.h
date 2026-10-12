@@ -329,6 +329,10 @@ class ScrollView final : public Widget
     bool _dragActive = false;
     f32 _grab = 0.0f;
 
+    /// Takes the gesture for a finger drag: captures the pointer and starts measuring from @p event.
+    /// False when the capture was refused.
+    bool _beginPan(const PointerEvent &event);
+
     /// Follows the finger to @p event.position, and measures how fast it is going.
     void _pan(const PointerEvent &event);
 

@@ -253,14 +253,14 @@ class UIRoot
     /// @name Theme and text
     /// @{
 
-    /// Editable theme. Every widget resolves its style per paint, so an edit
-    /// here shows up on the next frame with nothing to invalidate by hand.
     /// Seconds of update() time so far. What a gesture measures its speed against.
     [[nodiscard]] f32 time() const noexcept
     {
         return _time;
     }
 
+    /// Editable theme. Every widget resolves its style per paint, so an edit
+    /// here shows up on the next frame with nothing to invalidate by hand.
     [[nodiscard]] Theme &theme() noexcept
     {
         _requestLayout();

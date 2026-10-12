@@ -508,11 +508,14 @@ void ScrollView::_setOffset(glm::vec2 offset, bool animate)
 
 void ScrollView::scrollTo(glm::vec2 offset)
 {
+    //! A scroll the caller asked for replaces one the finger started.
+    _fling = glm::vec2{0.0f};
     _setOffset(offset, false);
 }
 
 void ScrollView::scrollBy(glm::vec2 delta)
 {
+    _fling = glm::vec2{0.0f};
     _setOffset(_offset.target() + delta, true);
 }
 
@@ -533,7 +536,10 @@ void ScrollView::scrollIntoView(const Rect &rect)
         delta.y = rect.max.y - viewport.max.y;
 
     if (delta != glm::vec2{0.0f})
+    {
+        _fling = glm::vec2{0.0f};
         _setOffset(_offset.target() + delta, true);
+    }
 }
 
 namespace
@@ -546,6 +552,10 @@ constexpr f32 kTouchSlop = 8.0f;
 constexpr f32 kFlingMinSpeed = 120.0f;
 constexpr f32 kFlingMaxSpeed = 6000.0f;
 constexpr f32 kFlingRestSeconds = 0.08f;
+
+/// The clock only moves once a frame, so moves closer together than this share a timestamp. Their
+/// distance is carried over to the next sample instead of being divided by a time that did not pass.
+constexpr f32 kVelocitySampleSeconds = 1.0f / 120.0f;
 
 /// Per second: the speed left after a second is e^-kFlingFriction of it.
 constexpr f32 kFlingFriction = 3.2f;
@@ -588,12 +598,10 @@ bool ScrollView::onPointerIntercept(const PointerEvent &event)
 
     const glm::vec2 moved = event.position - event.pressPosition;
 
-    //! A finger going down on a coasting view stops it, as it would on a real surface.
+    //! A finger going down on a coasting view stops it, as it would on a real surface, and the press is
+    //! spent on that: the button under the finger is not clicked when it lifts.
     if (moved == glm::vec2{0.0f})
-    {
-        _fling = glm::vec2{0.0f};
-        return false;
-    }
+        return _fling != glm::vec2{0.0f} && _beginPan(event);
 
     const bool vertical = std::abs(moved.y) >= std::abs(moved.x);
     if (std::abs(vertical ? moved.y : moved.x) < kTouchSlop)
@@ -609,9 +617,14 @@ bool ScrollView::onPointerIntercept(const PointerEvent &event)
     if (range <= 0.0f || std::clamp(wanted, 0.0f, range) == current)
         return false;
 
+    return _beginPan(event);
+}
+
+bool ScrollView::_beginPan(const PointerEvent &event)
+{
     _panActive = true;
     _panOrigin = event.position;
-    _panStart = target;
+    _panStart = _offset.target();
     _panLast = event.position;
     _panLastTime = root() != nullptr ? root()->time() : 0.0f;
     _velocity = glm::vec2{0.0f};
@@ -648,8 +661,13 @@ void ScrollView::_pan(const PointerEvent &event)
         _panOrigin.y = event.position.y;
     }
 
+    //! Speed is measured between samples a real interval apart. Several moves can land in one frame, and
+    //! the clock is the same for all of them, so a sample waits for time to have passed.
     const f32 now = root() != nullptr ? root()->time() : _panLastTime;
-    const f32 elapsed = std::max(now - _panLastTime, 1.0f / 240.0f);
+    const f32 elapsed = now - _panLastTime;
+    if (elapsed < kVelocitySampleSeconds)
+        return;
+
     const glm::vec2 instant = -(event.position - _panLast) / elapsed;
     _velocity = glm::mix(_velocity, instant, 0.5f);
     _panLast = event.position;

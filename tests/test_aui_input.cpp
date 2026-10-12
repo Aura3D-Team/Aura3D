@@ -717,7 +717,45 @@ void testTouchStopsAFling()
     for (int frame = 0; frame < 20; ++frame)
         list.harness.root.update(0.016f);
     AURA_CHECK(near(list.scroll->offset().y, held), "putting a finger down on a coasting view stops it");
+    AURA_CHECK(list.harness.root.pointerCapture() == list.scroll, "and the view keeps the finger");
     list.harness.touchUp({50.0f, 50.0f});
+    AURA_CHECK(list.totalClicks() == 0, "so the tap that stopped it does not also click the button under it");
+    list.harness.layout();
+    AURA_CHECK(near(list.scroll->offset().y, held), "and lifting without moving leaves the content where it stopped");
+}
+
+/// Distance a flick carries after the finger lifts, with the same finger speed delivered as
+/// @p movesPerFrame moves per frame.
+[[nodiscard]] f32 flingDistance(int movesPerFrame)
+{
+    ButtonList list;
+    list.harness.touchDown({50.0f, 90.0f});
+
+    const f32 step = 6.0f / static_cast<f32>(movesPerFrame);
+    f32 y = 90.0f;
+    for (int frame = 0; frame < 6; ++frame)
+        for (int move = 0; move < movesPerFrame; ++move)
+        {
+            y -= step;
+            list.harness.touchMove({50.0f, y}, move == 0 ? 0.016f : 0.0f);
+        }
+    list.harness.touchUp({50.0f, y});
+    list.harness.layout();
+
+    const f32 lifted = list.scroll->offset().y;
+    for (int frame = 0; frame < 600; ++frame)
+        list.harness.root.update(0.016f);
+    return list.scroll->offset().y - lifted;
+}
+
+void testTouchSpeedDoesNotDependOnMovesPerFrame()
+{
+    const f32 once = flingDistance(1);
+    const f32 batched = flingDistance(3);
+
+    AURA_CHECK(once > 0.0f && batched > 0.0f, "a flick carries on however its moves arrive");
+    AURA_CHECK(std::abs(once - batched) < 0.25f * once,
+               "and moves that share a frame's timestamp do not make the finger look faster");
 }
 
 void testTouchTapFocusesATextField()
@@ -858,6 +896,7 @@ int main()
     testTouchFling();
     testTouchRestBeforeLiftingDoesNotFling();
     testTouchStopsAFling();
+    testTouchSpeedDoesNotDependOnMovesPerFrame();
     testTouchTapFocusesATextField();
     testAccessibilityTree();
     testSignalLifetime();

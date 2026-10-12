@@ -32,7 +32,7 @@ compilation database; diagnostics remain limited to changed lines. Platform
 sources outside that database are reported separately. Vendor, generated and
 build directories are excluded. No repository-wide reformat is required.
 
-The container jobs build pinned Ink 0.5.0 sources for their target ABI with
+The container jobs build pinned Ink 0.6.0 sources for their target ABI with
 [setup-ink](../.github/actions/setup-ink/action.yml); the image's older Ink is
 insufficient. Put the action's installation prefix first in `CMAKE_PREFIX_PATH`.
 
