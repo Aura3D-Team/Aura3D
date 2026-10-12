@@ -541,8 +541,8 @@ bool UIRoot::pointerUp(glm::vec2 position, PointerButton button, Modifiers mods,
 
     Widget *target = _capture ? _capture : hovered();
 
-    PointerEvent event{.position = position, .button = button, .mods = mods, .kind = kind,
-                       .pressPosition = _pressPosition};
+    PointerEvent event{
+        .position = position, .button = button, .mods = mods, .kind = kind, .pressPosition = _pressPosition};
     if (button == PointerButton::Left)
         _endPress();
 
