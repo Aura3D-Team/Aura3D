@@ -43,7 +43,7 @@ MtlDeviceManager::~MtlDeviceManager()
      */
     _commandQueue.reset();
     _device.reset();
-    INK_DEBUG << "MtlDeviceManager destroyed";
+    INK_TRACE << "MtlDeviceManager destroyed";
 }
 
 } // namespace mtl

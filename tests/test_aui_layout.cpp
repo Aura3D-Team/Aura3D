@@ -168,6 +168,30 @@ void testMinMax()
     AURA_CHECK(floored.bounds().width() >= 60.0f, "minWidth holds a child open");
 }
 
+void testLabelFollowsThemeFontSize()
+{
+    Harness harness;
+    harness.root.theme().metrics.fontSize = 24.0f;
+
+    auto &page = harness.root.setContent<Column>();
+    auto &unset = page.add<Label>("Aura3D 0123");
+    auto &explicitSize = page.add<Label>("Aura3D 0123");
+    explicitSize.setFontSize(24.0f);
+    auto &small = page.add<Label>("Aura3D 0123");
+    small.setFontSize(12.0f);
+    harness.layout();
+
+    AURA_CHECK(near(unset.desiredSize().y, explicitSize.desiredSize().y) &&
+                   near(unset.desiredSize().x, explicitSize.desiredSize().x),
+               "a label with no size set is as large as the theme's font size");
+    AURA_CHECK(unset.desiredSize().y > small.desiredSize().y, "and an explicit size still overrides it");
+    AURA_CHECK(unset.fontSize() == 0.0f, "the default is reported as zero, as documented");
+
+    harness.root.theme().metrics.fontSize = 12.0f;
+    harness.layout();
+    AURA_CHECK(near(unset.desiredSize().y, small.desiredSize().y), "and it follows the theme when that changes");
+}
+
 void testCollapsedTakesNoSpace()
 {
     Harness harness;
@@ -378,6 +402,7 @@ int main()
     testFlexShares();
     testFixedAndFillMix();
     testMinMax();
+    testLabelFollowsThemeFontSize();
     testCollapsedTakesNoSpace();
     testIntrinsicSizing();
     testWrappingHeightFollowsWidth();

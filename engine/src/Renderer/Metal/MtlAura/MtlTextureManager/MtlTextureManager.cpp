@@ -59,7 +59,7 @@ MtlTextureManager::~MtlTextureManager()
     _sampler.reset();
     _device = nullptr;
 
-    INK_DEBUG << "MtlTextureManager destroyed";
+    INK_TRACE << "MtlTextureManager destroyed";
 }
 
 NS::SharedPtr<MTL::Texture> MtlTextureManager::allocate(u32 width, u32 height, const char *label,

@@ -178,7 +178,7 @@ gfx::Mesh3D MeshLoader::loadOBJ(const std::string &path)
 
     if (!fileHasNormals)
     {
-        INK_DEBUG << "MeshLoader: '" << path << "' has no normals; generating them";
+        INK_TRACE << "MeshLoader: '" << path << "' has no normals; generating them";
         generateNormals(mesh);
     }
 

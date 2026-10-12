@@ -29,7 +29,7 @@ VkDeviceManager::~VkDeviceManager()
         _device = VK_NULL_HANDLE;
     }
     _vkInstance = nullptr;
-    INK_DEBUG << "VkDeviceManager deleted";
+    INK_TRACE << "VkDeviceManager deleted";
 }
 
 void VkDeviceManager::_setBestDevice(VkInstance vkInstance)

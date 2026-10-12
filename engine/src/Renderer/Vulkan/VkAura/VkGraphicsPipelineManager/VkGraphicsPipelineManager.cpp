@@ -85,7 +85,7 @@ VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
     }
 
     // Base class destructor will handle pipeline and pipeline layout
-    INK_DEBUG << "Graphics Pipeline destroyed.";
+    INK_TRACE << "Graphics Pipeline destroyed.";
 }
 
 void VkGraphicsPipelineManager::setPushConstantRange(VkShaderStageFlags stageFlags, u32 offset, u32 size)
@@ -187,7 +187,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
         // Store the layout
         _descriptorSetLayouts[setInfo.setIndex] = layout;
 
-        INK_DEBUG << "Created descriptor set layout for set " << setInfo.setIndex << " with " << layoutBindings.size()
+        INK_TRACE << "Created descriptor set layout for set " << setInfo.setIndex << " with " << layoutBindings.size()
                   << " bindings";
     }
 
@@ -233,7 +233,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     // Create the pipeline layout
     VK_RESULT_CHECK(vkCreatePipelineLayout(*_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout));
 
-    INK_DEBUG << "Created pipeline layout with " << layouts.size() << " descriptor set layouts and "
+    INK_TRACE << "Created pipeline layout with " << layouts.size() << " descriptor set layouts and "
               << (_hasPushConstants ? _pushConstantRange.size : 0u) << " push-constant bytes";
 }
 
@@ -419,7 +419,7 @@ void VkGraphicsPipelineManager::createPipeline(
     // Create the graphics pipeline
     VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &_pipeline));
 
-    INK_DEBUG << "Graphics pipeline created";
+    INK_TRACE << "Graphics pipeline created";
 }
 
 void VkGraphicsPipelineManager::cmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint)

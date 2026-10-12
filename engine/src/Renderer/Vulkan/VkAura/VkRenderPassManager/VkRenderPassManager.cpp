@@ -22,7 +22,7 @@ VkRenderPassManager::~VkRenderPassManager()
 
     _device = nullptr;
 
-    INK_DEBUG << "RenderPass Destroyed.";
+    INK_TRACE << "RenderPass Destroyed.";
 }
 
 VkRenderPass *VkRenderPassManager::getRenderPass()

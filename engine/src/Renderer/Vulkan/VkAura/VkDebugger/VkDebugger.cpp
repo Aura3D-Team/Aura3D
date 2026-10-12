@@ -85,7 +85,7 @@ VkDebugger::~VkDebugger()
     {
         func(*_vkInstance, _debugMessenger, nullptr);
         _debugMessenger = VK_NULL_HANDLE;
-        INK_DEBUG << "VkDebugger deleted";
+        INK_TRACE << "VkDebugger deleted";
     }
     _vkInstance = nullptr;
 }

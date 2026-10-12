@@ -23,7 +23,7 @@ TextureHandle ResourceManager::loadTexture(const std::string &path)
     const TextureHandle handle = _renderer->createTextureFromFile(path);
     _textureCache.emplace(path, handle);
 
-    INK_DEBUG << "ResourceManager: cached texture '" << path << "' as handle " << handle;
+    INK_TRACE << "ResourceManager: cached texture '" << path << "' as handle " << handle;
     return handle;
 }
 
@@ -45,7 +45,7 @@ MeshHandle ResourceManager::loadMesh(const std::string &path)
     const MeshHandle handle = _renderer->createMesh(std::move(mesh));
     _meshCache.emplace(path, handle);
 
-    INK_DEBUG << "ResourceManager: cached mesh '" << path << "' as handle " << handle;
+    INK_TRACE << "ResourceManager: cached mesh '" << path << "' as handle " << handle;
     return handle;
 }
 
@@ -64,7 +64,7 @@ AudioClipHandle ResourceManager::loadSound(const std::string &path, AudioClipMod
     const AudioClipHandle handle = _audio->loadClip(path, mode);
     _soundCache.emplace(path, handle);
 
-    INK_DEBUG << "ResourceManager: cached sound '" << path << "' as handle " << handle;
+    INK_TRACE << "ResourceManager: cached sound '" << path << "' as handle " << handle;
     return handle;
 }
 

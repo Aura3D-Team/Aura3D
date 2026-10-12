@@ -66,4 +66,9 @@ android {
     }
 }
 
-dependencies {}
+dependencies {
+    // SDL's Java half, from the same SDL3 install as the native library it is linked against. SDLActivity
+    // refuses to start when the two versions differ, and a copy checked into this repo drifts from the install.
+    implementation fileTree(dir: "${androidDepsPrefix}/android/share/java/SDL3", include: ['SDL3-*.jar'],
+                            exclude: ['*-sources.jar'])
+}

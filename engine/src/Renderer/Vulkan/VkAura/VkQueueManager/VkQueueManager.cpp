@@ -34,7 +34,7 @@ void VkQueueManager::setupQueue(VkDevice device, u32 queueFamilyIndex, const VkQ
             vkGetDeviceQueue(device, queueData.vkDeviceQueueCreateInfo.queueFamilyIndex, i, &queue);
             queueData.queues.push_back(queue);
 
-            INK_DEBUG << "Queue " << i << " set up successfully for family index " << queueFamilyIndex << " with flags "
+            INK_TRACE << "Queue " << i << " set up successfully for family index " << queueFamilyIndex << " with flags "
                       << flags;
         }
     }

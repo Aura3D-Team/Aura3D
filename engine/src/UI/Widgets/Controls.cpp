@@ -1111,18 +1111,33 @@ bool TextField::onPointerDown(const PointerEvent &event)
     capturePointer();
     if (!alive.get() || !hasPointerCapture())
         return true;
+
+    if (event.kind == PointerKind::Touch)
+    {
+        _touchPress = true;
+        _touchClicks = event.clickCount;
+        return true;
+    }
+
+    _beginEdit(event, event.clickCount);
+    return true;
+}
+
+void TextField::_beginEdit(const PointerEvent &event, u32 clickCount)
+{
+    const WidgetRef alive(this);
     requestFocus(FocusReason::Pointer);
     if (!alive.get() || !hasPointerCapture())
-        return true;
+        return;
 
     const Rect content = contentRect();
     const usize byte = _shaped.byteAt({event.position.x - content.min.x + _scrollX, 0.0f});
 
-    if (event.clickCount >= 3)
+    if (clickCount >= 3)
     {
         selectAll();
     }
-    else if (event.clickCount == 2)
+    else if (clickCount == 2)
     {
         const std::string &value = text.get();
         _selection = utf8::previousWord(value, utf8::nextBoundary(value, byte));
@@ -1134,8 +1149,6 @@ bool TextField::onPointerDown(const PointerEvent &event)
         setCaret(byte, event.mods.shift);
         _dragging = true;
     }
-
-    return true;
 }
 
 bool TextField::onPointerMove(const PointerEvent &event)
@@ -1153,7 +1166,23 @@ bool TextField::onPointerUp(const PointerEvent &event)
     if (event.button != PointerButton::Left)
         return false;
     _dragging = false;
+
+    const bool tap = _touchPress && hitTest(event.position);
+    _touchPress = false;
+    if (tap)
+    {
+        _beginEdit(event, _touchClicks);
+        _dragging = false; //! A finger that lifted has nothing left to drag a selection with.
+    }
+
     return Control::onPointerUp(event);
+}
+
+void TextField::onPointerCancel()
+{
+    _touchPress = false;
+    _dragging = false;
+    Control::onPointerCancel();
 }
 
 void TextField::onFocusIn(FocusReason reason)

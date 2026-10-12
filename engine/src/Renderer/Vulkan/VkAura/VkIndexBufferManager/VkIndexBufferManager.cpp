@@ -87,7 +87,7 @@ void VkIndexBufferManager::createIndexBufferImpl(const std::string &name, VkComm
 
         VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0, bufferSize));
 
-        INK_DEBUG << "Created persistently mapped index buffer: " << name << ", indices: " << bufferInfo.indexCount;
+        INK_TRACE << "Created persistently mapped index buffer: " << name << ", indices: " << bufferInfo.indexCount;
     }
     else
     {
@@ -119,7 +119,7 @@ void VkIndexBufferManager::createIndexBufferImpl(const std::string &name, VkComm
 
         _memoryManager->destroyBuffer(staging);
 
-        INK_DEBUG << "Created device-local index buffer: " << name << ", indices: " << bufferInfo.indexCount;
+        INK_TRACE << "Created device-local index buffer: " << name << ", indices: " << bufferInfo.indexCount;
     }
 
     _indexBuffers[name] = bufferInfo;
@@ -207,7 +207,7 @@ void VkIndexBufferManager::cleanup(const std::string &name)
 
     destroyBufferInfo(_memoryManager, it->second);
     _indexBuffers.erase(it);
-    INK_DEBUG << "Cleaned up index buffer: " << name;
+    INK_TRACE << "Cleaned up index buffer: " << name;
 }
 
 void VkIndexBufferManager::cleanup()

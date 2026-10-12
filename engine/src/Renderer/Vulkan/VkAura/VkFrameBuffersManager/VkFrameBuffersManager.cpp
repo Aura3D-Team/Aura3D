@@ -19,7 +19,7 @@ VkFrameBuffersManager::~VkFrameBuffersManager()
 
     _device = nullptr;
 
-    INK_DEBUG << "FrameBuffers destroyed.";
+    INK_TRACE << "FrameBuffers destroyed.";
 }
 
 void VkFrameBuffersManager::createFrameBuffers(const std::vector<VkImageView> &imageViews, VkRenderPass renderPass,

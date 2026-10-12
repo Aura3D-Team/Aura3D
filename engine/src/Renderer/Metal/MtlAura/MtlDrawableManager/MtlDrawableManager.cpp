@@ -34,7 +34,7 @@ MtlDrawableManager::~MtlDrawableManager()
     _layers = nullptr;
     _device = nullptr;
 
-    INK_DEBUG << "MtlDrawableManager destroyed";
+    INK_TRACE << "MtlDrawableManager destroyed";
 }
 
 bool MtlDrawableManager::acquire()
@@ -125,7 +125,7 @@ void MtlDrawableManager::createDepthTexture(u32 width, u32 height)
     _depthWidth = width;
     _depthHeight = height;
 
-    INK_DEBUG << "Metal depth attachment: " << width << "x" << height;
+    INK_TRACE << "Metal depth attachment: " << width << "x" << height;
 }
 
 } // namespace mtl

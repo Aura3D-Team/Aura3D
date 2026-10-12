@@ -208,7 +208,9 @@ class Spacer final : public Widget
  *
  * Measures its content unbounded on the scrolling axes, so the child reports
  * the size it actually wants rather than being squeezed into the viewport.
- * The wheel scrolls; the bars can be dragged.
+ * The wheel scrolls; the bars can be dragged. A finger drags the content itself
+ * and lets go with some speed left, which carries on and slows down. Only a finger:
+ * a mouse drag over the content is left to what is under it.
  *
  * @code
  * auto& list = page.add<ScrollView>();
@@ -287,6 +289,8 @@ class ScrollView final : public Widget
     bool onPointerMove(const PointerEvent &event) override;
     bool onPointerUp(const PointerEvent &event) override;
     void onPointerCancel() override;
+    [[nodiscard]] bool interceptsPointer(PointerKind kind) const noexcept override;
+    bool onPointerIntercept(const PointerEvent &event) override;
 
     bool onTick(f32 deltaSeconds) override;
 
@@ -325,6 +329,24 @@ class ScrollView final : public Widget
     Axis _dragging = Axis::Vertical;
     bool _dragActive = false;
     f32 _grab = 0.0f;
+
+    /// Takes the gesture for a finger drag: captures the pointer and starts measuring from @p event.
+    /// False when the capture was refused.
+    bool _beginPan(const PointerEvent &event);
+
+    /// Follows the finger to @p event.position, and measures how fast it is going.
+    void _pan(const PointerEvent &event);
+
+    //! A finger drag on the content. The offset it started from and where the finger was then, so the
+    //! content stays under the finger; re-anchored when an edge stops it, so reversing responds at once.
+    bool _panActive = false;
+    glm::vec2 _panOrigin{0.0f};
+    glm::vec2 _panStart{0.0f};
+    glm::vec2 _panLast{0.0f};
+    f32 _panLastTime = 0.0f;
+    glm::vec2 _velocity{0.0f}; //! Offset units per second, smoothed over the last few moves.
+    u32 _velocitySamples = 0;  //! How many moves it has been measured over; the first one seeds it.
+    glm::vec2 _fling{0.0f};    //! What is left of it after the finger lifted.
 };
 
 } // namespace aura3d::ui

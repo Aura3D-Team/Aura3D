@@ -29,7 +29,7 @@ ImageData ImageLoader::loadRGBA(const std::string &path)
 
     stbi_image_free(decoded);
 
-    INK_DEBUG << "ImageLoader: loaded '" << path << "' (" << image.width << "x" << image.height << ", "
+    INK_TRACE << "ImageLoader: loaded '" << path << "' (" << image.width << "x" << image.height << ", "
               << image.channels << " source channels)";
 
     return image;

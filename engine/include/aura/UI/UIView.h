@@ -166,8 +166,8 @@ class UIView
     /// @}
 
   private:
-    /// Matches the tree to the window: logical size, and the device-pixel
-    /// ratio the framebuffer implies.
+    /// Matches the tree to the window: its size in UI units, and how many
+    /// framebuffer pixels one of them is.
     void _syncSurface();
 
     /// Reads the cursor and dispatches a move if it went anywhere. Polled
@@ -189,6 +189,10 @@ class UIView
 
     wma::IWindowManager *_window = nullptr;
     wma::MouseListener *_mouse = nullptr;
+
+    //! The display's own scale (wma's getContentScale()). The tree is laid out in units that many times
+    //! larger than the window's, so every position the window reports is divided by this on the way in.
+    f32 _contentScale = 1.0f;
 
     glm::vec2 _pointer{0.0f};
     bool _pointerKnown = false;

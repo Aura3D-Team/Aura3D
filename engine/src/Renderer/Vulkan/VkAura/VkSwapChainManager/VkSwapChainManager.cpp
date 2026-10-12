@@ -118,7 +118,7 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
         _swapChainCreateInfo.queueFamilyIndexCount = static_cast<u32>(queueFamilyIndices.size());
         _swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices.data();
 
-        INK_DEBUG << "VK_SHARING_MODE_CONCURRENT";
+        INK_TRACE << "VK_SHARING_MODE_CONCURRENT";
     }
     else
     {
@@ -126,7 +126,7 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
         _swapChainCreateInfo.queueFamilyIndexCount = static_cast<u32>(queueFamilyIndices.size());
         _swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices.data();
 
-        INK_DEBUG << "VK_SHARING_MODE_EXCLUSIVE";
+        INK_TRACE << "VK_SHARING_MODE_EXCLUSIVE";
     }
 
     // currentTransform reflects the device's physical orientation relative to
@@ -157,9 +157,9 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
 
     VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, nullptr, &_swapChain));
 
-    INK_DEBUG << "SwapChain successfuly created!";
-    INK_DEBUG << "ImageCount: " << imageCount;
-    INK_DEBUG << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
+    INK_TRACE << "SwapChain successfuly created!";
+    INK_TRACE << "ImageCount: " << imageCount;
+    INK_TRACE << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
 
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, nullptr);
     _swapChainImages.resize(imageCount);
@@ -297,7 +297,7 @@ void VkSwapChainManager::cleanup()
         // aborts on (observed on-device during repeated surface-lost
         // recovery attempts).
         _swapChain = VK_NULL_HANDLE;
-        INK_DEBUG << "VkSwapChain deleted";
+        INK_TRACE << "VkSwapChain deleted";
     }
 
     _swapChainImages.clear();

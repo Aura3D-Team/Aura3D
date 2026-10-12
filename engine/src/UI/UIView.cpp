@@ -1,5 +1,6 @@
 #include "aura/UI/UIView.h"
 
+#include <algorithm>
 #include <string>
 
 #include "aura/Core/AuraSettings/AuraSettings.h"
@@ -11,6 +12,10 @@ namespace aura3d::ui
 
 namespace
 {
+
+//! A broken display report must not collapse the UI to nothing or blow it up.
+constexpr f32 kMinContentScale = 0.25f;
+constexpr f32 kMaxContentScale = 8.0f;
 
 [[nodiscard]] PointerButton toPointerButton(i32 button) noexcept
 {
@@ -105,7 +110,7 @@ void UIView::attachInput(wma::IWindowManager &window)
         {
             const IWindowDecoration *decoration = windowDecoration();
             return decoration && decoration->visibility() == Visibility::Visible
-                       ? decoration->windowHit({static_cast<f32>(x), static_cast<f32>(y)})
+                       ? decoration->windowHit(glm::vec2{static_cast<f32>(x), static_cast<f32>(y)} / _contentScale)
                        : wma::WindowHit::Client;
         });
     _syncSurface();
@@ -163,7 +168,7 @@ void UIView::attachInput(wma::IWindowManager &window)
 
     const auto trackFinger = [this](const wma::WMATouchPoint &point)
     {
-        _pointer = {static_cast<f32>(point.x), static_cast<f32>(point.y)};
+        _pointer = glm::vec2{static_cast<f32>(point.x), static_cast<f32>(point.y)} / _contentScale;
         _pointerKnown = true;
     };
 
@@ -179,7 +184,7 @@ void UIView::attachInput(wma::IWindowManager &window)
             //! A finger arrives already on the widget, so hover has to be
             //! established before the press or the press has nothing to land on.
             _root.pointerMoved(_pointer);
-            _root.pointerDown(_pointer);
+            _root.pointerDown(_pointer, PointerButton::Left, {}, PointerKind::Touch);
         }));
 
     touch.setMoveAction(wma::TouchInputCallback::from(
@@ -197,7 +202,7 @@ void UIView::attachInput(wma::IWindowManager &window)
             if (alive.expired() || !_touchActive || point.fingerId != _finger)
                 return;
             trackFinger(point);
-            _root.pointerUp(_pointer);
+            _root.pointerUp(_pointer, PointerButton::Left, {}, PointerKind::Touch);
             _root.pointerLeft();
             _touchActive = false;
         }));
@@ -209,7 +214,7 @@ void UIView::_syncPointer()
         return;
 
     const wma::WMAMousePosition position = _mouse->getCurrentPosition();
-    const glm::vec2 current{static_cast<f32>(position.x), static_cast<f32>(position.y)};
+    const glm::vec2 current = glm::vec2{static_cast<f32>(position.x), static_cast<f32>(position.y)} / _contentScale;
 
     if (_pointerKnown && current == _pointer)
         return;
@@ -228,7 +233,8 @@ void UIView::_syncSurface()
     const wma::WindowDetails &details = _renderer->getWindowDetails();
 
     glm::vec2 logical{static_cast<f32>(details.width), static_cast<f32>(details.height)};
-    f32 scale = 1.0f;
+    f32 ratio = 1.0f;
+    f32 content = 1.0f;
 
     if (wma::IWindowManager *window = _renderer->getWindowManager())
     {
@@ -245,12 +251,21 @@ void UIView::_syncSurface()
              * device-pixel ratio, and taking it from the two the platform
              * actually gives us is more dependable than any scale setting.
              */
-            scale = static_cast<f32>(framebuffer.width) / logical.x;
+            ratio = static_cast<f32>(framebuffer.width) / logical.x;
         }
+
+        /*
+         * What the ratio cannot see: Android draws a phone's surface at the
+         * window's own pixel count, so the display density is in neither size.
+         * The window asks for it; the tree is laid out in units that much
+         * larger than the window's, and drawn that much bigger.
+         */
+        content = std::clamp(window->getContentScale(), kMinContentScale, kMaxContentScale);
     }
 
-    _root.setScale(scale);
-    _root.resize(logical);
+    _contentScale = content;
+    _root.setScale(ratio * content);
+    _root.resize(logical / content);
     if (auto *decoration = windowDecoration())
     {
         auto *window = _renderer->getWindowManager();

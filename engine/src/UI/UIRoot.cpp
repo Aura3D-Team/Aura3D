@@ -405,6 +405,35 @@ bool UIRoot::isHovered(const Widget *widget) const noexcept
     return widget != nullptr && std::ranges::find(_hoverChain, widget) != _hoverChain.end();
 }
 
+bool UIRoot::_offerIntercept(const PointerEvent &event)
+{
+    //! Deepest first, so the scroll view nearest the finger gets the first claim.
+    for (usize i = _pressChain.size(); i-- > 0;)
+    {
+        //! A handler further down may end the press, and that empties the chain under this loop.
+        if (i >= _pressChain.size())
+            continue;
+
+        Widget *node = _pressChain[i].get();
+        if (node == nullptr || node == _capture || node->root() != this || !node->effectivelyEnabled() ||
+            !node->effectivelyVisible())
+            continue;
+
+        if (node->onPointerIntercept(event))
+        {
+            _pressChain.clear();
+            return true;
+        }
+    }
+    return false;
+}
+
+void UIRoot::_endPress() noexcept
+{
+    _pressChain.clear();
+    _pressKind = PointerKind::Mouse;
+}
+
 bool UIRoot::pointerMoved(glm::vec2 position)
 {
     if (_layoutDirty)
@@ -413,9 +442,12 @@ bool UIRoot::pointerMoved(glm::vec2 position)
     _pointer = position;
     _pointerInside = true;
 
+    PointerEvent event{.position = position, .delta = delta, .kind = _pressKind, .pressPosition = _pressPosition};
+    if (!_pressChain.empty())
+        _offerIntercept(event);
+
     if (_capture)
     {
-        PointerEvent event{.position = position, .delta = delta};
         event.local = position - _capture->bounds().min;
         _capture->onPointerMove(event);
         return true;
@@ -423,7 +455,6 @@ bool UIRoot::pointerMoved(glm::vec2 position)
 
     _updateHover(position);
 
-    PointerEvent event{.position = position, .delta = delta};
     const bool handled = _bubble(hovered(), event,
                                  [](Widget &node, PointerEvent &e)
                                  {
@@ -433,12 +464,13 @@ bool UIRoot::pointerMoved(glm::vec2 position)
     return handled || !_hoverChain.empty();
 }
 
-bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mods)
+bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mods, PointerKind kind)
 {
     if (_layoutDirty)
         _layout();
     _pointer = position;
     _pointerInside = true;
+    _endPress();
 
     _updateHover(position);
 
@@ -459,7 +491,28 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
 
     Widget *target = _capture ? _capture : hovered();
 
-    PointerEvent event{.position = position, .button = button, .mods = mods, .clickCount = _clickCount};
+    PointerEvent event{.position = position,
+                       .button = button,
+                       .mods = mods,
+                       .clickCount = _clickCount,
+                       .kind = kind,
+                       .pressPosition = position};
+
+    //! Only the primary button starts a gesture. The chain is recorded before dispatch, because a widget
+    //! that takes the press captures the pointer and the ancestors still need to hear about the moves.
+    if (button == PointerButton::Left)
+    {
+        _pressPosition = position;
+        _pressKind = kind;
+        for (Widget *node : _hoverChain)
+            if (node->interceptsPointer(kind))
+                _pressChain.emplace_back(node);
+
+        //! A widget that takes the press itself (a coasting scroll view caught by a finger) keeps it from
+        //! the one under the finger, so that one is not clicked when the finger lifts.
+        if (!_pressChain.empty() && _offerIntercept(event))
+            return true;
+    }
 
     const bool handled = _bubble(target, event,
                                  [](Widget &node, PointerEvent &e)
@@ -478,7 +531,7 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
     return handled || target != nullptr;
 }
 
-bool UIRoot::pointerUp(glm::vec2 position, PointerButton button, Modifiers mods)
+bool UIRoot::pointerUp(glm::vec2 position, PointerButton button, Modifiers mods, PointerKind kind)
 {
     if (_layoutDirty)
         _layout();
@@ -488,7 +541,10 @@ bool UIRoot::pointerUp(glm::vec2 position, PointerButton button, Modifiers mods)
 
     Widget *target = _capture ? _capture : hovered();
 
-    PointerEvent event{.position = position, .button = button, .mods = mods};
+    PointerEvent event{
+        .position = position, .button = button, .mods = mods, .kind = kind, .pressPosition = _pressPosition};
+    if (button == PointerButton::Left)
+        _endPress();
 
     const bool handled = _bubble(target, event,
                                  [](Widget &node, PointerEvent &e)
@@ -549,6 +605,7 @@ void UIRoot::capturePointer(Widget *widget)
 void UIRoot::cancelInput()
 {
     _pointerInside = false;
+    _endPress();
     capturePointer(nullptr);
     clearFocus();
     _dropHover();
