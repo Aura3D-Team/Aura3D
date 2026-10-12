@@ -78,7 +78,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string &name, VkComman
 
         VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0, bufferSize));
 
-        INK_DEBUG << "Created persistently mapped vertex buffer: " << name << ", vertices: " << bufferInfo.vertexCount;
+        INK_TRACE << "Created persistently mapped vertex buffer: " << name << ", vertices: " << bufferInfo.vertexCount;
     }
     else
     {
@@ -111,7 +111,7 @@ void VkVertexBufferManager::createVertexBuffer(const std::string &name, VkComman
 
         _memoryManager->destroyBuffer(staging);
 
-        INK_DEBUG << "Created device-local vertex buffer: " << name << ", vertices: " << bufferInfo.vertexCount;
+        INK_TRACE << "Created device-local vertex buffer: " << name << ", vertices: " << bufferInfo.vertexCount;
     }
 
     _vertexBuffers[name] = bufferInfo;
@@ -172,7 +172,7 @@ void VkVertexBufferManager::cleanup(const std::string &name)
     destroyBufferInfo(_memoryManager, it->second);
     _vertexBuffers.erase(it);
 
-    INK_DEBUG << "Cleaned up vertex buffer: " << name;
+    INK_TRACE << "Cleaned up vertex buffer: " << name;
 }
 
 void VkVertexBufferManager::cleanup()

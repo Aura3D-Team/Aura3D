@@ -40,13 +40,13 @@ VkCommandManager::~VkCommandManager()
                 vkDestroyCommandPool(*_device, renderPool.pool, nullptr);
         }
 
-        INK_DEBUG << "CommandPools for thread " << threadId << " were deleted.";
+        INK_TRACE << "CommandPools for thread " << threadId << " were deleted.";
     }
 
     _threadCommandPools.clear();
     _device = nullptr;
 
-    INK_DEBUG << "CommandPools destroyed.";
+    INK_TRACE << "CommandPools destroyed.";
 }
 
 VkCommandPool VkCommandManager::_createPool(VkCommandPoolCreateFlags flags) const

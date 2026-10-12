@@ -90,7 +90,7 @@ MtlLayerManager::~MtlLayerManager()
     _layer.reset();
     _windowManager = nullptr;
 
-    INK_DEBUG << "MtlLayerManager destroyed";
+    INK_TRACE << "MtlLayerManager destroyed";
 }
 
 bool MtlLayerManager::resizeToWindow()
@@ -107,7 +107,7 @@ bool MtlLayerManager::resizeToWindow()
 
     _layer->setDrawableSize(CGSizeMake(static_cast<CGFloat>(_width), static_cast<CGFloat>(_height)));
 
-    INK_DEBUG << "CAMetalLayer resized: " << _width << "x" << _height << " px";
+    INK_TRACE << "CAMetalLayer resized: " << _width << "x" << _height << " px";
     return true;
 }
 

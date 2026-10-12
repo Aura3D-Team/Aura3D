@@ -41,7 +41,7 @@ VkInstanceManager::~VkInstanceManager()
     {
         vkDestroyInstance(_vkInstance, hostAllocationCallbacks());
         _vkInstance = VK_NULL_HANDLE;
-        INK_DEBUG << "VkInstance deleted";
+        INK_TRACE << "VkInstance deleted";
     }
 }
 

@@ -94,7 +94,7 @@ VkSurfaceManager::~VkSurfaceManager()
     if (_vkSurface != VK_NULL_HANDLE)
     {
         vkDestroySurfaceKHR(*_vkInstance, _vkSurface, nullptr);
-        INK_DEBUG << "VkSurface deleted";
+        INK_TRACE << "VkSurface deleted";
     }
     _vkInstance = nullptr;
 }

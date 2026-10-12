@@ -30,7 +30,7 @@ MtlShaderLibraryManager::MtlShaderLibraryManager(MTL::Device *device)
 MtlShaderLibraryManager::~MtlShaderLibraryManager()
 {
     _library.reset();
-    INK_DEBUG << "MtlShaderLibraryManager destroyed";
+    INK_TRACE << "MtlShaderLibraryManager destroyed";
 }
 
 void MtlShaderLibraryManager::loadPrecompiledLibrary(MTL::Device *device)

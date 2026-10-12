@@ -84,7 +84,7 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
 
     _cullMode = options.cullBackFaces ? MTL::CullModeBack : MTL::CullModeNone;
 
-    INK_DEBUG << "Metal pipeline '" << options.label << "' compiled"
+    INK_TRACE << "Metal pipeline '" << options.label << "' compiled"
               << " | depth: " << (options.depthTest ? "on" : "off")
               << " | blend: " << (options.alphaBlend ? "on" : "off")
               << " | cull: " << (options.cullBackFaces ? "back" : "none");
