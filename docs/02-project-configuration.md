@@ -105,7 +105,7 @@ nothing, so this doc is deliberately exact about which is which.
 |---|---|---|---|
 | `width`, `height` | int | 1280, 720 | Initial window size. |
 | `title` | string | `"Aura3D"` | Window title, used verbatim by every backend. |
-| `backend` | string | `"SDL3"` | Windowing library `wma` creates the window through: `"SDL3"`, `"GLFW"`, `"X11"`, or `"WAYLAND"` (case-insensitive). SDL3 is the only one exercised by all three renderer backends on every platform this engine targets — pick another only if you have a specific reason to (e.g. testing wma's X11/Wayland backends directly). An unrecognized value falls back to SDL3 with a warning, the same pattern `renderer.backend` uses. |
+| `backend` | string | `"SDL3"` | Windowing library `wma` creates the window through: `"SDL3"`, `"GLFW"`, `"X11"`, or `"WAYLAND"` (case-insensitive). SDL3 is the only one exercised by all three renderer backends on every platform this engine targets — pick another only if you have a specific reason to (e.g. testing wma's X11/Wayland backends directly). GLFW runs the CPU renderer too with libwma 0.7.0 or later, through an OpenGL 3.3 context, so it needs a working OpenGL driver even then; with older libwma the window refuses to open. An unrecognized value falls back to SDL3 with a warning, the same pattern `renderer.backend` uses. |
 | `resizable` | bool | `true` | |
 | `fullscreen` | bool | `false` | |
 | `decorations` | string | `"server"` | `"client"` makes `UIView` draw the title bar — see [03-engine-and-renderer.md](03-engine-and-renderer.md#window-decorations). A Wayland compositor may override the request either way. |

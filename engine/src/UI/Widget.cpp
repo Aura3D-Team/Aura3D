@@ -439,6 +439,10 @@ bool Widget::onWheel(const WheelEvent &)
 {
     return false;
 }
+bool Widget::interceptsPointer(PointerKind) const noexcept
+{
+    return false;
+}
 bool Widget::onPointerIntercept(const PointerEvent &)
 {
     return false;

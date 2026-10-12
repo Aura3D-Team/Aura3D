@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -725,15 +726,15 @@ void testTouchStopsAFling()
 }
 
 /// Distance a flick carries after the finger lifts, with the same finger speed delivered as
-/// @p movesPerFrame moves per frame.
-[[nodiscard]] f32 flingDistance(int movesPerFrame)
+/// @p movesPerFrame moves per frame, for @p frames frames.
+[[nodiscard]] f32 flingDistance(int movesPerFrame, int frames = 6)
 {
     ButtonList list;
     list.harness.touchDown({50.0f, 90.0f});
 
     const f32 step = 6.0f / static_cast<f32>(movesPerFrame);
     f32 y = 90.0f;
-    for (int frame = 0; frame < 6; ++frame)
+    for (int frame = 0; frame < frames; ++frame)
         for (int move = 0; move < movesPerFrame; ++move)
         {
             y -= step;
@@ -746,6 +747,17 @@ void testTouchStopsAFling()
     for (int frame = 0; frame < 600; ++frame)
         list.harness.root.update(0.016f);
     return list.scroll->offset().y - lifted;
+}
+
+void testShortFlickIsAsFastAsALongDrag()
+{
+    //! Three frames is the pan's first move past the slop and one measured sample: nothing to average with.
+    const f32 shortFlick = flingDistance(1, 3);
+    const f32 longDrag = flingDistance(1, 8);
+
+    AURA_CHECK(shortFlick > 0.0f, "a flick of only a few moves still carries on");
+    AURA_CHECK(std::abs(shortFlick - longDrag) < 0.2f * longDrag,
+               "and as far as a long drag at the same finger speed: the first sample is the speed, not half of it");
 }
 
 void testTouchSpeedDoesNotDependOnMovesPerFrame()
@@ -785,6 +797,53 @@ void testTouchTapFocusesATextField()
     harness.touchDown(now);
     harness.touchUp(now);
     AURA_CHECK(field.hasFocus(), "a tap focuses it, when the finger lifts");
+}
+
+/// Counts what it is offered, and wants whichever kind of press it is told to.
+class InterceptProbe final : public Widget
+{
+  public:
+    std::optional<PointerKind> wants;
+    int offers = 0;
+
+    [[nodiscard]] bool interceptsPointer(PointerKind kind) const noexcept override
+    {
+        return wants == kind;
+    }
+
+    bool onPointerIntercept(const PointerEvent &) override
+    {
+        ++offers;
+        return false;
+    }
+};
+
+void testPressesAreOnlyOfferedToWhoAsked()
+{
+    Harness harness({200.0f, 100.0f});
+    auto &probe = harness.root.setContent<InterceptProbe>();
+    harness.layout();
+    const glm::vec2 at{50.0f, 50.0f};
+
+    //! Presses and drags of both kinds: with no interest, the widget hears of none of it.
+    harness.click(at);
+    harness.touchDown(at);
+    harness.touchMove(at + glm::vec2{20.0f, 0.0f});
+    harness.touchUp(at + glm::vec2{20.0f, 0.0f});
+    AURA_CHECK(probe.offers == 0, "a widget that did not ask is never offered a press");
+
+    probe.wants = PointerKind::Touch;
+    harness.click(at);
+    AURA_CHECK(probe.offers == 0, "and one that asked for a finger is not offered a mouse");
+
+    harness.touchDown(at);
+    harness.touchMove(at + glm::vec2{20.0f, 0.0f});
+    harness.touchMove(at + glm::vec2{40.0f, 0.0f});
+    harness.touchUp(at + glm::vec2{40.0f, 0.0f});
+    AURA_CHECK(probe.offers == 3, "but is offered a finger's press and each move of it");
+
+    harness.touchMove(at + glm::vec2{60.0f, 0.0f});
+    AURA_CHECK(probe.offers == 3, "and nothing once the finger is up");
 }
 
 void testAccessibilityTree()
@@ -897,6 +956,8 @@ int main()
     testTouchRestBeforeLiftingDoesNotFling();
     testTouchStopsAFling();
     testTouchSpeedDoesNotDependOnMovesPerFrame();
+    testShortFlickIsAsFastAsALongDrag();
+    testPressesAreOnlyOfferedToWhoAsked();
     testTouchTapFocusesATextField();
     testAccessibilityTree();
     testSignalLifetime();

@@ -308,12 +308,23 @@ class Widget
     /// @}
 
     /**
-     * @brief Offered a press that landed on a descendant, before the descendant sees what follows.
+     * @brief Whether a press of @p kind is offered to onPointerIntercept().
+     *
+     * Asked once, when the press lands, of each widget under it. Only those that say yes are offered the press
+     * and the moves that follow, so a press nobody wants costs nothing on every move. No by default: override
+     * this together with onPointerIntercept(). A scroll view says yes to a finger and no to a mouse.
+     */
+    [[nodiscard]] virtual bool interceptsPointer(PointerKind kind) const noexcept;
+
+    /**
+     * @brief Offered a press that landed on this widget or a descendant, before the pressed widget sees what
+     *        follows. Only when interceptsPointer() accepted the press's kind.
      *
      * Called on the press itself (with @c position equal to @c pressPosition) and on every move while the
-     * button stays down, on each ancestor of the pressed widget, deepest first. Return true to take the
-     * gesture: call capturePointer() first, which cancels the widget that had it. A scroll view takes a
-     * finger drag this way, so the button under the finger is not clicked when it lifts.
+     * button stays down, deepest widget first. Return true to take the gesture: call capturePointer() first,
+     * which cancels the widget that had it. A scroll view takes a finger drag this way, so the button under the
+     * finger is not clicked when it lifts. A widget that takes the press itself keeps it from the one under it
+     * altogether.
      */
     virtual bool onPointerIntercept(const PointerEvent &event);
 

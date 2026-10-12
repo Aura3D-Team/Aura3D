@@ -591,6 +591,11 @@ bool ScrollView::onTick(f32 deltaSeconds)
     return running;
 }
 
+bool ScrollView::interceptsPointer(PointerKind kind) const noexcept
+{
+    return kind == PointerKind::Touch;
+}
+
 bool ScrollView::onPointerIntercept(const PointerEvent &event)
 {
     if (event.kind != PointerKind::Touch || _panActive || _dragActive)
@@ -628,6 +633,7 @@ bool ScrollView::_beginPan(const PointerEvent &event)
     _panLast = event.position;
     _panLastTime = root() != nullptr ? root()->time() : 0.0f;
     _velocity = glm::vec2{0.0f};
+    _velocitySamples = 0;
     _fling = glm::vec2{0.0f};
 
     const WidgetRef alive(this);
@@ -669,7 +675,10 @@ void ScrollView::_pan(const PointerEvent &event)
         return;
 
     const glm::vec2 instant = -(event.position - _panLast) / elapsed;
-    _velocity = glm::mix(_velocity, instant, 0.5f);
+    //! The first sample is the speed, not half of it: there is nothing before it to average with, and a short
+    //! flick may not have a second.
+    _velocity = _velocitySamples == 0 ? instant : glm::mix(_velocity, instant, 0.5f);
+    ++_velocitySamples;
     _panLast = event.position;
     _panLastTime = now;
 }

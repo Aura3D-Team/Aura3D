@@ -505,11 +505,12 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
         _pressPosition = position;
         _pressKind = kind;
         for (Widget *node : _hoverChain)
-            _pressChain.emplace_back(node);
+            if (node->interceptsPointer(kind))
+                _pressChain.emplace_back(node);
 
         //! A widget that takes the press itself (a coasting scroll view caught by a finger) keeps it from
         //! the one under the finger, so that one is not clicked when the finger lifts.
-        if (_offerIntercept(event))
+        if (!_pressChain.empty() && _offerIntercept(event))
             return true;
     }
 

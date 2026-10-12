@@ -20,7 +20,9 @@ over it (`Camera`, `Material`, `ResourceManager`, `TextOverlay`, ...).
 - **CPU (software)** — a real triangle rasterizer (perspective-correct
   interpolation, depth testing, Gouraud shading) with no GPU dependency at
   all. Useful for headless testing, low-end targets, or simply understanding
-  what the GPU is doing.
+  what the GPU is doing. It shows its frames through whichever window backend
+  you configure: SDL3, X11 and Wayland blit them directly, and GLFW (libwma
+  0.7.0 and later) draws them as a texture through an OpenGL 3.3 context.
 
 All three implement the same `aura3d::IRenderer` interface, so a scene
 written once renders identically (mesh, material, camera, lighting, 2D

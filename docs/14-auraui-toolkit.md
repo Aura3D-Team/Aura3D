@@ -335,9 +335,12 @@ root.pointerDown(at, PointerButton::Left, {}, PointerKind::Touch);
 | A tap focuses a `TextField` when the finger lifts, so a drag that starts on one scrolls the page and leaves the keyboard down | `TextField` |
 | A mouse drag over scrolling content is left to the widget under it | |
 
-A widget that wants a gesture of its own takes it from the press, before the pressed widget sees the moves:
+A widget that wants a gesture of its own says which kinds of press it is interested in, and takes the gesture
+from the press, before the pressed widget sees the moves. A press nobody is interested in costs nothing:
 
 ```cpp
+bool interceptsPointer(PointerKind kind) const noexcept override { return kind == PointerKind::Touch; }
+
 bool onPointerIntercept(const PointerEvent& e) override {
     if (e.kind != PointerKind::Touch || glm::distance(e.position, e.pressPosition) < 8.0f)
         return false;

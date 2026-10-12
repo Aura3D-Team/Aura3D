@@ -391,7 +391,8 @@ class UIRoot
     glm::vec2 _pointer{0.0f};
     bool _pointerInside = false;
 
-    //! The press in progress: its ancestors, offered the gesture on every move until it is taken or released.
+    //! The press in progress: the widgets under it that asked for its gesture (Widget::interceptsPointer),
+    //! offered it on every move until it is taken or released. Empty for most presses, which then cost nothing.
     std::vector<WidgetRef> _pressChain;
     glm::vec2 _pressPosition{0.0f};
     PointerKind _pressKind = PointerKind::Mouse;

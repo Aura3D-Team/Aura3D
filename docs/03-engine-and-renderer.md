@@ -243,7 +243,11 @@ or NEON) — and it presents through the window manager's software-framebuffer p
 (`wma::IWindowManager::lockFramebuffer`/`presentFramebuffer`), so it works
 with any `window.backend` wma supports (see
 [02-project-configuration.md](02-project-configuration.md#window--live)), not
-just one.
+just one. SDL3, X11 and Wayland copy the frame straight into the window's
+surface. GLFW has no surface to copy into, so wma 0.7.0 and later uploads the
+frame as a texture and draws it through an OpenGL 3.3 context: the window then
+needs a working OpenGL driver (Mesa's software one is enough), and the rasterizer
+itself is unchanged.
 
 Because it has no GPU descriptor limits or pipeline objects, `graphics.gpu_preference`,
 `graphics.msaa_samples`, and `renderer.validation_layers` don't apply to it —

@@ -289,6 +289,7 @@ class ScrollView final : public Widget
     bool onPointerMove(const PointerEvent &event) override;
     bool onPointerUp(const PointerEvent &event) override;
     void onPointerCancel() override;
+    [[nodiscard]] bool interceptsPointer(PointerKind kind) const noexcept override;
     bool onPointerIntercept(const PointerEvent &event) override;
 
     bool onTick(f32 deltaSeconds) override;
@@ -344,6 +345,7 @@ class ScrollView final : public Widget
     glm::vec2 _panLast{0.0f};
     f32 _panLastTime = 0.0f;
     glm::vec2 _velocity{0.0f}; //! Offset units per second, smoothed over the last few moves.
+    u32 _velocitySamples = 0;  //! How many moves it has been measured over; the first one seeds it.
     glm::vec2 _fling{0.0f};    //! What is left of it after the finger lifted.
 };
 
