@@ -227,6 +227,14 @@ class UIRoot
     [[nodiscard]] wma::SystemCursor cursor() const noexcept;
 
     void capturePointer(Widget *widget);
+
+    /**
+     * Takes the press in progress for @p widget: it captures the pointer, and no scroll view is offered what is left of
+     * the press. For a gesture that starts without a move, such as a long press that picks something up: left alone, a
+     * scroll view would take the finger back on its next move. A widget that starts its gesture from a move does not
+     * need this; it takes the press from onPointerIntercept().
+     */
+    void claimPointer(Widget *widget);
     [[nodiscard]] Widget *pointerCapture() const noexcept
     {
         return _capture;

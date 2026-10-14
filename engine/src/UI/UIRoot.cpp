@@ -613,6 +613,13 @@ void UIRoot::capturePointer(Widget *widget)
         _dropHover();
 }
 
+void UIRoot::claimPointer(Widget *widget)
+{
+    capturePointer(widget);
+    if (_capture == widget)
+        _pressChain.clear();
+}
+
 void UIRoot::cancelInput()
 {
     _pointerInside = false;

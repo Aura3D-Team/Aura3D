@@ -335,6 +335,13 @@ root.pointerDown(at, PointerButton::Left, {}, PointerKind::Touch);
 | A tap focuses a `TextField` when the finger lifts, so a drag that starts on one scrolls the page and leaves the keyboard down | `TextField` |
 | A mouse drag over scrolling content is left to the widget under it | |
 
+A gesture that starts without a move, such as a long press that picks something up, has no moment to take the press from
+`onPointerIntercept()`. It captures through the root instead, which also keeps scroll views from taking the finger back:
+
+```cpp
+root()->claimPointer(this);   // from a timer: the press is now this widget's
+```
+
 A widget that wants a gesture of its own says which kinds of press it is interested in, and takes the gesture
 from the press, before the pressed widget sees the moves. A press nobody is interested in costs nothing:
 
