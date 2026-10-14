@@ -358,6 +358,7 @@ up that returns something other than `Default` wins, and a disabled one shows th
 |---|---|
 | Every `Control` (button, check box, slider, drop-down…) | `Pointer` |
 | `TextField` | `Text` |
+| Window caption buttons | arrow: `control.setCursor(wma::SystemCursor::Default)` opts a `Control` out |
 | Yours | override `cursor()`; a captured widget decides while it holds the pointer |
 
 ```cpp

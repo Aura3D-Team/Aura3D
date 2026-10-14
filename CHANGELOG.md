@@ -8,7 +8,7 @@ Needs libwma 0.7.0.
 
 ### Added
 
-- The pointer follows what is under it. `Widget::cursor()` names an image (default: none, so an ancestor's applies); every `Control` is a hand, `TextField` an I-beam, and a disabled widget shows the arrow. `UIRoot::cursor()` resolves it from the captor or the hovered widget, and `UIView` sets it on the window when it changes.
+- The pointer follows what is under it. `Widget::cursor()` names an image (default: none, so an ancestor's applies); every `Control` is a hand, `TextField` an I-beam, and a disabled widget shows the arrow. `UIRoot::cursor()` resolves it from the captor or the hovered widget, and `UIView` sets it on the window when it changes. `Control::setCursor()` overrides a control's image; the window's caption buttons keep the arrow.
 
 ### Fixed
 

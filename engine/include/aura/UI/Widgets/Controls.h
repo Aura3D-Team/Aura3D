@@ -41,10 +41,15 @@ class Control : public Widget
         _showsFocusRing = shows;
     }
 
-    /// A hand: everything a Control does, it does when clicked.
+    /// A hand by default: everything a Control does, it does when clicked. Default defers to an ancestor, so window
+    /// chrome can keep the arrow.
     [[nodiscard]] wma::SystemCursor cursor() const noexcept override
     {
-        return wma::SystemCursor::Pointer;
+        return _cursor;
+    }
+    void setCursor(wma::SystemCursor cursor) noexcept
+    {
+        _cursor = cursor;
     }
 
   protected:
@@ -93,6 +98,7 @@ class Control : public Widget
     Transition<f32> _hover{0.0f};
     bool _pressed = false;
     bool _showsFocusRing = true;
+    wma::SystemCursor _cursor = wma::SystemCursor::Pointer;
     bool _focusRingVisible = false;
 };
 
