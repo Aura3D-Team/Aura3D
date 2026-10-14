@@ -349,8 +349,8 @@ class CustomDecoration final : public IWindowDecoration
 void captionButtonsKeepTheArrow()
 {
     Harness h;
-    for (Button *button : {&h.decoration->minimizeButton(), &h.decoration->maximizeButton(),
-                           &h.decoration->closeButton()})
+    for (Button *button :
+         {&h.decoration->minimizeButton(), &h.decoration->maximizeButton(), &h.decoration->closeButton()})
     {
         h.frame(0.5f);
         h.root.pointerMoved(button->bounds().center());
