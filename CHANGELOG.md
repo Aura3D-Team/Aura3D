@@ -2,6 +2,14 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.7.1]
+
+Needs libwma 0.7.0.
+
+### Fixed
+
+- A long press that picks something up, such as a drag started from a timer, lost the finger to the scroll view underneath on the next move: it begins without a move, so there was no moment to take the press from `onPointerIntercept()`. `UIRoot::claimPointer()` takes the press in progress for a widget and keeps scroll views out of what is left of it.
+
 ## [0.7.0]
 
 Needs libwma 0.7.0.
