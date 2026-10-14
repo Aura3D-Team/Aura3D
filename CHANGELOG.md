@@ -2,6 +2,18 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.6.0]
+
+Needs libwma 0.7.0.
+
+### Added
+
+- The pointer follows what is under it. `Widget::cursor()` names an image (default: none, so an ancestor's applies); every `Control` is a hand, `TextField` an I-beam, and a disabled widget shows the arrow. `UIRoot::cursor()` resolves it from the captor or the hovered widget, and `UIView` sets it on the window when it changes. `Control::setCursor()` overrides a control's image; the window's caption buttons keep the arrow.
+
+### Fixed
+
+- `WidgetStyle::padding`, documented as the text's inset from the component's edges, was not applied by `TextField` and `Dropdown`, which drew from the border, nor by a `Button` whose label is aligned to one side. All three now inset the content by it on both sides (`contentInsets()`), and a `Dropdown` no longer counts it twice when it measures.
+
 ## [0.5.0]
 
 Needs libwma 0.6.0.

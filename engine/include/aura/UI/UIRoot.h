@@ -222,6 +222,10 @@ class UIRoot
     [[nodiscard]] Widget *hovered() const noexcept;
     [[nodiscard]] bool isHovered(const Widget *widget) const noexcept;
 
+    /// The pointer image for where the pointer is: the first widget from the captor (else the deepest hovered one)
+    /// up to the root that names one, Default if none does or that widget is disabled.
+    [[nodiscard]] wma::SystemCursor cursor() const noexcept;
+
     void capturePointer(Widget *widget);
     [[nodiscard]] Widget *pointerCapture() const noexcept
     {

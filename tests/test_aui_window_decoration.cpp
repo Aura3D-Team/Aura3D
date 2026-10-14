@@ -346,6 +346,23 @@ class CustomDecoration final : public IWindowDecoration
     }
 };
 
+void captionButtonsKeepTheArrow()
+{
+    Harness h;
+    for (Button *button : {&h.decoration->minimizeButton(), &h.decoration->maximizeButton(),
+                           &h.decoration->closeButton()})
+    {
+        h.frame(0.5f);
+        h.root.pointerMoved(button->bounds().center());
+        AURA_CHECK(h.root.cursor() == wma::SystemCursor::Default, "a caption button leaves the arrow");
+    }
+
+    Button &own = h.root.setContent<Column>().add<Button>("Launch");
+    h.frame(0.5f);
+    h.root.pointerMoved(own.bounds().center());
+    AURA_CHECK(h.root.cursor() == wma::SystemCursor::Pointer, "an ordinary button is still a hand");
+}
+
 void replacementAndFocus()
 {
     Harness h;
@@ -399,6 +416,7 @@ int main()
     centredTitle();
     resizeBorder();
     hoverFeedback();
+    captionButtonsKeepTheArrow();
     replacementAndFocus();
     AURA_TEST_MAIN_RETURN();
 }

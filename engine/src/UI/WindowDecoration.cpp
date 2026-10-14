@@ -86,6 +86,7 @@ Button &addControl(Widget &parent, const char *name, const ColorSet &colors)
     auto &button = parent.add<Button>();
     button.setName(name);
     button.setAccessibleName(name);
+    button.setCursor(wma::SystemCursor::Default);
     button.style().fill(colors).textColor({1, 1, 1, 1}).outline({0, 0, 0, 0}, 0).rounded(0).pad(0);
     return button;
 }

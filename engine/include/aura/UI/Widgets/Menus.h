@@ -110,6 +110,9 @@ class Dropdown final : public Control
 
     void accessibility(AccessibilityInfo &out) const override;
 
+    /// The layout padding, and the style's text inset on both sides: the caption and the chevron keep off the border.
+    [[nodiscard]] Thickness contentInsets() const noexcept override;
+
   protected:
     glm::vec2 measureContent(const Constraints &available) override;
     void paint(DrawList &out) override;

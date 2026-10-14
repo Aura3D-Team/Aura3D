@@ -400,6 +400,17 @@ Widget *UIRoot::hovered() const noexcept
     return _hoverChain.empty() ? nullptr : _hoverChain.back();
 }
 
+wma::SystemCursor UIRoot::cursor() const noexcept
+{
+    for (const Widget *node = _capture != nullptr ? _capture : hovered(); node != nullptr; node = node->parent())
+    {
+        const wma::SystemCursor shape = node->cursor();
+        if (shape != wma::SystemCursor::Default)
+            return node->effectivelyEnabled() ? shape : wma::SystemCursor::Default;
+    }
+    return wma::SystemCursor::Default;
+}
+
 bool UIRoot::isHovered(const Widget *widget) const noexcept
 {
     return widget != nullptr && std::ranges::find(_hoverChain, widget) != _hoverChain.end();

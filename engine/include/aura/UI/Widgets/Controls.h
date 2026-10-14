@@ -41,6 +41,17 @@ class Control : public Widget
         _showsFocusRing = shows;
     }
 
+    /// A hand by default: everything a Control does, it does when clicked. Default defers to an ancestor, so window
+    /// chrome can keep the arrow.
+    [[nodiscard]] wma::SystemCursor cursor() const noexcept override
+    {
+        return _cursor;
+    }
+    void setCursor(wma::SystemCursor cursor) noexcept
+    {
+        _cursor = cursor;
+    }
+
   protected:
     Control();
 
@@ -87,6 +98,7 @@ class Control : public Widget
     Transition<f32> _hover{0.0f};
     bool _pressed = false;
     bool _showsFocusRing = true;
+    wma::SystemCursor _cursor = wma::SystemCursor::Pointer;
     bool _focusRingVisible = false;
 };
 
@@ -116,6 +128,10 @@ class Button final : public Control
     {
         return *_label;
     }
+
+    /// The layout padding, and the style's text inset on both sides: a label aligned to one side keeps its distance
+    /// from the edge.
+    [[nodiscard]] Thickness contentInsets() const noexcept override;
 
     void accessibility(AccessibilityInfo &out) const override;
 
@@ -429,6 +445,14 @@ class TextField final : public Control
     {
         return !_readOnly;
     }
+
+    [[nodiscard]] wma::SystemCursor cursor() const noexcept override
+    {
+        return wma::SystemCursor::Text;
+    }
+
+    /// The layout padding, and the style's text inset on both sides: text never sits on the border.
+    [[nodiscard]] Thickness contentInsets() const noexcept override;
 
     void accessibility(AccessibilityInfo &out) const override;
 
