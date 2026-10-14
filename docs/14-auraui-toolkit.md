@@ -349,6 +349,21 @@ bool onPointerIntercept(const PointerEvent& e) override {
 }
 ```
 
+### The pointer image
+
+`Widget::cursor()` names the image shown while the pointer is over a widget; the first widget from the hovered one
+up that returns something other than `Default` wins, and a disabled one shows the arrow.
+
+| Widget | Pointer |
+|---|---|
+| Every `Control` (button, check box, slider, drop-down…) | `Pointer` |
+| `TextField` | `Text` |
+| Yours | override `cursor()`; a captured widget decides while it holds the pointer |
+
+```cpp
+wma::SystemCursor cursor() const noexcept override { return wma::SystemCursor::Grabbing; }
+```
+
 ### Focus and shortcuts
 
 ```cpp

@@ -202,6 +202,7 @@ class UIView
     bool _touchActive = false;
     wma::TouchFingerId _finger = 0;
     bool _windowFocused = true;
+    wma::SystemCursor _cursor = wma::SystemCursor::Default; //! What the window shows now; set only when it changes.
     bool _frameHitTest = false;
     //! windowDecoration() runs on every pointer move as the hit test, so the cast
     //! is redone only when the root's decoration changes.

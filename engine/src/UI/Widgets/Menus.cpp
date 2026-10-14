@@ -182,6 +182,15 @@ void Dropdown::_reshape()
     _shapedFontSize = style.pixelSize;
 }
 
+Thickness Dropdown::contentInsets() const noexcept
+{
+    Thickness insets = layout().padding;
+    const f32 inset = resolvedStyle().padding;
+    insets.left += inset;
+    insets.right += inset;
+    return insets;
+}
+
 glm::vec2 Dropdown::measureContent(const Constraints &available)
 {
     _reshape();
@@ -208,7 +217,8 @@ glm::vec2 Dropdown::measureContent(const Constraints &available)
     }
 
     (void)available;
-    return {widest + style.padding * 2.0f + row, row};
+    //! The text inset on both sides is in contentInsets(), which measure() adds.
+    return {widest + row, row};
 }
 
 void Dropdown::paint(DrawList &out)

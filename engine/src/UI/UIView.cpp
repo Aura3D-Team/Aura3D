@@ -86,6 +86,9 @@ void UIView::detachInput()
         _window->setHitTest({});
     }
     _frameHitTest = false;
+    if (_mouse && _cursor != wma::SystemCursor::Default)
+        _mouse->setSystemCursor(wma::SystemCursor::Default);
+    _cursor = wma::SystemCursor::Default;
     _window = nullptr;
     _mouse = nullptr;
     _touchActive = false;
@@ -327,6 +330,17 @@ void UIView::update(f32 deltaSeconds)
     }
 
     _root.update(deltaSeconds);
+
+    // A finger has no pointer image, and a resize border from the window's hit test overrides this one.
+    if (_mouse && !_touchActive)
+    {
+        const wma::SystemCursor shape = _root.cursor();
+        if (shape != _cursor)
+        {
+            _cursor = shape;
+            _mouse->setSystemCursor(shape);
+        }
+    }
 
     if (_window && _window->isTextInputEnabled() != _root.capturesTextInput())
         _window->setTextInputEnabled(_root.capturesTextInput());

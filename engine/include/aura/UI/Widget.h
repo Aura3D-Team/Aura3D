@@ -328,6 +328,13 @@ class Widget
      */
     virtual bool onPointerIntercept(const PointerEvent &event);
 
+    /// The pointer image while the pointer is over this widget, or while it holds the capture. Default leaves the
+    /// choice to an ancestor; a control that can be clicked says Pointer, a field Text. Ignored while disabled.
+    [[nodiscard]] virtual wma::SystemCursor cursor() const noexcept
+    {
+        return wma::SystemCursor::Default;
+    }
+
     /// @{
     /// Notifications, not events: they cannot be refused and do not bubble.
     virtual void onPointerEnter();

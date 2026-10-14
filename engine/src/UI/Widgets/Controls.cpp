@@ -177,7 +177,17 @@ glm::vec2 Button::measureContent(const Constraints &available)
     //! them has one rhythm rather than one height per string.
     const f32 height = style.height.value_or(theme().metrics.rowHeight);
 
-    return {content.x + style.padding * 2.0f, std::max(content.y, height)};
+    //! The text inset is in contentInsets(), which measure() adds to the width.
+    return {content.x, std::max(content.y, height)};
+}
+
+Thickness Button::contentInsets() const noexcept
+{
+    Thickness insets = layout().padding;
+    const f32 inset = resolvedStyle().padding;
+    insets.left += inset;
+    insets.right += inset;
+    return insets;
 }
 
 void Button::paint(DrawList &out)
@@ -879,6 +889,15 @@ void TextField::setObscured(bool obscured)
     _obscured = obscured;
     invalidateLayout();
     invalidatePaint();
+}
+
+Thickness TextField::contentInsets() const noexcept
+{
+    Thickness insets = layout().padding;
+    const f32 inset = resolvedStyle().padding;
+    insets.left += inset;
+    insets.right += inset;
+    return insets;
 }
 
 glm::vec2 TextField::measureContent(const Constraints &)

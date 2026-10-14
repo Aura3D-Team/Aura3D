@@ -41,6 +41,12 @@ class Control : public Widget
         _showsFocusRing = shows;
     }
 
+    /// A hand: everything a Control does, it does when clicked.
+    [[nodiscard]] wma::SystemCursor cursor() const noexcept override
+    {
+        return wma::SystemCursor::Pointer;
+    }
+
   protected:
     Control();
 
@@ -116,6 +122,10 @@ class Button final : public Control
     {
         return *_label;
     }
+
+    /// The layout padding, and the style's text inset on both sides: a label aligned to one side keeps its distance
+    /// from the edge.
+    [[nodiscard]] Thickness contentInsets() const noexcept override;
 
     void accessibility(AccessibilityInfo &out) const override;
 
@@ -429,6 +439,14 @@ class TextField final : public Control
     {
         return !_readOnly;
     }
+
+    [[nodiscard]] wma::SystemCursor cursor() const noexcept override
+    {
+        return wma::SystemCursor::Text;
+    }
+
+    /// The layout padding, and the style's text inset on both sides: text never sits on the border.
+    [[nodiscard]] Thickness contentInsets() const noexcept override;
 
     void accessibility(AccessibilityInfo &out) const override;
 
