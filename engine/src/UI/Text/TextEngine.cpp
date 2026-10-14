@@ -367,6 +367,7 @@ void AtlasTextShaper::_shape(std::string_view utf8, const TextStyle &style, f32 
                              bool allowNewSheet)
 {
     out.clear();
+    out.scale = _scale;
 
     Page *page = _pageFor(style);
     if (!page)

@@ -1,6 +1,8 @@
 #include "aura/UI/UIView.h"
 
 #include <algorithm>
+#include <array>
+#include <ranges>
 #include <string>
 
 #include "aura/Core/AuraSettings/AuraSettings.h"
@@ -16,6 +18,10 @@ namespace
 //! A broken display report must not collapse the UI to nothing or blow it up.
 constexpr f32 kMinContentScale = 0.25f;
 constexpr f32 kMaxContentScale = 8.0f;
+constexpr f32 kMinZoom = 0.5f;
+constexpr f32 kMaxZoom = 4.0f;
+constexpr f32 kZoomEpsilon = 1e-3f;
+constexpr std::array<f32, 12> kZoomSteps{0.5f, 0.67f, 0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f};
 
 [[nodiscard]] PointerButton toPointerButton(i32 button) noexcept
 {
@@ -211,6 +217,45 @@ void UIView::attachInput(wma::IWindowManager &window)
         }));
 }
 
+void UIView::setZoom(f32 zoom)
+{
+    zoom = std::clamp(zoom, kMinZoom, kMaxZoom);
+    if (zoom == _zoom)
+        return;
+    _zoom = zoom;
+    zoomChanged.emit(_zoom);
+}
+
+f32 UIView::zoom() const noexcept
+{
+    return _zoom;
+}
+
+void UIView::zoomStep(int direction)
+{
+    //! From wherever the zoom is, so a value between rungs, or beyond the ladder, still steps to a neighbour.
+    if (direction > 0)
+    {
+        const auto rung = std::ranges::find_if(kZoomSteps,
+                                               [this](f32 step)
+                                               {
+                                                   return step > _zoom + kZoomEpsilon;
+                                               });
+        if (rung != kZoomSteps.end())
+            setZoom(*rung);
+    }
+    else if (direction < 0)
+    {
+        const auto rung = std::ranges::find_if(kZoomSteps | std::views::reverse,
+                                               [this](f32 step)
+                                               {
+                                                   return step < _zoom - kZoomEpsilon;
+                                               });
+        if (rung != kZoomSteps.rend())
+            setZoom(*rung);
+    }
+}
+
 void UIView::_syncPointer()
 {
     if (!_mouse || _touchActive)
@@ -266,6 +311,7 @@ void UIView::_syncSurface()
         content = std::clamp(window->getContentScale(), kMinContentScale, kMaxContentScale);
     }
 
+    content *= _zoom;
     _contentScale = content;
     _root.setScale(ratio * content);
     _root.resize(logical / content);

@@ -43,14 +43,8 @@ class Control : public Widget
 
     /// A hand by default: everything a Control does, it does when clicked. Default defers to an ancestor, so window
     /// chrome can keep the arrow.
-    [[nodiscard]] wma::SystemCursor cursor() const noexcept override
-    {
-        return _cursor;
-    }
-    void setCursor(wma::SystemCursor cursor) noexcept
-    {
-        _cursor = cursor;
-    }
+    [[nodiscard]] wma::SystemCursor cursor() const noexcept override;
+    void setCursor(wma::SystemCursor cursor) noexcept;
 
   protected:
     Control();
@@ -446,10 +440,7 @@ class TextField final : public Control
         return !_readOnly;
     }
 
-    [[nodiscard]] wma::SystemCursor cursor() const noexcept override
-    {
-        return wma::SystemCursor::Text;
-    }
+    [[nodiscard]] wma::SystemCursor cursor() const noexcept override;
 
     /// The layout padding, and the style's text inset on both sides: text never sits on the border.
     [[nodiscard]] Thickness contentInsets() const noexcept override;

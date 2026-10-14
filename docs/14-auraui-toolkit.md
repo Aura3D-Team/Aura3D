@@ -349,6 +349,26 @@ bool onPointerIntercept(const PointerEvent& e) override {
 }
 ```
 
+### Zoom
+
+```cpp
+ui.zoomChanged.connect([](f32 zoom) { save(zoom); });
+ui.zoomStep(+1);                                         // 100 % -> 110 %; setZoom(1.25f) for an exact value
+
+// Ctrl + wheel: the app's own scroll action; UIView polls the wheel, so this displaces nothing.
+mouse.setScrollAction(wma::MouseAction{[&](const wma::WMAMouseScroll &scroll)
+{
+    if (keyboard.modifiers().ctrl && scroll.yOffset != 0.0)
+        ui.zoomStep(scroll.yOffset > 0.0 ? 1 : -1);
+}});
+```
+
+The wheel still reaches the widgets, so a `ScrollView` under the pointer scrolls too.
+
+The ladder is 50, 67, 80, 90, 100, 110, 125, 150, 175, 200, 250 and 300 %. Layout is in smaller units and drawn larger,
+and text is rasterized again at the new size. Every size and scale takes a rasterization size of its own, so raise
+`UIViewDesc::maxFontSizes` for an application with many font sizes or a wide zoom range.
+
 ### The pointer image
 
 `Widget::cursor()` names the image shown while the pointer is over a widget; the first widget from the hovered one

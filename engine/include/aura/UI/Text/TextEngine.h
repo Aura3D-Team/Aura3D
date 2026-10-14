@@ -123,6 +123,10 @@ class ShapedText
     /// Glyph raster page these quads' UVs address; see ITextShaper::page().
     u32 page = 0;
 
+    /// ITextShaper::scale() when this was shaped. Glyph bitmaps are rasterized for that scale, so a widget
+    /// shapes again when it no longer matches, or its text is a bitmap stretched to the new one.
+    f32 scale = 0.0f;
+
     [[nodiscard]] bool empty() const noexcept
     {
         return glyphs.empty();

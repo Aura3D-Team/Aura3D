@@ -97,6 +97,19 @@ class UIView
     void setWindowDecoration(std::unique_ptr<IWindowDecoration> decoration);
     [[nodiscard]] IWindowDecoration *windowDecoration() const noexcept;
 
+    /// @{
+    /// The user's zoom, on top of the display's own scale: 1 is as the display asks, 2 draws everything twice as
+    /// large. Text is rasterized again at the new size, not stretched. Clamped to [0.5, 4].
+    void setZoom(f32 zoom);
+    [[nodiscard]] f32 zoom() const noexcept;
+
+    /// The next (+1) or previous (-1) rung of a short ladder of sizes, 50 % to 300 %; 0 does nothing.
+    void zoomStep(int direction);
+
+    /// The zoom changed, from setZoom() or zoomStep().
+    Signal<f32> zoomChanged;
+    /// @}
+
     void setWindowTitle(std::string title);
     [[nodiscard]] const std::string &windowTitle() const noexcept
     {
@@ -202,6 +215,7 @@ class UIView
     bool _touchActive = false;
     wma::TouchFingerId _finger = 0;
     bool _windowFocused = true;
+    f32 _zoom = 1.0f;
     wma::SystemCursor _cursor = wma::SystemCursor::Default; //! What the window shows now; set only when it changes.
     bool _frameHitTest = false;
     //! windowDecoration() runs on every pointer move as the hit test, so the cast

@@ -460,6 +460,11 @@ bool Widget::onTextInput(const TextEvent &)
     return false;
 }
 
+wma::SystemCursor Widget::cursor() const noexcept
+{
+    return wma::SystemCursor::Default;
+}
+
 void Widget::onPointerEnter()
 {
 }

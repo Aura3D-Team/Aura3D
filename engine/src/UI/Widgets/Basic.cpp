@@ -87,7 +87,7 @@ void Label::shapeText(f32 maxWidth)
     const bool wraps = style.wrap != TextWrap::None;
     const f32 key = wraps ? maxWidth : -1.0f;
 
-    if (!_textDirty && style == _shapedStyle && key == _shapedWidth)
+    if (!_textDirty && style == _shapedStyle && key == _shapedWidth && _shaped.scale == shaper->scale())
         return;
 
     shaper->shape(text.get(), style, wraps ? maxWidth : kUnbounded, _shaped);

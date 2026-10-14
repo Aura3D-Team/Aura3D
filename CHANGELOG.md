@@ -2,6 +2,18 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.7.0]
+
+Needs libwma 0.7.0.
+
+### Added
+
+- `UIView::setZoom()` and `zoomStep()`: the user's zoom, 50 % to 300 % on a ladder, on top of the display's scale. `zoomChanged` reports it so an application can keep it; what triggers it (a shortcut, the wheel) is the application's.
+
+### Fixed
+
+- Text was not shaped again when the scale changed, so after a DPI or zoom change a `Label`, `TextField` or `Dropdown` drew its old glyph bitmaps stretched, which looks blurred. `ShapedText::scale` records the scale a run was shaped at, and these widgets shape again when it differs.
+
 ## [0.6.0]
 
 Needs libwma 0.7.0.

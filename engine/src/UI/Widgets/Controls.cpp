@@ -34,6 +34,16 @@ Control::Control()
     setFocusable(true);
 }
 
+wma::SystemCursor Control::cursor() const noexcept
+{
+    return _cursor;
+}
+
+void Control::setCursor(wma::SystemCursor cursor) noexcept
+{
+    _cursor = cursor;
+}
+
 void Control::onPointerEnter()
 {
     _hover.to(1.0f, kHoverSeconds);
@@ -866,7 +876,8 @@ void TextField::_reshape()
 
     const TextStyle style = _style();
 
-    if (_shapedSource == text.get() && _shapedFontSize == style.pixelSize && _shapedObscured == _obscured)
+    if (_shapedSource == text.get() && _shapedFontSize == style.pixelSize && _shapedObscured == _obscured &&
+        _shaped.scale == shaper->scale())
         return;
 
     //! One asterisk per byte, not per character: every caret and selection
@@ -889,6 +900,11 @@ void TextField::setObscured(bool obscured)
     _obscured = obscured;
     invalidateLayout();
     invalidatePaint();
+}
+
+wma::SystemCursor TextField::cursor() const noexcept
+{
+    return wma::SystemCursor::Text;
 }
 
 Thickness TextField::contentInsets() const noexcept
@@ -949,7 +965,8 @@ void TextField::paint(DrawList &out)
 
     if (text.get().empty() && !_placeholder.empty())
     {
-        if (ITextShaper *shaper = this->shaper(); shaper && _placeholderShaped.empty())
+        if (ITextShaper *shaper = this->shaper();
+            shaper && (_placeholderShaped.empty() || _placeholderShaped.scale != shaper->scale()))
             shaper->shape(_placeholder, _style(), kUnbounded, _placeholderShaped);
 
         out.drawText(_placeholderShaped, {content.min.x, origin.y}, withAlpha(style.text, alpha * 0.45f));

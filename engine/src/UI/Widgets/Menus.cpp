@@ -173,7 +173,7 @@ void Dropdown::_reshape()
     TextStyle style{};
     style.pixelSize = theme().metrics.fontSize;
 
-    if (_shapedSource == text() && _shapedFontSize == style.pixelSize)
+    if (_shapedSource == text() && _shapedFontSize == style.pixelSize && _shaped.scale == shaper->scale())
         return;
 
     shaper->shape(text(), style, kUnbounded, _shaped);
