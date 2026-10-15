@@ -406,6 +406,31 @@ void testWidgetOpacityAndTranslation()
     AURA_CHECK(panelFill({10.0f, 5.0f}) == nullptr, "a transparent widget is not recorded at all");
 }
 
+void testHoverFromTransparentKeepsTheColour()
+{
+    Harness harness;
+    harness.root.theme()[Part::DropdownItem].surface = {glm::vec4{0.0f}, glm::vec4{0.8f, 0.9f, 1.0f, 1.0f},
+                                                        glm::vec4{0.0f}};
+    auto &row = harness.root.setContent<Column>().add<Selectable>("Row");
+    row.setPart(Part::DropdownItem);
+    harness.frame();
+
+    harness.root.pointerMoved(row.bounds().center());
+    harness.frame(harness.root.theme().metrics.hoverSeconds * 0.5f);
+
+    const auto fill = std::ranges::find_if(harness.list.commands(),
+                                           [&row](const DrawCommand &command)
+                                           {
+                                               return command.type == DrawCommandType::Rect &&
+                                                      command.bounds.min == row.bounds().min &&
+                                                      command.bounds.max == row.bounds().max;
+                                           });
+    AURA_CHECK(fill != harness.list.commands().end(), "the row draws its surface");
+    AURA_CHECK(fill->color.a > 0.0f && fill->color.a < 1.0f, "part way through it is part way opaque");
+    AURA_CHECK(std::fabs(fill->color.r - 0.8f) < 1e-4f && std::fabs(fill->color.b - 1.0f) < 1e-4f,
+               "and already the hover colour, not that colour mixed with black");
+}
+
 void testClipping()
 {
     DrawList list;
@@ -1171,6 +1196,7 @@ int main()
     testInvisibleImageKeepsBatch();
     testGlyphsStayOnDevicePixels();
     testEffectScope();
+    testHoverFromTransparentKeepsTheColour();
     testWidgetOpacityAndTranslation();
     testClipping();
     testSingleBatch();

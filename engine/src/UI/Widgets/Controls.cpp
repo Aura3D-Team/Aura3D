@@ -12,9 +12,25 @@ namespace aura3d::ui
 namespace
 {
 
+/// Blends in premultiplied space
 [[nodiscard]] glm::vec4 mix(const glm::vec4 &a, const glm::vec4 &b, f32 t) noexcept
 {
-    return a + (b - a) * std::clamp(t, 0.0f, 1.0f);
+    const f32 u = std::clamp(t, 0.0f, 1.0f);
+
+    const f32 alpha = glm::mix(a.a, b.a, u);
+
+    if (alpha <= 0.0f)
+    {
+        return glm::vec4(0.0f);
+    }
+
+    const glm::vec3 premultiplied =
+        glm::vec3(a) * (a.a * (1.0f - u)) +
+        glm::vec3(b) * (b.a * u);
+
+    const glm::vec3 rgb = premultiplied / alpha;
+
+    return glm::vec4(rgb, alpha);
 }
 
 } // namespace

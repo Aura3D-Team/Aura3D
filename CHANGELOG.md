@@ -22,6 +22,10 @@ Needs libwma 0.7.0.
 - `Menu` and `Dropdown` take their surface from `Part::Popup`, not `Part::Tooltip`. They start identical; a theme that restyled `Tooltip` to restyle menus must now restyle `Popup` too.
 - The window decoration's close icon scales its strokes with `WindowChrome::iconSize`; at the default size nothing changes.
 
+### Fixed
+
+- Interpolation for two RGBA colors in premultiplied-alpha space
+
 ## [0.7.1]
 
 Needs libwma 0.7.0.
