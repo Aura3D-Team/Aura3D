@@ -925,6 +925,31 @@ void testScrollPhysicsIsConfigurable()
         AURA_CHECK(list.scroll->physics().touchSlop == 30.0f, "and resetting returns it to the theme's");
     }
     {
+        //! Zero is a legal setting for both, and neither may divide by it: samples in the same instant, and a
+        //! release that did not move at all.
+        ButtonList list;
+        list.scroll->setPhysics(ScrollPhysics{.flingMinSpeed = 0.0f, .velocitySampleSeconds = 0.0f});
+        list.harness.touchDown({50.0f, 90.0f});
+        list.harness.touchMove({50.0f, 80.0f}); //! Past the slop: the pan begins here.
+        list.harness.touchMove({50.0f, 70.0f}, 0.0f);
+        list.harness.touchMove({50.0f, 60.0f}, 0.0f);
+        list.harness.touchUp({50.0f, 60.0f});
+        list.harness.layout();
+        for (int frame = 0; frame < 30; ++frame)
+            list.harness.root.update(0.016f);
+        AURA_CHECK(std::isfinite(list.scroll->offset().y) && std::isfinite(list.scroll->offset().x),
+                   "zero sample time and zero minimum speed leave the offset finite");
+
+        ButtonList still;
+        still.scroll->setPhysics(ScrollPhysics{.flingMinSpeed = 0.0f});
+        still.harness.touchDown({50.0f, 90.0f});
+        still.harness.touchMove({50.0f, 70.0f}); //! The pan begins and the finger lifts before a sample exists.
+        still.harness.touchUp({50.0f, 70.0f});
+        for (int frame = 0; frame < 30; ++frame)
+            still.harness.root.update(0.016f);
+        AURA_CHECK(std::isfinite(still.scroll->offset().y), "and so does a release before any speed was sampled");
+    }
+    {
         ButtonList list;
         list.scroll->setPhysics(ScrollPhysics{.flingMinSpeed = 1.0e9f});
         list.harness.touchDown({50.0f, 90.0f});

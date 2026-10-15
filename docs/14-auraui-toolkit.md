@@ -211,7 +211,7 @@ menu.addSubmenu("Export", [&](Menu& sub) { sub.addItem("PNG"); });
 | `offset` | Nudge applied after placement |
 | `modal` | Swallows input to everything underneath |
 | `dismissOnOutsideClick` / `dismissOnEscape` | Light dismissal; both on by default |
-| `transition` | `enter` / `exit` hooks for this overlay; unset ones fall back to `OverlayLayer::setDefaultTransition()` |
+| `transition` | `enter` (after its first placement, before it is first drawn) and `exit` hooks for this overlay; unset ones fall back to `OverlayLayer::setDefaultTransition()` |
 | `onClosed` | Runs once it is gone, so an opener can forget its id |
 
 Every placement flips to its opposite when the surface has no room and is then
@@ -414,6 +414,32 @@ wma::SystemCursor cursor() const noexcept override { return wma::SystemCursor::G
 
 Zero hover seconds makes a control change at once; zero double-click seconds turns double clicks off.
 
+### Clipboard and undo
+
+`TextField` copies, cuts, pastes and undoes from the keyboard: Ctrl+C, X, V, Z and Y (or Ctrl+Shift+Z), and
+Ctrl+Insert, Shift+Delete and Shift+Insert. The same are calls, for a menu item or a button:
+
+```cpp
+field.copy();  field.cut();  field.paste();
+field.undo();  field.redo();
+const std::string picked = field.selectedText();
+```
+
+Where the text goes is `UIRoot::clipboard()`:
+
+| Installed | Reaches |
+|---|---|
+| `UIView`, over a window that has one | The system clipboard (`WindowClipboard`) |
+| Nothing | A clipboard in the process: fields of one application share it, nothing else sees it |
+| Yours: `root.setClipboard(&mine)` | Whatever `IClipboard::text()` and `setText()` do; null puts the in-process one back |
+
+A passphrase field (`setObscured`) is never copied or cut. A cut the clipboard did not take does not delete. A paste
+has its line breaks turned to spaces and its control characters and invalid UTF-8 removed, and is cut short, at a
+character, to what still fits `setMaxBytes()`. A run of typing, or of deleting, is one undo step; moving the caret ends
+it, and assigning to `text` from outside forgets the history.
+
+An application shortcut on one of these keys wins over the field's, as for every modified key.
+
 ### Focus and shortcuts
 
 ```cpp
@@ -518,6 +544,10 @@ const AccessibilityNode tree = ui.root().accessibilityTree();
 `accessibilityTree()` is a platform-independent snapshot — roles, states,
 bounds, nesting — with purely visual nodes folded out. An AT-SPI or UI
 Automation bridge consumes it, and so does a test.
+
+Open overlays follow the content, back to front, so a menu or a drop-down list is read where it sits. A modal one
+is `Role::Window` with `info.modal` set, which is the bridge's cue to hide the rest. An overlay that is closing, even
+while its exit still draws, is not in the tree; neither is a tooltip, whose text is the owner's `description`.
 
 ## DPI
 

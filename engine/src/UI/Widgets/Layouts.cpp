@@ -124,7 +124,8 @@ void Box::arrangeContent(const Rect &content)
         }
 
         const Length &length = _mainLength(child);
-        const f32 size = length.isFill() ? leftover * (length.value / weight) : _base[i];
+        //! A fill with no weight takes no share: with only such children, weight is 0 and the ratio would be 0 / 0.
+        const f32 size = length.isFill() ? (weight > 0.0f ? leftover * (length.value / weight) : 0.0f) : _base[i];
 
         const glm::vec2 origin = fromAxes(_axis, cursor, across(_axis, content.min));
         const glm::vec2 slot = fromAxes(_axis, size, across(_axis, content.size()));
@@ -665,7 +666,8 @@ void ScrollView::_pan(const PointerEvent &event)
     //! the clock is the same for all of them, so a sample waits for time to have passed.
     const f32 now = root() != nullptr ? root()->time() : _panLastTime;
     const f32 elapsed = now - _panLastTime;
-    if (elapsed < physics().velocitySampleSeconds)
+    //! Never a division by a clock that did not move, whatever interval the physics asks for.
+    if (elapsed <= 0.0f || elapsed < physics().velocitySampleSeconds)
         return;
 
     const glm::vec2 instant = -(event.position - _panLast) / elapsed;
@@ -852,7 +854,8 @@ bool ScrollView::onPointerUp(const PointerEvent &event)
         const f32 rested = root() != nullptr ? root()->time() - _panLastTime : 0.0f;
         const f32 speed = glm::length(_velocity);
         const ScrollPhysics &motion = physics();
-        const glm::vec2 carried = rested <= motion.flingRestSeconds && speed >= motion.flingMinSpeed
+        //! A finger that has not moved has no direction to carry, and dividing by its zero speed is not one.
+        const glm::vec2 carried = speed > 0.0f && rested <= motion.flingRestSeconds && speed >= motion.flingMinSpeed
                                       ? _velocity * (std::min(speed, motion.flingMaxSpeed) / speed)
                                       : glm::vec2{0.0f};
 

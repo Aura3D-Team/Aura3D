@@ -62,11 +62,30 @@ void OverlayLayer::_register(const OverlayDesc &desc)
         Entry{_nextId++, desc, false, WidgetRef(desc.owner), WidgetRef(root() ? root()->focused() : nullptr), true});
     if (desc.modal && root())
         root()->capturePointer(nullptr);
+}
 
-    //! A copy, called last: the hook may open another overlay, which would move the entry it was read from.
-    const auto enter = desc.transition.enter ? desc.transition.enter : _defaultTransition.enter;
-    if (enter && root())
-        enter(childAt(childCount() - 1), desc);
+void OverlayLayer::runEnterTransitions()
+{
+    //! By id, and on copies: a hook may open or close overlays, which moves and erases entries under this loop.
+    std::vector<Id> fresh;
+    for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
+        if (!_entries[i].placed && !_entries[i].closing && childAt(i).visibility() != Visibility::Collapsed)
+            fresh.push_back(_entries[i].id);
+
+    for (const Id id : fresh)
+    {
+        for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
+        {
+            if (_entries[i].id != id)
+                continue;
+            _entries[i].placed = true;
+            const OverlayDesc desc = _entries[i].desc;
+            const auto enter = desc.transition.enter ? desc.transition.enter : _defaultTransition.enter;
+            if (enter && root())
+                enter(childAt(i), desc);
+            break;
+        }
+    }
 }
 
 void OverlayLayer::setDefaultTransition(OverlayTransition transition)
@@ -181,6 +200,19 @@ bool OverlayLayer::isOpen(Id id) const noexcept
                                });
 }
 
+std::vector<OverlayLayer::OpenOverlay> OverlayLayer::openOverlays() const
+{
+    std::vector<OpenOverlay> open;
+    for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
+    {
+        const Widget &child = childAt(i);
+        if (_entries[i].closing || !child.hitTestVisible() || child.visibility() == Visibility::Collapsed)
+            continue;
+        open.push_back({&child, _entries[i].desc.modal});
+    }
+    return open;
+}
+
 bool OverlayLayer::hasModal() const noexcept
 {
     return std::ranges::any_of(_entries,
@@ -258,7 +290,9 @@ void OverlayLayer::close(Id id)
          */
         child.setHitTestVisible(false);
         const auto exit = entry.desc.transition.exit ? entry.desc.transition.exit : _defaultTransition.exit;
-        entry.exiting = exit && root() != nullptr;
+        //! One that was never placed was never seen: there is nothing to fade out, and fading it from full opacity
+        //! would show a popup nobody opened.
+        entry.exiting = exit && root() != nullptr && entry.placed;
 
         //! Read now: focus handlers and the hook itself may open or close overlays, which moves or erases the entry.
         std::optional<OverlayDesc> leaving;

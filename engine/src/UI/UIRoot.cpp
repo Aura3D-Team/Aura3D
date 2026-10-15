@@ -293,6 +293,16 @@ f32 UIRoot::caretBlinkSeconds() const noexcept
     return _caretBlinkSeconds;
 }
 
+void UIRoot::setClipboard(IClipboard *clipboard) noexcept
+{
+    _clipboard = clipboard;
+}
+
+IClipboard &UIRoot::clipboard() noexcept
+{
+    return _clipboard != nullptr ? *_clipboard : _memoryClipboard;
+}
+
 void UIRoot::_requestHover() noexcept
 {
     _hoverDirty = true;
@@ -370,6 +380,9 @@ void UIRoot::_layout()
 
     _layoutDirty = false;
     _paintDirty = true;
+
+    //! After the flags: a hook that invalidates layout asks for the next pass, and is not overwritten by this one.
+    _overlay->runEnterTransitions();
 }
 
 bool UIRoot::paint(DrawList &out)
@@ -1142,6 +1155,26 @@ AccessibilityNode UIRoot::accessibilityTree() const
         AccessibilityNode child{};
         collectAccessibility(*_decoration, child);
         tree.children.push_back(std::move(child));
+    }
+
+    //! Last, as they are drawn: what floats is on top of everything else, and a modal one is all there is to reach.
+    for (const OverlayLayer::OpenOverlay &overlay : _overlay->openOverlays())
+    {
+        AccessibilityNode child{};
+        collectAccessibility(*overlay.widget, child);
+
+        if (overlay.modal)
+        {
+            child.info.modal = true;
+            child.info.role = Role::Window;
+        }
+
+        //! The same fold as inside the tree: a root that means nothing hands its children up.
+        if (!overlay.modal && child.info.role == Role::None && child.info.name.empty())
+            tree.children.insert(tree.children.end(), std::make_move_iterator(child.children.begin()),
+                                 std::make_move_iterator(child.children.end()));
+        else
+            tree.children.push_back(std::move(child));
     }
 
     return tree;

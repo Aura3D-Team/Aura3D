@@ -1019,6 +1019,62 @@ void testMotionIsThemeAndRootParameters()
     AURA_CHECK(slowAfter == slowShown, "and still on with a ten-second blink");
 }
 
+void testFocusedTextFieldDoesNotKeepTheUiRedrawing()
+{
+    Harness harness;
+    auto &field = harness.root.setContent<Column>().add<TextField>();
+    harness.frame();
+    harness.root.setFocus(&field);
+    harness.frame(0.0f);
+
+    //! The caret flips at 0.53 s; until then nothing on screen changes, so nothing may be recorded again.
+    int recorded = 0;
+    for (int i = 0; i < 20; ++i)
+        recorded += harness.frame(0.016f) ? 1 : 0;
+    AURA_CHECK(recorded == 0, "a focused field leaves the UI idle between caret flips");
+
+    int flips = 0;
+    for (int i = 0; i < 40; ++i)
+        flips += harness.frame(0.016f) ? 1 : 0;
+    AURA_CHECK(flips >= 1 && flips <= 3, "and the frame it does record is the one where the caret changes");
+}
+
+void testCheckMarkAnimationRepaints()
+{
+    Harness harness;
+    auto &box = harness.root.setContent<Column>().add<CheckBox>("Option");
+    harness.frame();
+
+    box.checked = true;
+    //! Nothing is hovered: the mark alone is moving, and each frame of it has to reach the screen.
+    int recorded = 0;
+    for (int i = 0; i < 4; ++i)
+        recorded += harness.frame(0.016f) ? 1 : 0;
+    AURA_CHECK(recorded == 4, "a check mark that is animating re-records every frame, hover or not");
+
+    bool settled = false;
+    for (int i = 0; i < 60 && !settled; ++i)
+        settled = !harness.frame(0.016f);
+    AURA_CHECK(settled, "and the tree idles once it has arrived");
+}
+
+void testUnfocusedTextFieldFinishesItsHover()
+{
+    Harness harness;
+    auto &field = harness.root.setContent<Column>().add<TextField>();
+    harness.frame();
+    harness.root.pointerMoved(field.bounds().center());
+    for (int i = 0; i < 30; ++i)
+        harness.frame(0.016f);
+
+    glm::vec4 fill{0.0f};
+    for (const DrawCommand &command : harness.list.commands())
+        if (command.type == DrawCommandType::Rect && command.bounds.min == field.bounds().min)
+            fill = command.color;
+    AURA_CHECK(fill == Theme{}[Part::TextField].surface.hovered,
+               "a hover over a field that has no focus runs to the end");
+}
+
 void testPopupHasItsOwnSurface()
 {
     Harness harness;
@@ -1213,6 +1269,9 @@ int main()
     testScaleMultipliesVerticesNotLayout();
     testAnimationDirtiesFrames();
     testMotionIsThemeAndRootParameters();
+    testFocusedTextFieldDoesNotKeepTheUiRedrawing();
+    testCheckMarkAnimationRepaints();
+    testUnfocusedTextFieldFinishesItsHover();
     testPopupHasItsOwnSurface();
     testAtlasSurvivesScaleAndFirstFrameMasks();
     testStyleMetricsInvalidateLayout();

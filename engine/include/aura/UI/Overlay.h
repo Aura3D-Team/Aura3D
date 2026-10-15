@@ -52,8 +52,8 @@ struct OverlayDesc;
 /// How an overlay arrives and leaves. AuraUI animates nothing itself; both hooks are the application's.
 struct OverlayTransition
 {
-    /// Right after open(), before the overlay is first drawn: set its starting state and start the entrance, with
-    /// UIRoot::animate() for instance. It is not placed yet; a tween step reads bounds() once it is.
+    /// After the overlay is first placed and before it is first drawn, so bounds() are final and nothing shows in its
+    /// resting state first: set its starting state and start the entrance, with UIRoot::animate() for instance.
     std::function<void(Widget &overlay, const OverlayDesc &desc)> enter;
 
     /// From close(). The overlay keeps drawing, takes no input, and onClosed waits, until @p done is called: call it
@@ -165,6 +165,18 @@ class OverlayLayer final : public Widget
     /// The owner the overlay holding @p member was opened with, if any.
     [[nodiscard]] Widget *ownerOf(const Widget &member) const noexcept;
 
+    /// An overlay a user can reach, for the accessibility tree.
+    struct OpenOverlay
+    {
+        const Widget *widget = nullptr;
+        bool modal = false;
+    };
+
+    /// The overlays that are open and take the pointer, back to front. One that is closing, even while its exit
+    /// still draws, is gone to a screen reader; so is a click-through one, a tooltip, which is a description of its
+    /// owner and already part of it.
+    [[nodiscard]] std::vector<OpenOverlay> openOverlays() const;
+
     [[nodiscard]] bool isOpen(Id id) const noexcept;
     [[nodiscard]] bool empty() const noexcept
     {
@@ -192,6 +204,9 @@ class OverlayLayer final : public Widget
     /// Destroys what close() marked and has finished leaving. UIRoot calls this between frames.
     void collectClosed();
 
+    /// Runs the enter hook of every overlay that has just been placed. UIRoot calls this at the end of layout.
+    void runEnterTransitions();
+
     /// Overlays place themselves; a parent never arranges one.
     [[nodiscard]] bool clipsChildren() const noexcept override
     {
@@ -212,6 +227,7 @@ class OverlayLayer final : public Widget
         WidgetRef owner;
         WidgetRef restoreFocus;
         bool focusPending = true;
+        bool placed = false;  //! Laid out at least once, which is when its enter hook runs and it can be seen.
         bool exiting = false; //! Closing, and still drawn until its exit transition calls done.
     };
 

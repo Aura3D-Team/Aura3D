@@ -663,7 +663,7 @@ void Widget::accessibility(AccessibilityInfo &out) const
 {
     out.role = _children.empty() ? Role::None : Role::Group;
     out.name = !_accessibleName.empty() ? _accessibleName : _name;
-    out.description = _accessibleDescription;
+    out.description = !_accessibleDescription.empty() ? _accessibleDescription : _tooltip;
     out.enabled = effectivelyEnabled();
     out.focusable = focusable();
     out.focused = hasFocus();

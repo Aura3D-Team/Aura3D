@@ -75,6 +75,28 @@ class FakeWindow final : public wma::IWindowManager
 
     wma::HitTest hitTest;
 
+    //! The clipboard this window offers. Off, it is a backend that has none.
+    bool clipboardSupported = true;
+    //! False: a platform that declines the text, as a Wayland window does before its first key press.
+    bool clipboardAccepts = true;
+    std::string clipboardText;
+
+    bool isClipboardSupported() const noexcept override
+    {
+        return clipboardSupported;
+    }
+    std::string getClipboardText() override
+    {
+        return clipboardText;
+    }
+    bool setClipboardText(std::string_view text) override
+    {
+        if (!clipboardAccepts)
+            return false;
+        clipboardText.assign(text);
+        return true;
+    }
+
     bool setHitTest(wma::HitTest value) override
     {
         hitTest = std::move(value);

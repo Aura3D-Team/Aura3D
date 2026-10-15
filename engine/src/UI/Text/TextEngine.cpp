@@ -9,6 +9,8 @@
 #include "aura/Core/AuraFont/FontAtlas.h"
 #include "aura/UI/Text/Utf8.h"
 
+#include <wma/input/keyboard/Utf8.hpp>
+
 namespace aura3d::ui
 {
 
@@ -66,6 +68,49 @@ void append(std::string &out, char32_t codepoint)
         emit(0x80u | ((codepoint >> 6) & 0x3Fu));
         emit(0x80u | (codepoint & 0x3Fu));
     }
+}
+
+std::string sanitize(std::string_view text, Controls controls)
+{
+    std::string clean;
+    clean.reserve(text.size());
+
+    //! The last thing written was the space that stands for a break, so a run of them is one space.
+    bool broke = false;
+
+    for (usize index = 0; index < text.size();)
+    {
+        const wma::utf8::DecodeResult decoded = wma::utf8::decodeOne(text, index);
+        const usize next = std::max(decoded.next, index + 1);
+
+        if (!decoded.ok())
+        {
+            index = next;
+            continue;
+        }
+
+        const u32 codepoint = decoded.codepoint;
+        const bool lineBreak = codepoint == '\n' || codepoint == '\r' || codepoint == 0x85u || codepoint == 0x2028u ||
+                               codepoint == 0x2029u;
+        const bool control = codepoint < 0x20u || (codepoint >= 0x7Fu && codepoint <= 0x9Fu) || lineBreak;
+        if (control)
+        {
+            const bool breaks = lineBreak || codepoint == '\t' || codepoint == 0x0Bu || codepoint == 0x0Cu;
+            if (controls == Controls::Space && breaks)
+            {
+                if (!broke)
+                    clean.push_back(' ');
+                broke = true;
+            }
+            index = next;
+            continue;
+        }
+
+        clean.append(text.substr(index, next - index));
+        broke = false;
+        index = next;
+    }
+    return clean;
 }
 
 } // namespace utf8

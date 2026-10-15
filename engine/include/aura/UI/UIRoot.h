@@ -10,6 +10,7 @@
 
 #include "aura/UI/Core/Accessibility.h"
 #include "aura/UI/Core/Animation.h"
+#include "aura/UI/Core/Clipboard.h"
 #include "aura/UI/Core/Event.h"
 #include "aura/UI/Core/Signal.h"
 #include "aura/UI/Core/Theme.h"
@@ -328,6 +329,12 @@ class UIRoot
     /// long interval.
     void setCaretBlinkSeconds(f32 seconds) noexcept;
     [[nodiscard]] f32 caretBlinkSeconds() const noexcept;
+
+    /// Where a TextField copies to and pastes from. Not owned; null puts back the clipboard inside the root, which
+    /// holds what was copied in this application and nothing else. UIView installs the system's when its window has
+    /// one.
+    void setClipboard(IClipboard *clipboard) noexcept;
+    [[nodiscard]] IClipboard &clipboard() noexcept;
     [[nodiscard]] f32 tooltipDelay() const noexcept
     {
         return _tooltipDelay;
@@ -465,6 +472,9 @@ class UIRoot
     Widget *_tooltipTarget = nullptr;
     f32 _tooltipDwell = 0.0f;
     f32 _tooltipDelay = 0.5f;
+
+    MemoryClipboard _memoryClipboard;
+    IClipboard *_clipboard = nullptr; //! Null: _memoryClipboard.
 
     f32 _doubleClickSeconds = 0.40f;
     f32 _doubleClickSlop = 5.0f;

@@ -86,6 +86,8 @@ void UIView::detachInput()
 {
     _inputLifetime.reset();
     _root.cancelInput();
+    _root.setClipboard(nullptr);
+    _clipboard.reset();
     if (_window)
     {
         _window->setTextInputEnabled(false);
@@ -112,6 +114,12 @@ void UIView::attachInput(wma::IWindowManager &window)
     const std::weak_ptr<void> alive = _inputLifetime;
     _window = &window;
     _mouse = &window.getMouseListener();
+
+    if (window.isClipboardSupported())
+    {
+        _clipboard = std::make_unique<WindowClipboard>(window);
+        _root.setClipboard(_clipboard.get());
+    }
 
     //! The decoration's regions drive native move, resize and caption double-click.
     _frameHitTest = window.setHitTest(

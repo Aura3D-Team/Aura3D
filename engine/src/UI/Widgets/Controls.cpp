@@ -13,6 +13,39 @@ namespace
 {
 
 /// Blends in premultiplied space
+//! Command key of the platform: Ctrl, and on Apple's the Command key too.
+[[nodiscard]] bool commandKey(const Modifiers &mods) noexcept
+{
+#if defined(__APPLE__)
+    return mods.ctrl || mods.super;
+#else
+    return mods.ctrl;
+#endif
+}
+
+//! Sets a flag for a scope, however it is left.
+class FlagScope
+{
+  public:
+    explicit FlagScope(bool &flag) noexcept : _flag(flag)
+    {
+        _flag = true;
+    }
+    ~FlagScope()
+    {
+        _flag = false;
+    }
+    FlagScope(const FlagScope &) = delete;
+    FlagScope &operator=(const FlagScope &) = delete;
+
+  private:
+    bool &_flag;
+};
+
+//! How much history a field keeps: a step is a copy of its text, so both bounds matter.
+constexpr usize kMaxUndoSteps = 100;
+constexpr usize kMaxHistoryBytes = usize{4} << 20;
+
 [[nodiscard]] glm::vec4 mix(const glm::vec4 &a, const glm::vec4 &b, f32 t) noexcept
 {
     const f32 u = std::clamp(t, 0.0f, 1.0f);
@@ -24,9 +57,7 @@ namespace
         return glm::vec4(0.0f);
     }
 
-    const glm::vec3 premultiplied =
-        glm::vec3(a) * (a.a * (1.0f - u)) +
-        glm::vec3(b) * (b.a * u);
+    const glm::vec3 premultiplied = glm::vec3(a) * (a.a * (1.0f - u)) + glm::vec3(b) * (b.a * u);
 
     const glm::vec3 rgb = premultiplied / alpha;
 
@@ -87,9 +118,18 @@ void Control::onFocusOut()
 
 bool Control::onTick(f32 deltaSeconds)
 {
-    const bool running = _hover.tick(deltaSeconds);
-    invalidatePaint();
-    return running;
+    const bool running = tickHover(deltaSeconds);
+    if (running)
+        invalidatePaint();
+    return _hover.running();
+}
+
+bool Control::tickHover(f32 deltaSeconds) noexcept
+{
+    //! The tick that finishes the transition still moved the value, so it counts.
+    const bool moving = _hover.running();
+    _hover.tick(deltaSeconds);
+    return moving;
 }
 
 void Control::setPressed(bool pressed)
@@ -341,9 +381,14 @@ void CheckBox::activate()
 
 bool CheckBox::onTick(f32 deltaSeconds)
 {
-    const bool mark = _check.tick(deltaSeconds);
+    //! The tick that finishes the mark still moved it, so it is painted.
+    const bool markMoving = _check.running();
+    _check.tick(deltaSeconds);
+    if (markMoving)
+        invalidatePaint();
+
     const bool hover = Control::onTick(deltaSeconds);
-    return mark || hover;
+    return _check.running() || hover;
 }
 
 void CheckBox::accessibility(AccessibilityInfo &out) const
@@ -849,6 +894,15 @@ TextField::TextField(std::string value) : text(std::move(value))
             //! character boundary.
             _caret = utf8::clampToBoundary(updated, std::min(_caret, updated.size()));
             _selection = _caret;
+
+            //! A step is a copy of what the text was, and an assignment from outside has made them all stale.
+            if (!_editing)
+            {
+                _undo.clear();
+                _redo.clear();
+                _historyBytes = 0;
+                _lastEdit = EditKind::None;
+            }
             invalidateLayout();
         });
 }
@@ -995,8 +1049,7 @@ void TextField::paint(DrawList &out)
 
     //! Blink is a square wave on the tick clock, so the caret is solid while
     //! the field is being typed into -- _blink is reset on every edit.
-    const f32 blink = root() != nullptr ? root()->caretBlinkSeconds() : 0.53f;
-    if (focused && !_readOnly && std::fmod(_blink, blink * 2.0f) < blink)
+    if (focused && !_readOnly && _caretShown())
         out.fillRect(_shaped.caretRect(_caret, 1.0f).translated(origin), withAlpha(style.accent, alpha));
 
     paintFocusRing(out, style, bounds());
@@ -1004,6 +1057,7 @@ void TextField::paint(DrawList &out)
 
 void TextField::setCaret(usize byte, bool extendSelection)
 {
+    _lastEdit = EditKind::None;
     _caret = utf8::clampToBoundary(text.get(), std::min(byte, text.get().size()));
 
     if (!extendSelection)
@@ -1015,20 +1069,121 @@ void TextField::setCaret(usize byte, bool extendSelection)
 
 void TextField::selectAll()
 {
+    _lastEdit = EditKind::None;
     _selection = 0;
     _caret = text.get().size();
     invalidatePaint();
 }
 
-void TextField::_deleteSelection()
+std::string TextField::selectedText() const
 {
-    if (!_hasSelection())
+    return _hasSelection() ? text.get().substr(_selectionBegin(), _selectionEnd() - _selectionBegin()) : std::string{};
+}
+
+TextField::Snapshot TextField::_snapshot() const
+{
+    return {text.get(), _caret, _selection};
+}
+
+void TextField::_remember(EditKind kind)
+{
+    //! A run's first step stands for all of it, as long as the caret has not been moved or a selection made between.
+    const bool continuesRun =
+        kind == _lastEdit && (kind == EditKind::Typing || kind == EditKind::Deleting) && !_hasSelection();
+    _lastEdit = kind;
+    if (continuesRun)
         return;
 
-    std::string updated = text.get();
-    const usize begin = _selectionBegin();
+    _redo.clear();
+    _undo.push_back(_snapshot());
+    _trimHistory();
+}
 
-    updated.erase(begin, _selectionEnd() - begin);
+void TextField::_trimHistory() noexcept
+{
+    _historyBytes = 0;
+    for (const Snapshot &step : _undo)
+        _historyBytes += step.text.size();
+    for (const Snapshot &step : _redo)
+        _historyBytes += step.text.size();
+
+    //! The oldest go first; the newest step is always kept, whatever it weighs.
+    while (_undo.size() > 1 && (_undo.size() > kMaxUndoSteps || _historyBytes > kMaxHistoryBytes))
+    {
+        _historyBytes -= _undo.front().text.size();
+        _undo.erase(_undo.begin());
+    }
+}
+
+void TextField::_restore(Snapshot snapshot)
+{
+    _lastEdit = EditKind::None;
+    _blink = 0.0f;
+
+    {
+        const FlagScope editing(_editing);
+        text.set(std::move(snapshot.text), false);
+        text.changed().emit(text.get());
+    }
+
+    //! The observers above reset the selection to the caret; the step being returned to had its own.
+    _caret = utf8::clampToBoundary(text.get(), std::min(snapshot.caret, text.get().size()));
+    _selection = utf8::clampToBoundary(text.get(), std::min(snapshot.selection, text.get().size()));
+    invalidatePaint();
+}
+
+bool TextField::canUndo() const noexcept
+{
+    return !_readOnly && !_undo.empty();
+}
+
+bool TextField::canRedo() const noexcept
+{
+    return !_readOnly && !_redo.empty();
+}
+
+bool TextField::undo()
+{
+    if (!canUndo())
+        return false;
+
+    _redo.push_back(_snapshot());
+    Snapshot previous = std::move(_undo.back());
+    _undo.pop_back();
+    _restore(std::move(previous));
+    _trimHistory();
+    return true;
+}
+
+bool TextField::redo()
+{
+    if (!canRedo())
+        return false;
+
+    _undo.push_back(_snapshot());
+    Snapshot next = std::move(_redo.back());
+    _redo.pop_back();
+    _restore(std::move(next));
+    _trimHistory();
+    return true;
+}
+
+void TextField::_deleteSelection(EditKind kind)
+{
+    _deleteRange(_selectionBegin(), _selectionEnd(), kind);
+}
+
+void TextField::_deleteRange(usize begin, usize end, EditKind kind)
+{
+    if (begin >= end)
+        return;
+
+    //! Before anything changes: what is kept is the caret and selection as the user left them, not as this edit
+    //! needs them.
+    _remember(kind);
+
+    std::string updated = text.get();
+    updated.erase(begin, end - begin);
 
     _caret = begin;
     _selection = begin;
@@ -1036,10 +1191,12 @@ void TextField::_deleteSelection()
     //! Written without notifying so the caret is already correct when
     //! observers run; the property fires once, below.
     text.set(std::move(updated), false);
+
+    const FlagScope editing(_editing);
     text.changed().emit(text.get());
 }
 
-void TextField::_replaceSelection(std::string_view insertion)
+void TextField::_replaceSelection(std::string_view insertion, EditKind kind)
 {
     if (_readOnly)
         return;
@@ -1059,6 +1216,8 @@ void TextField::_replaceSelection(std::string_view insertion)
     if (!fits && begin == end)
         return;
 
+    _remember(kind);
+
     if (fits)
         updated.insert(begin, insertion);
 
@@ -1068,7 +1227,49 @@ void TextField::_replaceSelection(std::string_view insertion)
     _selection = _caret;
     _blink = 0.0f;
 
+    const FlagScope editing(_editing);
     text.changed().emit(text.get());
+}
+
+bool TextField::copy()
+{
+    UIRoot *ui = root();
+
+    //! A passphrase is not for the clipboard: other applications read it.
+    if (ui == nullptr || _obscured || !_hasSelection())
+        return false;
+
+    return ui->clipboard().setText(selectedText());
+}
+
+bool TextField::cut()
+{
+    //! The text goes only once the clipboard has it.
+    if (_readOnly || !copy())
+        return false;
+
+    _deleteSelection(EditKind::Other);
+    return true;
+}
+
+bool TextField::paste()
+{
+    UIRoot *ui = root();
+    if (_readOnly || ui == nullptr)
+        return false;
+
+    std::string pasted = utf8::sanitize(ui->clipboard().text(), utf8::Controls::Space);
+
+    //! What still fits once the selection it replaces is gone, cut at a character rather than through one.
+    const usize kept = text.get().size() - (_selectionEnd() - _selectionBegin());
+    const usize room = _maxBytes > kept ? _maxBytes - kept : 0;
+    if (pasted.size() > room)
+        pasted.resize(utf8::clampToBoundary(pasted, room));
+    if (pasted.empty())
+        return false;
+
+    _replaceSelection(pasted, EditKind::Other);
+    return true;
 }
 
 bool TextField::onTextInput(const TextEvent &event)
@@ -1076,7 +1277,13 @@ bool TextField::onTextInput(const TextEvent &event)
     if (_readOnly || event.text.empty())
         return false;
 
-    _replaceSelection(event.text);
+    //! Typed text is the platform's, but a control character in it (the Tab key arrives as one on some backends)
+    //! must not become part of a single line.
+    const std::string typed = utf8::sanitize(event.text, utf8::Controls::Drop);
+    if (typed.empty())
+        return false;
+
+    _replaceSelection(typed, EditKind::Typing);
     return true;
 }
 
@@ -1084,6 +1291,50 @@ bool TextField::onKeyDown(const KeyEvent &event)
 {
     const std::string &value = text.get();
     const bool shift = event.mods.shift;
+    const bool command = commandKey(event.mods) && !event.mods.alt;
+
+    //! Consumed whether or not they did anything: a Ctrl+C with nothing selected is still not for the parent.
+    if (command)
+    {
+        switch (event.key)
+        {
+        case wma::KEY_C:
+        case wma::KEY_INSERT:
+            copy();
+            return true;
+        case wma::KEY_X:
+            cut();
+            return true;
+        case wma::KEY_V:
+            paste();
+            return true;
+        case wma::KEY_Z:
+            if (shift)
+                redo();
+            else
+                undo();
+            return true;
+        case wma::KEY_Y:
+            redo();
+            return true;
+        default:
+            break;
+        }
+    }
+    else if (shift && !event.mods.alt && !event.mods.ctrl)
+    {
+        //! The older pair of bindings, still what many keyboards and habits reach for.
+        if (event.key == wma::KEY_DELETE)
+        {
+            cut();
+            return true;
+        }
+        if (event.key == wma::KEY_INSERT)
+        {
+            paste();
+            return true;
+        }
+    }
 
     switch (event.key)
     {
@@ -1107,24 +1358,24 @@ bool TextField::onKeyDown(const KeyEvent &event)
         if (_readOnly)
             return true;
 
-        if (!_hasSelection())
-            _selection = utf8::previousBoundary(value, _caret);
-
-        _deleteSelection();
+        if (_hasSelection())
+            _deleteSelection(EditKind::Other);
+        else
+            _deleteRange(utf8::previousBoundary(value, _caret), _caret, EditKind::Deleting);
         return true;
 
     case wma::KEY_DELETE:
         if (_readOnly)
             return true;
 
-        if (!_hasSelection())
-            _selection = utf8::nextBoundary(value, _caret);
-
-        _deleteSelection();
+        if (_hasSelection())
+            _deleteSelection(EditKind::Other);
+        else
+            _deleteRange(_caret, utf8::nextBoundary(value, _caret), EditKind::Deleting);
         return true;
 
     case wma::KEY_A:
-        if (!event.mods.ctrl)
+        if (!command)
             return false;
 
         selectAll();
@@ -1248,22 +1499,31 @@ void TextField::onFocusIn(FocusReason reason)
 void TextField::onFocusOut()
 {
     Control::onFocusOut();
+    _lastEdit = EditKind::None;
 
     _selection = _caret;
     _dragging = false;
     setAnimating(false);
 }
 
+bool TextField::_caretShown() const noexcept
+{
+    const f32 blink = root() != nullptr ? root()->caretBlinkSeconds() : 0.53f;
+    return std::fmod(_blink, blink * 2.0f) < blink;
+}
+
 bool TextField::onTick(f32 deltaSeconds)
 {
+    //! Repainting only when the picture changes: a caret that is on for half a second does not need the whole UI
+    //! recorded sixty times in it, and a focused field would otherwise keep every frame from being idle.
+    const bool wasShown = _caretShown();
     _blink += deltaSeconds;
-    invalidatePaint();
+    const bool hovering = tickHover(deltaSeconds);
+    if (hovering || _caretShown() != wasShown)
+        invalidatePaint();
 
-    Control::onTick(deltaSeconds);
-
-    //! Ticked for as long as it has focus: the caret has to keep blinking
-    //! whether or not anything else is animating.
-    return hasFocus();
+    //! Ticked for as long as it has focus, for the caret, and until a hover that began without it has finished.
+    return hasFocus() || hovering;
 }
 
 void TextField::accessibility(AccessibilityInfo &out) const

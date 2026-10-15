@@ -7,7 +7,7 @@ endif()
 
 find_package(Threads REQUIRED)
 find_package(ink 0.6.0 CONFIG REQUIRED)
-find_package(wma 0.7.0 CONFIG REQUIRED)
+find_package(wma 0.8.0 CONFIG REQUIRED)
 
 # Graphics Backends Dependencies Tracking
 #

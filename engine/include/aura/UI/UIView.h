@@ -6,6 +6,7 @@
 #include <string>
 
 #include "aura/UI/Backend/DrawListRenderer.h"
+#include "aura/UI/Backend/WindowClipboard.h"
 #include "aura/UI/Text/TextEngine.h"
 #include "aura/UI/UIRoot.h"
 #include "aura/UI/WindowDecoration.h"
@@ -223,6 +224,8 @@ class UIView
     mutable IWindowDecoration *_decoration = nullptr;
     mutable u64 _decorationGeneration = ~u64{0};
     std::shared_ptr<void> _inputLifetime;
+    //! The window's clipboard, when it has one; installed in the root for as long as input is attached.
+    std::unique_ptr<WindowClipboard> _clipboard;
     std::string _windowTitle;
 };
 
