@@ -12,6 +12,7 @@
  */
 
 #include <cmath>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -251,6 +252,115 @@ void testOnClosedFires()
 
     harness.frame();
     AURA_CHECK(closed == 1, "it runs once the overlay is actually gone");
+}
+
+void testExitTransitionKeepsItUntilDone()
+{
+    Harness harness;
+    harness.root.setContent<Column>();
+
+    int closed = 0;
+    std::function<void()> finish;
+    auto &box = harness.root.overlay().open<Column>(
+        OverlayDesc{.anchor = Rect::fromSize({20.0f, 20.0f}, {40.0f, 20.0f}),
+                    .transition = {.exit =
+                                       [&finish](Widget &, const OverlayDesc &, std::function<void()> done)
+                                   {
+                                       finish = std::move(done);
+                                   }},
+                    .onClosed = [&closed]
+                    {
+                        ++closed;
+                    }});
+    const OverlayLayer::Id id = harness.root.overlay().lastId();
+    box.layout().minWidth = 80.0f;
+    box.layout().minHeight = 40.0f;
+    harness.frame();
+
+    harness.root.overlay().close(id);
+    AURA_CHECK(!harness.root.overlay().isOpen(id) && finish, "closing takes it out of play and hands the exit a done");
+    AURA_CHECK(box.visibility() == Visibility::Visible && !box.hitTestVisible(), "it stays on screen, inert");
+    AURA_CHECK(harness.root.overlay().widgetAt(box.bounds().center()) == nullptr, "and the pointer passes through it");
+
+    for (int i = 0; i < 10; ++i)
+        harness.frame(0.1f);
+    AURA_CHECK(closed == 0 && !harness.root.overlay().empty(), "nothing goes until done is called, however long");
+
+    finish();
+    AURA_CHECK(box.visibility() == Visibility::Collapsed, "done takes it off screen at once");
+    harness.frame();
+    AURA_CHECK(closed == 1 && harness.root.overlay().empty(), "and the next frame destroys it and runs onClosed");
+
+    finish();
+    harness.frame();
+    AURA_CHECK(closed == 1, "a done called again, after the overlay is gone, does nothing");
+}
+
+void testClosingReleasesFocusWhileTheExitRuns()
+{
+    Harness harness;
+    auto &page = harness.root.setContent<Column>();
+    auto &below = page.add<Button>("Below");
+    harness.frame();
+    harness.root.setFocus(&below);
+
+    auto &box = harness.root.overlay().open<Column>(
+        OverlayDesc{.transition = {.exit = [](Widget &, const OverlayDesc &, const std::function<void()> &)
+                                   {
+                                   }}});
+    const OverlayLayer::Id id = harness.root.overlay().lastId();
+    auto &field = box.add<TextField>();
+    harness.frame();
+    harness.root.setFocus(&field);
+    AURA_CHECK(harness.root.focused() == &field, "the field in the overlay has focus");
+
+    harness.root.overlay().close(id);
+    AURA_CHECK(harness.root.focused() == &below, "focus goes back at once, not when the exit ends");
+}
+
+void testDefaultTransitionReachesBuiltInOverlays()
+{
+    Harness harness;
+    std::vector<Placement> entered;
+    int defaultExits = 0;
+    harness.root.overlay().setDefaultTransition(
+        {.enter =
+             [&entered](Widget &overlay, const OverlayDesc &desc)
+         {
+             entered.push_back(desc.placement);
+             overlay.setOpacity(0.0f);
+         },
+         .exit =
+             [&defaultExits](Widget &, const OverlayDesc &, const std::function<void()> &done)
+         {
+             ++defaultExits;
+             done();
+         }});
+
+    auto &page = harness.root.setContent<Column>();
+    auto &dropdown = page.add<Dropdown>(std::vector<std::string>{"Vulkan", "OpenGL"});
+    harness.frame();
+
+    harness.click(dropdown.bounds().center());
+    harness.frame();
+    AURA_CHECK(entered.size() == 1 && entered[0] == Placement::Below,
+               "the list a drop-down opens goes through the application's enter");
+    AURA_CHECK(harness.root.overlay().topmost()->opacity() == 0.0f, "which set its starting state");
+
+    dropdown.close();
+    harness.frame();
+    AURA_CHECK(defaultExits == 1 && harness.root.overlay().empty(), "and its exit, done at once, closes it as before");
+
+    int ownExits = 0;
+    harness.root.overlay().open<Column>(
+        OverlayDesc{.transition = {.exit = [&ownExits](Widget &, const OverlayDesc &, const std::function<void()> &done)
+                                   {
+                                       ++ownExits;
+                                       done();
+                                   }}});
+    harness.root.overlay().close(harness.root.overlay().lastId());
+    AURA_CHECK(ownExits == 1 && defaultExits == 1 && entered.size() == 2,
+               "an overlay's own hook wins over the default; the one it leaves unset still falls back");
 }
 
 void testFocusIsTrappedInTheTopmostOverlay()
@@ -659,6 +769,9 @@ int main()
     testModalBlocksTheContentBeneath();
     testCloseIsDeferredSoAnItemCanCloseItsOwnMenu();
     testOnClosedFires();
+    testExitTransitionKeepsItUntilDone();
+    testClosingReleasesFocusWhileTheExitRuns();
+    testDefaultTransitionReachesBuiltInOverlays();
     testFocusIsTrappedInTheTopmostOverlay();
     testDropdown();
     testDropdownKeyboard();

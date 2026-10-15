@@ -846,6 +846,226 @@ void testPressesAreOnlyOfferedToWhoAsked()
     AURA_CHECK(probe.offers == 3, "and nothing once the finger is up");
 }
 
+class ClickProbe final : public Widget
+{
+  public:
+    u32 lastClickCount = 0;
+
+  protected:
+    bool onPointerDown(const PointerEvent &event) override
+    {
+        lastClickCount = event.clickCount;
+        return true;
+    }
+};
+
+void testDoubleClickIsConfigurable()
+{
+    const auto secondPress = [](f32 seconds, f32 slop, f32 gap, f32 distance)
+    {
+        Harness harness;
+        auto &probe = harness.root.setContent<Column>().add<ClickProbe>();
+        probe.layout().width = Length::px(100.0f);
+        probe.layout().height = Length::px(100.0f);
+        harness.layout();
+        if (seconds >= 0.0f)
+            harness.root.setDoubleClickSeconds(seconds);
+        if (slop >= 0.0f)
+            harness.root.setDoubleClickSlop(slop);
+
+        const glm::vec2 first = probe.bounds().center();
+        harness.root.pointerDown(first);
+        harness.root.pointerUp(first);
+        harness.root.update(gap);
+        harness.root.pointerDown(first + glm::vec2{distance, 0.0f});
+        return probe.lastClickCount;
+    };
+
+    AURA_CHECK(secondPress(-1.0f, -1.0f, 0.1f, 2.0f) == 2, "two quick presses close together are a double click");
+    AURA_CHECK(secondPress(0.05f, -1.0f, 0.1f, 2.0f) == 1, "a shorter window leaves the same gap too slow");
+    AURA_CHECK(secondPress(1.0f, -1.0f, 0.7f, 2.0f) == 2, "and a longer one lets a slower pair count");
+    AURA_CHECK(secondPress(-1.0f, 1.0f, 0.1f, 3.0f) == 1, "a tighter slop makes the same move a different press");
+    AURA_CHECK(secondPress(-1.0f, 20.0f, 0.1f, 15.0f) == 2, "and a looser one forgives it");
+    AURA_CHECK(secondPress(0.0f, -1.0f, 0.0f, 0.0f) == 1, "zero seconds turns double clicks off");
+}
+
+void testScrollPhysicsIsConfigurable()
+{
+    {
+        ButtonList list;
+        list.harness.touchDown({50.0f, 85.0f});
+        list.harness.touchMove({50.0f, 75.0f});
+        AURA_CHECK(list.harness.root.pointerCapture() == list.scroll, "by default ten pixels is a drag");
+    }
+    {
+        ButtonList list;
+        list.scroll->setPhysics(ScrollPhysics{.touchSlop = 30.0f});
+        list.harness.touchDown({50.0f, 85.0f});
+        list.harness.touchMove({50.0f, 75.0f});
+        AURA_CHECK(list.harness.root.pointerCapture() != list.scroll,
+                   "a view with a wider slop leaves them to the tap");
+        list.harness.touchMove({50.0f, 50.0f});
+        AURA_CHECK(list.harness.root.pointerCapture() == list.scroll, "and takes the finger once it is past it");
+    }
+    {
+        ButtonList list;
+        list.harness.root.theme().metrics.scroll.touchSlop = 30.0f;
+        list.harness.touchDown({50.0f, 85.0f});
+        list.harness.touchMove({50.0f, 75.0f});
+        AURA_CHECK(list.harness.root.pointerCapture() != list.scroll, "the theme's slop reaches every view");
+
+        list.harness.touchUp({50.0f, 75.0f});
+        list.scroll->setPhysics(ScrollPhysics{.touchSlop = 2.0f});
+        list.harness.touchDown({50.0f, 85.0f});
+        list.harness.touchMove({50.0f, 75.0f});
+        AURA_CHECK(list.harness.root.pointerCapture() == list.scroll, "a view's own physics wins over the theme's");
+        list.harness.touchUp({50.0f, 75.0f});
+
+        list.scroll->resetPhysics();
+        AURA_CHECK(list.scroll->physics().touchSlop == 30.0f, "and resetting returns it to the theme's");
+    }
+    {
+        ButtonList list;
+        list.scroll->setPhysics(ScrollPhysics{.flingMinSpeed = 1.0e9f});
+        list.harness.touchDown({50.0f, 90.0f});
+        for (int step = 1; step <= 4; ++step)
+            list.harness.touchMove({50.0f, 90.0f - 6.0f * static_cast<f32>(step)});
+        list.harness.touchUp({50.0f, 66.0f});
+        list.harness.layout();
+        const f32 lifted = list.scroll->offset().y;
+        list.harness.root.update(0.016f);
+        list.harness.root.update(0.016f);
+        AURA_CHECK(list.scroll->offset().y == lifted, "a view that wants a faster flick than this one does not coast");
+    }
+}
+
+void testTweenDrivesAnything()
+{
+    Harness harness;
+    auto &page = harness.root.setContent<Column>();
+    auto &box = page.add<Widget>();
+    harness.layout();
+
+    std::vector<f32> steps;
+    int done = 0;
+    harness.root.animate(&box, Tween{.seconds = 0.1f,
+                                     .curve = easing::linear,
+                                     .step =
+                                         [&steps, &box](f32 progress)
+                                     {
+                                         steps.push_back(progress);
+                                         box.setOpacity(progress);
+                                     },
+                                     .done =
+                                         [&done]
+                                     {
+                                         ++done;
+                                     }});
+    AURA_CHECK(steps.size() == 1 && steps[0] == 0.0f && box.opacity() == 0.0f,
+               "the first step runs at once, so the starting state is in place before anything draws");
+    AURA_CHECK(harness.root.animating(), "a running tween keeps the root animating");
+
+    harness.root.update(0.05f);
+    AURA_CHECK(steps.size() == 2 && near(steps[1], 0.5f, 0.01f), "progress follows time through the curve");
+    harness.root.update(0.06f);
+    AURA_CHECK(steps.back() == 1.0f && done == 1, "the last step is exactly 1, then done");
+    harness.root.update(0.05f);
+    AURA_CHECK(steps.size() == 3 && done == 1 && !harness.root.animating(), "and nothing after it");
+
+    int cancelledSteps = 0;
+    bool cancelledDone = false;
+    const UIRoot::AnimationId id = harness.root.animate(nullptr, Tween{.seconds = 1.0f,
+                                                                       .step =
+                                                                           [&cancelledSteps](f32)
+                                                                       {
+                                                                           ++cancelledSteps;
+                                                                       },
+                                                                       .done =
+                                                                           [&cancelledDone]
+                                                                       {
+                                                                           cancelledDone = true;
+                                                                       }});
+    harness.root.cancelAnimation(id);
+    harness.root.update(2.0f);
+    AURA_CHECK(cancelledSteps == 1 && !cancelledDone, "a cancelled tween takes no further step and no done");
+
+    auto &doomed = page.add<Widget>();
+    harness.layout();
+    int doomedSteps = 0;
+    bool doomedDone = false;
+    harness.root.animate(&doomed, Tween{.seconds = 1.0f,
+                                        .step =
+                                            [&doomedSteps](f32)
+                                        {
+                                            ++doomedSteps;
+                                        },
+                                        .done =
+                                            [&doomedDone]
+                                        {
+                                            doomedDone = true;
+                                        }});
+    page.remove(doomed);
+    harness.root.update(2.0f);
+    AURA_CHECK(doomedSteps == 1 && !doomedDone, "a tween stops with its target, without done");
+
+    int chained = 0;
+    harness.root.animate(nullptr, Tween{.done = [&harness, &chained]
+                                        {
+                                            harness.root.animate(nullptr, Tween{.done = [&chained]
+                                                                                {
+                                                                                    ++chained;
+                                                                                }});
+                                        }});
+    harness.root.update(0.0f);
+    AURA_CHECK(chained == 0, "a tween started from another's done waits for the next update");
+    harness.root.update(0.0f);
+    AURA_CHECK(chained == 1, "and runs there");
+}
+
+void testTranslationMovesHitTestingAndEvents()
+{
+    Harness harness;
+    auto &page = harness.root.setContent<Column>();
+    auto &button = page.add<Button>("Moved");
+    auto &panel = page.add<Column>();
+    auto &slider = panel.add<Slider>(0.0f, 100.0f);
+    slider.layout().width = Length::px(200.0f);
+    slider.layout().hAlign = Alignment::Start;
+
+    int clicks = 0;
+    button.clicked.connect(
+        [&clicks]
+        {
+            ++clicks;
+        });
+    harness.layout();
+
+    const Rect resting = button.bounds();
+    const glm::vec2 shift{0.0f, 150.0f};
+    button.setTranslation(shift);
+    harness.layout();
+    AURA_CHECK(button.bounds().min == resting.min && button.visualBounds().min == resting.min + shift,
+               "layout keeps its slot; only the picture moves");
+
+    harness.click(resting.center());
+    AURA_CHECK(clicks == 0, "where it was laid out takes no click");
+    harness.click(resting.center() + shift);
+    AURA_CHECK(clicks == 1, "where it is drawn does");
+
+    panel.setTranslation({40.0f, 0.0f});
+    harness.layout();
+    const Rect drawn = slider.visualBounds();
+    AURA_CHECK(drawn.min.x == slider.bounds().min.x + 40.0f, "a translation moves every descendant");
+
+    harness.root.pointerMoved(drawn.center());
+    harness.root.pointerDown(drawn.center());
+    AURA_CHECK(near(slider.value.get(), 50.0f, 2.0f), "a control in a moved panel reads the pointer in its own space");
+    harness.root.pointerMoved({drawn.min.x - 500.0f, drawn.center().y});
+    harness.root.pointerMoved(drawn.center());
+    AURA_CHECK(near(slider.value.get(), 50.0f, 2.0f), "and so does the drag it captured");
+    harness.root.pointerUp(drawn.center());
+}
+
 void testAccessibilityTree()
 {
     Harness harness;
@@ -959,6 +1179,10 @@ int main()
     testShortFlickIsAsFastAsALongDrag();
     testPressesAreOnlyOfferedToWhoAsked();
     testTouchTapFocusesATextField();
+    testDoubleClickIsConfigurable();
+    testScrollPhysicsIsConfigurable();
+    testTweenDrivesAnything();
+    testTranslationMovesHitTestingAndEvents();
     testAccessibilityTree();
     testSignalLifetime();
 

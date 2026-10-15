@@ -33,12 +33,40 @@ class IWindowDecoration : public Widget
     void paint(DrawList &out) override;
 };
 
+/// How DefaultWindowDecoration looks and where it grabs. Pixels; colours are linear, which keeps the intended dark
+/// surface on an sRGB swapchain.
+struct WindowChrome
+{
+    f32 titleHeight = 34.0f;
+    f32 buttonWidth = 46.0f; //! Each caption button; narrower surfaces shrink them.
+    f32 titleInset = 16.0f;  //! Title to the left edge.
+    f32 titleGap = 12.0f;    //! Title to the caption buttons.
+    f32 titleFontSize = 16.0f;
+    f32 iconSize = 12.0f; //! The caption icons' square. Their strokes scale with it.
+    f32 border = 1.5f;    //! The painted resize border, while the window is resizable.
+    /// Edges grab this far in, past the painted border: a surface without an invisible outer margin otherwise leaves
+    /// a target too thin to hit with a mouse.
+    f32 resizeReach = 5.0f;
+    f32 cornerReach = 16.0f; //! How far along an edge from a corner the hit test reports a diagonal resize.
+
+    glm::vec4 frame{0.006f, 0.006f, 0.006f, 1.0f};
+    glm::vec4 titleText{0.82f, 0.82f, 0.82f, 1.0f};
+    glm::vec4 icon{1.0f, 1.0f, 1.0f, 1.0f};
+    ColorSet minimize{{0, 0, 0, 0}, {0.055f, 0.055f, 0.055f, 1}, {0.032f, 0.032f, 0.032f, 1}};
+    ColorSet maximize{{0, 0, 0, 0}, {0.015f, 0.19f, 0.62f, 1}, {0.01f, 0.12f, 0.38f, 1}};
+    ColorSet close{{0, 0, 0, 0}, {0.65f, 0.018f, 0.035f, 1}, {0.43f, 0.009f, 0.018f, 1}};
+};
+
 /// Title bar with a centred title and caption buttons, framed by a thin resize
 /// border of the same colour while the window is resizable and not maximized.
 class DefaultWindowDecoration : public IWindowDecoration
 {
   public:
     DefaultWindowDecoration();
+
+    /// Replaces the look and the reach; it applies at once.
+    void setChrome(const WindowChrome &chrome);
+    [[nodiscard]] const WindowChrome &chrome() const noexcept;
 
     void update(wma::IWindowManager &window, std::string_view title) override;
     [[nodiscard]] wma::WindowHit windowHit(glm::vec2 point) const override;
@@ -68,6 +96,9 @@ class DefaultWindowDecoration : public IWindowDecoration
   private:
     [[nodiscard]] Rect _titleBar() const noexcept;
     void _toggleMaximized();
+    void _applyChrome();
+
+    WindowChrome _chrome{};
 
     wma::IWindowManager *_window = nullptr;
     Label *_title = nullptr;

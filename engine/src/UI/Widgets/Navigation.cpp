@@ -14,9 +14,6 @@ namespace
 /// The arrow's share of the header row's height.
 constexpr f32 kArrowScale = 0.42f;
 
-/// How long the tab underline takes to travel.
-constexpr f32 kIndicatorSeconds = 0.16f;
-
 } // namespace
 
 // =============================================================================
@@ -288,8 +285,8 @@ void TabView::_apply()
 
     if (!tab.empty())
     {
-        _indicatorX.to(tab.min.x, kIndicatorSeconds);
-        _indicatorWidth.to(tab.width(), kIndicatorSeconds);
+        _indicatorX.to(tab.min.x, theme().metrics.indicatorSeconds);
+        _indicatorWidth.to(tab.width(), theme().metrics.indicatorSeconds);
         setAnimating(true);
     }
 

@@ -12,12 +12,6 @@ namespace aura3d::ui
 namespace
 {
 
-/// How long hover and press take to settle. Short enough to feel immediate,
-/// long enough that the eye reads it as motion rather than a jump.
-constexpr f32 kHoverSeconds = 0.11f;
-
-constexpr f32 kCaretBlinkSeconds = 0.53f;
-
 [[nodiscard]] glm::vec4 mix(const glm::vec4 &a, const glm::vec4 &b, f32 t) noexcept
 {
     return a + (b - a) * std::clamp(t, 0.0f, 1.0f);
@@ -46,13 +40,13 @@ void Control::setCursor(wma::SystemCursor cursor) noexcept
 
 void Control::onPointerEnter()
 {
-    _hover.to(1.0f, kHoverSeconds);
+    _hover.to(1.0f, theme().metrics.hoverSeconds);
     setAnimating(true);
 }
 
 void Control::onPointerLeave()
 {
-    _hover.to(0.0f, kHoverSeconds);
+    _hover.to(0.0f, theme().metrics.hoverSeconds);
     setAnimating(true);
 }
 
@@ -243,7 +237,7 @@ CheckBox::CheckBox(std::string text, bool value) : checked(value)
     checked.changed().connect(
         [this](bool on)
         {
-            _check.to(on ? 1.0f : 0.0f, kHoverSeconds);
+            _check.to(on ? 1.0f : 0.0f, theme().metrics.hoverSeconds);
             setAnimating(true);
         });
 }
@@ -985,7 +979,8 @@ void TextField::paint(DrawList &out)
 
     //! Blink is a square wave on the tick clock, so the caret is solid while
     //! the field is being typed into -- _blink is reset on every edit.
-    if (focused && !_readOnly && std::fmod(_blink, kCaretBlinkSeconds * 2.0f) < kCaretBlinkSeconds)
+    const f32 blink = root() != nullptr ? root()->caretBlinkSeconds() : 0.53f;
+    if (focused && !_readOnly && std::fmod(_blink, blink * 2.0f) < blink)
         out.fillRect(_shaped.caretRect(_caret, 1.0f).translated(origin), withAlpha(style.accent, alpha));
 
     paintFocusRing(out, style, bounds());

@@ -320,6 +320,92 @@ struct Harness
                                                     }));
 }
 
+void testEffectScope()
+{
+    DrawList list;
+    list.begin(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}));
+    const Rect box = Rect::fromSize({10.0f, 10.0f}, {20.0f, 20.0f});
+
+    {
+        const EffectScope outer(list, 0.5f, {0.0f, 4.0f});
+        list.fillRect(box, glm::vec4{1.0f});
+        {
+            const EffectScope inner(list, 0.5f, {3.0f, 0.0f});
+            list.fillRect(box, glm::vec4{1.0f});
+        }
+        list.fillRect(box, glm::vec4{1.0f});
+    }
+    list.fillRect(box, glm::vec4{1.0f});
+
+    AURA_CHECK(list.size() == 4, "every rectangle is recorded");
+    const auto commands = list.commands();
+    AURA_CHECK(commands[0].color.a == 0.5f && commands[0].bounds.min.y == 14.0f && commands[0].bounds.min.x == 10.0f,
+               "an effect scales alpha and moves the rectangle");
+    AURA_CHECK(commands[1].color.a == 0.25f && commands[1].bounds.min.x == 13.0f && commands[1].bounds.min.y == 14.0f,
+               "effects nest: opacities multiply and offsets add");
+    AURA_CHECK(commands[2].color.a == 0.5f, "and the inner one pops back to the outer");
+    AURA_CHECK(commands[3].color.a == 1.0f && commands[3].bounds.min.y == 10.0f, "the outer pops back to nothing");
+
+    list.popEffect();
+    list.fillRect(box, glm::vec4{1.0f});
+    AURA_CHECK(list.commands().back().color.a == 1.0f, "an unbalanced pop cannot take the identity");
+
+    list.begin(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}));
+    {
+        const EffectScope shifted(list, 1.0f, {50.0f, 0.0f});
+        const ClipScope clipped(list, Rect::fromSize({0.0f, 0.0f}, {20.0f, 20.0f}));
+        list.fillRect(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}), glm::vec4{1.0f});
+    }
+    list.fillRect(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}), glm::vec4{1.0f});
+    AURA_CHECK(list.size() == 2 && list.commands()[0].clip.min.x == 50.0f && list.commands()[0].clip.max.x == 70.0f,
+               "a clip pushed inside moves with the effect");
+    AURA_CHECK(list.commands()[1].clip.min.x == 0.0f && list.commands()[1].clip.max.x == 100.0f,
+               "and the surface clip is back, unmoved, after it");
+
+    //! A clip already in force when the scope opens does not move, whatever the scope moves.
+    list.begin(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}));
+    {
+        const ClipScope outer(list, Rect::fromSize({0.0f, 0.0f}, {60.0f, 60.0f}));
+        const EffectScope shifted(list, 1.0f, {30.0f, 0.0f});
+        list.fillRect(Rect::fromSize({0.0f, 0.0f}, {20.0f, 20.0f}), glm::vec4{1.0f});
+        //! Where it would be drawn, 30 to the right, is outside the 60-wide clip: culled, as it would be unshifted.
+        list.fillRect(Rect::fromSize({40.0f, 0.0f}, {20.0f, 20.0f}), glm::vec4{1.0f});
+    }
+    AURA_CHECK(list.size() == 1 && list.commands()[0].bounds.min.x == 30.0f && list.commands()[0].clip.max.x == 60.0f,
+               "a shifted primitive is culled and clipped against the clip it was shifted under");
+}
+
+void testWidgetOpacityAndTranslation()
+{
+    Harness harness;
+    auto &page = harness.root.setContent<Column>();
+    auto &panel = page.add<Column>();
+    panel.layout().width = Length::px(100.0f);
+    panel.layout().height = Length::px(40.0f);
+    panel.style().fill(glm::vec4{1.0f});
+    harness.frame();
+    const Rect resting = panel.bounds();
+
+    const auto panelFill = [&harness, &resting](glm::vec2 shift) -> const DrawCommand *
+    {
+        for (const DrawCommand &command : harness.list.commands())
+            if (command.type == DrawCommandType::Rect && command.bounds.min == resting.min + shift)
+                return &command;
+        return nullptr;
+    };
+
+    panel.setOpacity(0.5f);
+    panel.setTranslation({10.0f, 5.0f});
+    AURA_CHECK(harness.frame(), "either one asks for a repaint");
+    const DrawCommand *moved = panelFill({10.0f, 5.0f});
+    AURA_CHECK(moved != nullptr && moved->color.a == 0.5f, "the fill is drawn moved and half as opaque");
+    AURA_CHECK(panel.bounds().min == resting.min, "without touching layout");
+
+    panel.setOpacity(0.0f);
+    harness.frame();
+    AURA_CHECK(panelFill({10.0f, 5.0f}) == nullptr, "a transparent widget is not recorded at all");
+}
+
 void testClipping()
 {
     DrawList list;
@@ -870,6 +956,70 @@ void testAnimationDirtiesFrames()
     AURA_CHECK(settled, "and stops once it has run out");
 }
 
+void testMotionIsThemeAndRootParameters()
+{
+    const auto fillAfterHover = [](f32 seconds)
+    {
+        Harness harness;
+        auto &button = harness.root.setContent<Column>().add<Button>("Hover");
+        harness.root.theme().metrics.hoverSeconds = seconds;
+        harness.frame();
+        harness.root.pointerMoved(button.bounds().center());
+        harness.frame(0.0f);
+        for (const DrawCommand &command : harness.list.commands())
+            if (command.type == DrawCommandType::Rect && command.bounds.min == button.bounds().min)
+                return command.color;
+        return glm::vec4{0.0f};
+    };
+    const glm::vec4 hovered = Theme{}[Part::Button].surface.hovered;
+    const glm::vec4 normal = Theme{}[Part::Button].surface.normal;
+    AURA_CHECK(fillAfterHover(0.0f) == hovered, "with no hover time the surface is hovered at once");
+    AURA_CHECK(fillAfterHover(0.5f) == normal, "and with half a second it has not started to move");
+
+    const auto caretCommands = [](f32 blinkSeconds)
+    {
+        Harness harness;
+        auto &field = harness.root.setContent<Column>().add<TextField>();
+        harness.root.setCaretBlinkSeconds(blinkSeconds);
+        harness.frame();
+        harness.root.setFocus(&field);
+        harness.frame(0.0f);
+        const usize on = harness.list.size();
+        harness.frame(0.7f);
+        return std::pair{on, harness.list.size()};
+    };
+    const auto [shown, hiddenAfter] = caretCommands(0.53f);
+    AURA_CHECK(hiddenAfter + 1 == shown, "the caret is off 0.7 s in, with the default blink");
+    const auto [slowShown, slowAfter] = caretCommands(10.0f);
+    AURA_CHECK(slowAfter == slowShown, "and still on with a ten-second blink");
+}
+
+void testPopupHasItsOwnSurface()
+{
+    Harness harness;
+    harness.root.setContent<Column>();
+    const glm::vec4 popup{0.9f, 0.1f, 0.1f, 1.0f};
+    harness.root.theme()[Part::Popup].surface = ColorSet::flat(popup);
+
+    auto &menu =
+        harness.root.overlay().open<Menu>(OverlayDesc{.anchor = Rect::fromSize({20.0f, 20.0f}, {40.0f, 20.0f})});
+    menu.addItem("Rename");
+    harness.frame();
+
+    const auto fillOf = [&harness](const Rect &bounds)
+    {
+        for (const DrawCommand &command : harness.list.commands())
+            if (command.type == DrawCommandType::Rect && command.bounds.min == bounds.min &&
+                command.bounds.max == bounds.max)
+                return command.color;
+        return glm::vec4{0.0f};
+    };
+    AURA_CHECK(fillOf(menu.bounds()) == popup, "a menu takes its surface from Part::Popup");
+    AURA_CHECK(harness.root.theme()[Part::Tooltip].surface.normal != popup, "which leaves the tooltip's alone");
+    AURA_CHECK(Theme{}[Part::Popup].surface.normal == Theme{}[Part::Tooltip].surface.normal,
+               "and starts out looking the same");
+}
+
 void testAtlasSurvivesScaleAndFirstFrameMasks()
 {
     Harness harness;
@@ -1020,6 +1170,8 @@ int main()
     testSharedAtlasUploads();
     testInvisibleImageKeepsBatch();
     testGlyphsStayOnDevicePixels();
+    testEffectScope();
+    testWidgetOpacityAndTranslation();
     testClipping();
     testSingleBatch();
     testFontSizesShareBatch();
@@ -1034,6 +1186,8 @@ int main()
     testDisabledIsDrawnFaded();
     testScaleMultipliesVerticesNotLayout();
     testAnimationDirtiesFrames();
+    testMotionIsThemeAndRootParameters();
+    testPopupHasItsOwnSurface();
     testAtlasSurvivesScaleAndFirstFrameMasks();
     testStyleMetricsInvalidateLayout();
     testOutlineWithoutFillDrawsAnOutline();

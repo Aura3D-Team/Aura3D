@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "aura/UI/Core/Animation.h"
@@ -250,6 +251,14 @@ class ScrollView final : public Widget
     /// default; turn it off for a list being driven programmatically.
     void setSmooth(bool smooth);
 
+    /// @{
+    /// How a finger drags and flings this view. Unset, it follows Theme::metrics.scroll, so one edit there changes
+    /// every view and this changes one.
+    void setPhysics(const ScrollPhysics &physics);
+    void resetPhysics();
+    [[nodiscard]] const ScrollPhysics &physics() const noexcept;
+    /// @}
+
     void scrollTo(glm::vec2 offset);
     void scrollBy(glm::vec2 delta);
 
@@ -323,6 +332,7 @@ class ScrollView final : public Widget
     bool _horizontal = false;
     bool _vertical = true;
     bool _smooth = true;
+    std::optional<ScrollPhysics> _physics;
 
     //! Which bar is being dragged, and where inside its thumb the drag
     //! started -- without the grab offset the thumb would jump to the cursor.

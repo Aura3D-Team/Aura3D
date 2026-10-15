@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #include <ink/ink_base.hpp>
 
@@ -160,6 +161,25 @@ template <class T> class Transition
     f32 _duration = 0.0f; //! Zero means "not running"; no separate flag to disagree with it.
 
     EasingFn _curve = easing::outCubic;
+};
+
+/**
+ * @brief A progress from 0 to 1 over time, handed to a step that does whatever the animation is.
+ *
+ * Driven by UIRoot::animate(). The step decides what moves: a widget's opacity or translation, a layout size, a
+ * colour, a value of the application's own.
+ */
+struct Tween
+{
+    f32 seconds = 0.0f;
+    EasingFn curve = easing::outCubic;
+
+    /// Eased progress: 0 as soon as the tween starts, so its first state is in place before anything draws, then
+    /// once per update(), the last time with exactly 1.
+    std::function<void(f32 progress)> step;
+
+    /// After the last step. Not called for a tween that is cancelled or whose target goes away first.
+    std::function<void()> done;
 };
 
 } // namespace aura3d::ui

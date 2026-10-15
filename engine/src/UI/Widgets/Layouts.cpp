@@ -542,27 +542,6 @@ void ScrollView::scrollIntoView(const Rect &rect)
     }
 }
 
-namespace
-{
-
-/// Logical pixels a finger must travel before it is a drag and not a slightly sloppy tap.
-constexpr f32 kTouchSlop = 8.0f;
-
-/// A release slower than this, or after the finger rested this long, does not fling.
-constexpr f32 kFlingMinSpeed = 120.0f;
-constexpr f32 kFlingMaxSpeed = 6000.0f;
-constexpr f32 kFlingRestSeconds = 0.08f;
-
-/// The clock only moves once a frame, so moves closer together than this share a timestamp. Their
-/// distance is carried over to the next sample instead of being divided by a time that did not pass.
-constexpr f32 kVelocitySampleSeconds = 1.0f / 120.0f;
-
-/// Per second: the speed left after a second is e^-kFlingFriction of it.
-constexpr f32 kFlingFriction = 3.2f;
-constexpr f32 kFlingStopSpeed = 20.0f;
-
-} // namespace
-
 bool ScrollView::onTick(f32 deltaSeconds)
 {
     bool running = _offset.tick(deltaSeconds);
@@ -580,8 +559,8 @@ bool ScrollView::onTick(f32 deltaSeconds)
         if ((_fling.y < 0.0f && after.y <= 0.0f) || (_fling.y > 0.0f && after.y >= limit.y))
             _fling.y = 0.0f;
 
-        _fling *= std::exp(-kFlingFriction * deltaSeconds);
-        if (glm::length(_fling) < kFlingStopSpeed)
+        _fling *= std::exp(-physics().flingFriction * deltaSeconds);
+        if (glm::length(_fling) < physics().flingStopSpeed)
             _fling = glm::vec2{0.0f};
 
         running = running || _fling != glm::vec2{0.0f};
@@ -589,6 +568,21 @@ bool ScrollView::onTick(f32 deltaSeconds)
 
     invalidateLayout();
     return running;
+}
+
+void ScrollView::setPhysics(const ScrollPhysics &physics)
+{
+    _physics = physics;
+}
+
+void ScrollView::resetPhysics()
+{
+    _physics.reset();
+}
+
+const ScrollPhysics &ScrollView::physics() const noexcept
+{
+    return _physics ? *_physics : theme().metrics.scroll;
 }
 
 bool ScrollView::interceptsPointer(PointerKind kind) const noexcept
@@ -609,7 +603,7 @@ bool ScrollView::onPointerIntercept(const PointerEvent &event)
         return _fling != glm::vec2{0.0f} && _beginPan(event);
 
     const bool vertical = std::abs(moved.y) >= std::abs(moved.x);
-    if (std::abs(vertical ? moved.y : moved.x) < kTouchSlop)
+    if (std::abs(vertical ? moved.y : moved.x) < physics().touchSlop)
         return false;
 
     //! Content follows the finger, so the offset moves the other way. When this view cannot move that way
@@ -671,7 +665,7 @@ void ScrollView::_pan(const PointerEvent &event)
     //! the clock is the same for all of them, so a sample waits for time to have passed.
     const f32 now = root() != nullptr ? root()->time() : _panLastTime;
     const f32 elapsed = now - _panLastTime;
-    if (elapsed < kVelocitySampleSeconds)
+    if (elapsed < physics().velocitySampleSeconds)
         return;
 
     const glm::vec2 instant = -(event.position - _panLast) / elapsed;
@@ -857,8 +851,9 @@ bool ScrollView::onPointerUp(const PointerEvent &event)
 
         const f32 rested = root() != nullptr ? root()->time() - _panLastTime : 0.0f;
         const f32 speed = glm::length(_velocity);
-        const glm::vec2 carried = rested <= kFlingRestSeconds && speed >= kFlingMinSpeed
-                                      ? _velocity * (std::min(speed, kFlingMaxSpeed) / speed)
+        const ScrollPhysics &motion = physics();
+        const glm::vec2 carried = rested <= motion.flingRestSeconds && speed >= motion.flingMinSpeed
+                                      ? _velocity * (std::min(speed, motion.flingMaxSpeed) / speed)
                                       : glm::vec2{0.0f};
 
         //! After the release: letting go of capture tells this widget its press was cancelled, which clears

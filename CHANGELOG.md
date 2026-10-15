@@ -2,6 +2,26 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.8.0]
+
+Needs libwma 0.7.0.
+
+### Added
+
+- `UIRoot::animate()` with `Tween`: drives any value over time from outside a widget, with any `easing` curve; the step decides what moves. `cancelAnimation()`, and a tween stops with its target. `UIRoot::animating()` tells a loop that only redraws on demand to keep going.
+- `Widget::setOpacity()` / `setTranslation()`: paint-only, for a whole subtree; layout keeps the slot, and hit testing and pointer coordinates follow the translation. `visualBounds()` is where the widget is drawn.
+- `DrawList::pushEffect()` / `popEffect()` and `EffectScope`, which they are built on.
+- `OverlayTransition`: `enter` and `exit` hooks, per overlay in `OverlayDesc::transition` or for all of them in `OverlayLayer::setDefaultTransition()`. An `exit` keeps the overlay drawn and inert until it calls `done`, and `onClosed` waits for it. AuraUI animates none of its overlays itself; the hooks are how an application animates the drop-downs, submenus and tooltips it opens for it. `AuraUIDemo` fades them in and out.
+
+- Parameters that were constants, with the same defaults: `Metrics::hoverSeconds` and `indicatorSeconds`; `UIRoot::setDoubleClickSeconds()`, `setDoubleClickSlop()` and `setCaretBlinkSeconds()`; `ScrollPhysics` in `Metrics::scroll` for every `ScrollView` and `ScrollView::setPhysics()` for one; `WindowChrome` and `DefaultWindowDecoration::setChrome()` for the title bar's geometry and colours.
+- `Part::Popup`: the surface of menus and drop-down lists, which borrowed `Part::Tooltip`.
+
+### Changed
+
+- `Dropdown`, `Menu` submenus and the accessibility tree use `visualBounds()`, so they follow a translated trigger.
+- `Menu` and `Dropdown` take their surface from `Part::Popup`, not `Part::Tooltip`. They start identical; a theme that restyled `Tooltip` to restyle menus must now restyle `Popup` too.
+- The window decoration's close icon scales its strokes with `WindowChrome::iconSize`; at the default size nothing changes.
+
 ## [0.7.1]
 
 Needs libwma 0.7.0.

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.3.3)
 
 project(Aura3D
-    VERSION 0.7.1
+    VERSION 0.8.0
     DESCRIPTION "Aura3D Multi Backend Engine"
     LANGUAGES C CXX
 )
