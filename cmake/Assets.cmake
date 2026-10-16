@@ -6,7 +6,7 @@
 #       makes TARGET depend on the result.
 #
 #   aura_copy_assets(TARGET)
-#       Stages resources/ and the app settings.json next to TARGET's binary.
+#       Stages resources/ and the app settings*.json next to TARGET's binary.
 
 # A host tool even when cross-compiling, hence NO_CMAKE_FIND_ROOT_PATH. The NDK
 # and vcpkg (shaderc/glslang ports) ship one outside PATH. A cached path
@@ -107,18 +107,20 @@ function(aura_copy_assets TARGET)
         VERBATIM
     )
 
-    set(_settings "${CMAKE_CURRENT_SOURCE_DIR}/settings.json")
-    if(EMSCRIPTEN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/settings.wasm.json")
-        set(_settings "${CMAKE_CURRENT_SOURCE_DIR}/settings.wasm.json")
-    endif()
+    # settings.json, and any settings.<platform>.json beside it: the engine reads the one for the platform it runs on
+    # over settings.json, so the others are staged and ignored.
+    file(GLOB _settings CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/settings.json"
+        "${CMAKE_CURRENT_SOURCE_DIR}/settings.*.json")
 
-    if(EXISTS "${_settings}")
+    foreach(_file IN LISTS _settings)
+        get_filename_component(_name "${_file}" NAME)
         add_custom_command(TARGET ${TARGET} POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                    "${_settings}"
-                    "$<TARGET_FILE_DIR:${TARGET}>/settings.json"
-            COMMENT "Staging settings.json for ${TARGET}"
+                    "${_file}"
+                    "$<TARGET_FILE_DIR:${TARGET}>/${_name}"
+            COMMENT "Staging ${_name} for ${TARGET}"
             VERBATIM
         )
-    endif()
+    endforeach()
 endfunction()

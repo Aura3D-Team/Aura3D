@@ -1,54 +1,21 @@
 {
-    "application": {
-        "name": "Aura3D Organization Logo",
-        "version": "1.0.0",
-        "headless": false
-    },
+    "$schema": "../../docs/aura.schema.json",
+    "schema_version": 1,
     "window": {
+        "backend": "sdl3",
         "width": 1440,
         "height": 1024,
-        "title": "Aura3D \u2014 Organization Logo",
-        "backend": "SDL3",
-        "resizable": false,
-        "fullscreen": false,
-        "vsync": true,
-        "fps_limit": 60
+        "title": "Aura3D — Organization Logo",
+        "resizable": false
+    },
+    "present": {
+        "mode": "fifo"
     },
     "renderer": {
-        "backend": "software",
-        "validation_layers": true,
-        "max_frames_in_flight": 2
-    },
-    "graphics": {
-        "gpu_preference": "discrete",
-        "msaa_samples": 4
-    },
-    "audio": {
-        "backend": "auto",
-        "master_volume": 1.0,
-        "sample_rate": 48000,
-        "channels": 2,
-        "buffer_frames": 1024,
-        "max_voices": 32
-    },
-    "paths": {
-        "shaders": "./resources/shaders/",
-        "textures": "./resources/textures/",
-        "models": "./resources/models/",
-        "audio": "./resources/audio/",
-        "logs": "./logs/"
-    },
-    "memory": {
-        "vma": {
-            "buffer_device_address": true,
-            "prefer_device_memory": true,
-            "persistently_map_upload_buffers": true,
-            "vulkan_api_version": "1.4",
-            "preferred_large_heap_block_size_mb": 128
-        }
+        "api": "software",
+        "msaa": 4
     },
     "logging": {
-        "level": "info",
-        "write_to_file": false
+        "level": "info"
     }
 }

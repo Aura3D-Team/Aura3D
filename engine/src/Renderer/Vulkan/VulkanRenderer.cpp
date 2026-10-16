@@ -170,19 +170,20 @@ void VulkanRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     //! for the backend that does share the engine's pool.
     (void)jobs;
 
-    const bool enableValidation = settings->getValidationLayers();
+    const bool enableValidation = settings->get(setting::vulkanValidation);
 
     _vmaConfig = VulkanMemoryManager::loadConfig(settings);
     _memoryManager = std::make_unique<VulkanMemoryManager>();
 
-    createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
+    createWindow(settings->windowTitle().c_str(), settings->windowBackend());
     createCoreObjects(enableValidation);
 
     // Only actually request it from VMA if the device genuinely supports it
     // (see VkDeviceManager::supportsBufferDeviceAddress)
     _vmaConfig.bufferDeviceAddress = _vmaConfig.bufferDeviceAddress && _vkDeviceManager->supportsBufferDeviceAddress();
 
-    _msaaSamples = resolveSampleCount(settings->getMsaaSamples(), _vkDeviceManager->getMaxUsableSampleCount());
+    _msaaSamples =
+        resolveSampleCount(settings->get(setting::rendererMsaa), _vkDeviceManager->getMaxUsableSampleCount());
 
     createResourceManagers();
     buildSwapchainResources();
@@ -285,7 +286,7 @@ void VulkanRenderer::createResourceManagers()
     _vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(dev);
 
     //! Zero configured workers selects hardware concurrency.
-    const int configuredThreads = AuraSettings::get()->getCpuThreads();
+    const int configuredThreads = AuraSettings::get()->get(setting::rendererCpuThreads);
     const unsigned detected = std::thread::hardware_concurrency();
     _recordWorkerCount = configuredThreads > 0 ? static_cast<u32>(configuredThreads) : (detected > 0 ? detected : 1u);
 
@@ -308,13 +309,26 @@ void VulkanRenderer::setupPipeline(const std::string &vertShaderPath, const std:
     }
 }
 
-void VulkanRenderer::buildSwapchainResources()
+wma::WindowDetails VulkanRenderer::drawableDetails() const
 {
     const auto framebuffer = _windowManagerApi->getFramebufferSize();
-    auto drawableDetails = *_windowManagerApi->getWindowDetails();
-    drawableDetails.width = framebuffer.width;
-    drawableDetails.height = framebuffer.height;
-    _vkSwapChainManager->createSwapChain(&drawableDetails, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get(), 2,
+    auto details = *_windowManagerApi->getWindowDetails();
+    details.width = framebuffer.width;
+    details.height = framebuffer.height;
+    return details;
+}
+
+bool VulkanRenderer::swapchainMatchesSurface()
+{
+    auto details = drawableDetails();
+    return _vkSwapChainManager->matchesSurface(*_vkDeviceManager->getPhysicalDevice(), *_vkSurfaceManager->getSurface(),
+                                               &details);
+}
+
+void VulkanRenderer::buildSwapchainResources()
+{
+    auto details = drawableDetails();
+    _vkSwapChainManager->createSwapChain(&details, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get(), 2,
                                          _windowManagerApi->transparentFramebuffer());
     _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
                                            _vkSwapChainManager->getChoosedSurfaceFormat()->format, _vkImageViewData);
@@ -924,9 +938,8 @@ void VulkanRenderer::beginFrame()
             // escape the render loop and abort the process.
             INK_ERROR << "recreateSurfaceAndSwapchain failed, will retry: " << e.what();
             windowFlags->surfaceLost = true;
+            return;
         }
-
-        return;
     }
 
     if (windowFlags->resized)
@@ -934,25 +947,29 @@ void VulkanRenderer::beginFrame()
         windowFlags->resized = false;
         _targetStale = true;
 
-        try
+        //! Size events repeat without the size changing (a system bar appearing, a focus change), and a rebuild
+        //! is a blank stretch the user sees; only an out-of-date swapchain or a different extent earns one.
+        if (_vkSwapChainManager->outOfDate() || !swapchainMatchesSurface())
         {
-            handleWindowChanges();
+            try
+            {
+                handleWindowChanges();
+            }
+            catch (const AuraException &e)
+            {
+                // A plain resize can reuse a VkSurfaceKHR whose backing window
+                // already died out from under it e.g. the transient portrait
+                // relayout Android does mid-resume on an orientation-locked
+                // Activity, which fires a resize without ever tripping
+                // surfaceLost first. Only surfaceLost's path actually rebuilds
+                // the surface (not just the swapchain), so route recovery
+                // through it rather than letting the exception reach the top of
+                // the render loop and abort the process.
+                INK_ERROR << "handleWindowChanges failed, forcing surface recreation: " << e.what();
+                windowFlags->surfaceLost = true;
+                return;
+            }
         }
-        catch (const AuraException &e)
-        {
-            // A plain resize can reuse a VkSurfaceKHR whose backing window
-            // already died out from under it e.g. the transient portrait
-            // relayout Android does mid-resume on an orientation-locked
-            // Activity, which fires a resize without ever tripping
-            // surfaceLost first. Only surfaceLost's path actually rebuilds
-            // the surface (not just the swapchain), so route recovery
-            // through it rather than letting the exception reach the top of
-            // the render loop and abort the process.
-            INK_ERROR << "handleWindowChanges failed, forcing surface recreation: " << e.what();
-            windowFlags->surfaceLost = true;
-        }
-
-        return;
     }
 
     if (!_pipelineReady)
@@ -1129,6 +1146,11 @@ void VulkanRenderer::endFrame()
             graphicsQueue, &_vkRenderSyncManager->getRenderFinishedSemaphores()[_currentImageIndex], _currentImageIndex,
             _windowManagerApi->getWindowFlags());
     }
+
+    //! A rotation can raise its size event before the surface has the new size; the swapchain was then built to the
+    //! old one, and Android reports that only as the suboptimal result a rotated phone gives permanently.
+    if (_vkSwapChainManager->takeUnverified() && !swapchainMatchesSurface())
+        _windowManagerApi->getWindowFlags()->resized = true;
 
     AURA_FRAME_END();
 

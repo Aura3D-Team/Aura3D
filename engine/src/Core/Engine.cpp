@@ -23,24 +23,19 @@ Engine::Engine(const aura3d::AuraConfig &defaults, const std::string &configPath
     INK_CORE_LOGGER;
     INK_CORE_LOGGER->setName(APPLICATION_NAME);
 
-    //! Before the reload, so a file that fails to load leaves these standing
-    //! rather than the engine's own.
-    aura3d::AuraSettings::get()->setDefaults(defaults);
-
-    if (!configPath.empty())
-        aura3d::AuraSettings::get()->reload(configPath);
+    aura3d::AuraSettings::get()->configure(defaults, configPath);
 
     const aura3d::AuraSettings *config = aura3d::AuraSettings::get();
-    ink::LogManager::getInstance().setGlobalLevel(config->getLogLevel());
-    if (config->getLogToFile())
+    ink::LogManager::getInstance().setGlobalLevel(config->logLevel());
+    if (config->get(aura3d::setting::loggingFile))
     {
-        const std::string logsPath = config->getLogsPath();
+        const std::string logsPath = config->get(aura3d::setting::pathLogs);
         std::error_code ec;
         std::filesystem::create_directories(logsPath, ec);
         ink::LogManager::getInstance().setLogToFile(logsPath + APPLICATION_NAME + ".log");
     }
 
-    _jobs = std::make_unique<aura3d::JobSystem>(config->getCpuThreads());
+    _jobs = std::make_unique<aura3d::JobSystem>(config->get(aura3d::setting::rendererCpuThreads));
 
     _configureWindow();
     _createRenderer();
@@ -70,18 +65,13 @@ void Engine::_configureWindow()
     const aura3d::AuraSettings *config = aura3d::AuraSettings::get();
 
     _windowDetails = {};
-    _windowDetails.width = config->getWindowWidth();
-    _windowDetails.height = config->getWindowHeight();
-    _windowDetails.resizable = config->getWindowResizable();
-    _windowDetails.fullscreen = config->getFullscreen();
-    _windowDetails.decorationMode = config->getWindowDecorations();
-    _windowDetails.vsync = config->getVSync();
-    _windowDetails.targetFPS = config->getFPSLimit();
-
-    if (_windowDetails.vsync)
-    {
-        _windowDetails.targetFPS = 0;
-    }
+    _windowDetails.width = config->get(aura3d::setting::windowWidth);
+    _windowDetails.height = config->get(aura3d::setting::windowHeight);
+    _windowDetails.resizable = config->get(aura3d::setting::windowResizable);
+    _windowDetails.fullscreen = config->get(aura3d::setting::windowFullscreen);
+    _windowDetails.decorationMode = config->windowDecorations();
+    _windowDetails.vsync = aura3d::VSyncModeSyncsToDisplay(config->presentMode());
+    _windowDetails.targetFPS = _windowDetails.vsync ? 0 : config->get(aura3d::setting::presentFpsLimit);
 
 #ifdef __EMSCRIPTEN__
     double cssWidth = 0.0, cssHeight = 0.0;
@@ -100,18 +90,18 @@ void Engine::_createRenderer()
 
     const std::string defaultBackend = aura3d::RendererChoiceToString(aura3d::RendererFactory::defaultChoice());
 
-    std::string backendStr = config->getRendererBackend();
+    const std::string backendStr = config->get(aura3d::setting::rendererApi);
 
-    aura3d::RendererChoice requested;
-    if (!aura3d::RendererChoiceFromString(backendStr, requested))
+    aura3d::RendererChoice requested = aura3d::RendererFactory::defaultChoice();
+    if (backendStr != "auto" && !aura3d::RendererChoiceFromString(backendStr, requested))
     {
-        INK_WARN << "Unsupported renderer backend '" << backendStr << "'; falling back to " << defaultBackend;
+        INK_WARN << "Unsupported renderer '" << backendStr << "'; falling back to " << defaultBackend;
         requested = aura3d::RendererFactory::defaultChoice();
     }
 
     _adoptRenderer(requested);
 
-    INK_INFO << "Window backend: " << aura3d::WindowBackendToString(config->getWindowBackend());
+    INK_INFO << "Window backend: " << aura3d::WindowBackendToString(config->windowBackend());
 }
 
 void Engine::_createAudio()
@@ -119,14 +109,14 @@ void Engine::_createAudio()
     const aura3d::AuraSettings *config = aura3d::AuraSettings::get();
 
     wma::AudioDeviceConfig deviceConfig;
-    deviceConfig.sampleRate = static_cast<u32>(config->getAudioSampleRate());
-    deviceConfig.channelCount = static_cast<u16>(config->getAudioChannels());
-    deviceConfig.framesPerBuffer = static_cast<u32>(config->getAudioBufferFrames());
+    deviceConfig.sampleRate = static_cast<u32>(config->get(aura3d::setting::audioSampleRate));
+    deviceConfig.channelCount = static_cast<u16>(config->get(aura3d::setting::audioChannels));
+    deviceConfig.framesPerBuffer = static_cast<u32>(config->get(aura3d::setting::audioBufferFrames));
 
-    _audio = std::make_unique<aura3d::AudioEngine>(wma::openAudioDevice(deviceConfig, config->getAudioBackend()),
-                                                   static_cast<u32>(config->getAudioMaxVoices()));
+    _audio = std::make_unique<aura3d::AudioEngine>(wma::openAudioDevice(deviceConfig, config->audioBackend()),
+                                                   static_cast<u32>(config->get(aura3d::setting::audioMaxVoices)));
 
-    _audio->setMasterVolume(config->getMasterVolume());
+    _audio->setMasterVolume(static_cast<f32>(config->get(aura3d::setting::audioVolume)));
 
     if (_resources)
         _resources->setAudioEngine(_audio.get());
@@ -152,7 +142,7 @@ void Engine::_adoptRenderer(aura3d::RendererChoice choice)
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
 
     _renderer->setWindowFactory(_windowFactory);
-    _renderer->setGpuTimingEnabled(aura3d::AuraSettings::get()->getGpuTiming());
+    _renderer->setGpuTimingEnabled(aura3d::AuraSettings::get()->get(aura3d::setting::rendererGpuTiming));
     _renderer->initialize(aura3d::AuraSettings::get(), _jobs.get());
 
     if (_resources)

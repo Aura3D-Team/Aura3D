@@ -61,6 +61,20 @@ foreach(_aura_test_name IN LISTS AURA_TEST_SUITES)
     add_test(NAME ${_aura_test_name} COMMAND ${_aura_test_name})
 endforeach()
 
+# test_settings compares the committed schema and reference with what the engine generates.
+target_compile_definitions(test_settings PRIVATE AURA_DOCS_DIR="${PROJECT_SOURCE_DIR}/docs")
+
+if(NOT CMAKE_CROSSCOMPILING)
+    # Rewrites docs/aura.schema.json and docs/settings-reference.md after a setting changes.
+    add_executable(gen_settings_docs gen_settings_docs.cpp)
+    target_link_libraries(gen_settings_docs PRIVATE Aura3D::Aura3D)
+    add_custom_target(update-settings-docs
+        COMMAND gen_settings_docs "${PROJECT_SOURCE_DIR}/docs"
+        DEPENDS gen_settings_docs
+        COMMENT "Regenerating the settings reference and schema"
+        VERBATIM)
+endif()
+
 # Includes a generated header, so it must not compile before the engine's are written.
 add_dependencies(test_shader_loader aura3d_embedded_shaders)
 

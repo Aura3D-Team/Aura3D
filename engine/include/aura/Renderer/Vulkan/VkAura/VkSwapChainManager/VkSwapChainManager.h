@@ -121,6 +121,16 @@ class VkSwapChainManager
 
     u32 acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags *windowFlags);
 
+    /// Acquire or present said the swapchain no longer fits its surface, whatever the window's size events say.
+    [[nodiscard]] bool outOfDate() const noexcept;
+
+    /// True once per swapchain, after its first present: the moment to check the surface did not move on meanwhile.
+    [[nodiscard]] bool takeUnverified() noexcept;
+
+    /// Whether the extent this surface wants now is the one the swapchain was built with.
+    [[nodiscard]] bool matchesSurface(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+                                      wma::WindowDetails *drawable);
+
     void presentBackToSwapChain(VkQueue queue, VkSemaphore *renderFinishedSemaphore, const u32 &imageIndex,
                                 wma::WindowFlags *windowFlags);
 
@@ -178,6 +188,9 @@ class VkSwapChainManager
      */
     std::vector<VkImage> _swapChainImages;
 
+    bool _outOfDate = false;
+    bool _unverified = false;
+
     /**
      * @brief Chooses a surface format for the swap chain.
      *
@@ -199,14 +212,13 @@ class VkSwapChainManager
     /**
      * @brief Chooses the swap chain presentation mode for the requested VSyncMode.
      *
-     * AutoVsync and AutoNoVsync pick the first supported mode out of their
-     * fallback group; the concrete modes (Fifo, FifoRelaxed, Immediate,
-     * Mailbox) are used directly when supported and fall back to
+     * Uncapped picks the first supported of Immediate, Mailbox, Fifo; the
+     * concrete modes are used directly when supported and fall back to
      * VK_PRESENT_MODE_FIFO_KHR otherwise, since Fifo is guaranteed by the
      * Vulkan spec to always be available.
      *
      * @param availablePresentModes A list of supported presentation modes for the swap chain.
-     * @param mode The requested VSyncMode, read from AuraSettings.
+     * @param mode The requested VSyncMode, `present.mode` in the settings.
      *
      * @return VkPresentModeKHR The chosen presentation mode for the swap chain.
      */

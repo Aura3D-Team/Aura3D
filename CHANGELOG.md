@@ -20,12 +20,18 @@ Needs libwma 0.8.0.
 
 ### Changed
 
+- **Settings, rebuilt.** One declaration, `AURA_SETTINGS`, generates the typed keys (`setting::windowWidth`), the validation, `docs/settings-reference.md` and `docs/aura.schema.json`. Layers: built-in, `AuraConfig`, `settings.json`, `settings.<platform>.json`, `AURA_*` environment, `--set path=value`, runtime `set()`. An unknown key, a wrong type, an out-of-range number or a bad choice is reported with its path and a suggestion instead of being ignored.
+- **Breaking: the file layout.** `window.{vsync,vsync_mode,fps_limit}` become `present.{mode,fps_limit}` (`fifo`, `fifo_relaxed`, `mailbox`, `immediate`, `uncapped`; `AutoVsync` is `fifo`). `renderer.backend` is `renderer.api` (`auto` by default, `software` for the CPU); `graphics.*` and `memory.vma.*` move under `renderer` and `renderer.vulkan`; `audio.master_volume` is `audio.volume`; `logging.write_to_file` is `logging.file`; `application.*` is gone. Choices are lower case. The default present mode is `fifo`.
+- **Breaking: the API.** `AuraConfig` takes `config.set(setting::windowWidth, 1024)` where it had fields; `AuraSettings::getWindowWidth()` and the other getters are `get(setting::windowWidth)`, with `windowBackend()`, `presentMode()`, `audioBackend()`, `logLevel()` for the values that resolve; `reload(path)` is `configure(config, path)`; `getSettings()` and the raw JSON are gone. `VSyncMode` is `Fifo`, `FifoRelaxed`, `Mailbox`, `Immediate`, `Uncapped`.
+- `present.mode` decides vsync on every backend (OpenGL, Metal and the frame cap followed the legacy `vsync` flag), and `fifo` replaces `AutoVsync`'s `FifoRelaxed`, which tore when a frame was late.
 - `Menu` and `Dropdown` use `Part::Popup` instead of `Part::Tooltip`; themes that restyled `Tooltip` for menus must restyle `Popup`.
 - `Dropdown`, `Menu` submenus and the accessibility tree follow `visualBounds()`.
 
 ### Fixed
 
 - Interpolation of RGBA colours in premultiplied-alpha space.
+- Vulkan sized the swapchain from the window event, not the surface's fixed extent (Android, X11), so a rotation that raced the surface left it scaled or cropped; checked again after the first present.
+- Vulkan rebuilt the swapchain on every resize event, size change or not, and dropped the frame after a rebuild: a blank stretch on Android resume.
 - Focused `TextField` redrew every frame to blink its caret; hover transition stopped after one frame.
 - `AudioEngine` NaN output for parallel/zero `forward`/`up` and infinite source positions.
 - `Box` NaN bounds when all `Length::fill()` weights were zero.

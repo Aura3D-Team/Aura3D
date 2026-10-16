@@ -631,7 +631,7 @@ try
 
     // The gallery shows off AuraUI's title bar; settings.json may still opt out.
     AuraConfig config;
-    config.window.decorations = wma::DecorationMode::ClientSide;
+    config.set(setting::windowDecorations, wma::DecorationMode::ClientSide);
     Engine engine(config, "settings.json");
 
     IRenderer *renderer = engine.getRenderer();

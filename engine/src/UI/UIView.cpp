@@ -44,7 +44,7 @@ UIView::UIView(IRenderer &renderer, const UIViewDesc &desc, std::unique_ptr<IWin
     : _renderer(&renderer),
       _shaper(TextShaperDesc{.fontPath = desc.fontPath, .pageSize = desc.glyphPageSize, .maxPages = desc.maxFontSizes}),
       _root(_shaper, desc.theme), _backend(renderer, _shaper),
-      _windowTitle(desc.windowTitle.empty() ? AuraSettings::get()->getWindowTitle() : desc.windowTitle)
+      _windowTitle(desc.windowTitle.empty() ? AuraSettings::get()->windowTitle() : desc.windowTitle)
 {
     _root.setDecoration(std::move(decoration));
     if (!desc.windowTitle.empty())

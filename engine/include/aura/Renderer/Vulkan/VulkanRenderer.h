@@ -153,6 +153,9 @@ class VulkanRenderer : public IRenderer
     void recreateSurfaceAndSwapchain();
     void createResourceManagers();
     void buildSwapchainResources();
+    //! The window's details with the size swapped for the framebuffer's: what the swapchain is sized from.
+    [[nodiscard]] wma::WindowDetails drawableDetails() const;
+    [[nodiscard]] bool swapchainMatchesSurface();
     void destroySwapchainResources();
     void createDepthResources();
     void destroyDepthResources();

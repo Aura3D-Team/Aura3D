@@ -194,7 +194,7 @@ The `audio` section of `settings.json` (see
 ```json
 "audio": {
     "backend": "auto",
-    "master_volume": 1.0,
+    "volume": 1.0,
     "sample_rate": 48000,
     "channels": 2,
     "buffer_frames": 1024,
@@ -205,14 +205,14 @@ The `audio` section of `settings.json` (see
 | Key | Default | Meaning |
 |---|---|---|
 | `backend` | `"auto"` | `auto`, `alsa`, `sdl3`, or `null`. `auto` picks ALSA on desktop Linux, SDL3 elsewhere. |
-| `master_volume` | `1.0` | Clamped to `[0, 1]`. |
+| `volume` | `1.0` | `0` to `1`. |
 | `sample_rate` | `48000` | The native rate of nearly all modern hardware. |
 | `channels` | `2` | Stereo. Panning needs two. |
 | `buffer_frames` | `1024` | Latency dial: ~21 ms at 48 kHz. Lower is tighter but risks dropouts. |
 | `max_voices` | `32` | Simultaneous sounds before `play()` starts dropping. |
 
 Plus `paths.audio` (default `./resources/audio/`), read via
-`settings->getAudioPath()`.
+`settings->get(aura3d::setting::pathAudio)`.
 
 The device may not grant exactly what you ask for. Read back what it actually
 did:

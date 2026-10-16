@@ -144,8 +144,8 @@ reachable via `engine.resources()`:
 ```cpp
 ResourceManager* resources = engine.resources();
 
-const TextureHandle crate = resources->loadTexture(settings->getTexturesPath() + "crate.png");
-const MeshHandle ship     = resources->loadMesh(settings->getModelsPath() + "ship.obj");
+const TextureHandle crate = resources->loadTexture(settings->get(aura3d::setting::pathTextures) + "crate.png");
+const MeshHandle ship     = resources->loadMesh(settings->get(aura3d::setting::pathModels) + "ship.obj");
 
 resources->cachedTextureCount();
 resources->cachedMeshCount();
