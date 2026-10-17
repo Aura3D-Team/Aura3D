@@ -51,3 +51,13 @@ install(
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/PlatformSuffix.cmake
     DESTINATION ${AURA_INSTALL_CMAKEDIR}
 )
+
+# Apache-2.0 4(a)/(d) and the MIT notices of what is compiled in: they must
+# reach every archive built from this install tree.
+install(
+    FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+        ${CMAKE_CURRENT_SOURCE_DIR}/NOTICE
+        ${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_LICENSES.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+)

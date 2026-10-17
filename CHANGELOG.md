@@ -26,6 +26,7 @@ Needs libwma 0.8.0.
 - `present.mode` decides vsync on every backend (OpenGL, Metal and the frame cap followed the legacy `vsync` flag), and `fifo` replaces `AutoVsync`'s `FifoRelaxed`, which tore when a frame was late.
 - `Menu` and `Dropdown` use `Part::Popup` instead of `Part::Tooltip`; themes that restyled `Tooltip` for menus must restyle `Popup`.
 - `Dropdown`, `Menu` submenus and the accessibility tree follow `visualBounds()`.
+- **Licensing.** `LICENSE` is the full Apache-2.0 text (it was the short header). New `NOTICE` and `THIRD_PARTY_LICENSES.md`; `cmake --install` puts all three in `share/doc`. `vendor/glad/AURA_PROVENANCE.md` records the glad licensing.
 
 ### Fixed
 
