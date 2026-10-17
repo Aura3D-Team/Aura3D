@@ -98,27 +98,25 @@ int main(int argc, char **argv)
     if (argc > 1)
     {
         AuraConfig config;
-        config.renderer.backend = argv[1];
-        config.renderer.validationLayers = std::getenv("AURA_BENCH_VALIDATION") != nullptr;
-        config.window.width = 320;
-        config.window.height = 240;
-        config.window.fpsLimit = 0;
-        config.window.vsync = false;
-        config.graphics.cpuThreads = 4;
-        config.graphics.gpuPreference = "any";
-        config.audio.backend = wma::AudioBackend::Null;
-        config.logging.level = ink::LogLevel::ERROR;
         const bool raster = argc > 2 && std::string_view(argv[2]) == "raster";
-        if (raster)
-        {
-            config.window.width = 1920;
-            config.window.height = 1080;
-            config.graphics.cpuThreads = 0;
-        }
+        config.set(setting::rendererApi, std::string{argv[1]})
+            .set(setting::vulkanValidation, std::getenv("AURA_BENCH_VALIDATION") != nullptr)
+            .set(setting::windowWidth, raster ? 1920 : 320)
+            .set(setting::windowHeight, raster ? 1080 : 240)
+            .set(setting::presentMode, VSyncMode::Uncapped)
+            .set(setting::presentFpsLimit, 0)
+            .set(setting::rendererCpuThreads, raster ? 0 : 4)
+            .set(setting::vulkanGpu, std::string{"any"})
+            .set(setting::audioBackend, wma::AudioBackend::Null)
+            .set(setting::loggingLevel, ink::LogLevel::ERROR);
         // AURA_BENCH_WINDOW=sdl3|x11|wayland|glfw runs any mode through that window backend.
-        if (const char *window = std::getenv("AURA_BENCH_WINDOW");
-            window && !WindowBackendFromString(window, config.window.backend))
-            return 1;
+        if (const char *window = std::getenv("AURA_BENCH_WINDOW"))
+        {
+            wma::WindowBackend backend{};
+            if (!WindowBackendFromString(window, backend))
+                return 1;
+            config.set(setting::windowBackend, backend);
+        }
         Engine engine(config);
         auto &renderer = *engine.getRenderer();
         if (argc > 2 && std::string_view(argv[2]) == "primitives")

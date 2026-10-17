@@ -11,7 +11,9 @@
  * UIRoot over the bitmap font tests every bit of it with no window and no GPU.
  */
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -251,6 +253,225 @@ void testOnClosedFires()
 
     harness.frame();
     AURA_CHECK(closed == 1, "it runs once the overlay is actually gone");
+}
+
+void testExitTransitionKeepsItUntilDone()
+{
+    Harness harness;
+    harness.root.setContent<Column>();
+
+    int closed = 0;
+    std::function<void()> finish;
+    auto &box = harness.root.overlay().open<Column>(
+        OverlayDesc{.anchor = Rect::fromSize({20.0f, 20.0f}, {40.0f, 20.0f}),
+                    .transition = {.exit =
+                                       [&finish](Widget &, const OverlayDesc &, std::function<void()> done)
+                                   {
+                                       finish = std::move(done);
+                                   }},
+                    .onClosed = [&closed]
+                    {
+                        ++closed;
+                    }});
+    const OverlayLayer::Id id = harness.root.overlay().lastId();
+    box.layout().minWidth = 80.0f;
+    box.layout().minHeight = 40.0f;
+    harness.frame();
+
+    harness.root.overlay().close(id);
+    AURA_CHECK(!harness.root.overlay().isOpen(id) && finish, "closing takes it out of play and hands the exit a done");
+    AURA_CHECK(box.visibility() == Visibility::Visible && !box.hitTestVisible(), "it stays on screen, inert");
+    AURA_CHECK(harness.root.overlay().widgetAt(box.bounds().center()) == nullptr, "and the pointer passes through it");
+
+    for (int i = 0; i < 10; ++i)
+        harness.frame(0.1f);
+    AURA_CHECK(closed == 0 && !harness.root.overlay().empty(), "nothing goes until done is called, however long");
+
+    finish();
+    AURA_CHECK(box.visibility() == Visibility::Collapsed, "done takes it off screen at once");
+    harness.frame();
+    AURA_CHECK(closed == 1 && harness.root.overlay().empty(), "and the next frame destroys it and runs onClosed");
+
+    finish();
+    harness.frame();
+    AURA_CHECK(closed == 1, "a done called again, after the overlay is gone, does nothing");
+}
+
+void testClosingReleasesFocusWhileTheExitRuns()
+{
+    Harness harness;
+    auto &page = harness.root.setContent<Column>();
+    auto &below = page.add<Button>("Below");
+    harness.frame();
+    harness.root.setFocus(&below);
+
+    auto &box = harness.root.overlay().open<Column>(
+        OverlayDesc{.transition = {.exit = [](Widget &, const OverlayDesc &, const std::function<void()> &)
+                                   {
+                                   }}});
+    const OverlayLayer::Id id = harness.root.overlay().lastId();
+    auto &field = box.add<TextField>();
+    harness.frame();
+    harness.root.setFocus(&field);
+    AURA_CHECK(harness.root.focused() == &field, "the field in the overlay has focus");
+
+    harness.root.overlay().close(id);
+    AURA_CHECK(harness.root.focused() == &below, "focus goes back at once, not when the exit ends");
+}
+
+void testDefaultTransitionReachesBuiltInOverlays()
+{
+    Harness harness;
+    std::vector<Placement> entered;
+    bool placedWhenEntered = true;
+    int defaultExits = 0;
+    harness.root.overlay().setDefaultTransition(
+        {.enter =
+             [&entered, &placedWhenEntered](Widget &overlay, const OverlayDesc &desc)
+         {
+             placedWhenEntered = placedWhenEntered && !overlay.bounds().empty();
+             entered.push_back(desc.placement);
+             overlay.setOpacity(0.0f);
+         },
+         .exit =
+             [&defaultExits](Widget &, const OverlayDesc &, const std::function<void()> &done)
+         {
+             ++defaultExits;
+             done();
+         }});
+
+    auto &page = harness.root.setContent<Column>();
+    auto &dropdown = page.add<Dropdown>(std::vector<std::string>{"Vulkan", "OpenGL"});
+    harness.frame();
+
+    harness.click(dropdown.bounds().center());
+    harness.frame();
+    AURA_CHECK(entered.size() == 1 && entered[0] == Placement::Below,
+               "the list a drop-down opens goes through the application's enter");
+    AURA_CHECK(harness.root.overlay().topmost()->opacity() == 0.0f, "which set its starting state");
+    AURA_CHECK(placedWhenEntered, "after it was placed, so its bounds are final");
+
+    dropdown.close();
+    harness.frame();
+    AURA_CHECK(defaultExits == 1 && harness.root.overlay().empty(), "and its exit, done at once, closes it as before");
+
+    //! Opened and closed before it was ever laid out: nobody saw it, so there is nothing to fade out.
+    entered.clear();
+    harness.root.overlay().open<Column>(OverlayDesc{});
+    harness.root.overlay().close(harness.root.overlay().lastId());
+    harness.frame();
+    AURA_CHECK(defaultExits == 1 && entered.empty() && harness.root.overlay().empty(),
+               "an overlay closed before it was placed skips both hooks");
+
+    int ownExits = 0;
+    harness.root.overlay().open<Column>(
+        OverlayDesc{.transition = {.exit = [&ownExits](Widget &, const OverlayDesc &, const std::function<void()> &done)
+                                   {
+                                       ++ownExits;
+                                       done();
+                                   }}});
+    harness.frame();
+    harness.root.overlay().close(harness.root.overlay().lastId());
+    AURA_CHECK(ownExits == 1 && defaultExits == 1 && entered.size() == 1,
+               "an overlay's own hook wins over the default; the one it leaves unset still falls back");
+}
+
+/// Every node's name, depth first.
+void namesIn(const AccessibilityNode &node, std::vector<std::string> &out)
+{
+    if (!node.info.name.empty())
+        out.push_back(node.info.name);
+    for (const AccessibilityNode &child : node.children)
+        namesIn(child, out);
+}
+
+[[nodiscard]] bool reads(const AccessibilityNode &tree, const std::string &name)
+{
+    std::vector<std::string> names;
+    namesIn(tree, names);
+    return std::ranges::find(names, name) != names.end();
+}
+
+void testOverlaysAreInTheAccessibilityTree()
+{
+    Harness harness;
+    auto &page = harness.root.setContent<Column>();
+    page.add<Button>("Page button");
+
+    auto &menu =
+        harness.root.overlay().open<Menu>(OverlayDesc{.anchor = Rect::fromSize({20.0f, 20.0f}, {40.0f, 20.0f})});
+    menu.addItem("Rename");
+    const OverlayLayer::Id menuId = harness.root.overlay().lastId();
+    harness.frame();
+
+    AccessibilityNode tree = harness.root.accessibilityTree();
+    AURA_CHECK(reads(tree, "Page button") && reads(tree, "Rename"), "an open menu is read alongside the page");
+
+    //! Back to front, as drawn: the last child of the window is the menu.
+    AURA_CHECK(!tree.children.empty() && reads(tree.children.back(), "Rename"),
+               "and it comes after the content, the way it is drawn over it");
+
+    harness.root.overlay().close(menuId);
+    tree = harness.root.accessibilityTree();
+    AURA_CHECK(!reads(tree, "Rename") && reads(tree, "Page button"), "a closed menu is gone from it at once");
+}
+
+void testClosingOverlayIsNotAnnouncedWhileItsExitDraws()
+{
+    Harness harness;
+    harness.root.setContent<Column>();
+    auto &menu = harness.root.overlay().open<Menu>(
+        OverlayDesc{.anchor = Rect::fromSize({20.0f, 20.0f}, {40.0f, 20.0f}),
+                    .transition = {.exit = [](Widget &, const OverlayDesc &, const std::function<void()> &)
+                                   {
+                                   }}});
+    menu.addItem("Rename");
+    const OverlayLayer::Id id = harness.root.overlay().lastId();
+    harness.frame();
+    harness.root.overlay().close(id);
+
+    AURA_CHECK(menu.visibility() == Visibility::Visible, "the exit is still being drawn");
+    AURA_CHECK(!reads(harness.root.accessibilityTree(), "Rename"), "but a screen reader no longer finds it");
+}
+
+void testModalOverlayIsADialog()
+{
+    Harness harness;
+    harness.root.setContent<Column>().add<Button>("Behind");
+
+    auto &dialog = harness.root.overlay().open<Column>(OverlayDesc{.placement = Placement::Center, .modal = true});
+    dialog.add<Label>("Delete everything?");
+    dialog.add<Button>("Cancel");
+    harness.frame();
+
+    const AccessibilityNode tree = harness.root.accessibilityTree();
+    const AccessibilityNode &top = tree.children.back();
+    AURA_CHECK(top.info.modal && top.info.role == Role::Window, "a modal overlay is a modal window");
+    AURA_CHECK(reads(top, "Delete everything?") && reads(top, "Cancel"), "and holds what is in the dialog");
+    AURA_CHECK(!tree.info.modal, "the page behind is not marked: it is the bridge that hides it");
+}
+
+void testTooltipIsADescriptionNotANode()
+{
+    Harness harness;
+    auto &button = harness.root.setContent<Column>().add<Button>("Compile");
+    button.setTooltip("Build the project");
+    harness.frame();
+
+    AccessibilityInfo info{};
+    button.accessibility(info);
+    AURA_CHECK(info.description == "Build the project", "a tooltip is what a screen reader reads after the name");
+
+    button.setAccessibleDescription("Runs the build");
+    button.accessibility(info = {});
+    AURA_CHECK(info.description == "Runs the build", "unless the widget describes itself");
+
+    //! Dwell on it long enough for the tooltip overlay to open.
+    harness.root.pointerMoved(button.bounds().center());
+    for (int i = 0; i < 12; ++i)
+        harness.frame(0.1f);
+    AURA_CHECK(!harness.root.overlay().empty() && !reads(harness.root.accessibilityTree(), "Build the project"),
+               "and the tooltip overlay itself is not a second node for the same words");
 }
 
 void testFocusIsTrappedInTheTopmostOverlay()
@@ -659,6 +880,13 @@ int main()
     testModalBlocksTheContentBeneath();
     testCloseIsDeferredSoAnItemCanCloseItsOwnMenu();
     testOnClosedFires();
+    testExitTransitionKeepsItUntilDone();
+    testClosingReleasesFocusWhileTheExitRuns();
+    testDefaultTransitionReachesBuiltInOverlays();
+    testOverlaysAreInTheAccessibilityTree();
+    testClosingOverlayIsNotAnnouncedWhileItsExitDraws();
+    testModalOverlayIsADialog();
+    testTooltipIsADescriptionNotANode();
     testFocusIsTrappedInTheTopmostOverlay();
     testDropdown();
     testDropdownKeyboard();

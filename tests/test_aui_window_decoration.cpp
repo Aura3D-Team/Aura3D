@@ -363,6 +363,38 @@ void captionButtonsKeepTheArrow()
     AURA_CHECK(h.root.cursor() == wma::SystemCursor::Pointer, "an ordinary button is still a hand");
 }
 
+void chromeIsParameters()
+{
+    using enum wma::WindowHit;
+    Harness h;
+    const DefaultWindowDecoration &bar = *h.decoration;
+    AURA_CHECK(near(bar.contentInsets().top, 34.0f) && near(bar.chrome().buttonWidth, 46.0f),
+               "the default chrome is the one the decoration always had");
+
+    WindowChrome chrome = bar.chrome();
+    chrome.titleHeight = 50.0f;
+    chrome.buttonWidth = 60.0f;
+    chrome.resizeReach = 12.0f;
+    chrome.frame = {0.2f, 0.4f, 0.6f, 1.0f};
+    chrome.close = ColorSet::flat({0.1f, 0.9f, 0.1f, 1.0f});
+    h.decoration->setChrome(chrome);
+    h.frame();
+    h.paint();
+
+    AURA_CHECK(near(bar.contentInsets().top, 50.0f), "a taller title bar reserves more of the content");
+    AURA_CHECK(near(h.decoration->closeButton().bounds().width(), 60.0f) &&
+                   near(h.decoration->closeButton().bounds().height(), 50.0f),
+               "and the caption buttons follow its height and their width");
+    AURA_CHECK(bar.windowHit({240, 10}) == Top && bar.windowHit({240, 13}) == Caption,
+               "a wider reach grabs the edge from further in");
+
+    bool framePainted = false;
+    for (const auto &command : h.list.commands())
+        framePainted = framePainted || (command.type == DrawCommandType::Rect && command.color == chrome.frame);
+    AURA_CHECK(framePainted, "the frame colour is the chrome's");
+    AURA_CHECK(near(buttonFill(h, h.decoration->closeButton()).color.g, 0.9f), "and so is the close button's hover");
+}
+
 void replacementAndFocus()
 {
     Harness h;
@@ -416,6 +448,7 @@ int main()
     centredTitle();
     resizeBorder();
     hoverFeedback();
+    chromeIsParameters();
     captionButtonsKeepTheArrow();
     replacementAndFocus();
     AURA_TEST_MAIN_RETURN();

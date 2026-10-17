@@ -1,20 +1,25 @@
 /*
- * AuraSettings' three-layer resolution: a JSON document over an AuraConfig set
- * in code over the engine's own built-ins.
+ * The settings store: one schema, layered sources, and a loader that says what is wrong instead of ignoring it.
  *
- * The layering is what lets an application ship without a settings.json, so
- * the case worth pinning down is the one that does not fail loudly -- a key
- * the file omits must read the application's value, not the engine's, and a
- * reload must not quietly discard the application's values along the way.
+ * The cases worth pinning are the ones that fail quietly: a later layer must win key by key, a refused value must
+ * leave the earlier layer's standing, and a misspelt key has to be reported -- an unread `vsync_mode` is how this
+ * test came to exist.
  */
 
+#include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
+
+#include <ink/EnhancedJson.h>
 
 #include <wma/wma.hpp>
 
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/aura.h"
 
 #include "TestUtils.h"
 
@@ -24,7 +29,7 @@ namespace
 {
 
 //! Writes @p contents to a scratch file and returns its path.
-[[nodiscard]] std::string writeConfig(const std::string &name, const std::string &contents)
+[[nodiscard]] std::string writeFile(const std::string &name, const std::string &contents)
 {
     const std::string path = std::string{"aura_test_"} + name + ".json";
     std::ofstream file(path);
@@ -32,163 +37,269 @@ namespace
     return path;
 }
 
+[[nodiscard]] std::string readFile(const std::string &path)
+{
+    std::ifstream file(path);
+    std::ostringstream text;
+    text << file.rdbuf();
+    return text.str();
+}
+
+[[nodiscard]] bool mentions(const AuraSettings &settings, const std::string &needle)
+{
+    for (const std::string &line : settings.diagnostics())
+    {
+        if (line.find(needle) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
 //! Back to a pristine singleton: every test below shares one AuraSettings.
-void reset()
+AuraSettings &fresh()
 {
-    AuraSettings::get()->setDefaults(AuraConfig{});
-    AuraSettings::get()->reload("no-such-file-on-purpose.json");
+    AuraSettings &settings = *AuraSettings::get();
+    settings.clearRuntime();
+    settings.configure(AuraConfig{});
+    return settings;
 }
 
-void testBuiltInDefaultsWithNoFile()
+void testBuiltInDefaults()
 {
-    reset();
+    AuraSettings &settings = fresh();
 
-    const AuraSettings *settings = AuraSettings::get();
+    AURA_CHECK(settings.get(setting::windowWidth) == 1280, "the width defaults to 1280");
+    AURA_CHECK(settings.get(setting::windowResizable), "a window is resizable by default");
+    AURA_CHECK(settings.presentMode() == VSyncMode::Fifo, "frames wait for the display by default");
+    AURA_CHECK(settings.get(setting::rendererApi) == "auto", "the renderer is the platform's by default");
+    AURA_CHECK(settings.windowBackend() == wma::WindowBackend::SDL3, "SDL3 is the default window backend");
+    AURA_CHECK(settings.windowTitle() == APPLICATION_NAME, "an empty title takes the application name");
+    AURA_CHECK(settings.get(setting::audioVolume) == 1.0, "full volume by default");
+    AURA_CHECK(settings.diagnostics().empty(), "defaults alone report nothing");
 
-    AURA_CHECK(settings->getWindowWidth() == 1280, "an unconfigured engine is 1280 wide");
-    AURA_CHECK(settings->getWindowHeight() == 720, "an unconfigured engine is 720 tall");
-    AURA_CHECK(settings->getRendererBackend() == "vulkan", "the default backend is vulkan");
-    AURA_CHECK(settings->getWindowBackend() == wma::WindowBackend::SDL3, "the default window backend is SDL3");
-    AURA_CHECK(settings->getWindowDecorations() == wma::DecorationMode::ServerSide,
-               "an unconfigured window asks for server-side decorations");
+    for (const SettingDesc &desc : settingsSchema())
+        AURA_CHECK(settings.value(desc.path).has_value(),
+                   std::string{"every declared setting has a value: "} + std::string{desc.path});
 }
 
-void testWindowDecorations()
+void testLayersOverrideKeyByKey()
 {
-    reset();
+    AuraSettings &settings = fresh();
 
     AuraConfig config;
-    config.window.decorations = wma::DecorationMode::ClientSide;
-    AuraSettings::get()->setDefaults(config);
-    const AuraSettings *settings = AuraSettings::get();
-    AURA_CHECK(settings->getWindowDecorations() == wma::DecorationMode::ClientSide,
-               "a code default selects client-side decorations");
+    config.set(setting::windowWidth, 1024).set(setting::windowHeight, 768).set(setting::windowTitle, "Viewer");
 
-    std::string path = writeConfig("decorations", R"({ "window": { "decorations": "Server" } })");
-    AuraSettings::get()->reload(path);
-    AURA_CHECK(settings->getWindowDecorations() == wma::DecorationMode::ServerSide,
-               "the file overrides the decoration mode, case-insensitively");
-    std::remove(path.c_str());
+    const std::string file = writeFile("layers", R"({ "window": { "width": 800 }, "present": { "mode": "mailbox" } })");
+    settings.configure(config, file);
 
-    path = writeConfig("decorations", R"({ "window": { "decorations": "titlebar" } })");
-    AuraSettings::get()->reload(path);
-    AURA_CHECK(settings->getWindowDecorations() == wma::DecorationMode::ClientSide,
-               "an unrecognized decoration mode keeps the code default");
-    std::remove(path.c_str());
+    AURA_CHECK(settings.get(setting::windowWidth) == 800, "the file overrides the code");
+    AURA_CHECK(settings.get(setting::windowHeight) == 768, "a key the file omits reads the code's");
+    AURA_CHECK(settings.windowTitle() == "Viewer", "and so does the title");
+    AURA_CHECK(settings.presentMode() == VSyncMode::Mailbox, "a nested key is its dotted path");
+    AURA_CHECK(settings.get(setting::windowResizable), "a key nothing sets reads the built-in default");
+
+    //! The file is gone: the code layer must still stand.
+    std::remove(file.c_str());
+    settings.reload();
+    AURA_CHECK(settings.get(setting::windowWidth) == 1024, "a reload without the file falls back to the code");
+    AURA_CHECK(mentions(settings, "no readable file"), "and says the file was missing");
 }
 
-void testCodeDefaultsReplaceTheBuiltIns()
+void testPlatformFileOverridesTheFile()
 {
-    reset();
+    AuraSettings &settings = fresh();
 
-    AuraConfig config;
-    config.window.width = 1024;
-    config.window.height = 768;
-    config.window.title = "Viewer";
-    config.window.backend = wma::WindowBackend::WAYLAND;
-    config.window.vsyncMode = VSyncMode::Mailbox;
-    config.renderer.backend = "opengl";
-    config.renderer.validationLayers = false;
-    config.renderer.gpuTiming = true;
-    config.graphics.msaaSamples = 4;
-    config.audio.maxVoices = 8;
-    config.paths.textures = "./art/";
-    config.logging.level = ink::LogLevel::WARN;
-    config.logging.toFile = true;
+    const std::string base = writeFile("platform", R"({ "window": { "width": 800, "height": 600 } })");
+    const std::string overlay = platformSettingsPath(base);
+    {
+        std::ofstream(overlay) << R"({ "window": { "width": 640 } })";
+    }
 
-    AuraSettings::get()->setDefaults(config);
+    settings.configure(AuraConfig{}, base);
+    AURA_CHECK(settings.get(setting::windowWidth) == 640, "the platform file overrides settings.json");
+    AURA_CHECK(settings.get(setting::windowHeight) == 600, "and only the keys it names");
+    AURA_CHECK(settings.diagnostics().empty(), "a platform file is no problem");
 
-    const AuraSettings *settings = AuraSettings::get();
+    std::remove(overlay.c_str());
+    settings.configure(AuraConfig{}, base);
+    AURA_CHECK(settings.get(setting::windowWidth) == 800, "an absent platform file is silent");
+    AURA_CHECK(settings.diagnostics().empty(), "and reports nothing");
+    std::remove(base.c_str());
 
-    AURA_CHECK(settings->getWindowWidth() == 1024, "a code default sets the width");
-    AURA_CHECK(settings->getWindowTitle() == "Viewer", "a code default sets the title");
-    AURA_CHECK(settings->getWindowBackend() == wma::WindowBackend::WAYLAND, "a code default sets the window backend");
-    AURA_CHECK(settings->getVSyncMode() == VSyncMode::Mailbox,
-               "a code default sets the present mode without a vsync flag to derive it from");
-    AURA_CHECK(settings->getRendererBackend() == "opengl", "a code default sets the renderer");
-    AURA_CHECK(!settings->getValidationLayers(), "a code default turns validation layers off in a debug build");
-    AURA_CHECK(settings->getGpuTiming(), "a code default turns GPU timing on");
-    AURA_CHECK(settings->getMsaaSamples() == 4, "a code default sets MSAA");
-    AURA_CHECK(settings->getAudioMaxVoices() == 8, "a code default sets the voice count");
-    AURA_CHECK(settings->getTexturesPath() == "./art/", "a code default sets an asset path");
-    AURA_CHECK(settings->getLogLevel() == ink::LogLevel::WARN, "a code default sets the log level");
-    AURA_CHECK(settings->getLogToFile(), "a code default turns file logging on");
+    AURA_CHECK(platformSettingsPath("assets/settings.json").starts_with("assets/settings."),
+               "the platform name goes before the extension");
 }
 
-void testTheFileOverridesCodeKeyByKey()
+void testEnvironmentAndCommandLine()
 {
-    reset();
+    AuraSettings &settings = fresh();
 
+    setenv("AURA_WINDOW__WIDTH", "900", 1);
+    setenv("AURA_PRESENT__MODE", "IMMEDIATE", 1);
+
+    std::array<const char *, 4> arguments{"app", "--set", "window.width=700", "--set=audio.volume=0.25"};
     AuraConfig config;
-    config.window.width = 1024;
-    config.window.height = 768;
-    config.renderer.backend = "opengl";
-    AuraSettings::get()->setDefaults(config);
+    config.arguments(static_cast<int>(arguments.size()), arguments.data());
 
-    //! Sets the width and nothing else: height and backend must survive.
-    const std::string path = writeConfig("partial", R"({ "window": { "width": 640 } })");
-    AuraSettings::get()->reload(path);
+    const std::string file = writeFile("env", R"({ "window": { "width": 800 } })");
+    settings.configure(config, file);
+    unsetenv("AURA_WINDOW__WIDTH");
+    unsetenv("AURA_PRESENT__MODE");
+    std::remove(file.c_str());
 
-    const AuraSettings *settings = AuraSettings::get();
-
-    AURA_CHECK(settings->getWindowWidth() == 640, "a key the file sets wins");
-    AURA_CHECK(settings->getWindowHeight() == 768, "a key the file omits keeps the code default");
-    AURA_CHECK(settings->getRendererBackend() == "opengl", "a whole group the file omits keeps the code defaults");
-
-    std::remove(path.c_str());
+    AURA_CHECK(settings.get(setting::windowWidth) == 700, "the command line is the last word");
+    AURA_CHECK(settings.get(setting::audioVolume) == 0.25, "a float comes from text");
+    AURA_CHECK(settings.presentMode() == VSyncMode::Immediate, "the environment overrides the file, in any case");
+    AURA_CHECK(settings.diagnostics().empty(), "all of it was valid");
 }
 
-void testReloadKeepsTheCodeDefaults()
+void testBadValuesAreReportedAndRefused()
 {
-    reset();
+    AuraSettings &settings = fresh();
 
+    const std::string file = writeFile("bad", R"({
+        "$schema": "../docs/aura.schema.json",
+        "window": { "wdth": 800, "height": 99999, "resizable": "yes", "backend": "wayand" },
+        "present": { "mode": "Fifoo" },
+        "audio": { "volume": 2 },
+        "bogus": 1
+    })");
     AuraConfig config;
-    config.window.width = 1024;
-    AuraSettings::get()->setDefaults(config);
+    config.set(setting::windowHeight, 500);
+    settings.configure(config, file);
+    std::remove(file.c_str());
 
-    const std::string path = writeConfig("full", R"({ "window": { "width": 640 } })");
-    AuraSettings::get()->reload(path);
-    AURA_CHECK(AuraSettings::get()->getWindowWidth() == 640, "the file is picked up");
-
-    //! A second reload of a file that is not there must fall back to the
-    //! application's value, not to the engine's.
-    AuraSettings::get()->reload("no-such-file-on-purpose.json");
-    AURA_CHECK(AuraSettings::get()->getWindowWidth() == 1024,
-               "a failed reload falls back to the code defaults, not the built-ins");
-
-    std::remove(path.c_str());
+    AURA_CHECK(mentions(settings, "window.wdth: no such setting; did you mean 'window.width'?"),
+               "a misspelt key is reported with the key it nearly is");
+    AURA_CHECK(mentions(settings, "window.height") && settings.get(setting::windowHeight) == 500,
+               "a value out of range is refused and the layer beneath stands");
+    AURA_CHECK(mentions(settings, "window.resizable: expects true or false"), "a wrong type says what is expected");
+    AURA_CHECK(mentions(settings, "did you mean 'wayland'?"), "a wrong choice offers the nearest one");
+    AURA_CHECK(mentions(settings, "present.mode") && settings.presentMode() == VSyncMode::Fifo,
+               "a bad present mode leaves the default");
+    AURA_CHECK(mentions(settings, "audio.volume") && settings.get(setting::audioVolume) == 1.0,
+               "a volume above 1 is refused, not clamped");
+    AURA_CHECK(mentions(settings, "bogus: no such setting") && !mentions(settings, "$schema"),
+               "an unknown section is reported, the editor's $schema is not");
 }
 
-void testAudioBackendAutoStillMeansThePlatformDefault()
+void testNumbersAreCoerced()
 {
-    reset();
+    AuraSettings &settings = fresh();
+
+    const std::string file = writeFile("numbers", R"({ "audio": { "volume": 1, "sample_rate": 44100.0 } })");
+    settings.configure(AuraConfig{}, file);
+    std::remove(file.c_str());
+
+    AURA_CHECK(settings.get(setting::audioVolume) == 1.0, "a whole number is a valid float");
+    AURA_CHECK(settings.get(setting::audioSampleRate) == 44100, "a float with no fraction is a valid integer");
+    AURA_CHECK(settings.diagnostics().empty(), "neither is a problem");
+}
+
+void testTypedHelpers()
+{
+    AuraSettings &settings = fresh();
 
     AuraConfig config;
-    config.audio.backend = wma::AudioBackend::Null;
-    AuraSettings::get()->setDefaults(config);
+    config.set(setting::windowBackend, wma::WindowBackend::WAYLAND)
+        .set(setting::windowDecorations, wma::DecorationMode::ClientSide)
+        .set(setting::audioBackend, wma::AudioBackend::Null)
+        .set(setting::presentMode, VSyncMode::Uncapped)
+        .set(setting::loggingLevel, ink::LogLevel::WARN);
+    settings.configure(config);
 
-    AURA_CHECK(AuraSettings::get()->getAudioBackend() == wma::AudioBackend::Null,
-               "an unset key takes the code default");
+    AURA_CHECK(settings.windowBackend() == wma::WindowBackend::WAYLAND, "a window backend round-trips");
+    AURA_CHECK(settings.windowDecorations() == wma::DecorationMode::ClientSide, "decorations round-trip");
+    AURA_CHECK(settings.audioBackend() == wma::AudioBackend::Null, "an audio backend round-trips");
+    AURA_CHECK(settings.presentMode() == VSyncMode::Uncapped, "a present mode round-trips");
+    AURA_CHECK(settings.logLevel() == ink::LogLevel::WARN, "a log level round-trips");
+    AURA_CHECK(settings.diagnostics().empty(), "every spelling the helpers write is one the schema accepts");
 
-    const std::string path = writeConfig("audio", R"({ "audio": { "backend": "auto" } })");
-    AuraSettings::get()->reload(path);
+    settings.configure(AuraConfig{});
+    AURA_CHECK(settings.audioBackend() == wma::getDefaultAudioBackend(), "audio `auto` is the platform's backend");
+}
 
-    AURA_CHECK(AuraSettings::get()->getAudioBackend() == wma::getDefaultAudioBackend(),
-               "an explicit \"auto\" still asks for the platform default");
+void testVSyncModeDecidesWhetherTheDisplayPaces()
+{
+    AURA_CHECK(VSyncModeSyncsToDisplay(VSyncMode::Fifo) && VSyncModeSyncsToDisplay(VSyncMode::FifoRelaxed),
+               "the modes that wait for the display are vsync");
+    AURA_CHECK(!VSyncModeSyncsToDisplay(VSyncMode::Immediate) && !VSyncModeSyncsToDisplay(VSyncMode::Mailbox) &&
+                   !VSyncModeSyncsToDisplay(VSyncMode::Uncapped),
+               "the modes that do not wait are not, Mailbox included");
+}
 
-    std::remove(path.c_str());
+void testRuntimeChangesAndSubscribers()
+{
+    AuraSettings &settings = fresh();
+
+    std::vector<std::string> changed;
+    const u32 id = settings.subscribe(
+        [&changed](std::string_view path)
+        {
+            changed.emplace_back(path);
+        });
+
+    AURA_CHECK(settings.set(setting::audioVolume, 0.5), "a valid runtime change is taken");
+    AURA_CHECK(settings.get(setting::audioVolume) == 0.5, "and read back");
+    AURA_CHECK(changed == std::vector<std::string>{"audio.volume"}, "subscribers hear the path that changed");
+
+    AURA_CHECK(!settings.set(setting::audioVolume, 3.0), "an invalid one is refused");
+    AURA_CHECK(settings.get(setting::audioVolume) == 0.5, "and leaves the value alone");
+
+    const std::string file = writeFile("runtime", R"({ "audio": { "volume": 0.9, "channels": 1 } })");
+    changed.clear();
+    settings.configure(AuraConfig{}, file);
+    std::remove(file.c_str());
+    AURA_CHECK(settings.get(setting::audioVolume) == 0.5, "a runtime change outlasts a reload");
+    AURA_CHECK(changed == std::vector<std::string>{"audio.channels"},
+               "a reload tells subscribers about what changed, and only that");
+
+    settings.unsubscribe(id);
+    changed.clear();
+    AURA_CHECK(settings.set(setting::audioVolume, 0.7) && changed.empty(), "an unsubscribed handler is not called");
+
+    settings.clearRuntime();
+    AURA_CHECK(settings.get(setting::audioVolume) == 1.0, "clearing drops runtime changes");
+}
+
+void testSchemaAndReferenceMatchTheCommittedFiles()
+{
+    const std::string schema = settingsJsonSchema();
+    AURA_CHECK(readFile(std::string{AURA_DOCS_DIR} + "/aura.schema.json") == schema,
+               "docs/aura.schema.json is current (cmake --build . --target update-settings-docs)");
+    AURA_CHECK(readFile(std::string{AURA_DOCS_DIR} + "/settings-reference.md") == settingsMarkdown(),
+               "docs/settings-reference.md is current (cmake --build . --target update-settings-docs)");
+
+    try
+    {
+        const nlohmann::json parsed = nlohmann::json::parse(schema);
+        const nlohmann::json &window = parsed.at("properties").at("window").at("properties");
+        AURA_CHECK(parsed.at("additionalProperties") == false, "the schema rejects unknown top-level keys");
+        AURA_CHECK(window.at("width").at("minimum") == 1 && window.at("width").at("default") == 1280,
+                   "a nested setting carries its range and default");
+        AURA_CHECK(parsed.at("properties").at("present").at("properties").at("mode").at("enum").size() == 5,
+                   "a choice lists its spellings");
+    }
+    catch (const nlohmann::json::exception &error)
+    {
+        AURA_CHECK(false, std::string{"the schema is valid and complete: "} + error.what());
+    }
 }
 
 } // namespace
 
 int main()
 {
-    testBuiltInDefaultsWithNoFile();
-    testWindowDecorations();
-    testCodeDefaultsReplaceTheBuiltIns();
-    testTheFileOverridesCodeKeyByKey();
-    testReloadKeepsTheCodeDefaults();
-    testAudioBackendAutoStillMeansThePlatformDefault();
+    testBuiltInDefaults();
+    testLayersOverrideKeyByKey();
+    testPlatformFileOverridesTheFile();
+    testEnvironmentAndCommandLine();
+    testBadValuesAreReportedAndRefused();
+    testNumbersAreCoerced();
+    testTypedHelpers();
+    testVSyncModeDecidesWhetherTheDisplayPaces();
+    testRuntimeChangesAndSubscribers();
+    testSchemaAndReferenceMatchTheCommittedFiles();
 
     AURA_TEST_MAIN_RETURN();
 }

@@ -23,6 +23,17 @@
 namespace aura3d::ui::utf8
 {
 
+/// What to do with a control character in text headed for a single-line field.
+enum class Controls : u8
+{
+    Drop,  //! Remove it.
+    Space, //! A tab or a line break becomes one space, however many in a row; any other control is removed.
+};
+
+/// @p text as well-formed UTF-8 with no control characters: an invalid sequence is removed, whole. For text that did
+/// not come from the user's own keystrokes -- a paste -- before it is trusted with a string whose offsets are bytes.
+[[nodiscard]] std::string sanitize(std::string_view text, Controls controls);
+
 [[nodiscard]] constexpr bool isContinuation(char byte) noexcept
 {
     return (static_cast<u8>(byte) & 0xC0u) == 0x80u;

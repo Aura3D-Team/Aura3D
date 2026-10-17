@@ -12,7 +12,7 @@ and its own backend restrictions, applied automatically by `cmake/Platform.cmake
 | Android | Vulkan only | `AURA_ENABLE_OPENGL`/`AURA_ENABLE_CPU` are force-disabled; Vulkan is the modern mobile GPU path. |
 | WASM | OpenGL only | Compiles to WebGL2; `AURA_ENABLE_VULKAN`/`AURA_ENABLE_CPU` are force-disabled (no browser Vulkan, and the CPU backend's `wma` framebuffer path isn't wired for Emscripten). |
 
-This means `renderer.backend` in `settings.json` only really has a choice on
+This means `renderer.api` in `settings.json` only really has a choice on
 Linux — Android and WASM builds only ever have one backend available, and
 `RendererFactory` will resolve to it regardless of what the JSON says (see
 [03-engine-and-renderer.md](03-engine-and-renderer.md#backend-resolution--fallback)).
@@ -302,7 +302,7 @@ SDL for a full EGL/GLX context — something containerized or virtualized GPU
 setups (Docker with a passthrough/virtual GPU, some remote-desktop or CI
 environments) frequently can't hand out even when Vulkan works perfectly on
 the same machine. Confirm this is what's happening by running the same
-build's Vulkan or CPU backend (`renderer.backend` in `settings.json`) on the
+build's Vulkan or CPU backend (`renderer.api` in `settings.json`) on the
 same machine — if those render normally, the OpenGL failure is a host/EGL
 configuration gap, not a code path to debug in Aura3D. Test the OpenGL
 backend on a real desktop GPU (not inside a container) before relying on it

@@ -197,7 +197,7 @@ and every one of those widgets is a user of it rather than its own special
 case.
 
 ```cpp
-auto& menu = root.overlay().open<Menu>({.anchor = button.bounds(),
+auto& menu = root.overlay().open<Menu>({.anchor = button.visualBounds(),
                                         .placement = Placement::Below});
 menu.addItem("Rename", "F2").activated.connect([&] { rename(); });
 menu.addSeparator();
@@ -211,6 +211,7 @@ menu.addSubmenu("Export", [&](Menu& sub) { sub.addItem("PNG"); });
 | `offset` | Nudge applied after placement |
 | `modal` | Swallows input to everything underneath |
 | `dismissOnOutsideClick` / `dismissOnEscape` | Light dismissal; both on by default |
+| `transition` | `enter` (after its first placement, before it is first drawn) and `exit` hooks for this overlay; unset ones fall back to `OverlayLayer::setDefaultTransition()` |
 | `onClosed` | Runs once it is gone, so an opener can forget its id |
 
 Every placement flips to its opposite when the surface has no room and is then
@@ -221,7 +222,8 @@ instead of off-screen.
 lives in is the normal case, not an edge case, and destroying the widget inside
 its own click handler would pull the ground out from under the dispatch still
 running through it. `close()` takes effect visually at once and structurally at
-the next `update()`.
+the next `update()` — unless an `exit` hook runs: the overlay then stays drawn
+and inert, and `onClosed` waits, until the hook calls its `done`.
 
 While an overlay is open, Tab is trapped inside the topmost one, and Escape
 closes it before the focused widget sees the key.
@@ -330,10 +332,18 @@ root.pointerDown(at, PointerButton::Left, {}, PointerKind::Touch);
 
 | Behaviour | Where |
 |---|---|
-| A drag past 8 px scrolls the nearest `ScrollView` that can move that way, from anywhere in its content; the button under the finger is cancelled, not clicked | `ScrollView` |
+| A drag past the slop scrolls the nearest `ScrollView` that can move that way, from anywhere in its content; the button under the finger is cancelled, not clicked | `ScrollView` |
 | A quick flick coasts and slows to a stop; a finger down stops it | `ScrollView` |
 | A tap focuses a `TextField` when the finger lifts, so a drag that starts on one scrolls the page and leaves the keyboard down | `TextField` |
 | A mouse drag over scrolling content is left to the widget under it | |
+
+The slop and the coasting are `ScrollPhysics`: `theme.metrics.scroll` for every view, `scrollView.setPhysics()` for one
+(`resetPhysics()` goes back to the theme's).
+
+```cpp
+root.theme().metrics.scroll.touchSlop = 12.0f;                      // every view
+list.setPhysics(ScrollPhysics{.flingMaxSpeed = 9000.0f, .flingFriction = 1.5f});   // this one
+```
 
 A gesture that starts without a move, such as a long press that picks something up, has no moment to take the press from
 `onPointerIntercept()`. It captures through the root instead, which also keeps scroll views from taking the finger back:
@@ -392,6 +402,44 @@ up that returns something other than `Default` wins, and a disabled one shows th
 wma::SystemCursor cursor() const noexcept override { return wma::SystemCursor::Grabbing; }
 ```
 
+### Timing
+
+| Parameter | Where | Default |
+|---|---|---|
+| Hover, press and check transitions | `theme.metrics.hoverSeconds` | 0.11 s |
+| Tab underline travel | `theme.metrics.indicatorSeconds` | 0.16 s |
+| Double click: gap, and how far the pointer may move | `root.setDoubleClickSeconds()` · `setDoubleClickSlop()` | 0.4 s · 5 px |
+| Caret blink, on then off | `root.setCaretBlinkSeconds()` | 0.53 s |
+| Tooltip dwell | `root.setTooltipDelay()` | 0.5 s |
+
+Zero hover seconds makes a control change at once; zero double-click seconds turns double clicks off.
+
+### Clipboard and undo
+
+`TextField` copies, cuts, pastes and undoes from the keyboard: Ctrl+C, X, V, Z and Y (or Ctrl+Shift+Z), and
+Ctrl+Insert, Shift+Delete and Shift+Insert. The same are calls, for a menu item or a button:
+
+```cpp
+field.copy();  field.cut();  field.paste();
+field.undo();  field.redo();
+const std::string picked = field.selectedText();
+```
+
+Where the text goes is `UIRoot::clipboard()`:
+
+| Installed | Reaches |
+|---|---|
+| `UIView`, over a window that has one | The system clipboard (`WindowClipboard`) |
+| Nothing | A clipboard in the process: fields of one application share it, nothing else sees it |
+| Yours: `root.setClipboard(&mine)` | Whatever `IClipboard::text()` and `setText()` do; null puts the in-process one back |
+
+A passphrase field (`setObscured`) is never copied or cut. A cut the clipboard did not take does not delete. A paste
+has its line breaks turned to spaces and its control characters and invalid UTF-8 removed, and is cut short, at a
+character, to what still fits `setMaxBytes()`. A run of typing, or of deleting, is one undo step; moving the caret ends
+it, and assigning to `text` from outside forgets the history.
+
+An application shortcut on one of these keys wins over the field's, as for every modified key.
+
 ### Focus and shortcuts
 
 ```cpp
@@ -426,6 +474,60 @@ bool onTick(f32 dt) override   { invalidatePaint(); return _hover.tick(dt); }
 from `onTick` takes it off. A UI with nothing animating does no per-frame work
 at all. Curves live in `ui::easing` — plain function pointers, no allocation.
 
+From outside a widget, `UIRoot::animate()` drives any value; the step decides what moves:
+
+```cpp
+panel.setOpacity(0.0f);
+root.animate(&panel, Tween{.seconds = 0.2f, .curve = easing::outCubic,
+                           .step = [&panel](f32 t) { panel.setOpacity(t); panel.setTranslation({0, 12 * (1 - t)}); },
+                           .done = [] { /* arrived */ }});
+```
+
+| | |
+|---|---|
+| `step(t)` | `0` at once, then every `update()`, the last time exactly `1` |
+| Stops | `cancelAnimation(id)`, or the target destroyed: no further step, no `done` |
+| `setOpacity()` / `setTranslation()` | Paint only, subtree-wide; layout keeps the slot. Hit testing and pointer coordinates follow the translation |
+| `visualBounds()` | Where it is drawn — what an overlay anchors to |
+
+Opacity multiplies each primitive; it is not a composited layer, so a child over its parent's fill lets the fill
+show through while both fade.
+
+AuraUI animates none of its own overlays. The application gives drop-downs, submenus and tooltips their motion in
+one place — `apps/AuraUIDemo` fades them and slides them away from the anchor:
+
+```cpp
+root.overlay().setDefaultTransition({
+    .enter = [&root](Widget& o, const OverlayDesc&) {
+        root.animate(&o, Tween{.seconds = 0.18f, .step = [&o](f32 t) { o.setOpacity(t); }});
+    },
+    .exit = [&root](Widget& o, const OverlayDesc&, std::function<void()> done) {
+        root.animate(&o, Tween{.seconds = 0.11f, .step = [&o](f32 t) { o.setOpacity(1 - t); },
+                               .done = std::move(done)});
+    }});
+```
+
+## Window chrome
+
+`DefaultWindowDecoration` takes everything it draws and grabs from a `WindowChrome`; the defaults are the look it has
+always had.
+
+```cpp
+auto chrome = decoration.chrome();
+chrome.titleHeight = 40.0f;
+chrome.buttonWidth = 52.0f;
+chrome.frame = {0.10f, 0.11f, 0.14f, 1.0f};
+chrome.close = ColorSet::flat({0.8f, 0.2f, 0.2f, 1.0f});
+decoration.setChrome(chrome);          // applies at once
+```
+
+| Field | Meaning |
+|---|---|
+| `titleHeight` `buttonWidth` `titleInset` `titleGap` `titleFontSize` | The bar |
+| `iconSize` | The caption icons' square; strokes scale with it |
+| `border` `resizeReach` `cornerReach` | The painted resize border, and how far in the edges and corners grab |
+| `frame` `titleText` `icon` `minimize` `maximize` `close` | Colours; the buttons take a `ColorSet` for rest, hover and press |
+
 ## Accessibility
 
 Every widget fills this in; it is a virtual with a default, not an opt-in.
@@ -442,6 +544,10 @@ const AccessibilityNode tree = ui.root().accessibilityTree();
 `accessibilityTree()` is a platform-independent snapshot — roles, states,
 bounds, nesting — with purely visual nodes folded out. An AT-SPI or UI
 Automation bridge consumes it, and so does a test.
+
+Open overlays follow the content, back to front, so a menu or a drop-down list is read where it sits. A modal one
+is `Role::Window` with `info.modal` set, which is the bridge's cue to hide the rest. An overlay that is closing, even
+while its exit still draws, is not in the tree; neither is a tooltip, whose text is the owner's `description`.
 
 ## DPI
 
@@ -521,6 +627,9 @@ protected:
 fire-on-release-inside, Space/Enter activation and the focus ring. `measure()`
 and `arrange()` themselves are non-virtual: the base class applies margin,
 padding, `Length` and alignment, so a widget cannot get those wrong.
+
+A floating surface — a menu, a list — styles itself from `Part::Popup`, not from a tooltip's entry: it starts out
+looking the same (`Palette::overlay`), and restyling one leaves the other alone.
 
 Register the theme entry it reads in `Theme::applyPalette` and add a `Part` for
 it if none fits — see `engine/src/UI/Core/Theme.cpp` for how the existing

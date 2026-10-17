@@ -1,0 +1,372 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "audio": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "default": "auto",
+          "description": "API sound is played through, independent of `window.backend`. `auto` is ALSA on desktop Linux, SDL3 elsewhere; one that cannot open a device degrades to `null`.",
+          "enum": [
+            "auto",
+            "alsa",
+            "sdl3",
+            "null"
+          ],
+          "type": "string"
+        },
+        "buffer_frames": {
+          "default": 1024,
+          "description": "Frames per device callback, the latency dial. SDL3 may choose its own.",
+          "maximum": 16384,
+          "minimum": 32,
+          "type": "integer"
+        },
+        "channels": {
+          "default": 2,
+          "description": "Requested output channels.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_voices": {
+          "default": 32,
+          "description": "Voices that can sound at once; further play() calls are dropped. 0 plays nothing.",
+          "maximum": 1024,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sample_rate": {
+          "default": 48000,
+          "description": "Requested output rate; the device may grant another.",
+          "maximum": 192000,
+          "minimum": 8000,
+          "type": "integer"
+        },
+        "volume": {
+          "default": 1.0,
+          "description": "Master output gain.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "debug": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_flush_interval_frames": {
+          "default": 0,
+          "description": "Write an interim report every N frames; 0 writes only at the end.",
+          "maximum": 1000000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "exit_on_complete": {
+          "default": false,
+          "description": "End the process once `debug.target_frames` are captured.",
+          "type": "boolean"
+        },
+        "frame_budget_ms": {
+          "default": 16.6667,
+          "description": "Frame time a frame must stay under to be on budget.",
+          "maximum": 10000.0,
+          "minimum": 0.001,
+          "type": "number"
+        },
+        "label": {
+          "default": "",
+          "description": "Free-form tag copied into the report, such as a commit or a scene.",
+          "type": "string"
+        },
+        "leak_slope_bytes_per_frame": {
+          "default": 1024.0,
+          "description": "Retained growth per frame above which a leak is called.",
+          "maximum": 1000000000000.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "max_over_budget_ratio": {
+          "default": 0.05,
+          "description": "Fraction of over-budget frames above which the verdict fails.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "report_path": {
+          "default": "aura3d-benchmark.json",
+          "description": "Where the benchmark report is written. AURA_ENABLE_DEBUG_MODE builds only.",
+          "type": "string"
+        },
+        "sample_capacity": {
+          "default": 20000,
+          "description": "Ring capacity for raw samples, about 96 bytes each.",
+          "maximum": 10000000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "target_frames": {
+          "default": 0,
+          "description": "Frames to capture before the report is written; 0 runs until the application stops.",
+          "maximum": 1000000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "warmup_frames": {
+          "default": 60,
+          "description": "Frames discarded before sampling begins.",
+          "maximum": 1000000,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "logging": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "default": false,
+          "description": "Also write the log to `<paths.logs>/<application>.log`.",
+          "type": "boolean"
+        },
+        "level": {
+          "description": "Lowest level logged.",
+          "enum": [
+            "off",
+            "fatal",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "verbose",
+            "trace"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "paths": {
+      "additionalProperties": false,
+      "properties": {
+        "audio": {
+          "default": "./resources/audio/",
+          "description": "Sound directory.",
+          "type": "string"
+        },
+        "logs": {
+          "default": "./logs/",
+          "description": "Where the log file goes when `logging.file` is on.",
+          "type": "string"
+        },
+        "models": {
+          "default": "./resources/models/",
+          "description": "Model directory.",
+          "type": "string"
+        },
+        "shaders": {
+          "default": "./resources/shaders/",
+          "description": "Shader directory for the application's own loading.",
+          "type": "string"
+        },
+        "textures": {
+          "default": "./resources/textures/",
+          "description": "Texture directory.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "present": {
+      "additionalProperties": false,
+      "properties": {
+        "fps_limit": {
+          "default": 0,
+          "description": "Frame cap for the modes that do not wait for the display. 0 is uncapped.",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "default": "fifo",
+          "description": "How frames reach the display. `fifo` waits for it and never tears; `fifo_relaxed` may tear when late; `mailbox` does not wait and does not tear; `immediate` does not wait; `uncapped` is the best of those the surface has. OpenGL and Metal only take wait or no wait from it.",
+          "enum": [
+            "fifo",
+            "fifo_relaxed",
+            "mailbox",
+            "immediate",
+            "uncapped"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "renderer": {
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "default": "auto",
+          "description": "Graphics API. `auto` is the platform's best; one that is unavailable falls back with a warning.",
+          "enum": [
+            "auto",
+            "vulkan",
+            "opengl",
+            "metal",
+            "software"
+          ],
+          "type": "string"
+        },
+        "cpu_threads": {
+          "default": 0,
+          "description": "Worker threads of the job system and the software rasteriser. 0 detects the core count.",
+          "maximum": 256,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "frames_in_flight": {
+          "default": 2,
+          "description": "Frames the CPU may record ahead of the GPU. Vulkan only.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "gpu_timing": {
+          "description": "Measure each frame's GPU time. Ignored without AURA_PROFILE_FRAME.",
+          "type": "boolean"
+        },
+        "msaa": {
+          "default": 1,
+          "description": "MSAA sample count, clamped to what the device supports; 1 is off. Vulkan only.",
+          "maximum": 64,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "vulkan": {
+          "additionalProperties": false,
+          "properties": {
+            "api_version": {
+              "default": "1.4",
+              "description": "Vulkan API version the allocator is created for, capped at what the headers support.",
+              "type": "string"
+            },
+            "gpu": {
+              "default": "discrete",
+              "description": "Which kind of device to prefer. `any` lets capability decide alone.",
+              "enum": [
+                "discrete",
+                "integrated",
+                "any"
+              ],
+              "type": "string"
+            },
+            "validation": {
+              "description": "Enable the Khronos validation layer.",
+              "type": "boolean"
+            },
+            "vma": {
+              "additionalProperties": false,
+              "properties": {
+                "buffer_device_address": {
+                  "default": true,
+                  "description": "Allow buffer device addresses, where the device has them.",
+                  "type": "boolean"
+                },
+                "heap_block_mb": {
+                  "default": 128,
+                  "description": "Preferred size of one large heap block, in MiB.",
+                  "maximum": 4096,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "map_upload_buffers": {
+                  "default": true,
+                  "description": "Keep upload buffers mapped for their whole life.",
+                  "type": "boolean"
+                },
+                "prefer_device_memory": {
+                  "default": true,
+                  "description": "Prefer device-local memory for resources.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "schema_version": {
+      "default": 1,
+      "description": "Layout version of the file; 1 is the only one.",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "default": "sdl3",
+          "description": "Library the window is created through. SDL3 is the one every renderer supports on every platform.",
+          "enum": [
+            "sdl3",
+            "glfw",
+            "x11",
+            "wayland"
+          ],
+          "type": "string"
+        },
+        "decorations": {
+          "default": "server",
+          "description": "Who draws the title bar. `client` makes UIView draw it; a Wayland compositor may override either way.",
+          "enum": [
+            "server",
+            "client"
+          ],
+          "type": "string"
+        },
+        "fullscreen": {
+          "default": false,
+          "description": "Start fullscreen.",
+          "type": "boolean"
+        },
+        "height": {
+          "default": 720,
+          "description": "Initial height in pixels.",
+          "maximum": 16384,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resizable": {
+          "default": true,
+          "description": "Whether the user can resize the window.",
+          "type": "boolean"
+        },
+        "title": {
+          "default": "",
+          "description": "Window title. Empty takes the application name.",
+          "type": "string"
+        },
+        "width": {
+          "default": 1280,
+          "description": "Initial width in pixels.",
+          "maximum": 16384,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "Aura3D settings",
+  "type": "object"
+}

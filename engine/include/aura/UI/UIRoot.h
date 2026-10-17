@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "aura/UI/Core/Accessibility.h"
+#include "aura/UI/Core/Animation.h"
+#include "aura/UI/Core/Clipboard.h"
 #include "aura/UI/Core/Event.h"
 #include "aura/UI/Core/Signal.h"
 #include "aura/UI/Core/Theme.h"
@@ -172,6 +174,24 @@ class UIRoot
 
     /// @}
 
+    /// @name Animation
+    /// @{
+
+    using AnimationId = u64;
+    static constexpr AnimationId kNoAnimation = 0;
+
+    /// Runs @p tween, from its first step now to its last in a later update(). It stops, without done, when
+    /// @p target is destroyed or leaves this root; null ties it to no widget.
+    AnimationId animate(Widget *target, Tween tween);
+
+    /// No further step and no done. An id that has already finished is ignored.
+    void cancelAnimation(AnimationId id) noexcept;
+
+    /// True while a tween runs or a widget is ticking: what a loop that only redraws on demand keeps going for.
+    [[nodiscard]] bool animating() const noexcept;
+
+    /// @}
+
     /// @name Pointer input
     /// @{
 
@@ -296,6 +316,25 @@ class UIRoot
     {
         _tooltipDelay = std::max(0.0f, seconds);
     }
+    /// @{
+    /// What counts as a double click: the longest gap between two presses, and how far the pointer may move between
+    /// them. A press-and-drag is not a double click however fast. Zero seconds turns double clicks off.
+    void setDoubleClickSeconds(f32 seconds) noexcept;
+    [[nodiscard]] f32 doubleClickSeconds() const noexcept;
+    void setDoubleClickSlop(f32 pixels) noexcept;
+    [[nodiscard]] f32 doubleClickSlop() const noexcept;
+    /// @}
+
+    /// How long a text caret stays on, and then off. Platforms differ, and some users turn blinking off with a very
+    /// long interval.
+    void setCaretBlinkSeconds(f32 seconds) noexcept;
+    [[nodiscard]] f32 caretBlinkSeconds() const noexcept;
+
+    /// Where a TextField copies to and pastes from. Not owned; null puts back the clipboard inside the root, which
+    /// holds what was copied in this application and nothing else. UIView installs the system's when its window has
+    /// one.
+    void setClipboard(IClipboard *clipboard) noexcept;
+    [[nodiscard]] IClipboard &clipboard() noexcept;
     [[nodiscard]] f32 tooltipDelay() const noexcept
     {
         return _tooltipDelay;
@@ -333,6 +372,8 @@ class UIRoot
         _paintDirty = true;
     }
     void _setAnimating(Widget &widget, bool animating);
+    void _requestHover() noexcept;
+    void _tickTweens(f32 deltaSeconds);
 
     void _layout();
 
@@ -395,6 +436,21 @@ class UIRoot
 
     std::vector<Widget *> _animating;
     std::vector<WidgetRef> _tickScratch;
+
+    struct TweenEntry
+    {
+        AnimationId id = kNoAnimation; //! kNoAnimation once finished or cancelled; swept at the next tick.
+        WidgetRef target;
+        bool targeted = false;
+        Tween tween;
+        f32 elapsed = 0.0f;
+    };
+    //! Behind pointers: a step that starts another tween must not move the one that is running.
+    std::vector<std::unique_ptr<TweenEntry>> _tweens;
+    AnimationId _nextAnimationId = 1;
+
+    //! A translation moved what is under a pointer that did not move.
+    bool _hoverDirty = false;
     std::vector<Widget *> _focusScratch;
 
     std::vector<ShortcutEntry> _shortcuts;
@@ -416,6 +472,13 @@ class UIRoot
     Widget *_tooltipTarget = nullptr;
     f32 _tooltipDwell = 0.0f;
     f32 _tooltipDelay = 0.5f;
+
+    MemoryClipboard _memoryClipboard;
+    IClipboard *_clipboard = nullptr; //! Null: _memoryClipboard.
+
+    f32 _doubleClickSeconds = 0.40f;
+    f32 _doubleClickSlop = 5.0f;
+    f32 _caretBlinkSeconds = 0.53f;
     OverlayLayer::Id _tooltipOverlay = OverlayLayer::kNone;
 
     //! Double-click detection: a second press close enough in time and space

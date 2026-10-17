@@ -80,7 +80,7 @@ namespace vk
  */
 [[nodiscard]] inline u32 GetMaxFramesInFlight() noexcept
 {
-    return static_cast<u32>(std::max(1, AuraSettings::get()->getMaxFramesInFlight()));
+    return static_cast<u32>(std::max(1, AuraSettings::get()->get(setting::rendererFramesInFlight)));
 }
 
 } // namespace vk

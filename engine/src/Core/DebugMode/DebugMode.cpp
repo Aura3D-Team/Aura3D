@@ -171,21 +171,16 @@ DebugModeConfig DebugModeConfig::fromSettings(AuraSettings *settings)
 
     if (settings != nullptr)
     {
-        if (ink::EnhancedJson *json = settings->getSettings(); json != nullptr)
-        {
-            config.reportPath = json->getPath<std::string>("/debug/report_path", config.reportPath);
-            config.label = json->getPath<std::string>("/debug/label", config.label);
-            config.warmupFrames = json->getPath<u32>("/debug/warmup_frames", config.warmupFrames);
-            config.sampleCapacity = json->getPath<u32>("/debug/sample_capacity", config.sampleCapacity);
-            config.targetFrames = json->getPath<u32>("/debug/target_frames", config.targetFrames);
-            config.frameBudgetMillis = json->getPath<f64>("/debug/frame_budget_ms", config.frameBudgetMillis);
-            config.maxOverBudgetRatio = json->getPath<f64>("/debug/max_over_budget_ratio", config.maxOverBudgetRatio);
-            config.leakSlopeBytesPerFrame =
-                json->getPath<f64>("/debug/leak_slope_bytes_per_frame", config.leakSlopeBytesPerFrame);
-            config.autoFlushIntervalFrames =
-                json->getPath<u32>("/debug/auto_flush_interval_frames", config.autoFlushIntervalFrames);
-            config.exitOnComplete = json->getPath<bool>("/debug/exit_on_complete", config.exitOnComplete);
-        }
+        config.reportPath = settings->get(setting::debugReportPath);
+        config.label = settings->get(setting::debugLabel);
+        config.warmupFrames = static_cast<u32>(settings->get(setting::debugWarmupFrames));
+        config.sampleCapacity = static_cast<u32>(settings->get(setting::debugSampleCapacity));
+        config.targetFrames = static_cast<u32>(settings->get(setting::debugTargetFrames));
+        config.frameBudgetMillis = settings->get(setting::debugFrameBudgetMs);
+        config.maxOverBudgetRatio = settings->get(setting::debugMaxOverBudgetRatio);
+        config.leakSlopeBytesPerFrame = settings->get(setting::debugLeakSlopeBytesPerFrame);
+        config.autoFlushIntervalFrames = static_cast<u32>(settings->get(setting::debugAutoFlushFrames));
+        config.exitOnComplete = settings->get(setting::debugExitOnComplete);
     }
 
     applyEnv("AURA_DEBUG_REPORT", config.reportPath);

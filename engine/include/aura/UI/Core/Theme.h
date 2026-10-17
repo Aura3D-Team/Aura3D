@@ -65,6 +65,7 @@ enum class Part : u8
     Tooltip,
     Separator,
     ProgressBar,
+    Popup,
 
     Count
 };
@@ -231,6 +232,19 @@ struct Style
     /// @}
 };
 
+/// How a touch-scrolled ScrollView starts a drag and how it coasts after the finger lifts. Logical pixels and seconds.
+struct ScrollPhysics
+{
+    float touchSlop = 8.0f;       //! Travel before a finger is dragging and not a slightly sloppy tap.
+    float flingMinSpeed = 120.0f; //! A release slower than this does not fling...
+    float flingMaxSpeed = 6000.0f;
+    float flingRestSeconds = 0.08f; //! ...and neither does one after the finger rested this long.
+    //! The clock moves once a frame, so moves closer together than this share a sample; their distance carries over.
+    float velocitySampleSeconds = 1.0f / 120.0f;
+    float flingFriction = 3.2f; //! Per second: the speed left after a second is e^-flingFriction of it.
+    float flingStopSpeed = 20.0f;
+};
+
 /// Layout every component shares. Pixels, unless said otherwise.
 struct Metrics
 {
@@ -242,6 +256,10 @@ struct Metrics
     float textScale = 1.0f;   //! Multiplier on the atlas rasterization size.
     float scrollbarWidth = 10.0f;
     float disabledAlpha = 0.40f; //! Alpha multiplier applied inside beginDisabled().
+
+    float hoverSeconds = 0.11f;     //! Hover, press and check transitions: short enough to feel immediate.
+    float indicatorSeconds = 0.16f; //! The tab bar's underline sliding to the selected tab.
+    ScrollPhysics scroll{};         //! Every ScrollView's, unless it sets its own.
 };
 
 /**
@@ -261,7 +279,7 @@ struct Palette
     glm::vec4 accent{0.24f, 0.52f, 0.85f, 1.00f};
     glm::vec4 text{0.92f, 0.93f, 0.95f, 1.00f};
     glm::vec4 border{1.00f, 1.00f, 1.00f, 0.12f};
-    glm::vec4 overlay{0.05f, 0.05f, 0.07f, 0.96f}; //! Tooltip and open dropdown.
+    glm::vec4 overlay{0.05f, 0.05f, 0.07f, 0.96f}; //! Anything that floats: tooltips, menus, drop-down lists.
 
     [[nodiscard]] static Palette dark();
     [[nodiscard]] static Palette light();

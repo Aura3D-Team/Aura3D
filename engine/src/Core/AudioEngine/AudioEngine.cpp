@@ -458,14 +458,7 @@ void AudioEngine::computeSpatialGains(const Voice &voice, f32 &leftGain, f32 &ri
 
     constexpr f32 kMinPanDistance = 0.0001f;
     if (distance > kMinPanDistance)
-    {
-        const glm::vec3 forward = glm::normalize(_mixListener.forward);
-        const glm::vec3 up = glm::normalize(_mixListener.up);
-
-        const glm::vec3 right = glm::normalize(glm::cross(forward, up));
-
-        pan = std::clamp(glm::dot(toSource / distance, right), -1.0f, 1.0f);
-    }
+        pan = std::clamp(glm::dot(toSource / distance, _mixRight), -1.0f, 1.0f);
 
     const f32 angle = (pan + 1.0f) * 0.25f * std::numbers::pi_v<f32>;
     leftGain = std::cos(angle) * attenuation;
@@ -481,7 +474,14 @@ void AudioEngine::mix(std::span<f32> output)
 
     const f32 master = _masterVolume.load(std::memory_order_relaxed);
 
-    (void)_listenerCommands.consume(_mixListener);
+    if (_listenerCommands.consume(_mixListener))
+    {
+        //! Only the direction of the cross product matters, so forward and up need no normalizing of their own.
+        const glm::vec3 right = glm::cross(_mixListener.forward, _mixListener.up);
+        const f32 lengthSquared = glm::dot(right, right);
+        constexpr f32 kMinLengthSquared = 1.0e-12f;
+        _mixRight = lengthSquared > kMinLengthSquared ? right * glm::inversesqrt(lengthSquared) : glm::vec3{0.0f};
+    }
     for (usize i = 0; i < _mixVoices.size(); ++i)
     {
         Voice command;
@@ -592,7 +592,10 @@ void AudioEngine::mix(std::span<f32> output)
     }
 
     for (f32 &sample : output)
-        sample = std::clamp(sample, -1.0f, 1.0f);
+    {
+        const f32 limited = std::clamp(sample, -1.0f, 1.0f);
+        sample = limited == limited ? limited : 0.0f;
+    }
     for (usize i = 0; i < _mixVoices.size(); ++i)
         if (!_mixVoices[i].active)
             _channels[i].finished.store(_mixVoices[i].serial, std::memory_order_release);

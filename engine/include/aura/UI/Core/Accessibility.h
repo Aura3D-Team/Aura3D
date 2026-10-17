@@ -64,6 +64,9 @@ struct AccessibilityInfo
     bool focusable = false;
     bool focused = false;
 
+    /// Everything outside this node is out of reach while it is open: a modal dialog. A bridge hides the rest.
+    bool modal = false;
+
     /// @{
     /// Meaningful for the roles that have the state; ignored otherwise.
     bool checked = false;

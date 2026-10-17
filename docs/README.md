@@ -6,9 +6,9 @@ straight to whatever you need — each chapter links to the ones it builds on.
 
 1. **[Getting Started](01-getting-started.md)** — build, run, the smallest
    possible Aura3D program.
-2. **[Project Configuration](02-project-configuration.md)** — the complete
-   `settings.json` reference: every key, its type, its default, and whether
-   it's actually wired to behavior.
+2. **[Project Configuration](02-project-configuration.md)** — how settings
+   are layered, read and validated; every key is in
+   [settings-reference.md](settings-reference.md).
 3. **[Engine & Renderer](03-engine-and-renderer.md)** — `Engine`,
    `IRenderer`, backend resolution/fallback, the run loop, present modes,
    switching backends at runtime.

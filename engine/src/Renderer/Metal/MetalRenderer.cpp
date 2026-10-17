@@ -53,7 +53,7 @@ void MetalRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     if (!settings)
         throw AuraException("MetalRenderer: settings are null");
 
-    createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
+    createWindow(settings->windowTitle().c_str(), settings->windowBackend());
 
     _frameSlots = std::make_shared<FrameSlots>(MTL_MAX_FRAMES_IN_FLIGHT);
 #ifdef AURA_PROFILE_FRAME
@@ -61,8 +61,8 @@ void MetalRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
 #endif
     _deviceManager = std::make_unique<MtlDeviceManager>();
 
-    _layerManager =
-        std::make_unique<MtlLayerManager>(_deviceManager->getDevice(), _windowManagerApi.get(), settings->getVSync());
+    _layerManager = std::make_unique<MtlLayerManager>(_deviceManager->getDevice(), _windowManagerApi.get(),
+                                                      VSyncModeSyncsToDisplay(settings->presentMode()));
 
     _drawableManager = std::make_unique<MtlDrawableManager>(_deviceManager->getDevice(), _layerManager.get());
 

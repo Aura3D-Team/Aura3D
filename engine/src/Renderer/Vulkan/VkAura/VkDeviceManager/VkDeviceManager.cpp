@@ -72,7 +72,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         // graphics.gpu_preference steers which device type wins the +1000 type
         // bonus; "any" drops the type bonus entirely and lets capability alone
         // (API version, image limits, geometry shader) decide.
-        const std::string gpuPreference = aura3d::AuraSettings::get()->getGpuPreference();
+        const std::string gpuPreference = aura3d::AuraSettings::get()->get(aura3d::setting::vulkanGpu);
         if (gpuPreference == "integrated")
         {
             if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)

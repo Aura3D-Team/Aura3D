@@ -131,6 +131,32 @@ void testFlexShares()
                "Fill weights split the leftover in proportion");
 }
 
+void testZeroWeightFillIsNotNan()
+{
+    Harness harness;
+    auto &row = harness.root.setContent<Row>();
+    auto &first = row.add<Widget>();
+    first.layout().width = Length::fill(0.0f);
+    auto &second = row.add<Widget>();
+    second.layout().width = Length::fill(0.0f);
+    harness.layout();
+
+    const auto finite = [](const Rect &rect)
+    {
+        return std::isfinite(rect.min.x) && std::isfinite(rect.max.x) && std::isfinite(rect.min.y) &&
+               std::isfinite(rect.max.y);
+    };
+    AURA_CHECK(finite(first.bounds()) && finite(second.bounds()),
+               "children that fill with no weight still get a number for a size");
+    AURA_CHECK(near(first.bounds().width(), 0.0f) && near(second.bounds().width(), 0.0f),
+               "and a share of nothing is nothing");
+
+    second.layout().width = Length::fill(1.0f);
+    harness.layout();
+    AURA_CHECK(near(first.bounds().width(), 0.0f) && near(second.bounds().width(), 400.0f),
+               "next to a weighted one, a zero weight takes none of the room");
+}
+
 void testFixedAndFillMix()
 {
     Harness harness;
@@ -400,6 +426,7 @@ int main()
     testMarginAndPadding();
     testAlignment();
     testFlexShares();
+    testZeroWeightFillIsNotNan();
     testFixedAndFillMix();
     testMinMax();
     testLabelFollowsThemeFontSize();

@@ -1,5 +1,7 @@
 #include "aura/UI/Core/DrawList.h"
 
+#include <algorithm>
+
 #include "aura/UI/Text/TextEngine.h"
 
 namespace aura3d::ui
@@ -9,6 +11,7 @@ void DrawList::begin(const Rect &surface)
 {
     _commands.clear();
     _clips.assign(1, surface);
+    _effects.clear();
 }
 
 bool DrawList::_visible(const Rect &bounds) const noexcept
@@ -112,6 +115,52 @@ void DrawList::popClip() noexcept
     //! against a stale rectangle.
     if (_clips.size() > 1)
         _clips.pop_back();
+}
+
+void DrawList::pushEffect(f32 opacity, glm::vec2 offset)
+{
+    _effects.push_back(Effect{.opacity = std::clamp(opacity, 0.0f, 1.0f),
+                              .offset = offset,
+                              .firstCommand = _commands.size(),
+                              .clipDepth = _clips.size()});
+    //! Recorded in the scope's own space, so culling and clips inside need to know nothing about the effect;
+    //! popEffect() moves what was recorded. The clip in force is shifted into that space, and shifted back with the
+    //! rest.
+    _clips.push_back(_clips.back().translated(-offset));
+}
+
+void DrawList::popEffect() noexcept
+{
+    if (_effects.empty())
+        return;
+
+    const Effect effect = _effects.back();
+    _effects.pop_back();
+    _clips.erase(_clips.begin() + static_cast<std::ptrdiff_t>(effect.clipDepth), _clips.end());
+
+    if (effect.opacity == 1.0f && effect.offset == glm::vec2{0.0f})
+        return;
+
+    for (usize i = effect.firstCommand; i < _commands.size(); ++i)
+    {
+        DrawCommand &command = _commands[i];
+        command.bounds = command.bounds.translated(effect.offset);
+        command.clip = command.clip.translated(effect.offset);
+        if (command.type == DrawCommandType::Text)
+            command.origin += effect.offset;
+        command.color.a *= effect.opacity;
+        command.borderColor.a *= effect.opacity;
+    }
+}
+
+EffectScope::EffectScope(DrawList &list, f32 opacity, glm::vec2 offset) : _list(list)
+{
+    _list.pushEffect(opacity, offset);
+}
+
+EffectScope::~EffectScope()
+{
+    _list.popEffect();
 }
 
 } // namespace aura3d::ui

@@ -1,8 +1,10 @@
 #include "aura/Core/AudioEngine/AudioEngine.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
+#include <string>
 
 #include <wma/audio/backends/null/NullAudioDevice.hpp>
 
@@ -434,6 +436,48 @@ void test_spatial_panning()
     }
 }
 
+/**
+ * A camera looking straight up has forward parallel to up, so the listener's right vector is a normalized zero.
+ * Whatever the mixer then does, what it hands the device must be a number: NaN samples are noise, or worse.
+ */
+void test_degenerate_listener_never_produces_nan()
+{
+    const auto allFinite = [](std::span<const f32> block)
+    {
+        return std::ranges::all_of(block,
+                                   [](f32 sample)
+                                   {
+                                       return std::isfinite(sample);
+                                   });
+    };
+
+    struct Case
+    {
+        const char *name;
+        glm::vec3 forward;
+        glm::vec3 up;
+    };
+    for (const Case &listener : {Case{"forward parallel to up", {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+                                 Case{"a zero forward", {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+                                 Case{"a zero up", {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 0.0f}}})
+    {
+        TestRig rig;
+        const AudioClipHandle clip = rig.engine->createClip(constantClip(0.5f));
+        rig.engine->setListener({.position = glm::vec3(0.0f), .forward = listener.forward, .up = listener.up});
+
+        AudioSourceDesc desc;
+        desc.clip = clip;
+        desc.loop = true;
+        desc.spatial = true;
+        desc.minDistance = 100.0f;
+        desc.maxDistance = 200.0f;
+        desc.position = glm::vec3(3.0f, 0.0f, 0.0f);
+        (void)rig.engine->play(desc);
+
+        AURA_CHECK(allFinite(rig.render(64)), std::string("mix: output stays finite with ") + listener.name);
+    }
+}
+
 void test_spatial_distance_attenuation()
 {
     TestRig rig;
@@ -605,6 +649,7 @@ int main()
     test_recycled_slot_invalidates_old_handle();
     test_spatial_panning();
     test_spatial_distance_attenuation();
+    test_degenerate_listener_never_produces_nan();
     test_clip_unload_stops_voices();
     test_resampling_preserves_duration();
     AURA_TEST_MAIN_RETURN();

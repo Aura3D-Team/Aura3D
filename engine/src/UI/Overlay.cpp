@@ -2,6 +2,7 @@
 
 #include "aura/UI/UIRoot.h"
 #include <algorithm>
+#include <optional>
 
 namespace aura3d::ui
 {
@@ -25,6 +26,8 @@ Widget *pickOverlay(Widget &node, glm::vec2 point)
 {
     if (!node.effectivelyVisible())
         return nullptr;
+    //! Into the space the node's bounds are in: a translation moves the target with the picture.
+    point -= node.translation();
     if (!node.clipsChildren() || node.contentRect().contains(point))
         for (usize i = node.childCount(); i-- > 0;)
             if (Widget *hit = pickOverlay(node.childAt(i), point))
@@ -59,6 +62,49 @@ void OverlayLayer::_register(const OverlayDesc &desc)
         Entry{_nextId++, desc, false, WidgetRef(desc.owner), WidgetRef(root() ? root()->focused() : nullptr), true});
     if (desc.modal && root())
         root()->capturePointer(nullptr);
+}
+
+void OverlayLayer::runEnterTransitions()
+{
+    //! By id, and on copies: a hook may open or close overlays, which moves and erases entries under this loop.
+    std::vector<Id> fresh;
+    for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
+        if (!_entries[i].placed && !_entries[i].closing && childAt(i).visibility() != Visibility::Collapsed)
+            fresh.push_back(_entries[i].id);
+
+    for (const Id id : fresh)
+    {
+        for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
+        {
+            if (_entries[i].id != id)
+                continue;
+            _entries[i].placed = true;
+            const OverlayDesc desc = _entries[i].desc;
+            const auto enter = desc.transition.enter ? desc.transition.enter : _defaultTransition.enter;
+            if (enter && root())
+                enter(childAt(i), desc);
+            break;
+        }
+    }
+}
+
+void OverlayLayer::setDefaultTransition(OverlayTransition transition)
+{
+    _defaultTransition = std::move(transition);
+}
+
+void OverlayLayer::_finishExit(Id id)
+{
+    for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
+    {
+        if (_entries[i].id != id || !_entries[i].exiting)
+            continue;
+        _entries[i].exiting = false;
+        _pendingClose = true;
+        //! Off screen now, not one frame later when collectClosed() destroys it.
+        childAt(i).setVisibility(Visibility::Collapsed);
+        return;
+    }
 }
 
 Widget *OverlayLayer::focusScope() const noexcept
@@ -154,6 +200,19 @@ bool OverlayLayer::isOpen(Id id) const noexcept
                                });
 }
 
+std::vector<OverlayLayer::OpenOverlay> OverlayLayer::openOverlays() const
+{
+    std::vector<OpenOverlay> open;
+    for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
+    {
+        const Widget &child = childAt(i);
+        if (_entries[i].closing || !child.hitTestVisible() || child.visibility() == Visibility::Collapsed)
+            continue;
+        open.push_back({&child, _entries[i].desc.modal});
+    }
+    return open;
+}
+
 bool OverlayLayer::hasModal() const noexcept
 {
     return std::ranges::any_of(_entries,
@@ -193,7 +252,7 @@ bool OverlayLayer::contains(glm::vec2 point) const
         if (_entries[i].closing || !childAt(i).hitTestVisible())
             continue;
 
-        if (childAt(i).bounds().contains(point))
+        if (childAt(i).visualBounds().contains(point))
             return true;
     }
 
@@ -216,20 +275,49 @@ void OverlayLayer::close(Id id)
         if (_entries[i].id != id || _entries[i].closing)
             continue;
 
-        _entries[i].closing = true;
+        Entry &entry = _entries[i];
+        Widget &child = childAt(i);
+        entry.closing = true;
         _pendingClose = true;
-        const WidgetRef restore = _entries[i].restoreFocus;
+        const WidgetRef restore = entry.restoreFocus;
 
         /*
-         * Collapsed now, destroyed later. The widget stops drawing and stops
-         * taking input on this very frame -- which is what the user asked for
-         * by dismissing it -- while its storage outlives the dispatch that is
-         * probably still unwinding through it.
+         * Inert now, destroyed later. The widget stops taking input on this
+         * very frame -- which is what the user asked for by dismissing it --
+         * while its storage outlives the dispatch that is probably still
+         * unwinding through it. One with an exit transition keeps drawing
+         * until the transition says it is done; any other collapses at once.
          */
-        childAt(i).setVisibility(Visibility::Collapsed);
-        childAt(i).setHitTestVisible(false);
-        if (root() && !root()->focused())
+        child.setHitTestVisible(false);
+        const auto exit = entry.desc.transition.exit ? entry.desc.transition.exit : _defaultTransition.exit;
+        //! One that was never placed was never seen: there is nothing to fade out, and fading it from full opacity
+        //! would show a popup nobody opened.
+        entry.exiting = exit && root() != nullptr && entry.placed;
+
+        //! Read now: focus handlers and the hook itself may open or close overlays, which moves or erases the entry.
+        std::optional<OverlayDesc> leaving;
+        if (entry.exiting)
+            leaving = entry.desc;
+        else
+            child.setVisibility(Visibility::Collapsed);
+
+        //! Focus left inside a widget that is still drawing would go on taking keys.
+        if (root() && (!root()->focused() || within(&child, root()->focused())))
+        {
             root()->setFocus(restore.get());
+            if (root()->focused() && within(&child, root()->focused()))
+                root()->setFocus(nullptr);
+        }
+
+        if (leaving)
+        {
+            exit(child, *leaving,
+                 [layer = WidgetRef(this), id]
+                 {
+                     if (Widget *self = layer.get())
+                         static_cast<OverlayLayer *>(self)->_finishExit(id);
+                 });
+        }
         return;
     }
 }
@@ -319,6 +407,10 @@ void OverlayLayer::collectClosed()
     for (usize i = _entries.size(); i-- > 0;)
     {
         if (!_entries[i].closing)
+            continue;
+
+        //! Still leaving; its done() asks for another collection.
+        if (_entries[i].exiting)
             continue;
 
         if (_entries[i].desc.onClosed)
@@ -414,14 +506,15 @@ void OverlayLayer::arrangeContent(const Rect &content)
     {
         Widget &child = childAt(i);
 
-        if (_entries[i].closing || child.visibility() == Visibility::Collapsed)
+        const Entry &entry = _entries[i];
+        if ((entry.closing && !entry.exiting) || child.visibility() == Visibility::Collapsed)
         {
             child.arrange(Rect{});
             continue;
         }
 
         const glm::vec2 size = child.desiredSize();
-        child.arrange(Rect::fromSize(place(_entries[i].desc, size, content), size));
+        child.arrange(Rect::fromSize(place(entry.desc, size, content), size));
     }
 }
 

@@ -293,6 +293,9 @@ class AudioEngine
     AudioListener3D _listener{};
     //! Listener the mixer spatializes against.
     AudioListener3D _mixListener{};
+    //! The listener's right, unit length, from _mixListener; zero when forward and up do not span a plane (a camera
+    //! looking straight up), which pans a source to the centre rather than to NaN.
+    glm::vec3 _mixRight{1.0f, 0.0f, 0.0f};
     //! Carries _listener to _mixListener; consumed once per block.
     AudioMailbox<AudioListener3D> _listenerCommands;
     //! Incremented at the end of every mix(); the clock reclaimClips() waits on.

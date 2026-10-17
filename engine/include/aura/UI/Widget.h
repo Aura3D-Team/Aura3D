@@ -261,6 +261,23 @@ class Widget
     /// this.
     void paintTree(DrawList &out);
 
+    /// @{
+    /// Drawn this opaque and moved this far, with every descendant; both nest. Layout never sees them: the widget keeps
+    /// its slot. Hit testing and pointer events follow the translation, so a moved control works where it is drawn.
+    /// Opacity multiplies each primitive, it is not a composited layer: a child over its parent's fill lets the fill
+    /// show through as both fade. An invisible widget still takes the pointer; setHitTestVisible() decides that.
+    void setOpacity(f32 opacity) noexcept;
+    [[nodiscard]] f32 opacity() const noexcept;
+    void setTranslation(glm::vec2 translation) noexcept;
+    [[nodiscard]] glm::vec2 translation() const noexcept;
+    /// @}
+
+    /// The translation of this widget and every ancestor, summed.
+    [[nodiscard]] glm::vec2 visualOffset() const noexcept;
+
+    /// bounds() where it is drawn, in surface pixels: what an overlay should anchor to.
+    [[nodiscard]] Rect visualBounds() const noexcept;
+
     /// @}
 
     /// @name Input
@@ -517,12 +534,17 @@ class Widget
 
     void _insert(usize index, std::unique_ptr<Widget> child);
     void _setRoot(UIRoot *root);
+    void _paintEffected(DrawList &out);
+    void _updateEffect() noexcept;
 
     /// The size this widget settled on in measure(), margin excluded -- what
     /// arrange() places, and what tells stretch from an explicit size.
     glm::vec2 _measured{0.0f};
     glm::vec2 _desired{0.0f};
     Rect _bounds{};
+    glm::vec2 _translation{0.0f};
+    f32 _opacity = 1.0f;
+    bool _hasEffect = false; //! Opacity or translation set: the one thing paintTree() tests for either.
 
     Widget *_parent = nullptr;
     UIRoot *_root = nullptr;
