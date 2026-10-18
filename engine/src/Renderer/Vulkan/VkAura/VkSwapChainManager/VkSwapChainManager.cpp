@@ -71,9 +71,10 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
 
     const VkSurfaceCapabilitiesKHR &caps = _swapChainSupportDetails.capabilities;
     INK_VERBOSE << "Swapchain " << _choosedExtent.width << "x" << _choosedExtent.height << " | window "
-             << windowDetails->width << "x" << windowDetails->height << " | surface current "
-             << caps.currentExtent.width << "x" << caps.currentExtent.height << ", transform "
-             << static_cast<u32>(caps.currentTransform) << " | present mode " << static_cast<i32>(_choosedPresentMode);
+                << windowDetails->width << "x" << windowDetails->height << " | surface current "
+                << caps.currentExtent.width << "x" << caps.currentExtent.height << ", transform "
+                << static_cast<u32>(caps.currentTransform) << " | present mode "
+                << static_cast<i32>(_choosedPresentMode);
 
     /*
      * minImageCount + 1: one image being presented, one to render into.

@@ -325,7 +325,7 @@ void testExitThatNeverFinishesIsCutShort()
     auto &box = harness.root.overlay().open<Column>(
         OverlayDesc{.anchor = Rect::fromSize({20.0f, 20.0f}, {40.0f, 20.0f}),
                     .transition = {.exit =
-                                       [](Widget &, const OverlayDesc &, std::function<void()>)
+                                       [](Widget &, const OverlayDesc &, const std::function<void()> &)
                                    {
                                    },
                                    .exitTimeoutSeconds = 1.0f},

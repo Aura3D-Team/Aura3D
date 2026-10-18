@@ -55,9 +55,9 @@ class MtlPipelineManager
         bool depthTest = false;                             //! Enables the test; writes unless depthWrite is off.
         bool depthWrite = true;                             //! Ignored without depthTest.
         MTL::CompareFunction depthCompare = MTL::CompareFunctionLess;
-        bool alphaBlend = false;                            //! src*srcAlpha + dst*(1-srcAlpha).
-        bool cullBackFaces = false;                         //! Discards back faces; see bind().
-        const char *label = "Aura3D pipeline";              //! Shown in Xcode's GPU debugger.
+        bool alphaBlend = false;               //! src*srcAlpha + dst*(1-srcAlpha).
+        bool cullBackFaces = false;            //! Discards back faces; see bind().
+        const char *label = "Aura3D pipeline"; //! Shown in Xcode's GPU debugger.
     };
 
     /**
