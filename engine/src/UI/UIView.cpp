@@ -1,9 +1,10 @@
 #include "aura/UI/UIView.h"
 
 #include <algorithm>
-#include <array>
+#include <limits>
 #include <ranges>
 #include <string>
+#include <utility>
 
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Renderer/IRenderer.h"
@@ -15,13 +16,18 @@ namespace aura3d::ui
 namespace
 {
 
-//! A broken display report must not collapse the UI to nothing or blow it up.
-constexpr f32 kMinContentScale = 0.25f;
-constexpr f32 kMaxContentScale = 8.0f;
-constexpr f32 kMinZoom = 0.5f;
-constexpr f32 kMaxZoom = 4.0f;
-constexpr f32 kZoomEpsilon = 1e-3f;
-constexpr std::array<f32, 12> kZoomSteps{0.5f, 0.67f, 0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f};
+//! std::clamp is undefined for a reversed range, so a caller's bounds are put in order rather than trusted.
+[[nodiscard]] ViewScaling normalized(ViewScaling scaling)
+{
+    if (scaling.minContentScale > scaling.maxContentScale)
+        std::swap(scaling.minContentScale, scaling.maxContentScale);
+    if (scaling.minZoom > scaling.maxZoom)
+        std::swap(scaling.minZoom, scaling.maxZoom);
+    scaling.minContentScale = std::max(scaling.minContentScale, std::numeric_limits<f32>::min());
+    scaling.minVisibleFraction = std::clamp(scaling.minVisibleFraction, 0.0f, 1.0f);
+    std::ranges::sort(scaling.zoomSteps);
+    return scaling;
+}
 
 [[nodiscard]] PointerButton toPointerButton(i32 button) noexcept
 {
@@ -43,9 +49,10 @@ constexpr std::array<f32, 12> kZoomSteps{0.5f, 0.67f, 0.8f, 0.9f, 1.0f, 1.1f, 1.
 UIView::UIView(IRenderer &renderer, const UIViewDesc &desc, std::unique_ptr<IWindowDecoration> decoration)
     : _renderer(&renderer),
       _shaper(TextShaperDesc{.fontPath = desc.fontPath, .pageSize = desc.glyphPageSize, .maxPages = desc.maxFontSizes}),
-      _root(_shaper, desc.theme), _backend(renderer, _shaper),
+      _root(_shaper, desc.theme), _backend(renderer, _shaper), _scaling(normalized(desc.scaling)),
       _windowTitle(desc.windowTitle.empty() ? AuraSettings::get()->windowTitle() : desc.windowTitle)
 {
+    _zoom = std::clamp(_zoom, _scaling.minZoom, _scaling.maxZoom);
     _root.setDecoration(std::move(decoration));
     if (!desc.windowTitle.empty())
         if (auto *window = _renderer->getWindowManager())
@@ -192,7 +199,10 @@ void UIView::attachInput(wma::IWindowManager &window)
     touch.setDownAction(wma::TouchInputCallback::from(
         [this, alive, trackFinger](const wma::WMATouchPoint &point)
         {
-            if (alive.expired() || _touchActive)
+            if (alive.expired())
+                return;
+            touchDown.emit(point);
+            if (_touchActive)
                 return;
             _finger = point.fingerId;
             trackFinger(point);
@@ -207,7 +217,10 @@ void UIView::attachInput(wma::IWindowManager &window)
     touch.setMoveAction(wma::TouchInputCallback::from(
         [this, alive, trackFinger](const wma::WMATouchPoint &point)
         {
-            if (alive.expired() || !_touchActive || point.fingerId != _finger)
+            if (alive.expired())
+                return;
+            touchMoved.emit(point);
+            if (!_touchActive || point.fingerId != _finger)
                 return;
             trackFinger(point);
             _root.pointerMoved(_pointer);
@@ -216,7 +229,10 @@ void UIView::attachInput(wma::IWindowManager &window)
     touch.setUpAction(wma::TouchInputCallback::from(
         [this, alive, trackFinger](const wma::WMATouchPoint &point)
         {
-            if (alive.expired() || !_touchActive || point.fingerId != _finger)
+            if (alive.expired())
+                return;
+            touchUp.emit(point);
+            if (!_touchActive || point.fingerId != _finger)
                 return;
             trackFinger(point);
             _root.pointerUp(_pointer, PointerButton::Left, {}, PointerKind::Touch);
@@ -227,7 +243,7 @@ void UIView::attachInput(wma::IWindowManager &window)
 
 void UIView::setZoom(f32 zoom)
 {
-    zoom = std::clamp(zoom, kMinZoom, kMaxZoom);
+    zoom = std::clamp(zoom, _scaling.minZoom, _scaling.maxZoom);
     if (zoom == _zoom)
         return;
     _zoom = zoom;
@@ -244,22 +260,22 @@ void UIView::zoomStep(int direction)
     //! From wherever the zoom is, so a value between rungs, or beyond the ladder, still steps to a neighbour.
     if (direction > 0)
     {
-        const auto rung = std::ranges::find_if(kZoomSteps,
+        const auto rung = std::ranges::find_if(_scaling.zoomSteps,
                                                [this](f32 step)
                                                {
-                                                   return step > _zoom + kZoomEpsilon;
+                                                   return step > _zoom + _scaling.zoomEpsilon;
                                                });
-        if (rung != kZoomSteps.end())
+        if (rung != _scaling.zoomSteps.end())
             setZoom(*rung);
     }
     else if (direction < 0)
     {
-        const auto rung = std::ranges::find_if(kZoomSteps | std::views::reverse,
+        const auto rung = std::ranges::find_if(_scaling.zoomSteps | std::views::reverse,
                                                [this](f32 step)
                                                {
-                                                   return step < _zoom - kZoomEpsilon;
+                                                   return step < _zoom - _scaling.zoomEpsilon;
                                                });
-        if (rung != kZoomSteps.rend())
+        if (rung != _scaling.zoomSteps.rend())
             setZoom(*rung);
     }
 }
@@ -283,6 +299,11 @@ void UIView::_syncPointer()
 // -----------------------------------------------------------------------------
 // Frame
 // -----------------------------------------------------------------------------
+
+void UIView::setBottomInset(f32 pixels)
+{
+    _bottomInset = std::max(pixels, 0.0f);
+}
 
 void UIView::_syncSurface()
 {
@@ -316,13 +337,14 @@ void UIView::_syncSurface()
          * The window asks for it; the tree is laid out in units that much
          * larger than the window's, and drawn that much bigger.
          */
-        content = std::clamp(window->getContentScale(), kMinContentScale, kMaxContentScale);
+        content = std::clamp(window->getContentScale(), _scaling.minContentScale, _scaling.maxContentScale);
     }
 
     content *= _zoom;
     _contentScale = content;
     _root.setScale(ratio * content);
-    _root.resize(logical / content);
+    const f32 covered = std::min(_bottomInset / ratio, logical.y * (1.0f - _scaling.minVisibleFraction));
+    _root.resize({logical.x / content, (logical.y - covered) / content});
     if (auto *decoration = windowDecoration())
     {
         auto *window = _renderer->getWindowManager();
@@ -363,7 +385,10 @@ void UIView::update(f32 deltaSeconds)
     _syncSurface();
     if (_window)
     {
-        const bool focused = _window->getWindowFlags()->focused;
+        wma::WindowFlags &flags = *_window->getWindowFlags();
+        if (std::exchange(flags.textInputDismissed, false) && _root.capturesTextInput())
+            _root.clearFocus();
+        const bool focused = flags.focused;
         if (_windowFocused && !focused)
         {
             _root.cancelInput();

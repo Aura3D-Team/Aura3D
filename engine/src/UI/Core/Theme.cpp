@@ -13,10 +13,6 @@ namespace
     return {color.r, color.g, color.b, color.a * alpha};
 }
 
-//! Corner radius shared by the controls. One value, so a theme reads as one
-//! shape language rather than a dozen unrelated decisions.
-constexpr float kControlRounding = 3.0f;
-
 //! Anything past half the shorter side is clamped to a pill, so this is just
 //! "as round as it goes" -- what makes a radio button a circle.
 constexpr float kPill = 1000.0f;
@@ -101,7 +97,7 @@ Theme &Theme::applyPalette(const Palette &palette)
     control.border = ColorSet::flat(palette.border);
     control.text = palette.text;
     control.accent = palette.accent;
-    control.rounding = kControlRounding;
+    control.rounding = metrics.controlRounding;
     control.padding = 6.0f;
     control.align = Align::Left;
 

@@ -478,6 +478,34 @@ void test_degenerate_listener_never_produces_nan()
     }
 }
 
+/** A listener's axes are directions: a short, valid forward and up pan like unit ones. */
+void test_listener_axes_need_not_be_unit_length()
+{
+    TestRig rig;
+    const AudioClipHandle clip = rig.engine->createClip(constantClip(1.0f));
+    rig.engine->setListener({.position = glm::vec3(0.0f),
+                             .forward = glm::vec3(0.0f, 0.0f, -1.0e-3f),
+                             .up = glm::vec3(0.0f, 1.0e-3f, 0.0f)});
+
+    AudioSourceDesc desc;
+    desc.clip = clip;
+    desc.loop = true;
+    desc.spatial = true;
+    desc.minDistance = 100.0f;
+    desc.maxDistance = 200.0f;
+    desc.position = glm::vec3(10.0f, 0.0f, 0.0f);
+    (void)rig.engine->play(desc);
+
+    const std::span<const f32> block = rig.render(64);
+    f32 left = 0.0f, right = 0.0f;
+    for (usize i = 0; i + 1 < block.size(); i += 2)
+    {
+        left = std::max(left, std::fabs(block[i]));
+        right = std::max(right, std::fabs(block[i + 1]));
+    }
+    AURA_CHECK(right > left && left < 0.1f, "mix: a short forward and up still put a source on the right");
+}
+
 void test_spatial_distance_attenuation()
 {
     TestRig rig;
@@ -650,6 +678,7 @@ int main()
     test_spatial_panning();
     test_spatial_distance_attenuation();
     test_degenerate_listener_never_produces_nan();
+    test_listener_axes_need_not_be_unit_length();
     test_clip_unload_stops_voices();
     test_resampling_preserves_duration();
     AURA_TEST_MAIN_RETURN();

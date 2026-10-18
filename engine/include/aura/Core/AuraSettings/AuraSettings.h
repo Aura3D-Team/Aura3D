@@ -180,6 +180,7 @@ class AuraConfig
     AuraConfig &set(Key<int> key, int value);
     AuraConfig &set(Key<double> key, double value);
     AuraConfig &set(Key<std::string> key, std::string value);
+    /// The enum forms take a choice key; given a free-text one they warn and set nothing.
     AuraConfig &set(Key<std::string> key, wma::WindowBackend value);
     AuraConfig &set(Key<std::string> key, wma::DecorationMode value);
     AuraConfig &set(Key<std::string> key, wma::AudioBackend value);
@@ -206,6 +207,8 @@ class AuraConfig
     }
 
   private:
+    AuraConfig &setChoice(Key<std::string> key, std::string spelling);
+
     std::vector<std::pair<std::string, SettingValue>> _values;
     std::vector<std::string> _commandLine;
     std::vector<std::shared_ptr<ISettingsSource>> _sources;

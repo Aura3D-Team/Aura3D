@@ -370,6 +370,7 @@ bool onPointerIntercept(const PointerEvent& e) override {
 
 ```cpp
 ui.zoomChanged.connect([](f32 zoom) { save(zoom); });
+ui.touchDown.connect([](const wma::WMATouchPoint &p) { /* ... */ }); // + touchMoved, touchUp: for a pinch
 ui.zoomStep(+1);                                         // 100 % -> 110 %; setZoom(1.25f) for an exact value
 
 // Ctrl + wheel: the app's own scroll action; UIView polls the wheel, so this displaces nothing.
@@ -385,6 +386,20 @@ The wheel still reaches the widgets, so a `ScrollView` under the pointer scrolls
 The ladder is 50, 67, 80, 90, 100, 110, 125, 150, 175, 200, 250 and 300 %. Layout is in smaller units and drawn larger,
 and text is rasterized again at the new size. Every size and scale takes a rasterization size of its own, so raise
 `UIViewDesc::maxFontSizes` for an application with many font sizes or a wide zoom range.
+
+The ladder and its limits are `ViewScaling`, given at construction:
+
+```cpp
+aui::UIView ui(renderer, {.scaling = {.minZoom = 0.75f, .maxZoom = 2.0f, .zoomSteps = {0.75f, 1.0f, 1.5f, 2.0f}}});
+```
+
+| Field | Default |
+|---|---|
+| `minZoom` · `maxZoom` | 0.5 · 4 |
+| `zoomSteps` | the ladder above |
+| `zoomEpsilon` | 0.001 |
+| `minContentScale` · `maxContentScale` | 0.25 · 8 (what a display's reported scale is held to) |
+| `minVisibleFraction` | 1/3 (what `setBottomInset()` always leaves) |
 
 ### The pointer image
 
@@ -413,6 +428,15 @@ wma::SystemCursor cursor() const noexcept override { return wma::SystemCursor::G
 | Tooltip dwell | `root.setTooltipDelay()` | 0.5 s |
 
 Zero hover seconds makes a control change at once; zero double-click seconds turns double clicks off.
+
+### Shape and distance
+
+| Parameter | Where | Default |
+|---|---|---|
+| Corner radius the controls share (apply the palette again after changing it) | `theme.metrics.controlRounding` | 3 px |
+| A disclosure arrow's share of its row | `theme.metrics.arrowScale` | 0.42 |
+| How far a `Placement::Cursor` overlay clears the pointer | `OverlayDesc::cursorClearance` | 14 px |
+| Undo history of a field: steps, and bytes of text across them | `field.setHistoryLimit(steps, bytes)` | 100 · 4 MiB |
 
 ### Clipboard and undo
 

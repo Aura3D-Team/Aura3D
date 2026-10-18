@@ -70,7 +70,7 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
     _unverified = true;
 
     const VkSurfaceCapabilitiesKHR &caps = _swapChainSupportDetails.capabilities;
-    INK_INFO << "Swapchain " << _choosedExtent.width << "x" << _choosedExtent.height << " | window "
+    INK_VERBOSE << "Swapchain " << _choosedExtent.width << "x" << _choosedExtent.height << " | window "
              << windowDetails->width << "x" << windowDetails->height << " | surface current "
              << caps.currentExtent.width << "x" << caps.currentExtent.height << ", transform "
              << static_cast<u32>(caps.currentTransform) << " | present mode " << static_cast<i32>(_choosedPresentMode);
@@ -372,7 +372,27 @@ VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &
     //! A surface that fixes its size (Android, X11) is the authority: a window event can arrive before the surface
     //! has settled, and a swapchain built to the stale number is then scaled or cropped.
     if (capabilities.currentExtent.width != UINT32_MAX && capabilities.currentExtent.height != UINT32_MAX)
-        return capabilities.currentExtent;
+    {
+        VkExtent2D extent = capabilities.currentExtent;
+
+        //! A display turned a quarter from its panel (Android, a phone in landscape) reports the extent in the
+        //! panel's orientation, while a swapchain with the identity pre-transform, as createSwapChain() asks for,
+        //! is read in the window's. Built to the panel's, the image comes out rotated and stretched. The window
+        //! says which way round it is.
+        constexpr VkSurfaceTransformFlagsKHR kQuarterTurns = VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR |
+                                                             VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR |
+                                                             VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_90_BIT_KHR |
+                                                             VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_270_BIT_KHR;
+        if ((capabilities.currentTransform & kQuarterTurns) != 0 &&
+            (capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0 &&
+            windowDetails != nullptr && windowDetails->width > 0 && windowDetails->height > 0)
+        {
+            const bool windowIsWide = windowDetails->width >= windowDetails->height;
+            if ((extent.width >= extent.height) != windowIsWide)
+                std::swap(extent.width, extent.height);
+        }
+        return extent;
+    }
 
     VkExtent2D actualExtent = {static_cast<u32>(windowDetails->width), static_cast<u32>(windowDetails->height)};
 

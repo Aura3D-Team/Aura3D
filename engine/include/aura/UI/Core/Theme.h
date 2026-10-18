@@ -256,6 +256,9 @@ struct Metrics
     float textScale = 1.0f;   //! Multiplier on the atlas rasterization size.
     float scrollbarWidth = 10.0f;
     float disabledAlpha = 0.40f; //! Alpha multiplier applied inside beginDisabled().
+    //! Corner radius the controls share. applyPalette() copies it: apply again after changing it.
+    float controlRounding = 3.0f;
+    float arrowScale = 0.42f; //! A disclosure arrow's share of its row's height.
 
     float hoverSeconds = 0.11f;     //! Hover, press and check transitions: short enough to feel immediate.
     float indicatorSeconds = 0.16f; //! The tab bar's underline sliding to the selected tab.

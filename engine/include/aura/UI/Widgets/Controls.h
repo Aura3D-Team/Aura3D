@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -456,6 +457,10 @@ class TextField final : public Control
     bool redo();
     [[nodiscard]] bool canUndo() const noexcept;
     [[nodiscard]] bool canRedo() const noexcept;
+
+    /// What history keeps, as steps and as bytes of text across them (a step is a copy of the text), the oldest going
+    /// first; the newest step stays whatever it weighs. Zero steps keeps nothing but that one.
+    void setHistoryLimit(usize steps, usize bytes);
     /// @}
     [[nodiscard]] usize caret() const noexcept
     {
@@ -563,9 +568,10 @@ class TextField final : public Control
     f32 _scrollX = 0.0f;
     f32 _blink = 0.0f;
 
-    std::vector<Snapshot> _undo;
+    std::deque<Snapshot> _undo;
     std::vector<Snapshot> _redo;
-    usize _historyBytes = 0; //! The text held by both stacks.
+    usize _maxUndoSteps = 100;
+    usize _maxHistoryBytes = static_cast<usize>(INK_MIB_TO_BYTES(4));
     EditKind _lastEdit = EditKind::None;
     bool _editing = false; //! This field is changing its own text, which is not an assignment from outside.
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 #include "aura/UI/Core/Icon.h"
 #include "aura/UI/UIRoot.h"
@@ -37,19 +38,22 @@ class DecorationIcon final : public Widget
         const ClipScope clip(out, bounds());
         const glm::vec4 color = parent()->resolvedStyle().text;
         const f32 size = _chrome.iconSize;
+        //! A twelfth of the icon and at least a pixel, so the strokes keep their weight when the icon is sized.
+        const f32 stroke = std::max(1.0f, std::round(size / 12.0f));
+        const f32 inset = 2.0f * stroke;
         const Rect box = Rect::fromSize(glm::floor(bounds().center() - glm::vec2{size * 0.5f}), glm::vec2{size});
         switch (_icon)
         {
         case WindowIcon::Minimize:
-            out.fillRect(Rect::fromSize({box.min.x, box.center().y}, {size, 1.0f}), color);
+            out.fillRect(Rect::fromSize({box.min.x, box.center().y}, {size, stroke}), color);
             break;
         case WindowIcon::Maximize:
-            out.strokeRect(box, color, 1.0f);
+            out.strokeRect(box, color, stroke);
             break;
         case WindowIcon::Restore:
-            out.fillRect(Rect::fromSize({box.min.x + 2.0f, box.min.y}, {size - 2.0f, 1.0f}), color);
-            out.fillRect(Rect::fromSize({box.max.x - 1.0f, box.min.y}, {1.0f, size - 2.0f}), color);
-            out.strokeRect(Rect::fromSize({box.min.x, box.min.y + 2.0f}, glm::vec2{size - 2.0f}), color, 1.0f);
+            out.fillRect(Rect::fromSize({box.min.x + inset, box.min.y}, {size - inset, stroke}), color);
+            out.fillRect(Rect::fromSize({box.max.x - stroke, box.min.y}, {stroke, size - inset}), color);
+            out.strokeRect(Rect::fromSize({box.min.x, box.min.y + inset}, glm::vec2{size - inset}), color, stroke);
             break;
         case WindowIcon::Close:
             if (auto *text = shaper())

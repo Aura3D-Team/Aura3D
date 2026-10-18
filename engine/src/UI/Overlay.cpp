@@ -2,17 +2,16 @@
 
 #include "aura/UI/UIRoot.h"
 #include <algorithm>
+#include <limits>
 #include <optional>
+
+#include <ink/Inkogger.h>
 
 namespace aura3d::ui
 {
 
 namespace
 {
-
-/// How far a Cursor-placed overlay clears the pointer, so the thing it
-/// describes is not under the thing describing it.
-constexpr f32 kCursorClearance = 14.0f;
 
 bool within(const Widget *ancestor, const Widget *node)
 {
@@ -293,6 +292,12 @@ void OverlayLayer::close(Id id)
         //! One that was never placed was never seen: there is nothing to fade out, and fading it from full opacity
         //! would show a popup nobody opened.
         entry.exiting = exit && root() != nullptr && entry.placed;
+        if (entry.exiting)
+        {
+            const OverlayTransition &own = entry.desc.transition;
+            const f32 timeout = own.exit ? own.exitTimeoutSeconds : _defaultTransition.exitTimeoutSeconds;
+            entry.exitDeadline = timeout > 0.0f ? root()->time() + timeout : std::numeric_limits<f32>::infinity();
+        }
 
         //! Read now: focus handlers and the hook itself may open or close overlays, which moves or erases the entry.
         std::optional<OverlayDesc> leaving;
@@ -409,9 +414,17 @@ void OverlayLayer::collectClosed()
         if (!_entries[i].closing)
             continue;
 
-        //! Still leaving; its done() asks for another collection.
+        //! Still leaving; its done() asks for another collection, and a hook that never calls it is not waited for
+        //! past its deadline.
         if (_entries[i].exiting)
-            continue;
+        {
+            if (root() != nullptr && root()->time() < _entries[i].exitDeadline)
+            {
+                _pendingClose = true;
+                continue;
+            }
+            INK_WARN << "An overlay's exit transition did not finish in time; closing it";
+        }
 
         if (_entries[i].desc.onClosed)
             notify.push_back(std::move(_entries[i].desc.onClosed));
@@ -479,11 +492,11 @@ glm::vec2 OverlayLayer::place(const OverlayDesc &desc, glm::vec2 size, const Rec
         break;
 
     case Placement::Cursor:
-        origin = anchor.min + glm::vec2{kCursorClearance, kCursorClearance};
+        origin = anchor.min + glm::vec2{desc.cursorClearance};
         if (origin.x + size.x > surface.max.x)
-            origin.x = anchor.min.x - size.x - kCursorClearance;
+            origin.x = anchor.min.x - size.x - desc.cursorClearance;
         if (origin.y + size.y > surface.max.y)
-            origin.y = anchor.min.y - size.y - kCursorClearance;
+            origin.y = anchor.min.y - size.y - desc.cursorClearance;
         break;
 
     case Placement::Center:

@@ -1,6 +1,7 @@
 #include "aura/Core/Settings/SettingsSchema.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <map>
 #include <ranges>
@@ -114,13 +115,6 @@ static_assert(defaultsAreValid(), "a setting's default is outside its own range 
     return previous[b.size()];
 }
 
-[[nodiscard]] std::string number(f64 value)
-{
-    std::array<char, 32> text{};
-    std::snprintf(text.data(), text.size(), "%g", value);
-    return text.data();
-}
-
 [[nodiscard]] std::string_view typeName(SettingType type) noexcept
 {
     switch (type)
@@ -151,7 +145,7 @@ static_assert(defaultsAreValid(), "a setting's default is outside its own range 
     case SettingType::Int:
         return std::to_string(desc.fallbackInt);
     case SettingType::Float:
-        return number(desc.fallbackFloat);
+        return formatNumber(desc.fallbackFloat);
     case SettingType::Text:
     case SettingType::Choice:
         return "\"" + std::string{desc.fallbackText} + "\"";
@@ -160,6 +154,24 @@ static_assert(defaultsAreValid(), "a setting's default is outside its own range 
 }
 
 } // namespace
+
+std::string lowerAscii(std::string_view text)
+{
+    std::string folded(text);
+    std::ranges::transform(folded, folded.begin(),
+                           [](unsigned char c)
+                           {
+                               return static_cast<char>(std::tolower(c));
+                           });
+    return folded;
+}
+
+std::string formatNumber(f64 value)
+{
+    std::array<char, 32> text{};
+    std::snprintf(text.data(), text.size(), "%g", value);
+    return text.data();
+}
 
 std::span<const SettingDesc> settingsSchema() noexcept
 {
@@ -333,7 +345,7 @@ std::string settingsMarkdown()
             else if ((desc->type == SettingType::Int || desc->type == SettingType::Float) &&
                      desc->minimum != desc->maximum)
             {
-                notes += " " + number(desc->minimum) + " to " + number(desc->maximum) + ".";
+                notes += " " + formatNumber(desc->minimum) + " to " + formatNumber(desc->maximum) + ".";
             }
 
             out += "| `" + key + "` | ";

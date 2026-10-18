@@ -678,11 +678,27 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
             return true;
     }
 
+    const WidgetRef typing(_focused != nullptr && _focused->wantsTextInput() ? _focused : nullptr);
     const bool handled = _bubble(target, event,
                                  [](Widget &node, PointerEvent &e)
                                  {
                                      return node.onPointerDown(e);
                                  });
+
+    //! A press elsewhere ends typing even when what it landed on takes the press (a scroll view always does), or the
+    //! on-screen keyboard of a phone would stay up over the board.
+    if (typing.get() != nullptr && typing.get() == _focused)
+    {
+        const auto inside = [&typing](const Widget *node)
+        {
+            for (; node != nullptr; node = node->parent())
+                if (node == typing.get())
+                    return true;
+            return false;
+        };
+        if (!inside(target))
+            clearFocus();
+    }
 
     /*
      * A press that landed on the UI but that no widget wanted still counts as

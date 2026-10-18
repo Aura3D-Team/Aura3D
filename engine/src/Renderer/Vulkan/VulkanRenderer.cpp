@@ -54,9 +54,6 @@ namespace
     return attributes;
 }
 
-//! Camera slots per frame in flight; a frame's cameras past this overwrite the last slot.
-constexpr u32 kTransformSlots = 1024;
-
 void declareBatchInterface(VkGraphicsPipelineManager &pipeline, u32 bindlessTextureCapacity)
 {
     pipeline.resetInterface();
@@ -293,6 +290,9 @@ void VulkanRenderer::createResourceManagers()
     //! The pool is built by the first drawMeshes() large enough to use it, so a
     //! scene that never reaches that size runs without the worker threads.
     INK_VERBOSE << "Command recording workers: " << _recordWorkerCount;
+
+    _minDrawsToThread = static_cast<size_t>(AuraSettings::get()->get(setting::vulkanMinDrawsToThread));
+    _minDrawsPerChunk = static_cast<size_t>(AuraSettings::get()->get(setting::vulkanMinDrawsPerChunk));
 }
 
 void VulkanRenderer::setupPipeline(const std::string &vertShaderPath, const std::string &fragShaderPath)
@@ -361,11 +361,12 @@ void VulkanRenderer::createUniformBuffers()
      * the buffers it protects must be too.
      */
     const u32 framesInFlight = GetMaxFramesInFlight();
+    _transformSlots = static_cast<u32>(AuraSettings::get()->get(setting::vulkanTransformSlots));
 
     const VkPhysicalDeviceProperties *properties = nullptr;
     vmaGetPhysicalDeviceProperties(_memoryManager->getAllocator(), &properties);
     _vkUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight, sizeof(gfx::TransformUBO),
-                                                  kTransformSlots, properties->limits.minUniformBufferOffsetAlignment);
+                                                  _transformSlots, properties->limits.minUniformBufferOffsetAlignment);
 
     for (u32 i = 0; i < framesInFlight; ++i)
     {
@@ -1179,7 +1180,7 @@ void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)
 void VulkanRenderer::publishTransform()
 {
     //! Recorded draws read their slot at GPU time, so a full ring is never reused.
-    if (_transformSlotsUsed < kTransformSlots)
+    if (_transformSlotsUsed < _transformSlots)
         _vkUniformBufferManager->updateUniformBuffer(_currentFrame, _currentTransform, _transformSlotsUsed++);
 }
 
@@ -1310,11 +1311,8 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     VkFramebuffer framebuffer = _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex];
 
     // Small batches stay inline to avoid worker wakeups and secondary-buffer setup.
-    constexpr size_t kMinDrawsToThread = 512;
-    constexpr size_t kMinDrawsPerChunk = 128;
-
-    const size_t maxChunks = _resolvedDraws.size() / kMinDrawsPerChunk;
-    const size_t chunkCount = (_resolvedDraws.size() < kMinDrawsToThread)
+    const size_t maxChunks = _resolvedDraws.size() / _minDrawsPerChunk;
+    const size_t chunkCount = (_resolvedDraws.size() < _minDrawsToThread)
                                   ? 1
                                   : std::min<size_t>(_recordWorkerCount, std::max<size_t>(maxChunks, 1));
 

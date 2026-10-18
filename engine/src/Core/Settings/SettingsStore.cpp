@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 
 #include <ink/EnhancedJson.h>
 #include <ink/Inkogger.h>
@@ -17,17 +18,6 @@ namespace aura3d
 {
 namespace
 {
-
-[[nodiscard]] std::string lower(std::string_view text)
-{
-    std::string folded(text);
-    std::ranges::transform(folded, folded.begin(),
-                           [](unsigned char c)
-                           {
-                               return static_cast<char>(std::tolower(c));
-                           });
-    return folded;
-}
 
 [[nodiscard]] std::string upper(std::string_view text)
 {
@@ -46,13 +36,6 @@ namespace
     for (const std::string_view word : words)
         joined += (joined.empty() ? "" : ", ") + std::string{word};
     return joined;
-}
-
-[[nodiscard]] std::string shortNumber(f64 value)
-{
-    std::array<char, 32> text{};
-    std::snprintf(text.data(), text.size(), "%g", value);
-    return text.data();
 }
 
 [[nodiscard]] u16 indexOf(const SettingDesc &desc) noexcept
@@ -107,7 +90,8 @@ namespace
 
         if (!(number >= desc.minimum && number <= desc.maximum))
         {
-            why = shortNumber(number) + " is outside " + shortNumber(desc.minimum) + " to " + shortNumber(desc.maximum);
+            why = formatNumber(number) + " is outside " + formatNumber(desc.minimum) + " to " +
+                  formatNumber(desc.maximum);
             return false;
         }
 
@@ -135,7 +119,7 @@ namespace
             return false;
         }
 
-        const std::string folded = lower(*text);
+        const std::string folded = lowerAscii(*text);
         if (const auto match = std::ranges::find(desc.choices, folded); match != desc.choices.end())
         {
             value = std::string{*match};
@@ -157,7 +141,7 @@ namespace
     {
     case SettingType::Bool:
     {
-        const std::string word = lower(text);
+        const std::string word = lowerAscii(text);
         if (word == "true" || word == "1" || word == "yes" || word == "on")
             return true;
         if (word == "false" || word == "0" || word == "no" || word == "off")
@@ -206,6 +190,10 @@ void collect(const nlohmann::json &node, const std::string &prefix, SettingsSink
         else if (child.is_boolean())
         {
             sink.set(path, child.get<bool>());
+        }
+        else if (child.is_number_unsigned() && child.get<u64>() > static_cast<u64>(std::numeric_limits<i64>::max()))
+        {
+            sink.report(path + ": too large for a whole number");
         }
         else if (child.is_number_integer())
         {
@@ -523,8 +511,13 @@ void CommandLineSource::load(SettingsSink &sink)
     for (usize i = 0; i < _arguments.size(); ++i)
     {
         const std::string_view argument = _arguments[i];
-        if (argument == "--set" && i + 1 < _arguments.size())
-            apply(_arguments[++i]);
+        if (argument == "--set")
+        {
+            if (i + 1 < _arguments.size())
+                apply(_arguments[++i]);
+            else
+                sink.report("--set: expected path=value after it");
+        }
         else if (argument.starts_with("--set="))
             apply(argument.substr(6));
     }

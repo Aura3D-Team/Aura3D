@@ -73,7 +73,7 @@ VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(AuraSettings *settin
     cfg.persistentlyMapUploadBuffers = settings->get(setting::vmaMapUploadBuffers);
 
     const u32 blockMb = static_cast<u32>(settings->get(setting::vmaHeapBlockMb));
-    cfg.preferredLargeHeapBlockSize = static_cast<size_t>(blockMb) * 1024u * 1024u;
+    cfg.preferredLargeHeapBlockSize = static_cast<size_t>(INK_MIB_TO_BYTES(blockMb));
 
     cfg.vulkanApiVersion = parseVulkanApiVersion(settings->get(setting::vulkanApiVersion));
 

@@ -59,6 +59,10 @@ struct OverlayTransition
     /// From close(). The overlay keeps drawing, takes no input, and onClosed waits, until @p done is called: call it
     /// once the exit has finished, from any later point. Unset, the overlay is gone at the next frame boundary.
     std::function<void(Widget &overlay, const OverlayDesc &desc, std::function<void()> done)> exit;
+
+    /// An exit still running after this long is cut short as if @c done had been called, so a hook that never calls it
+    /// cannot leave a dead overlay on screen. Zero waits for ever.
+    f32 exitTimeoutSeconds = 5.0f;
 };
 
 /// How one overlay is placed and dismissed.
@@ -72,6 +76,10 @@ struct OverlayDesc
 
     /// Nudge applied after placement. Positive y pushes further down.
     glm::vec2 offset{0.0f};
+
+    /// How far a @ref Placement::Cursor overlay clears the pointer, so the thing it describes is not under the thing
+    /// describing it.
+    f32 cursorClearance = 14.0f;
 
     /// Swallows input to everything underneath, including other overlays below
     /// it. A dialog wants this; a tooltip must not have it.
@@ -227,8 +235,9 @@ class OverlayLayer final : public Widget
         WidgetRef owner;
         WidgetRef restoreFocus;
         bool focusPending = true;
-        bool placed = false;  //! Laid out at least once, which is when its enter hook runs and it can be seen.
-        bool exiting = false; //! Closing, and still drawn until its exit transition calls done.
+        bool placed = false;     //! Laid out at least once, which is when its enter hook runs and it can be seen.
+        bool exiting = false;    //! Closing, and still drawn until its exit transition calls done.
+        f32 exitDeadline = 0.0f; //! UIRoot::time() at which an exit that has not called done is cut short.
     };
 
     /// Top-left @p size should sit at, given @p desc, flipped and then clamped

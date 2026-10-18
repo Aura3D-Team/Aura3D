@@ -183,6 +183,43 @@ void testBadValuesAreReportedAndRefused()
                "an unknown section is reported, the editor's $schema is not");
 }
 
+void testVulkanTuningIsConfigurable()
+{
+    AuraSettings &settings = fresh();
+    AURA_CHECK(settings.get(setting::vulkanTransformSlots) == 1024 &&
+                   settings.get(setting::vulkanMinDrawsToThread) == 512 &&
+                   settings.get(setting::vulkanMinDrawsPerChunk) == 128 &&
+                   settings.get(setting::vulkanDescriptorHeadroom) == 16,
+               "the recording and ring sizes default to what they were when fixed");
+
+    AuraConfig config;
+    config.set(setting::vulkanMinDrawsToThread, 64).set(setting::vulkanMinDrawsPerChunk, 0);
+    settings.configure(config);
+    AURA_CHECK(settings.get(setting::vulkanMinDrawsToThread) == 64, "an application sets them in code");
+    AURA_CHECK(settings.get(setting::vulkanMinDrawsPerChunk) == 128 && mentions(settings, "min_draws_per_chunk"),
+               "a chunk of no draws would divide by zero, so it is refused");
+}
+
+void testInputThatIsMisplacedIsReported()
+{
+    AuraSettings &settings = fresh();
+
+    std::array<const char *, 3> arguments{"app", "--set=window.width=700", "--set"};
+    AuraConfig config;
+    config.arguments(static_cast<int>(arguments.size()), arguments.data());
+    config.set(setting::windowTitle, VSyncMode::Mailbox);
+
+    const std::string file = writeFile("huge", R"({ "window": { "height": 18446744073709551615 } })");
+    settings.configure(config, file);
+    std::remove(file.c_str());
+
+    AURA_CHECK(mentions(settings, "--set: expected path=value"), "a --set with nothing after it is reported");
+    AURA_CHECK(settings.get(setting::windowWidth) == 700, "and the others before it still apply");
+    AURA_CHECK(mentions(settings, "window.height: too large"), "an integer past what a setting can hold is said so");
+    AURA_CHECK(settings.get(setting::windowHeight) == 720, "and leaves the default");
+    AURA_CHECK(settings.get(setting::windowTitle).empty(), "an enum given to a free-text key writes nothing there");
+}
+
 void testNumbersAreCoerced()
 {
     AuraSettings &settings = fresh();
@@ -295,6 +332,8 @@ int main()
     testPlatformFileOverridesTheFile();
     testEnvironmentAndCommandLine();
     testBadValuesAreReportedAndRefused();
+    testVulkanTuningIsConfigurable();
+    testInputThatIsMisplacedIsReported();
     testNumbersAreCoerced();
     testTypedHelpers();
     testVSyncModeDecidesWhetherTheDisplayPaces();

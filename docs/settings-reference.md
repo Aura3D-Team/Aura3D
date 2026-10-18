@@ -37,6 +37,10 @@
 | `vulkan.validation` | bool | on in debug builds | Enable the Khronos validation layer. |
 | `vulkan.gpu` | choice | "discrete" | Which kind of device to prefer. `any` lets capability decide alone. One of `discrete`, `integrated`, `any`. |
 | `vulkan.api_version` | text | "1.4" | Vulkan API version the allocator is created for, capped at what the headers support. |
+| `vulkan.transform_slots` | int | 1024 | Camera slots per frame in flight; a frame's cameras past this overwrite the last slot. 1 to 65536. |
+| `vulkan.min_draws_to_thread` | int | 512 | Draws a batch needs before its recording is spread over the workers; fewer record inline. 0 to 1e+06. |
+| `vulkan.min_draws_per_chunk` | int | 128 | Fewest draws one worker records, which caps how many chunks a batch is cut into. 1 to 1e+06. |
+| `vulkan.descriptor_headroom` | int | 16 | Update-after-bind descriptors kept back for the engine's other bindings when sizing the texture table. 0 to 4096. |
 | `vulkan.vma.buffer_device_address` | bool | true | Allow buffer device addresses, where the device has them. |
 | `vulkan.vma.prefer_device_memory` | bool | true | Prefer device-local memory for resources. |
 | `vulkan.vma.map_upload_buffers` | bool | true | Keep upload buffers mapped for their whole life. |

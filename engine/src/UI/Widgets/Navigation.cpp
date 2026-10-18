@@ -8,14 +8,6 @@
 namespace aura3d::ui
 {
 
-namespace
-{
-
-/// The arrow's share of the header row's height.
-constexpr f32 kArrowScale = 0.42f;
-
-} // namespace
-
 // =============================================================================
 // Disclosure
 // =============================================================================
@@ -62,7 +54,7 @@ glm::vec2 Disclosure::measureContent(const Constraints &available)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
-    const f32 gutter = row * kArrowScale + style.padding;
+    const f32 gutter = row * theme().metrics.arrowScale + style.padding;
 
     Constraints headerSpace = available;
     if (!isUnbounded(headerSpace.max.x))
@@ -87,7 +79,7 @@ void Disclosure::arrangeContent(const Rect &content)
 {
     const WidgetStyle style = resolvedStyle();
     const f32 row = style.height.value_or(theme().metrics.rowHeight);
-    const f32 gutter = row * kArrowScale + style.padding;
+    const f32 gutter = row * theme().metrics.arrowScale + style.padding;
     const f32 header = headerHeight();
 
     _label->arrange(Rect{{content.min.x + gutter, content.min.y}, {content.max.x, content.min.y + header}});
@@ -115,7 +107,7 @@ void Disclosure::paint(DrawList &out)
     {
         if (ITextShaper *shaper = this->shaper())
         {
-            const f32 size = header.height() * kArrowScale;
+            const f32 size = header.height() * theme().metrics.arrowScale;
             const Rect box =
                 Rect::fromSize({header.min.x + style.padding * 0.5f, header.center().y - size * 0.5f}, {size, size});
 

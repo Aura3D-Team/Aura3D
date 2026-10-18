@@ -17,17 +17,6 @@ namespace aura3d
 namespace
 {
 
-[[nodiscard]] std::string lower(std::string_view text)
-{
-    std::string folded(text);
-    std::ranges::transform(folded, folded.begin(),
-                           [](unsigned char c)
-                           {
-                               return static_cast<char>(std::tolower(c));
-                           });
-    return folded;
-}
-
 //! Lends a source the config shares to a store that owns its sources.
 class SharedSource final : public ISettingsSource
 {
@@ -70,7 +59,7 @@ class SharedSource final : public ISettingsSource
 
 bool VSyncModeFromString(const std::string &s, VSyncMode &out)
 {
-    const std::string wanted = lower(s);
+    const std::string wanted = lowerAscii(s);
     for (const VSyncMode mode :
          {VSyncMode::Fifo, VSyncMode::FifoRelaxed, VSyncMode::Mailbox, VSyncMode::Immediate, VSyncMode::Uncapped})
     {
@@ -137,29 +126,41 @@ AuraConfig &AuraConfig::set(Key<std::string> key, std::string value)
     return *this;
 }
 
+AuraConfig &AuraConfig::setChoice(Key<std::string> key, std::string spelling)
+{
+    //! An enum names one of a choice's spellings; given to a free-text key it would be written there as text.
+    const SettingDesc &desc = settingsSchema()[key.index];
+    if (desc.type != SettingType::Choice)
+    {
+        INK_WARN << "Settings: " << key.path << ": is free text, not a choice; the value is ignored";
+        return *this;
+    }
+    return set(key, std::move(spelling));
+}
+
 AuraConfig &AuraConfig::set(Key<std::string> key, wma::WindowBackend value)
 {
-    return set(key, lower(WindowBackendToString(value)));
+    return setChoice(key, lowerAscii(WindowBackendToString(value)));
 }
 
 AuraConfig &AuraConfig::set(Key<std::string> key, wma::DecorationMode value)
 {
-    return set(key, std::string{value == wma::DecorationMode::ClientSide ? "client" : "server"});
+    return setChoice(key, value == wma::DecorationMode::ClientSide ? "client" : "server");
 }
 
 AuraConfig &AuraConfig::set(Key<std::string> key, wma::AudioBackend value)
 {
-    return set(key, lower(AudioBackendToString(value)));
+    return setChoice(key, lowerAscii(AudioBackendToString(value)));
 }
 
 AuraConfig &AuraConfig::set(Key<std::string> key, VSyncMode value)
 {
-    return set(key, std::string{VSyncModeToString(value)});
+    return setChoice(key, VSyncModeToString(value));
 }
 
 AuraConfig &AuraConfig::set(Key<std::string> key, ink::LogLevel value)
 {
-    return set(key, lower(ink::MAP_COLORS_FOR_LEVEL[std::to_underlying(value)].desc));
+    return setChoice(key, lowerAscii(ink::MAP_COLORS_FOR_LEVEL[std::to_underlying(value)].desc));
 }
 
 AuraConfig &AuraConfig::arguments(int argc, const char *const *argv)
@@ -246,7 +247,7 @@ ink::LogLevel AuraSettings::logLevel() const
     const std::string name = get(setting::loggingLevel);
     for (u32 i = 0; i < std::to_underlying(ink::LogLevel::COUNT); ++i)
     {
-        if (name == lower(ink::MAP_COLORS_FOR_LEVEL[i].desc))
+        if (name == lowerAscii(ink::MAP_COLORS_FOR_LEVEL[i].desc))
             return static_cast<ink::LogLevel>(i);
     }
     return ink::LogLevel::INFO;

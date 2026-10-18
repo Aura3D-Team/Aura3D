@@ -785,6 +785,62 @@ void testLostFrameIsRedrawnWhileIdle()
     AURA_CHECK(!view.needsDraw(), "and the view idles once the frame reaches the screen");
 }
 
+void testZoomLadderAndBoundsAreTheCallers()
+{
+    RecordingRenderer renderer;
+    UIViewDesc desc;
+    desc.scaling.minZoom = 2.0f; //! Reversed on purpose: bounds are put in order, not trusted.
+    desc.scaling.maxZoom = 1.0f;
+    desc.scaling.zoomSteps = {2.0f, 1.0f, 1.5f};
+    UIView view(renderer, desc);
+
+    AURA_CHECK(view.zoom() == 1.0f, "a view starts at 1, inside its bounds");
+    view.zoomStep(1);
+    AURA_CHECK(view.zoom() == 1.5f, "a ladder given out of order is climbed in order");
+    view.zoomStep(1);
+    view.zoomStep(1);
+    AURA_CHECK(view.zoom() == 2.0f, "and stops at its last rung");
+    view.zoomStep(-1);
+    AURA_CHECK(view.zoom() == 1.5f, "going down takes the rung below");
+    view.setZoom(10.0f);
+    AURA_CHECK(view.zoom() == 2.0f, "setZoom() stops at the view's own bound");
+
+    //! The form docs/14-auraui-toolkit.md shows.
+    UIView documented(renderer,
+                      {.scaling = {.minZoom = 0.75f, .maxZoom = 2.0f, .zoomSteps = {0.75f, 1.0f, 1.5f, 2.0f}}});
+    documented.zoomStep(-1);
+    AURA_CHECK(documented.zoom() == 0.75f, "a ladder written in a desc is the one that is climbed");
+}
+
+void testControlRoundingIsAMetric()
+{
+    Theme theme;
+    AURA_CHECK(theme[Part::Button].rounding == 3.0f, "controls are rounded by 3 unless the theme says otherwise");
+    theme.metrics.controlRounding = 9.0f;
+    theme.applyPalette(Palette::dark());
+    AURA_CHECK(theme[Part::Button].rounding == 9.0f, "and by the metric once the palette is applied again");
+}
+
+void testBottomInsetLeavesTheConfiguredShare()
+{
+    aura3d::test::FakeWindow window;
+    window.details.width = 1000;
+    window.details.height = 400;
+    window.details.decorationMode = wma::DecorationMode::ServerSide;
+    RecordingRenderer renderer;
+    renderer.window = &window;
+    UIViewDesc desc;
+    desc.scaling.minVisibleFraction = 0.5f;
+    UIView view(renderer, desc);
+
+    view.setBottomInset(100.0f);
+    view.update(0.0f);
+    AURA_CHECK(view.root().size().y == 300.0f, "the tree ends above an inset");
+    view.setBottomInset(390.0f);
+    view.update(0.0f);
+    AURA_CHECK(view.root().size().y == 200.0f, "but never past the share the view was told to leave");
+}
+
 [[nodiscard]] bool near(f32 a, f32 b)
 {
     return std::fabs(a - b) < 0.01f;
@@ -1260,6 +1316,9 @@ int main()
     testRoundedCornersAreConstantGeometry();
     testIdleFrameRebuildsNothing();
     testLostFrameIsRedrawnWhileIdle();
+    testZoomLadderAndBoundsAreTheCallers();
+    testControlRoundingIsAMetric();
+    testBottomInsetLeavesTheConfiguredShare();
     testContentScaleSizesTheTreeAndMapsInput();
     testContentScaleMultipliesTheBackingRatio();
     testContentScaleIsClamped();

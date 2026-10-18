@@ -181,7 +181,8 @@ class UIRoot
     static constexpr AnimationId kNoAnimation = 0;
 
     /// Runs @p tween, from its first step now to its last in a later update(). It stops, without done, when
-    /// @p target is destroyed or leaves this root; null ties it to no widget.
+    /// @p target is destroyed or leaves this root; null ties it to no widget. A target that is not in this root
+    /// starts nothing: no step, no done, and kNoAnimation back.
     AnimationId animate(Widget *target, Tween tween);
 
     /// No further step and no done. An id that has already finished is ignored.

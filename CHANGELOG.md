@@ -4,42 +4,36 @@ All notable changes to Aura3D are documented in this file.
 
 ## [0.8.0]
 
-Needs libwma 0.8.0.
+Needs libwma 0.8.2.
 
 ### Added
 
-- Clipboard: `IClipboard`, `MemoryClipboard` (default), `WindowClipboard` (installed by `UIView`), `UIRoot::setClipboard()`.
-- `TextField` copy, cut, paste, undo and redo (Ctrl+C/X/V/Z/Y, Ctrl+Shift+Z, Ctrl+Insert, Shift+Delete/Insert) and the matching calls. Passphrases are never copied.
-- `UIRoot::animate()` with `Tween`; `cancelAnimation()`, `animating()`.
-- `Widget::setOpacity()` / `setTranslation()`: paint-only, with `visualBounds()`.
-- `DrawList::pushEffect()` / `popEffect()`, `EffectScope`.
-- `OverlayTransition` (`enter` / `exit` hooks) per overlay or via `OverlayLayer::setDefaultTransition()`.
-- Tunables: `Metrics::hoverSeconds`, `indicatorSeconds`; `UIRoot::setDoubleClickSeconds()`, `setDoubleClickSlop()`, `setCaretBlinkSeconds()`; `ScrollPhysics`; `WindowChrome`.
+- Settings: one declaration (`AURA_SETTINGS`) generates keys, validation, JSON Schema and reference; layered sources.
+- Clipboard (`IClipboard`, `WindowClipboard`); `TextField` copy, cut, paste, undo, redo.
+- Animation: `UIRoot::animate()`, `Tween`; `Widget` opacity and translation; `DrawList` effects.
+- Overlay enter and exit transitions.
+- Accessibility: open overlays in the tree, modal dialogs.
+- Tunables: `Metrics`, `ScrollPhysics`, `WindowChrome`, `ViewScaling`, double click, caret blink, history limit, cursor clearance, Vulkan recording and ring sizes.
 - `Part::Popup`, `utf8::sanitize()`.
-- `accessibilityTree()` includes open overlays; `AccessibilityInfo::modal`, `OverlayLayer::openOverlays()`.
+- `UIView::setBottomInset()`, `touchDown`/`touchMoved`/`touchUp`.
 
 ### Changed
 
-- **Settings, rebuilt.** One declaration, `AURA_SETTINGS`, generates the typed keys (`setting::windowWidth`), the validation, `docs/settings-reference.md` and `docs/aura.schema.json`. Layers: built-in, `AuraConfig`, `settings.json`, `settings.<platform>.json`, `AURA_*` environment, `--set path=value`, runtime `set()`. An unknown key, a wrong type, an out-of-range number or a bad choice is reported with its path and a suggestion instead of being ignored.
-- **Breaking: the file layout.** `window.{vsync,vsync_mode,fps_limit}` become `present.{mode,fps_limit}` (`fifo`, `fifo_relaxed`, `mailbox`, `immediate`, `uncapped`; `AutoVsync` is `fifo`). `renderer.backend` is `renderer.api` (`auto` by default, `software` for the CPU); `graphics.*` and `memory.vma.*` move under `renderer` and `renderer.vulkan`; `audio.master_volume` is `audio.volume`; `logging.write_to_file` is `logging.file`; `application.*` is gone. Choices are lower case. The default present mode is `fifo`.
-- **Breaking: the API.** `AuraConfig` takes `config.set(setting::windowWidth, 1024)` where it had fields; `AuraSettings::getWindowWidth()` and the other getters are `get(setting::windowWidth)`, with `windowBackend()`, `presentMode()`, `audioBackend()`, `logLevel()` for the values that resolve; `reload(path)` is `configure(config, path)`; `getSettings()` and the raw JSON are gone. `VSyncMode` is `Fifo`, `FifoRelaxed`, `Mailbox`, `Immediate`, `Uncapped`.
-- `present.mode` decides vsync on every backend (OpenGL, Metal and the frame cap followed the legacy `vsync` flag), and `fifo` replaces `AutoVsync`'s `FifoRelaxed`, which tore when a frame was late.
-- `Menu` and `Dropdown` use `Part::Popup` instead of `Part::Tooltip`; themes that restyled `Tooltip` for menus must restyle `Popup`.
-- `Dropdown`, `Menu` submenus and the accessibility tree follow `visualBounds()`.
-- **Licensing.** `LICENSE` is the full Apache-2.0 text (it was the short header). New `NOTICE` and `THIRD_PARTY_LICENSES.md`; `cmake --install` puts all three in `share/doc`. `vendor/glad/AURA_PROVENANCE.md` records the glad licensing.
+- **Breaking:** settings file layout (`present.*`, `renderer.api`, `renderer.vulkan.*`, `audio.volume`, `logging.file`).
+- **Breaking:** settings API (`get(setting::…)`, `configure()`).
+- `present.mode` decides vsync on every backend; `fifo` is the default.
+- `Menu` and `Dropdown` style from `Part::Popup`, not `Part::Tooltip`.
+- Licensing: full Apache-2.0, `NOTICE`, `THIRD_PARTY_LICENSES.md`.
 
 ### Fixed
 
-- Interpolation of RGBA colours in premultiplied-alpha space.
-- Vulkan sized the swapchain from the window event, not the surface's fixed extent (Android, X11), so a rotation that raced the surface left it scaled or cropped; checked again after the first present.
-- Vulkan rebuilt the swapchain on every resize event, size change or not, and dropped the frame after a rebuild: a blank stretch on Android resume.
-- Focused `TextField` redrew every frame to blink its caret; hover transition stopped after one frame.
-- `AudioEngine` NaN output for parallel/zero `forward`/`up` and infinite source positions.
-- `Box` NaN bounds when all `Length::fill()` weights were zero.
-- Division by zero in `ScrollPhysics` when `velocitySampleSeconds` or `flingMinSpeed` was zero.
-- `TextField` accepted control characters and invalid UTF-8.
-- Accessible `description` now falls back to the tooltip.
-- Overlay `enter` hook ran before placement; an overlay closed before placement skips its exit.
+- Vulkan: swapchain size and orientation on Android and X11; rebuild on every resize event.
+- Premultiplied-alpha colour interpolation.
+- `TextField`: idle redraw, control characters, invalid UTF-8, passphrase kept in history, typing not ended by a press elsewhere.
+- Overlays: enter before placement, exit that never finishes, `UIRoot` teardown with a drop-down open.
+- `AudioEngine`: NaN output, small listener axes.
+- `Box` NaN bounds, `ScrollView` division by zero.
+- Settings: trailing `--set`, oversized integers.
 
 ## [0.7.1]
 

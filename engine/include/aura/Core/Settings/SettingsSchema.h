@@ -68,6 +68,14 @@
            "Which kind of device to prefer. `any` lets capability decide alone.")                                      \
     TEXT(vulkanApiVersion, "renderer.vulkan.api_version", "1.4",                                                       \
          "Vulkan API version the allocator is created for, capped at what the headers support.")                       \
+    INT(vulkanTransformSlots, "renderer.vulkan.transform_slots", 1024, 1, 65536,                                       \
+        "Camera slots per frame in flight; a frame's cameras past this overwrite the last slot.")                      \
+    INT(vulkanMinDrawsToThread, "renderer.vulkan.min_draws_to_thread", 512, 0, 1000000,                                \
+        "Draws a batch needs before its recording is spread over the workers; fewer record inline.")                   \
+    INT(vulkanMinDrawsPerChunk, "renderer.vulkan.min_draws_per_chunk", 128, 1, 1000000,                                \
+        "Fewest draws one worker records, which caps how many chunks a batch is cut into.")                            \
+    INT(vulkanDescriptorHeadroom, "renderer.vulkan.descriptor_headroom", 16, 0, 4096,                                  \
+        "Update-after-bind descriptors kept back for the engine's other bindings when sizing the texture table.")       \
     BOOL(vmaBufferDeviceAddress, "renderer.vulkan.vma.buffer_device_address", true,                                    \
          "Allow buffer device addresses, where the device has them.")                                                  \
     BOOL(vmaPreferDeviceMemory, "renderer.vulkan.vma.prefer_device_memory", true,                                      \
@@ -201,6 +209,12 @@ AURA_SETTINGS(AURA_KEY_BOOL, AURA_KEY_BOOL, AURA_KEY_INT, AURA_KEY_FLOAT, AURA_K
 
 //! Null for a path no setting has.
 [[nodiscard]] const SettingDesc *findSetting(std::string_view path) noexcept;
+
+//! ASCII-lower-cased copy: how a choice is compared, so a file may spell `Fifo` or `fifo`.
+[[nodiscard]] std::string lowerAscii(std::string_view text);
+
+//! The shortest spelling of @p value (`%g`), for diagnostics and the reference page.
+[[nodiscard]] std::string formatNumber(f64 value);
 
 //! The candidate nearest to @p word, or empty when none is close: the "did you mean" of a typo.
 [[nodiscard]] std::string_view closestMatch(std::string_view word, std::span<const std::string_view> candidates);

@@ -652,7 +652,8 @@ ITextShaper *Widget::shaper() const noexcept
 
 OverlayLayer *Widget::overlay() const noexcept
 {
-    return _root ? &_root->overlay() : nullptr;
+    //! Null while the root is destroying its overlay: widgets in it detach then, and a popup of theirs is already gone.
+    return _root ? _root->_overlay.get() : nullptr;
 }
 
 // -----------------------------------------------------------------------------

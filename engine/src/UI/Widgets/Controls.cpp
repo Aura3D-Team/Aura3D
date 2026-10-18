@@ -12,7 +12,6 @@ namespace aura3d::ui
 namespace
 {
 
-/// Blends in premultiplied space
 //! Command key of the platform: Ctrl, and on Apple's the Command key too.
 [[nodiscard]] bool commandKey(const Modifiers &mods) noexcept
 {
@@ -42,10 +41,7 @@ class FlagScope
     bool &_flag;
 };
 
-//! How much history a field keeps: a step is a copy of its text, so both bounds matter.
-constexpr usize kMaxUndoSteps = 100;
-constexpr usize kMaxHistoryBytes = usize{4} << 20;
-
+/// Blends in premultiplied space.
 [[nodiscard]] glm::vec4 mix(const glm::vec4 &a, const glm::vec4 &b, f32 t) noexcept
 {
     const f32 u = std::clamp(t, 0.0f, 1.0f);
@@ -900,7 +896,6 @@ TextField::TextField(std::string value) : text(std::move(value))
             {
                 _undo.clear();
                 _redo.clear();
-                _historyBytes = 0;
                 _lastEdit = EditKind::None;
             }
             invalidateLayout();
@@ -962,6 +957,12 @@ void TextField::setObscured(bool obscured)
     if (_obscured == obscured)
         return;
     _obscured = obscured;
+    if (obscured)
+    {
+        _undo.clear();
+        _redo.clear();
+        _lastEdit = EditKind::None;
+    }
     invalidateLayout();
     invalidatePaint();
 }
@@ -1087,6 +1088,10 @@ TextField::Snapshot TextField::_snapshot() const
 
 void TextField::_remember(EditKind kind)
 {
+    //! A passphrase must not outlive its edit in a stack of copies.
+    if (_obscured)
+        return;
+
     //! A run's first step stands for all of it, as long as the caret has not been moved or a selection made between.
     const bool continuesRun =
         kind == _lastEdit && (kind == EditKind::Typing || kind == EditKind::Deleting) && !_hasSelection();
@@ -1101,17 +1106,17 @@ void TextField::_remember(EditKind kind)
 
 void TextField::_trimHistory() noexcept
 {
-    _historyBytes = 0;
+    usize bytes = 0;
     for (const Snapshot &step : _undo)
-        _historyBytes += step.text.size();
+        bytes += step.text.size();
     for (const Snapshot &step : _redo)
-        _historyBytes += step.text.size();
+        bytes += step.text.size();
 
     //! The oldest go first; the newest step is always kept, whatever it weighs.
-    while (_undo.size() > 1 && (_undo.size() > kMaxUndoSteps || _historyBytes > kMaxHistoryBytes))
+    while (_undo.size() > 1 && (_undo.size() > _maxUndoSteps || bytes > _maxHistoryBytes))
     {
-        _historyBytes -= _undo.front().text.size();
-        _undo.erase(_undo.begin());
+        bytes -= _undo.front().text.size();
+        _undo.pop_front();
     }
 }
 
@@ -1130,6 +1135,13 @@ void TextField::_restore(Snapshot snapshot)
     _caret = utf8::clampToBoundary(text.get(), std::min(snapshot.caret, text.get().size()));
     _selection = utf8::clampToBoundary(text.get(), std::min(snapshot.selection, text.get().size()));
     invalidatePaint();
+}
+
+void TextField::setHistoryLimit(usize steps, usize bytes)
+{
+    _maxUndoSteps = steps;
+    _maxHistoryBytes = bytes;
+    _trimHistory();
 }
 
 bool TextField::canUndo() const noexcept
@@ -1508,7 +1520,10 @@ void TextField::onFocusOut()
 
 bool TextField::_caretShown() const noexcept
 {
-    const f32 blink = root() != nullptr ? root()->caretBlinkSeconds() : 0.53f;
+    if (root() == nullptr)
+        return true;
+
+    const f32 blink = root()->caretBlinkSeconds();
     return std::fmod(_blink, blink * 2.0f) < blink;
 }
 

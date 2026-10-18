@@ -122,6 +122,25 @@ void testPlacementFlipsAndClamps()
     AURA_CHECK(wide.bounds().min.x >= 0.0f, "on both sides");
 }
 
+void testCursorClearanceIsTheOverlays()
+{
+    Harness harness({400.0f, 300.0f});
+    harness.root.setContent<Column>();
+    const Rect at{{50.0f, 50.0f}, {50.0f, 50.0f}};
+
+    auto &near = harness.root.overlay().open<Column>(OverlayDesc{.anchor = at, .placement = Placement::Cursor});
+    near.layout().minWidth = 40.0f;
+    near.layout().minHeight = 20.0f;
+    auto &far = harness.root.overlay().open<Column>(
+        OverlayDesc{.anchor = at, .placement = Placement::Cursor, .cursorClearance = 40.0f});
+    far.layout().minWidth = 40.0f;
+    far.layout().minHeight = 20.0f;
+    harness.frame();
+
+    AURA_CHECK(near.bounds().min == glm::vec2(64.0f, 64.0f), "an overlay clears the pointer by 14 pixels unless told");
+    AURA_CHECK(far.bounds().min == glm::vec2(90.0f, 90.0f), "and by what its desc says");
+}
+
 void testOutsideClickAndEscapeDismiss()
 {
     Harness harness;
@@ -295,6 +314,38 @@ void testExitTransitionKeepsItUntilDone()
     finish();
     harness.frame();
     AURA_CHECK(closed == 1, "a done called again, after the overlay is gone, does nothing");
+}
+
+void testExitThatNeverFinishesIsCutShort()
+{
+    Harness harness;
+    harness.root.setContent<Column>();
+
+    int closed = 0;
+    auto &box = harness.root.overlay().open<Column>(
+        OverlayDesc{.anchor = Rect::fromSize({20.0f, 20.0f}, {40.0f, 20.0f}),
+                    .transition = {.exit =
+                                       [](Widget &, const OverlayDesc &, std::function<void()>)
+                                   {
+                                   },
+                                   .exitTimeoutSeconds = 1.0f},
+                    .onClosed = [&closed]
+                    {
+                        ++closed;
+                    }});
+    const OverlayLayer::Id id = harness.root.overlay().lastId();
+    box.layout().minWidth = 80.0f;
+    box.layout().minHeight = 40.0f;
+    harness.frame();
+
+    harness.root.overlay().close(id);
+    for (int i = 0; i < 8; ++i)
+        harness.frame(0.1f);
+    AURA_CHECK(closed == 0 && !harness.root.overlay().empty(), "an exit is waited for within its timeout");
+
+    for (int i = 0; i < 5; ++i)
+        harness.frame(0.1f);
+    AURA_CHECK(closed == 1 && harness.root.overlay().empty(), "and cut short after it, onClosed included");
 }
 
 void testClosingReleasesFocusWhileTheExitRuns()
@@ -875,12 +926,14 @@ int main()
 {
     testOverlayDrawsOverAndHitsFirst();
     testPlacementFlipsAndClamps();
+    testCursorClearanceIsTheOverlays();
     testOutsideClickAndEscapeDismiss();
     testStickyOverlayIgnoresOutsideClick();
     testModalBlocksTheContentBeneath();
     testCloseIsDeferredSoAnItemCanCloseItsOwnMenu();
     testOnClosedFires();
     testExitTransitionKeepsItUntilDone();
+    testExitThatNeverFinishesIsCutShort();
     testClosingReleasesFocusWhileTheExitRuns();
     testDefaultTransitionReachesBuiltInOverlays();
     testOverlaysAreInTheAccessibilityTree();

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "aura/UI/Backend/DrawListRenderer.h"
 #include "aura/UI/Backend/WindowClipboard.h"
@@ -47,6 +48,20 @@ class IRenderer;
 namespace aura3d::ui
 {
 
+/// The scale a view may draw at and the rungs zoomStep() climbs. Normalised at construction: bounds put in order,
+/// rungs sorted.
+struct ViewScaling
+{
+    //! A broken display report must not collapse the UI to nothing or blow it up.
+    f32 minContentScale = 0.25f;
+    f32 maxContentScale = 8.0f;
+    f32 minZoom = 0.5f;
+    f32 maxZoom = 4.0f;
+    f32 zoomEpsilon = 1e-3f; //! How close to a rung the zoom counts as on it.
+    std::vector<f32> zoomSteps{0.5f, 0.67f, 0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f};
+    f32 minVisibleFraction = 1.0f / 3.0f; //! What setBottomInset() always leaves of the surface's height.
+};
+
 /// Construction parameters for a @ref UIView.
 struct UIViewDesc
 {
@@ -57,6 +72,7 @@ struct UIViewDesc
     u32 maxFontSizes = 6;     //! Distinct rasterization sizes kept resident.
 
     Theme theme{};
+    ViewScaling scaling{};
 
     /// Empty uses the configured window title. Updated via setWindowTitle().
     std::string windowTitle;
@@ -109,6 +125,18 @@ class UIView
 
     /// The zoom changed, from setZoom() or zoomStep().
     Signal<f32> zoomChanged;
+    /// @}
+
+    /// Keeps the tree out of the bottom @p pixels of the surface, in framebuffer pixels: an on-screen keyboard laid
+    /// over a surface that is not resized for it. At least ViewScaling::minVisibleFraction of the surface stays.
+    void setBottomInset(f32 pixels);
+
+    /// @{
+    /// Every finger, as the platform reports it, before the view acts on it. The window keeps one handler per touch
+    /// event and this view owns it, so a gesture the view has no notion of (a pinch) listens here instead.
+    Signal<wma::WMATouchPoint> touchDown;
+    Signal<wma::WMATouchPoint> touchMoved;
+    Signal<wma::WMATouchPoint> touchUp;
     /// @}
 
     void setWindowTitle(std::string title);
@@ -216,7 +244,9 @@ class UIView
     bool _touchActive = false;
     wma::TouchFingerId _finger = 0;
     bool _windowFocused = true;
+    ViewScaling _scaling;
     f32 _zoom = 1.0f;
+    f32 _bottomInset = 0.0f;
     wma::SystemCursor _cursor = wma::SystemCursor::Default; //! What the window shows now; set only when it changes.
     bool _frameHitTest = false;
     //! windowDecoration() runs on every pointer move as the hit test, so the cast

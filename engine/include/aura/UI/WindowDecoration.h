@@ -42,7 +42,7 @@ struct WindowChrome
     f32 titleInset = 16.0f;  //! Title to the left edge.
     f32 titleGap = 12.0f;    //! Title to the caption buttons.
     f32 titleFontSize = 16.0f;
-    f32 iconSize = 12.0f; //! The caption icons' square. Their strokes scale with it.
+    f32 iconSize = 12.0f; //! The caption icons' square. Their strokes are a twelfth of it, a pixel at least.
     f32 border = 1.5f;    //! The painted resize border, while the window is resizable.
     /// Edges grab this far in, past the painted border: a surface without an invisible outer margin otherwise leaves
     /// a target too thin to hit with a mouse.

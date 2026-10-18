@@ -256,6 +256,13 @@
               "description": "Vulkan API version the allocator is created for, capped at what the headers support.",
               "type": "string"
             },
+            "descriptor_headroom": {
+              "default": 16,
+              "description": "Update-after-bind descriptors kept back for the engine's other bindings when sizing the texture table.",
+              "maximum": 4096,
+              "minimum": 0,
+              "type": "integer"
+            },
             "gpu": {
               "default": "discrete",
               "description": "Which kind of device to prefer. `any` lets capability decide alone.",
@@ -265,6 +272,27 @@
                 "any"
               ],
               "type": "string"
+            },
+            "min_draws_per_chunk": {
+              "default": 128,
+              "description": "Fewest draws one worker records, which caps how many chunks a batch is cut into.",
+              "maximum": 1000000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "min_draws_to_thread": {
+              "default": 512,
+              "description": "Draws a batch needs before its recording is spread over the workers; fewer record inline.",
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "transform_slots": {
+              "default": 1024,
+              "description": "Camera slots per frame in flight; a frame's cameras past this overwrite the last slot.",
+              "maximum": 65536,
+              "minimum": 1,
+              "type": "integer"
             },
             "validation": {
               "description": "Enable the Khronos validation layer.",

@@ -17,7 +17,7 @@ namespace
 {
 
 //! From this size, copying into staging costs more than the draw call a merge would save.
-constexpr usize kDirectBytes = usize{64} << 10;
+constexpr usize kDirectBytes = static_cast<usize>(INK_KIB_TO_BYTES(64));
 
 //! Orphans the store bound at @p target, so the copy never waits on draws still reading it.
 //! The store keeps the largest size seen, which spares the driver a reallocation per size.

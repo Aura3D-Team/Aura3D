@@ -38,7 +38,7 @@ class VulkanMemoryManager
         bool preferDeviceMemory = true;
         bool persistentlyMapUploadBuffers = true;
         u32 vulkanApiVersion = kVulkanApiVersion;
-        size_t preferredLargeHeapBlockSize = size_t{128} * 1024u * 1024u;
+        size_t preferredLargeHeapBlockSize = static_cast<size_t>(INK_MIB_TO_BYTES(128));
     };
 
     VulkanMemoryManager() = default;

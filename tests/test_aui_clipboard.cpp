@@ -177,6 +177,20 @@ void testPassphraseNeverReachesTheClipboard()
     AURA_CHECK(h.text() == "pasted", "pasting into one is allowed");
 }
 
+void testPassphraseLeavesNoHistory()
+{
+    Harness h{"hunter2"};
+    h.field->setObscured(true);
+    h.field->selectAll();
+    h.type("swordfish");
+    AURA_CHECK(!h.field->canUndo(), "an obscured field keeps no earlier state of the passphrase");
+
+    h.field->setObscured(false);
+    h.type("!");
+    h.field->setObscured(true);
+    AURA_CHECK(!h.field->canUndo() && !h.field->canRedo(), "and hiding a field drops what it had kept");
+}
+
 void testReadOnlyCopiesButDoesNotChange()
 {
     Harness h{"fixed"};
@@ -344,7 +358,7 @@ void testAssigningTheTextForgetsHistory()
 
 void testHistoryIsBounded()
 {
-    Harness h{"", 1u << 20};
+    Harness h{"", static_cast<usize>(INK_MIB_TO_BYTES(1))};
     for (int i = 0; i < 400; ++i)
     {
         h.type("x");
@@ -358,6 +372,40 @@ void testHistoryIsBounded()
         ++steps;
     }
     AURA_CHECK(steps > 0 && steps <= 100, "the history keeps a bounded number of steps");
+}
+
+void testHistoryLimitIsTheFields()
+{
+    Harness h{"", static_cast<usize>(INK_MIB_TO_BYTES(1))};
+    h.field->setHistoryLimit(5, static_cast<usize>(INK_MIB_TO_BYTES(1)));
+    for (int i = 0; i < 20; ++i)
+    {
+        h.type("x");
+        h.key(wma::KEY_LEFT);
+        h.key(wma::KEY_RIGHT);
+    }
+    int steps = 0;
+    while (h.field->canUndo() && steps < 1000)
+    {
+        h.key(wma::KEY_Z, kCtrl);
+        ++steps;
+    }
+    AURA_CHECK(steps == 5, "a field keeps the number of steps it was given");
+
+    h.field->setHistoryLimit(100, 3);
+    for (int i = 0; i < 10; ++i)
+    {
+        h.type("yy");
+        h.key(wma::KEY_LEFT);
+        h.key(wma::KEY_RIGHT);
+    }
+    steps = 0;
+    while (h.field->canUndo() && steps < 1000)
+    {
+        h.key(wma::KEY_Z, kCtrl);
+        ++steps;
+    }
+    AURA_CHECK(steps >= 1 && steps < 10, "and the bytes it may hold across them, the newest step always kept");
 }
 
 void testTypedControlsAreNotInserted()
@@ -411,6 +459,7 @@ int main()
     testClipboardIsTheRootsAndReplaceable();
     testNothingToCopyOrPasteStillConsumesTheKey();
     testPassphraseNeverReachesTheClipboard();
+    testPassphraseLeavesNoHistory();
     testReadOnlyCopiesButDoesNotChange();
     testCutThatWasNotTakenDoesNotDelete();
     testPasteIsMadeFitForASingleLine();
@@ -420,6 +469,7 @@ int main()
     testDeletionRunsAndCut();
     testAssigningTheTextForgetsHistory();
     testHistoryIsBounded();
+    testHistoryLimitIsTheFields();
     testTypedControlsAreNotInserted();
     testWindowClipboardAdaptsTheWindow();
     testSanitize();
