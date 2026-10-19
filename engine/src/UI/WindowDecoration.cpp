@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 #include "aura/UI/Core/Icon.h"
 #include "aura/UI/UIRoot.h"
@@ -10,18 +11,6 @@ namespace aura3d::ui
 {
 namespace
 {
-constexpr f32 kTitleHeight = 34.0f;
-constexpr f32 kButtonWidth = 46.0f;
-constexpr f32 kTitleInset = 16.0f;
-constexpr f32 kTitleGap = 12.0f;
-constexpr f32 kIconSize = 12.0f;
-constexpr f32 kBorder = 1.5f;
-/// Edges grab this far in, past the painted border: a surface without an invisible
-/// outer margin otherwise leaves a target too thin to hit with a mouse.
-constexpr f32 kResizeReach = 5.0f;
-/// How far along an edge from a corner the hit test reports a diagonal resize.
-constexpr f32 kCornerReach = 16.0f;
-
 /// Toolkit-reserved icon ids (below icon::kFirstUserId); triangle() uses 0-3.
 constexpr u32 kCloseFallingId = 4;
 constexpr u32 kCloseRisingId = 5;
@@ -38,7 +27,7 @@ enum class WindowIcon
 class DecorationIcon final : public Widget
 {
   public:
-    explicit DecorationIcon(WindowIcon icon) : _icon(icon)
+    DecorationIcon(WindowIcon icon, const WindowChrome &chrome) : _icon(icon), _chrome(chrome)
     {
         setHitTestVisible(false);
     }
@@ -48,26 +37,30 @@ class DecorationIcon final : public Widget
     {
         const ClipScope clip(out, bounds());
         const glm::vec4 color = parent()->resolvedStyle().text;
-        const Rect box =
-            Rect::fromSize(glm::floor(bounds().center() - glm::vec2{kIconSize * 0.5f}), glm::vec2{kIconSize});
+        const f32 size = _chrome.iconSize;
+        //! A twelfth of the icon and at least a pixel, so the strokes keep their weight when the icon is sized.
+        const f32 stroke = std::max(1.0f, std::round(size / 12.0f));
+        const f32 inset = 2.0f * stroke;
+        const Rect box = Rect::fromSize(glm::floor(bounds().center() - glm::vec2{size * 0.5f}), glm::vec2{size});
         switch (_icon)
         {
         case WindowIcon::Minimize:
-            out.fillRect(Rect::fromSize({box.min.x, box.center().y}, {kIconSize, 1.0f}), color);
+            out.fillRect(Rect::fromSize({box.min.x, box.center().y}, {size, stroke}), color);
             break;
         case WindowIcon::Maximize:
-            out.strokeRect(box, color, 1.0f);
+            out.strokeRect(box, color, stroke);
             break;
         case WindowIcon::Restore:
-            out.fillRect(Rect::fromSize({box.min.x + 2.0f, box.min.y}, {kIconSize - 2.0f, 1.0f}), color);
-            out.fillRect(Rect::fromSize({box.max.x - 1.0f, box.min.y}, {1.0f, kIconSize - 2.0f}), color);
-            out.strokeRect(Rect::fromSize({box.min.x, box.min.y + 2.0f}, glm::vec2{kIconSize - 2.0f}), color, 1.0f);
+            out.fillRect(Rect::fromSize({box.min.x + inset, box.min.y}, {size - inset, stroke}), color);
+            out.fillRect(Rect::fromSize({box.max.x - stroke, box.min.y}, {stroke, size - inset}), color);
+            out.strokeRect(Rect::fromSize({box.min.x, box.min.y + inset}, glm::vec2{size - inset}), color, stroke);
             break;
         case WindowIcon::Close:
             if (auto *text = shaper())
             {
-                /// A one-pixel offset per side keeps the diagonals as thick at any size.
-                static constexpr f32 t = 1.0f / kIconSize;
+                /// A twelfth of the cell: a pixel at the default size, and the same shape at any other, which is
+                /// what lets the atlas share one cell per (id, size) however the icon is sized.
+                static constexpr f32 t = 1.0f / 12.0f;
                 static constexpr std::array<glm::vec2, 4> falling{{{0, t}, {t, 0}, {1, 1 - t}, {1 - t, 1}}};
                 static constexpr std::array<glm::vec2, 4> rising{{{0, 1 - t}, {1 - t, 0}, {1, t}, {t, 1}}};
                 icon::convex(out, *text, box, falling, kCloseFallingId, color);
@@ -79,15 +72,15 @@ class DecorationIcon final : public Widget
 
   private:
     WindowIcon _icon;
+    const WindowChrome &_chrome;
 };
 
-Button &addControl(Widget &parent, const char *name, const ColorSet &colors)
+Button &addControl(Widget &parent, const char *name)
 {
     auto &button = parent.add<Button>();
     button.setName(name);
     button.setAccessibleName(name);
     button.setCursor(wma::SystemCursor::Default);
-    button.style().fill(colors).textColor({1, 1, 1, 1}).outline({0, 0, 0, 0}, 0).rounded(0).pad(0);
     return button;
 }
 
@@ -154,24 +147,20 @@ DefaultWindowDecoration::DefaultWindowDecoration()
 {
     setName("Window decoration");
     setPart(Part::TitleBar);
-    style().fill({0.006f, 0.006f, 0.006f, 1}).outline({0, 0, 0, 0}, 0).rounded(0).pad(0);
 
     _title = &add<Label>();
     //! The title is part of the draggable bar, not a click target of its own.
     _title->setHitTestVisible(false);
-    _title->setFontSize(16);
-    _title->style().textColor({0.82f, 0.82f, 0.82f, 1});
 
-    /// Linear colors retain the intended dark surface on an sRGB swapchain.
-    _minimize =
-        &addControl(*this, "Minimize", {{0, 0, 0, 0}, {0.055f, 0.055f, 0.055f, 1}, {0.032f, 0.032f, 0.032f, 1}});
-    _maximize = &addControl(*this, "Maximize", {{0, 0, 0, 0}, {0.015f, 0.19f, 0.62f, 1}, {0.01f, 0.12f, 0.38f, 1}});
-    _close = &addControl(*this, "Close", {{0, 0, 0, 0}, {0.65f, 0.018f, 0.035f, 1}, {0.43f, 0.009f, 0.018f, 1}});
-    _minimize->add<DecorationIcon>(WindowIcon::Minimize);
-    _maximizeIcon = &_maximize->add<DecorationIcon>(WindowIcon::Maximize);
-    _restoreIcon = &_maximize->add<DecorationIcon>(WindowIcon::Restore);
+    _minimize = &addControl(*this, "Minimize");
+    _maximize = &addControl(*this, "Maximize");
+    _close = &addControl(*this, "Close");
+    _minimize->add<DecorationIcon>(WindowIcon::Minimize, _chrome);
+    _maximizeIcon = &_maximize->add<DecorationIcon>(WindowIcon::Maximize, _chrome);
+    _restoreIcon = &_maximize->add<DecorationIcon>(WindowIcon::Restore, _chrome);
     _restoreIcon->setVisibility(Visibility::Collapsed);
-    _close->add<DecorationIcon>(WindowIcon::Close);
+    _close->add<DecorationIcon>(WindowIcon::Close, _chrome);
+    _applyChrome();
 
     _minimize->clicked.connect(
         [this]
@@ -216,15 +205,43 @@ void DefaultWindowDecoration::update(wma::IWindowManager &window, std::string_vi
     }
 }
 
+void DefaultWindowDecoration::setChrome(const WindowChrome &chrome)
+{
+    _chrome = chrome;
+    _applyChrome();
+}
+
+const WindowChrome &DefaultWindowDecoration::chrome() const noexcept
+{
+    return _chrome;
+}
+
+void DefaultWindowDecoration::_applyChrome()
+{
+    style().fill(_chrome.frame).outline({0, 0, 0, 0}, 0).rounded(0).pad(0);
+    _title->setFontSize(_chrome.titleFontSize);
+    _title->style().textColor(_chrome.titleText);
+
+    const auto look = [this](Button &button, const ColorSet &colors)
+    {
+        button.style().fill(colors).textColor(_chrome.icon).outline({0, 0, 0, 0}, 0).rounded(0).pad(0);
+    };
+    look(*_minimize, _chrome.minimize);
+    look(*_maximize, _chrome.maximize);
+    look(*_close, _chrome.close);
+
+    invalidateLayout();
+}
+
 Thickness DefaultWindowDecoration::contentInsets() const noexcept
 {
-    const f32 border = _resizable ? kBorder : 0.0f;
-    return {border, kTitleHeight, border, border};
+    const f32 border = _resizable ? _chrome.border : 0.0f;
+    return {border, _chrome.titleHeight, border, border};
 }
 
 Rect DefaultWindowDecoration::_titleBar() const noexcept
 {
-    return Rect::fromSize(bounds().min, {bounds().width(), std::min(kTitleHeight, bounds().height())});
+    return Rect::fromSize(bounds().min, {bounds().width(), std::min(_chrome.titleHeight, bounds().height())});
 }
 
 void DefaultWindowDecoration::_toggleMaximized()
@@ -245,14 +262,14 @@ wma::WindowHit DefaultWindowDecoration::windowHit(glm::vec2 point) const
     if (_resizable && frame.contains(point) && !overlayTakesPress(point))
     {
         //! The outermost pixels resize, even over Close, so every corner works.
-        const bool top = point.y < frame.min.y + kResizeReach;
-        const bool bottom = point.y >= frame.max.y - kResizeReach;
-        const bool left = point.x < frame.min.x + kResizeReach;
-        const bool right = point.x >= frame.max.x - kResizeReach;
-        const bool nearTop = point.y < frame.min.y + kCornerReach;
-        const bool nearBottom = point.y >= frame.max.y - kCornerReach;
-        const bool nearLeft = point.x < frame.min.x + kCornerReach;
-        const bool nearRight = point.x >= frame.max.x - kCornerReach;
+        const bool top = point.y < frame.min.y + _chrome.resizeReach;
+        const bool bottom = point.y >= frame.max.y - _chrome.resizeReach;
+        const bool left = point.x < frame.min.x + _chrome.resizeReach;
+        const bool right = point.x >= frame.max.x - _chrome.resizeReach;
+        const bool nearTop = point.y < frame.min.y + _chrome.cornerReach;
+        const bool nearBottom = point.y >= frame.max.y - _chrome.cornerReach;
+        const bool nearLeft = point.x < frame.min.x + _chrome.cornerReach;
+        const bool nearRight = point.x >= frame.max.x - _chrome.cornerReach;
         if ((top && nearLeft) || (left && nearTop))
             return TopLeft;
         if ((top && nearRight) || (right && nearTop))
@@ -279,7 +296,7 @@ void DefaultWindowDecoration::arrangeContent(const Rect &)
 
     /// Full-height and flush right, like native caption buttons, so a maximized
     /// window's corner still hits Close. Narrow surfaces shrink them, never reorder.
-    const f32 buttonWidth = std::min(kButtonWidth, bar.width() / 3.0f);
+    const f32 buttonWidth = std::min(_chrome.buttonWidth, bar.width() / 3.0f);
     const f32 controlsStart = bar.max.x - 3.0f * buttonWidth;
     f32 x = controlsStart;
     for (Button *button : {_minimize, _maximize, _close})
@@ -289,8 +306,8 @@ void DefaultWindowDecoration::arrangeContent(const Rect &)
     }
 
     /// Centred on the window, sliding left only when it would reach the controls.
-    const f32 left = bar.min.x + kTitleInset;
-    const f32 right = controlsStart - kTitleGap;
+    const f32 left = bar.min.x + _chrome.titleInset;
+    const f32 right = controlsStart - _chrome.titleGap;
     const f32 width = std::clamp(_title->desiredSize().x, 0.0f, std::max(0.0f, right - left));
     const f32 titleX = std::max(left, std::min(bar.center().x - width * 0.5f, right - width));
     _title->arrange(Rect::fromSize({titleX, bar.min.y}, {width, bar.height()}));

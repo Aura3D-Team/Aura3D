@@ -58,10 +58,10 @@ Press **Escape** to quit — every Aura3D app gets this for free (see
 Open `apps/Sandbox/settings.json` and change:
 
 ```json
-"renderer": { "backend": "vulkan" }
+"renderer": { "api": "vulkan" }
 ```
 
-to `"opengl"` or `"cpu"`, then rerun — same scene, same code, different
+to `"opengl"` or `"software"`, then rerun — same scene, same code, different
 graphics API. This is the core of how Aura3D is meant to be used: your game
 logic is written once against `IRenderer` and never knows which backend is
 actually active.

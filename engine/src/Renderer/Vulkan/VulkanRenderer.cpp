@@ -54,9 +54,6 @@ namespace
     return attributes;
 }
 
-//! Camera slots per frame in flight; a frame's cameras past this overwrite the last slot.
-constexpr u32 kTransformSlots = 1024;
-
 void declareBatchInterface(VkGraphicsPipelineManager &pipeline, u32 bindlessTextureCapacity)
 {
     pipeline.resetInterface();
@@ -170,19 +167,20 @@ void VulkanRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     //! for the backend that does share the engine's pool.
     (void)jobs;
 
-    const bool enableValidation = settings->getValidationLayers();
+    const bool enableValidation = settings->get(setting::vulkanValidation);
 
     _vmaConfig = VulkanMemoryManager::loadConfig(settings);
     _memoryManager = std::make_unique<VulkanMemoryManager>();
 
-    createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
+    createWindow(settings->windowTitle().c_str(), settings->windowBackend());
     createCoreObjects(enableValidation);
 
     // Only actually request it from VMA if the device genuinely supports it
     // (see VkDeviceManager::supportsBufferDeviceAddress)
     _vmaConfig.bufferDeviceAddress = _vmaConfig.bufferDeviceAddress && _vkDeviceManager->supportsBufferDeviceAddress();
 
-    _msaaSamples = resolveSampleCount(settings->getMsaaSamples(), _vkDeviceManager->getMaxUsableSampleCount());
+    _msaaSamples =
+        resolveSampleCount(settings->get(setting::rendererMsaa), _vkDeviceManager->getMaxUsableSampleCount());
 
     createResourceManagers();
     buildSwapchainResources();
@@ -285,13 +283,16 @@ void VulkanRenderer::createResourceManagers()
     _vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(dev);
 
     //! Zero configured workers selects hardware concurrency.
-    const int configuredThreads = AuraSettings::get()->getCpuThreads();
+    const int configuredThreads = AuraSettings::get()->get(setting::rendererCpuThreads);
     const unsigned detected = std::thread::hardware_concurrency();
     _recordWorkerCount = configuredThreads > 0 ? static_cast<u32>(configuredThreads) : (detected > 0 ? detected : 1u);
 
     //! The pool is built by the first drawMeshes() large enough to use it, so a
     //! scene that never reaches that size runs without the worker threads.
     INK_VERBOSE << "Command recording workers: " << _recordWorkerCount;
+
+    _minDrawsToThread = static_cast<size_t>(AuraSettings::get()->get(setting::vulkanMinDrawsToThread));
+    _minDrawsPerChunk = static_cast<size_t>(AuraSettings::get()->get(setting::vulkanMinDrawsPerChunk));
 }
 
 void VulkanRenderer::setupPipeline(const std::string &vertShaderPath, const std::string &fragShaderPath)
@@ -308,13 +309,26 @@ void VulkanRenderer::setupPipeline(const std::string &vertShaderPath, const std:
     }
 }
 
-void VulkanRenderer::buildSwapchainResources()
+wma::WindowDetails VulkanRenderer::drawableDetails() const
 {
     const auto framebuffer = _windowManagerApi->getFramebufferSize();
-    auto drawableDetails = *_windowManagerApi->getWindowDetails();
-    drawableDetails.width = framebuffer.width;
-    drawableDetails.height = framebuffer.height;
-    _vkSwapChainManager->createSwapChain(&drawableDetails, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get(), 2,
+    auto details = *_windowManagerApi->getWindowDetails();
+    details.width = framebuffer.width;
+    details.height = framebuffer.height;
+    return details;
+}
+
+bool VulkanRenderer::swapchainMatchesSurface()
+{
+    auto details = drawableDetails();
+    return _vkSwapChainManager->matchesSurface(*_vkDeviceManager->getPhysicalDevice(), *_vkSurfaceManager->getSurface(),
+                                               &details);
+}
+
+void VulkanRenderer::buildSwapchainResources()
+{
+    auto details = drawableDetails();
+    _vkSwapChainManager->createSwapChain(&details, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get(), 2,
                                          _windowManagerApi->transparentFramebuffer());
     _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
                                            _vkSwapChainManager->getChoosedSurfaceFormat()->format, _vkImageViewData);
@@ -347,11 +361,12 @@ void VulkanRenderer::createUniformBuffers()
      * the buffers it protects must be too.
      */
     const u32 framesInFlight = GetMaxFramesInFlight();
+    _transformSlots = static_cast<u32>(AuraSettings::get()->get(setting::vulkanTransformSlots));
 
     const VkPhysicalDeviceProperties *properties = nullptr;
     vmaGetPhysicalDeviceProperties(_memoryManager->getAllocator(), &properties);
     _vkUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight, sizeof(gfx::TransformUBO),
-                                                  kTransformSlots, properties->limits.minUniformBufferOffsetAlignment);
+                                                  _transformSlots, properties->limits.minUniformBufferOffsetAlignment);
 
     for (u32 i = 0; i < framesInFlight; ++i)
     {
@@ -924,9 +939,8 @@ void VulkanRenderer::beginFrame()
             // escape the render loop and abort the process.
             INK_ERROR << "recreateSurfaceAndSwapchain failed, will retry: " << e.what();
             windowFlags->surfaceLost = true;
+            return;
         }
-
-        return;
     }
 
     if (windowFlags->resized)
@@ -934,25 +948,29 @@ void VulkanRenderer::beginFrame()
         windowFlags->resized = false;
         _targetStale = true;
 
-        try
+        //! Size events repeat without the size changing (a system bar appearing, a focus change), and a rebuild
+        //! is a blank stretch the user sees; only an out-of-date swapchain or a different extent earns one.
+        if (_vkSwapChainManager->outOfDate() || !swapchainMatchesSurface())
         {
-            handleWindowChanges();
+            try
+            {
+                handleWindowChanges();
+            }
+            catch (const AuraException &e)
+            {
+                // A plain resize can reuse a VkSurfaceKHR whose backing window
+                // already died out from under it e.g. the transient portrait
+                // relayout Android does mid-resume on an orientation-locked
+                // Activity, which fires a resize without ever tripping
+                // surfaceLost first. Only surfaceLost's path actually rebuilds
+                // the surface (not just the swapchain), so route recovery
+                // through it rather than letting the exception reach the top of
+                // the render loop and abort the process.
+                INK_ERROR << "handleWindowChanges failed, forcing surface recreation: " << e.what();
+                windowFlags->surfaceLost = true;
+                return;
+            }
         }
-        catch (const AuraException &e)
-        {
-            // A plain resize can reuse a VkSurfaceKHR whose backing window
-            // already died out from under it e.g. the transient portrait
-            // relayout Android does mid-resume on an orientation-locked
-            // Activity, which fires a resize without ever tripping
-            // surfaceLost first. Only surfaceLost's path actually rebuilds
-            // the surface (not just the swapchain), so route recovery
-            // through it rather than letting the exception reach the top of
-            // the render loop and abort the process.
-            INK_ERROR << "handleWindowChanges failed, forcing surface recreation: " << e.what();
-            windowFlags->surfaceLost = true;
-        }
-
-        return;
     }
 
     if (!_pipelineReady)
@@ -1130,6 +1148,11 @@ void VulkanRenderer::endFrame()
             _windowManagerApi->getWindowFlags());
     }
 
+    //! A rotation can raise its size event before the surface has the new size; the swapchain was then built to the
+    //! old one, and Android reports that only as the suboptimal result a rotated phone gives permanently.
+    if (_vkSwapChainManager->takeUnverified() && !swapchainMatchesSurface())
+        _windowManagerApi->getWindowFlags()->resized = true;
+
     AURA_FRAME_END();
 
     //! A present that fails raises resized or surfaceLost, which needsFrame() reports.
@@ -1157,7 +1180,7 @@ void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)
 void VulkanRenderer::publishTransform()
 {
     //! Recorded draws read their slot at GPU time, so a full ring is never reused.
-    if (_transformSlotsUsed < kTransformSlots)
+    if (_transformSlotsUsed < _transformSlots)
         _vkUniformBufferManager->updateUniformBuffer(_currentFrame, _currentTransform, _transformSlotsUsed++);
 }
 
@@ -1288,11 +1311,8 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     VkFramebuffer framebuffer = _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex];
 
     // Small batches stay inline to avoid worker wakeups and secondary-buffer setup.
-    constexpr size_t kMinDrawsToThread = 512;
-    constexpr size_t kMinDrawsPerChunk = 128;
-
-    const size_t maxChunks = _resolvedDraws.size() / kMinDrawsPerChunk;
-    const size_t chunkCount = (_resolvedDraws.size() < kMinDrawsToThread)
+    const size_t maxChunks = _resolvedDraws.size() / _minDrawsPerChunk;
+    const size_t chunkCount = (_resolvedDraws.size() < _minDrawsToThread)
                                   ? 1
                                   : std::min<size_t>(_recordWorkerCount, std::max<size_t>(maxChunks, 1));
 

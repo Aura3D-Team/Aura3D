@@ -51,7 +51,7 @@ void CPURenderer::initialize(aura3d::AuraSettings *settings, const JobSystem *jo
     //! constructor comment).
     _jobs = jobs;
 
-    createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
+    createWindow(settings->windowTitle().c_str(), settings->windowBackend());
 }
 
 void CPURenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)

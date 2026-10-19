@@ -47,7 +47,7 @@ void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     //! Unused: this backend has no CPU-side worker pool of its own to share.
     (void)jobs;
 
-    createWindow(settings->getWindowTitle().c_str(), settings->getWindowBackend());
+    createWindow(settings->windowTitle().c_str(), settings->windowBackend());
     loadOpenGLEntryPoints();
 
     _vertexMgr = std::make_unique<GlVertexBufferManager>();

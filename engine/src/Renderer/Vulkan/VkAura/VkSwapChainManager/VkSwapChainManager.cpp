@@ -3,6 +3,7 @@
 #include "aura/Core/AuraException/AuraException.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace aura3d
 {
@@ -63,8 +64,17 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
 {
     _choosedSurfaceFormat = _chooseSwapSurfaceFormat(_swapChainSupportDetails.formats);
     _choosedPresentMode =
-        _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, AuraSettings::get()->getVSyncMode());
+        _chooseSwapPresentMode(_swapChainSupportDetails.presentModes, AuraSettings::get()->presentMode());
     _choosedExtent = chooseSwapExtent(_swapChainSupportDetails.capabilities, windowDetails);
+    _outOfDate = false;
+    _unverified = true;
+
+    const VkSurfaceCapabilitiesKHR &caps = _swapChainSupportDetails.capabilities;
+    INK_VERBOSE << "Swapchain " << _choosedExtent.width << "x" << _choosedExtent.height << " | window "
+                << windowDetails->width << "x" << windowDetails->height << " | surface current "
+                << caps.currentExtent.width << "x" << caps.currentExtent.height << ", transform "
+                << static_cast<u32>(caps.currentTransform) << " | present mode "
+                << static_cast<i32>(_choosedPresentMode);
 
     /*
      * minImageCount + 1: one image being presented, one to render into.
@@ -181,6 +191,7 @@ u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::Window
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
+        _outOfDate = true;
         // A stale swapchain never repairs itself: nothing else observes
         // VK_ERROR_OUT_OF_DATE_KHR here, so unless a real
         // SDL_EVENT_WINDOW_RESIZED happens to fire too, this would otherwise
@@ -229,7 +240,31 @@ void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore *rend
     if (result == VK_ERROR_SURFACE_LOST_KHR)
         windowFlags->surfaceLost = true;
     else if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        _outOfDate = true;
         windowFlags->resized = true;
+    }
+}
+
+bool VkSwapChainManager::outOfDate() const noexcept
+{
+    return _outOfDate;
+}
+
+bool VkSwapChainManager::takeUnverified() noexcept
+{
+    return std::exchange(_unverified, false);
+}
+
+bool VkSwapChainManager::matchesSurface(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+                                        wma::WindowDetails *drawable)
+{
+    VkSurfaceCapabilitiesKHR capabilities;
+    if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities) != VK_SUCCESS)
+        return false;
+
+    const VkExtent2D wanted = chooseSwapExtent(capabilities, drawable);
+    return wanted.width == _choosedExtent.width && wanted.height == _choosedExtent.height;
 }
 
 void VkSwapChainManager::transitionImageLayout(VkCommandBuffer commandBuffer, const u32 &imageIndex,
@@ -335,6 +370,31 @@ void VkSwapChainManager::initSwapChainSupportDetails(VkPhysicalDevice physicalDe
 VkExtent2D VkSwapChainManager::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities,
                                                 wma::WindowDetails *windowDetails)
 {
+    //! A surface that fixes its size (Android, X11) is the authority: a window event can arrive before the surface
+    //! has settled, and a swapchain built to the stale number is then scaled or cropped.
+    if (capabilities.currentExtent.width != UINT32_MAX && capabilities.currentExtent.height != UINT32_MAX)
+    {
+        VkExtent2D extent = capabilities.currentExtent;
+
+        //! A display turned a quarter from its panel (Android, a phone in landscape) reports the extent in the
+        //! panel's orientation, while a swapchain with the identity pre-transform, as createSwapChain() asks for,
+        //! is read in the window's. Built to the panel's, the image comes out rotated and stretched. The window
+        //! says which way round it is.
+        constexpr VkSurfaceTransformFlagsKHR kQuarterTurns = VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR |
+                                                             VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR |
+                                                             VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_90_BIT_KHR |
+                                                             VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_270_BIT_KHR;
+        if ((capabilities.currentTransform & kQuarterTurns) != 0 &&
+            (capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0 &&
+            windowDetails != nullptr && windowDetails->width > 0 && windowDetails->height > 0)
+        {
+            const bool windowIsWide = windowDetails->width >= windowDetails->height;
+            if ((extent.width >= extent.height) != windowIsWide)
+                std::swap(extent.width, extent.height);
+        }
+        return extent;
+    }
+
     VkExtent2D actualExtent = {static_cast<u32>(windowDetails->width), static_cast<u32>(windowDetails->height)};
 
     actualExtent.width =
@@ -373,13 +433,7 @@ VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<Vk
 {
     switch (mode)
     {
-    case VSyncMode::AutoVsync:
-        // FifoRelaxed, then Fifo (always supported).
-        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
-            return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-        return VK_PRESENT_MODE_FIFO_KHR;
-
-    case VSyncMode::AutoNoVsync:
+    case VSyncMode::Uncapped:
         // Immediate, then Mailbox, then Fifo (always supported).
         if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
             return VK_PRESENT_MODE_IMMEDIATE_KHR;

@@ -199,4 +199,5 @@ Aura3D/
 
 ## License
 
-See [LICENSE](LICENSE).
+Apache-2.0 — [LICENSE](LICENSE), [NOTICE](NOTICE). Bundled and linked third-party
+code: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

@@ -47,6 +47,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
     INK_VERBOSE << "Found " << _physicaldeviceCount << " Vulkan physical device(s).";
 
     u32 bestScore = 0;
+    const std::string gpuPreference = aura3d::AuraSettings::get()->get(aura3d::setting::vulkanGpu);
 
     for (const VkPhysicalDevice &device : devices)
     {
@@ -72,7 +73,6 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         // graphics.gpu_preference steers which device type wins the +1000 type
         // bonus; "any" drops the type bonus entirely and lets capability alone
         // (API version, image limits, geometry shader) decide.
-        const std::string gpuPreference = aura3d::AuraSettings::get()->getGpuPreference();
         if (gpuPreference == "integrated")
         {
             if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
@@ -258,8 +258,8 @@ u32 VkDeviceManager::_queryMaxBindlessTextures() const
      * whose budget is already far above the request should still get exactly
      * the request, with no clamp and no warning.
      */
-    constexpr u32 kReservedForOtherBindings = 16;
-    deviceBudget = (deviceBudget > kReservedForOtherBindings) ? (deviceBudget - kReservedForOtherBindings) : 0;
+    const u32 headroom = static_cast<u32>(AuraSettings::get()->get(setting::vulkanDescriptorHeadroom));
+    deviceBudget = (deviceBudget > headroom) ? (deviceBudget - headroom) : 0;
 
     const u32 limit = std::min(kDesiredBindlessTextures, deviceBudget);
 

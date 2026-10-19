@@ -320,6 +320,117 @@ struct Harness
                                                     }));
 }
 
+void testEffectScope()
+{
+    DrawList list;
+    list.begin(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}));
+    const Rect box = Rect::fromSize({10.0f, 10.0f}, {20.0f, 20.0f});
+
+    {
+        const EffectScope outer(list, 0.5f, {0.0f, 4.0f});
+        list.fillRect(box, glm::vec4{1.0f});
+        {
+            const EffectScope inner(list, 0.5f, {3.0f, 0.0f});
+            list.fillRect(box, glm::vec4{1.0f});
+        }
+        list.fillRect(box, glm::vec4{1.0f});
+    }
+    list.fillRect(box, glm::vec4{1.0f});
+
+    AURA_CHECK(list.size() == 4, "every rectangle is recorded");
+    const auto commands = list.commands();
+    AURA_CHECK(commands[0].color.a == 0.5f && commands[0].bounds.min.y == 14.0f && commands[0].bounds.min.x == 10.0f,
+               "an effect scales alpha and moves the rectangle");
+    AURA_CHECK(commands[1].color.a == 0.25f && commands[1].bounds.min.x == 13.0f && commands[1].bounds.min.y == 14.0f,
+               "effects nest: opacities multiply and offsets add");
+    AURA_CHECK(commands[2].color.a == 0.5f, "and the inner one pops back to the outer");
+    AURA_CHECK(commands[3].color.a == 1.0f && commands[3].bounds.min.y == 10.0f, "the outer pops back to nothing");
+
+    list.popEffect();
+    list.fillRect(box, glm::vec4{1.0f});
+    AURA_CHECK(list.commands().back().color.a == 1.0f, "an unbalanced pop cannot take the identity");
+
+    list.begin(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}));
+    {
+        const EffectScope shifted(list, 1.0f, {50.0f, 0.0f});
+        const ClipScope clipped(list, Rect::fromSize({0.0f, 0.0f}, {20.0f, 20.0f}));
+        list.fillRect(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}), glm::vec4{1.0f});
+    }
+    list.fillRect(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}), glm::vec4{1.0f});
+    AURA_CHECK(list.size() == 2 && list.commands()[0].clip.min.x == 50.0f && list.commands()[0].clip.max.x == 70.0f,
+               "a clip pushed inside moves with the effect");
+    AURA_CHECK(list.commands()[1].clip.min.x == 0.0f && list.commands()[1].clip.max.x == 100.0f,
+               "and the surface clip is back, unmoved, after it");
+
+    //! A clip already in force when the scope opens does not move, whatever the scope moves.
+    list.begin(Rect::fromSize({0.0f, 0.0f}, {100.0f, 100.0f}));
+    {
+        const ClipScope outer(list, Rect::fromSize({0.0f, 0.0f}, {60.0f, 60.0f}));
+        const EffectScope shifted(list, 1.0f, {30.0f, 0.0f});
+        list.fillRect(Rect::fromSize({0.0f, 0.0f}, {20.0f, 20.0f}), glm::vec4{1.0f});
+        //! Where it would be drawn, 30 to the right, is outside the 60-wide clip: culled, as it would be unshifted.
+        list.fillRect(Rect::fromSize({40.0f, 0.0f}, {20.0f, 20.0f}), glm::vec4{1.0f});
+    }
+    AURA_CHECK(list.size() == 1 && list.commands()[0].bounds.min.x == 30.0f && list.commands()[0].clip.max.x == 60.0f,
+               "a shifted primitive is culled and clipped against the clip it was shifted under");
+}
+
+void testWidgetOpacityAndTranslation()
+{
+    Harness harness;
+    auto &page = harness.root.setContent<Column>();
+    auto &panel = page.add<Column>();
+    panel.layout().width = Length::px(100.0f);
+    panel.layout().height = Length::px(40.0f);
+    panel.style().fill(glm::vec4{1.0f});
+    harness.frame();
+    const Rect resting = panel.bounds();
+
+    const auto panelFill = [&harness, &resting](glm::vec2 shift) -> const DrawCommand *
+    {
+        for (const DrawCommand &command : harness.list.commands())
+            if (command.type == DrawCommandType::Rect && command.bounds.min == resting.min + shift)
+                return &command;
+        return nullptr;
+    };
+
+    panel.setOpacity(0.5f);
+    panel.setTranslation({10.0f, 5.0f});
+    AURA_CHECK(harness.frame(), "either one asks for a repaint");
+    const DrawCommand *moved = panelFill({10.0f, 5.0f});
+    AURA_CHECK(moved != nullptr && moved->color.a == 0.5f, "the fill is drawn moved and half as opaque");
+    AURA_CHECK(panel.bounds().min == resting.min, "without touching layout");
+
+    panel.setOpacity(0.0f);
+    harness.frame();
+    AURA_CHECK(panelFill({10.0f, 5.0f}) == nullptr, "a transparent widget is not recorded at all");
+}
+
+void testHoverFromTransparentKeepsTheColour()
+{
+    Harness harness;
+    harness.root.theme()[Part::DropdownItem].surface = {glm::vec4{0.0f}, glm::vec4{0.8f, 0.9f, 1.0f, 1.0f},
+                                                        glm::vec4{0.0f}};
+    auto &row = harness.root.setContent<Column>().add<Selectable>("Row");
+    row.setPart(Part::DropdownItem);
+    harness.frame();
+
+    harness.root.pointerMoved(row.bounds().center());
+    harness.frame(harness.root.theme().metrics.hoverSeconds * 0.5f);
+
+    const auto fill = std::ranges::find_if(harness.list.commands(),
+                                           [&row](const DrawCommand &command)
+                                           {
+                                               return command.type == DrawCommandType::Rect &&
+                                                      command.bounds.min == row.bounds().min &&
+                                                      command.bounds.max == row.bounds().max;
+                                           });
+    AURA_CHECK(fill != harness.list.commands().end(), "the row draws its surface");
+    AURA_CHECK(fill->color.a > 0.0f && fill->color.a < 1.0f, "part way through it is part way opaque");
+    AURA_CHECK(std::fabs(fill->color.r - 0.8f) < 1e-4f && std::fabs(fill->color.b - 1.0f) < 1e-4f,
+               "and already the hover colour, not that colour mixed with black");
+}
+
 void testClipping()
 {
     DrawList list;
@@ -674,6 +785,62 @@ void testLostFrameIsRedrawnWhileIdle()
     AURA_CHECK(!view.needsDraw(), "and the view idles once the frame reaches the screen");
 }
 
+void testZoomLadderAndBoundsAreTheCallers()
+{
+    RecordingRenderer renderer;
+    UIViewDesc desc;
+    desc.scaling.minZoom = 2.0f; //! Reversed on purpose: bounds are put in order, not trusted.
+    desc.scaling.maxZoom = 1.0f;
+    desc.scaling.zoomSteps = {2.0f, 1.0f, 1.5f};
+    UIView view(renderer, desc);
+
+    AURA_CHECK(view.zoom() == 1.0f, "a view starts at 1, inside its bounds");
+    view.zoomStep(1);
+    AURA_CHECK(view.zoom() == 1.5f, "a ladder given out of order is climbed in order");
+    view.zoomStep(1);
+    view.zoomStep(1);
+    AURA_CHECK(view.zoom() == 2.0f, "and stops at its last rung");
+    view.zoomStep(-1);
+    AURA_CHECK(view.zoom() == 1.5f, "going down takes the rung below");
+    view.setZoom(10.0f);
+    AURA_CHECK(view.zoom() == 2.0f, "setZoom() stops at the view's own bound");
+
+    //! The form docs/14-auraui-toolkit.md shows.
+    UIView documented(renderer,
+                      {.scaling = {.minZoom = 0.75f, .maxZoom = 2.0f, .zoomSteps = {0.75f, 1.0f, 1.5f, 2.0f}}});
+    documented.zoomStep(-1);
+    AURA_CHECK(documented.zoom() == 0.75f, "a ladder written in a desc is the one that is climbed");
+}
+
+void testControlRoundingIsAMetric()
+{
+    Theme theme;
+    AURA_CHECK(theme[Part::Button].rounding == 3.0f, "controls are rounded by 3 unless the theme says otherwise");
+    theme.metrics.controlRounding = 9.0f;
+    theme.applyPalette(Palette::dark());
+    AURA_CHECK(theme[Part::Button].rounding == 9.0f, "and by the metric once the palette is applied again");
+}
+
+void testBottomInsetLeavesTheConfiguredShare()
+{
+    aura3d::test::FakeWindow window;
+    window.details.width = 1000;
+    window.details.height = 400;
+    window.details.decorationMode = wma::DecorationMode::ServerSide;
+    RecordingRenderer renderer;
+    renderer.window = &window;
+    UIViewDesc desc;
+    desc.scaling.minVisibleFraction = 0.5f;
+    UIView view(renderer, desc);
+
+    view.setBottomInset(100.0f);
+    view.update(0.0f);
+    AURA_CHECK(view.root().size().y == 300.0f, "the tree ends above an inset");
+    view.setBottomInset(390.0f);
+    view.update(0.0f);
+    AURA_CHECK(view.root().size().y == 200.0f, "but never past the share the view was told to leave");
+}
+
 [[nodiscard]] bool near(f32 a, f32 b)
 {
     return std::fabs(a - b) < 0.01f;
@@ -870,6 +1037,126 @@ void testAnimationDirtiesFrames()
     AURA_CHECK(settled, "and stops once it has run out");
 }
 
+void testMotionIsThemeAndRootParameters()
+{
+    const auto fillAfterHover = [](f32 seconds)
+    {
+        Harness harness;
+        auto &button = harness.root.setContent<Column>().add<Button>("Hover");
+        harness.root.theme().metrics.hoverSeconds = seconds;
+        harness.frame();
+        harness.root.pointerMoved(button.bounds().center());
+        harness.frame(0.0f);
+        for (const DrawCommand &command : harness.list.commands())
+            if (command.type == DrawCommandType::Rect && command.bounds.min == button.bounds().min)
+                return command.color;
+        return glm::vec4{0.0f};
+    };
+    const glm::vec4 hovered = Theme{}[Part::Button].surface.hovered;
+    const glm::vec4 normal = Theme{}[Part::Button].surface.normal;
+    AURA_CHECK(fillAfterHover(0.0f) == hovered, "with no hover time the surface is hovered at once");
+    AURA_CHECK(fillAfterHover(0.5f) == normal, "and with half a second it has not started to move");
+
+    const auto caretCommands = [](f32 blinkSeconds)
+    {
+        Harness harness;
+        auto &field = harness.root.setContent<Column>().add<TextField>();
+        harness.root.setCaretBlinkSeconds(blinkSeconds);
+        harness.frame();
+        harness.root.setFocus(&field);
+        harness.frame(0.0f);
+        const usize on = harness.list.size();
+        harness.frame(0.7f);
+        return std::pair{on, harness.list.size()};
+    };
+    const auto [shown, hiddenAfter] = caretCommands(0.53f);
+    AURA_CHECK(hiddenAfter + 1 == shown, "the caret is off 0.7 s in, with the default blink");
+    const auto [slowShown, slowAfter] = caretCommands(10.0f);
+    AURA_CHECK(slowAfter == slowShown, "and still on with a ten-second blink");
+}
+
+void testFocusedTextFieldDoesNotKeepTheUiRedrawing()
+{
+    Harness harness;
+    auto &field = harness.root.setContent<Column>().add<TextField>();
+    harness.frame();
+    harness.root.setFocus(&field);
+    harness.frame(0.0f);
+
+    //! The caret flips at 0.53 s; until then nothing on screen changes, so nothing may be recorded again.
+    int recorded = 0;
+    for (int i = 0; i < 20; ++i)
+        recorded += harness.frame(0.016f) ? 1 : 0;
+    AURA_CHECK(recorded == 0, "a focused field leaves the UI idle between caret flips");
+
+    int flips = 0;
+    for (int i = 0; i < 40; ++i)
+        flips += harness.frame(0.016f) ? 1 : 0;
+    AURA_CHECK(flips >= 1 && flips <= 3, "and the frame it does record is the one where the caret changes");
+}
+
+void testCheckMarkAnimationRepaints()
+{
+    Harness harness;
+    auto &box = harness.root.setContent<Column>().add<CheckBox>("Option");
+    harness.frame();
+
+    box.checked = true;
+    //! Nothing is hovered: the mark alone is moving, and each frame of it has to reach the screen.
+    int recorded = 0;
+    for (int i = 0; i < 4; ++i)
+        recorded += harness.frame(0.016f) ? 1 : 0;
+    AURA_CHECK(recorded == 4, "a check mark that is animating re-records every frame, hover or not");
+
+    bool settled = false;
+    for (int i = 0; i < 60 && !settled; ++i)
+        settled = !harness.frame(0.016f);
+    AURA_CHECK(settled, "and the tree idles once it has arrived");
+}
+
+void testUnfocusedTextFieldFinishesItsHover()
+{
+    Harness harness;
+    auto &field = harness.root.setContent<Column>().add<TextField>();
+    harness.frame();
+    harness.root.pointerMoved(field.bounds().center());
+    for (int i = 0; i < 30; ++i)
+        harness.frame(0.016f);
+
+    glm::vec4 fill{0.0f};
+    for (const DrawCommand &command : harness.list.commands())
+        if (command.type == DrawCommandType::Rect && command.bounds.min == field.bounds().min)
+            fill = command.color;
+    AURA_CHECK(fill == Theme{}[Part::TextField].surface.hovered,
+               "a hover over a field that has no focus runs to the end");
+}
+
+void testPopupHasItsOwnSurface()
+{
+    Harness harness;
+    harness.root.setContent<Column>();
+    const glm::vec4 popup{0.9f, 0.1f, 0.1f, 1.0f};
+    harness.root.theme()[Part::Popup].surface = ColorSet::flat(popup);
+
+    auto &menu =
+        harness.root.overlay().open<Menu>(OverlayDesc{.anchor = Rect::fromSize({20.0f, 20.0f}, {40.0f, 20.0f})});
+    menu.addItem("Rename");
+    harness.frame();
+
+    const auto fillOf = [&harness](const Rect &bounds)
+    {
+        for (const DrawCommand &command : harness.list.commands())
+            if (command.type == DrawCommandType::Rect && command.bounds.min == bounds.min &&
+                command.bounds.max == bounds.max)
+                return command.color;
+        return glm::vec4{0.0f};
+    };
+    AURA_CHECK(fillOf(menu.bounds()) == popup, "a menu takes its surface from Part::Popup");
+    AURA_CHECK(harness.root.theme()[Part::Tooltip].surface.normal != popup, "which leaves the tooltip's alone");
+    AURA_CHECK(Theme{}[Part::Popup].surface.normal == Theme{}[Part::Tooltip].surface.normal,
+               "and starts out looking the same");
+}
+
 void testAtlasSurvivesScaleAndFirstFrameMasks()
 {
     Harness harness;
@@ -1020,12 +1307,18 @@ int main()
     testSharedAtlasUploads();
     testInvisibleImageKeepsBatch();
     testGlyphsStayOnDevicePixels();
+    testEffectScope();
+    testHoverFromTransparentKeepsTheColour();
+    testWidgetOpacityAndTranslation();
     testClipping();
     testSingleBatch();
     testFontSizesShareBatch();
     testRoundedCornersAreConstantGeometry();
     testIdleFrameRebuildsNothing();
     testLostFrameIsRedrawnWhileIdle();
+    testZoomLadderAndBoundsAreTheCallers();
+    testControlRoundingIsAMetric();
+    testBottomInsetLeavesTheConfiguredShare();
     testContentScaleSizesTheTreeAndMapsInput();
     testContentScaleMultipliesTheBackingRatio();
     testContentScaleIsClamped();
@@ -1034,6 +1327,11 @@ int main()
     testDisabledIsDrawnFaded();
     testScaleMultipliesVerticesNotLayout();
     testAnimationDirtiesFrames();
+    testMotionIsThemeAndRootParameters();
+    testFocusedTextFieldDoesNotKeepTheUiRedrawing();
+    testCheckMarkAnimationRepaints();
+    testUnfocusedTextFieldFinishesItsHover();
+    testPopupHasItsOwnSurface();
     testAtlasSurvivesScaleAndFirstFrameMasks();
     testStyleMetricsInvalidateLayout();
     testOutlineWithoutFillDrawsAnOutline();

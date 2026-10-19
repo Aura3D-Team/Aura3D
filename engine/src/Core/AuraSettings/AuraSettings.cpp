@@ -2,6 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
+
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 
 #include <wma/wma.hpp>
 
@@ -9,283 +14,243 @@
 
 namespace aura3d
 {
+namespace
+{
+
+//! Lends a source the config shares to a store that owns its sources.
+class SharedSource final : public ISettingsSource
+{
+  public:
+    explicit SharedSource(std::shared_ptr<ISettingsSource> source) : _source(std::move(source))
+    {
+    }
+
+    [[nodiscard]] std::string name() const override
+    {
+        return _source->name();
+    }
+    void load(SettingsSink &sink) override
+    {
+        _source->load(sink);
+    }
+
+  private:
+    std::shared_ptr<ISettingsSource> _source;
+};
+
+[[nodiscard]] std::string_view platformName() noexcept
+{
+#if defined(__ANDROID__)
+    return "android";
+#elif defined(__EMSCRIPTEN__)
+    return "wasm";
+#elif defined(_WIN32)
+    return "windows";
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+    return "ios";
+#elif defined(__APPLE__)
+    return "macos";
+#else
+    return "linux";
+#endif
+}
+
+} // namespace
+
+bool VSyncModeFromString(const std::string &s, VSyncMode &out)
+{
+    const std::string wanted = lowerAscii(s);
+    for (const VSyncMode mode :
+         {VSyncMode::Fifo, VSyncMode::FifoRelaxed, VSyncMode::Mailbox, VSyncMode::Immediate, VSyncMode::Uncapped})
+    {
+        if (wanted == VSyncModeToString(mode))
+        {
+            out = mode;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *VSyncModeToString(VSyncMode mode)
+{
+    switch (mode)
+    {
+    case VSyncMode::Fifo:
+        return "fifo";
+    case VSyncMode::FifoRelaxed:
+        return "fifo_relaxed";
+    case VSyncMode::Mailbox:
+        return "mailbox";
+    case VSyncMode::Immediate:
+        return "immediate";
+    case VSyncMode::Uncapped:
+        return "uncapped";
+    }
+    return "fifo";
+}
+
+bool VSyncModeSyncsToDisplay(VSyncMode mode) noexcept
+{
+    return mode == VSyncMode::Fifo || mode == VSyncMode::FifoRelaxed;
+}
+
+std::string platformSettingsPath(std::string_view path)
+{
+    const std::filesystem::path file{path};
+    return (file.parent_path() / (file.stem().string() + "." + std::string{platformName()} + file.extension().string()))
+        .string();
+}
+
+AuraConfig &AuraConfig::set(Key<bool> key, bool value)
+{
+    _values.emplace_back(std::string{key.path}, value);
+    return *this;
+}
+
+AuraConfig &AuraConfig::set(Key<int> key, int value)
+{
+    _values.emplace_back(std::string{key.path}, static_cast<i64>(value));
+    return *this;
+}
+
+AuraConfig &AuraConfig::set(Key<double> key, double value)
+{
+    _values.emplace_back(std::string{key.path}, value);
+    return *this;
+}
+
+AuraConfig &AuraConfig::set(Key<std::string> key, std::string value)
+{
+    _values.emplace_back(std::string{key.path}, std::move(value));
+    return *this;
+}
+
+AuraConfig &AuraConfig::setChoice(Key<std::string> key, std::string spelling)
+{
+    //! An enum names one of a choice's spellings; given to a free-text key it would be written there as text.
+    const SettingDesc &desc = settingsSchema()[key.index];
+    if (desc.type != SettingType::Choice)
+    {
+        INK_WARN << "Settings: " << key.path << ": is free text, not a choice; the value is ignored";
+        return *this;
+    }
+    return set(key, std::move(spelling));
+}
+
+AuraConfig &AuraConfig::set(Key<std::string> key, wma::WindowBackend value)
+{
+    return setChoice(key, lowerAscii(WindowBackendToString(value)));
+}
+
+AuraConfig &AuraConfig::set(Key<std::string> key, wma::DecorationMode value)
+{
+    return setChoice(key, value == wma::DecorationMode::ClientSide ? "client" : "server");
+}
+
+AuraConfig &AuraConfig::set(Key<std::string> key, wma::AudioBackend value)
+{
+    return setChoice(key, lowerAscii(AudioBackendToString(value)));
+}
+
+AuraConfig &AuraConfig::set(Key<std::string> key, VSyncMode value)
+{
+    return setChoice(key, VSyncModeToString(value));
+}
+
+AuraConfig &AuraConfig::set(Key<std::string> key, ink::LogLevel value)
+{
+    return setChoice(key, lowerAscii(ink::MAP_COLORS_FOR_LEVEL[std::to_underlying(value)].desc));
+}
+
+AuraConfig &AuraConfig::arguments(int argc, const char *const *argv)
+{
+    _commandLine.assign(argv, argv + std::max(argc, 0));
+    return *this;
+}
+
+AuraConfig &AuraConfig::addSource(std::shared_ptr<ISettingsSource> source)
+{
+    _sources.push_back(std::move(source));
+    return *this;
+}
+
 AuraSettings *AuraSettings::get()
 {
     static AuraSettings instance;
     return &instance;
 }
 
-ink::EnhancedJson *AuraSettings::getSettings()
+void AuraSettings::configure(const AuraConfig &config, std::string_view path)
 {
-    return &_settings;
-}
-
-void AuraSettings::setDefaults(const AuraConfig &defaults)
-{
-    _defaults = defaults;
-}
-
-void AuraSettings::reload(const std::string &path)
-{
-    _settings = ink::EnhancedJson::loadFromFile(path);
-
-    //! loadFromFile() reports a missing or malformed file as a null document
-    //! rather than an error, which now matters: an application may legitimately
-    //! ship none, so the two cases have to read differently in the log.
-    if (_settings.is_null())
+    std::vector<std::unique_ptr<ISettingsSource>> sources;
+    sources.push_back(std::make_unique<MemorySource>("code", config.values()));
+    if (!path.empty())
     {
-        _settings = ink::EnhancedJson::object();
-        INK_WARN << "AuraSettings: no readable configuration at '" << path << "'; running on the compiled-in defaults";
-        return;
+        sources.push_back(std::make_unique<JsonFileSource>(std::string{path}, true));
+        sources.push_back(std::make_unique<JsonFileSource>(platformSettingsPath(path), false));
     }
-
-    INK_INFO << "AuraSettings: loaded configuration from " << path;
+    for (const std::shared_ptr<ISettingsSource> &source : config.sources())
+        sources.push_back(std::make_unique<SharedSource>(source));
+    sources.push_back(std::make_unique<EnvironmentSource>());
+    sources.push_back(std::make_unique<CommandLineSource>(config.commandLine()));
+    setSources(std::move(sources));
 }
 
-int AuraSettings::getWindowWidth() const
+std::string AuraSettings::windowTitle() const
 {
-    return _settings.getPath<int>("/window/width", _defaults.window.width);
+    std::string title = get(setting::windowTitle);
+    return title.empty() ? std::string{APPLICATION_NAME} : title;
 }
 
-int AuraSettings::getWindowHeight() const
+wma::WindowBackend AuraSettings::windowBackend() const
 {
-    return _settings.getPath<int>("/window/height", _defaults.window.height);
+    wma::WindowBackend backend = wma::WindowBackend::SDL3;
+    WindowBackendFromString(get(setting::windowBackend), backend);
+    return backend;
 }
 
-std::string AuraSettings::getWindowTitle() const
+wma::DecorationMode AuraSettings::windowDecorations() const
 {
-    const std::string &fallback = _defaults.window.title;
-
-    return _settings.getPath<std::string>("/window/title", fallback.empty() ? std::string{APPLICATION_NAME} : fallback);
+    return get(setting::windowDecorations) == "client" ? wma::DecorationMode::ClientSide
+                                                       : wma::DecorationMode::ServerSide;
 }
 
-wma::WindowBackend AuraSettings::getWindowBackend() const
+VSyncMode AuraSettings::presentMode() const
 {
-    const std::string backendStr = _settings.getPath<std::string>("/window/backend", std::string());
-
-    if (backendStr.empty())
-        return _defaults.window.backend;
-
-    wma::WindowBackend backend;
-    if (WindowBackendFromString(backendStr, backend))
-        return backend;
-
-    INK_WARN << "AuraSettings: unsupported window backend '" << backendStr << "'; falling back to "
-             << WindowBackendToString(_defaults.window.backend);
-    return _defaults.window.backend;
+    VSyncMode mode = VSyncMode::Fifo;
+    VSyncModeFromString(get(setting::presentMode), mode);
+    return mode;
 }
 
-bool AuraSettings::getWindowResizable() const
+wma::AudioBackend AuraSettings::audioBackend() const
 {
-    return _settings.getPath<bool>("/window/resizable", _defaults.window.resizable);
-}
-
-bool AuraSettings::getFullscreen() const
-{
-    return _settings.getPath<bool>("/window/fullscreen", _defaults.window.fullscreen);
-}
-
-wma::DecorationMode AuraSettings::getWindowDecorations() const
-{
-    std::string mode = _settings.getPath<std::string>("/window/decorations", std::string());
-    if (mode.empty())
-        return _defaults.window.decorations;
-
-    std::ranges::transform(mode, mode.begin(),
-                           [](unsigned char c)
-                           {
-                               return static_cast<char>(std::tolower(c));
-                           });
-    if (mode == "server")
-        return wma::DecorationMode::ServerSide;
-    if (mode == "client")
-        return wma::DecorationMode::ClientSide;
-
-    INK_WARN << "AuraSettings: unsupported window decorations '" << mode << "'; expected \"server\" or \"client\"";
-    return _defaults.window.decorations;
-}
-
-bool AuraSettings::getVSync() const
-{
-    return _settings.getPath<bool>("/window/vsync", _defaults.window.vsync);
-}
-
-VSyncMode AuraSettings::getVSyncMode() const
-{
-    const std::string modeStr = _settings.getPath<std::string>("/window/vsync_mode", std::string());
-
-    VSyncMode mode;
-    if (!modeStr.empty() && VSyncModeFromString(modeStr, mode))
-    {
-        return mode;
-    }
-
-    if (_defaults.window.vsyncMode)
-        return *_defaults.window.vsyncMode;
-
-    return getVSync() ? VSyncMode::Fifo : VSyncMode::AutoNoVsync;
-}
-
-int AuraSettings::getFPSLimit() const
-{
-    return _settings.getPath<int>("/window/fps_limit", _defaults.window.fpsLimit);
-}
-
-std::string AuraSettings::getRendererBackend() const
-{
-    return _settings.getPath<std::string>("/renderer/backend", _defaults.renderer.backend);
-}
-
-bool AuraSettings::getValidationLayers() const
-{
-#ifdef NDEBUG
-    constexpr bool kBuildDefault = false;
-#else
-    constexpr bool kBuildDefault = true;
-#endif
-    return _settings.getPath<bool>("/renderer/validation_layers",
-                                   _defaults.renderer.validationLayers.value_or(kBuildDefault));
-}
-
-int AuraSettings::getMaxFramesInFlight() const
-{
-    return _settings.getPath<int>("/renderer/max_frames_in_flight", _defaults.renderer.maxFramesInFlight);
-}
-
-bool AuraSettings::getGpuTiming() const
-{
-#ifdef AURA_PROFILE_FRAME
-    constexpr bool kBuildDefault = true;
-#else
-    constexpr bool kBuildDefault = false;
-#endif
-    return _settings.getPath<bool>("/renderer/gpu_timing", _defaults.renderer.gpuTiming.value_or(kBuildDefault));
-}
-
-std::string AuraSettings::getGpuPreference() const
-{
-    return _settings.getPath<std::string>("/graphics/gpu_preference", _defaults.graphics.gpuPreference);
-}
-
-int AuraSettings::getMsaaSamples() const
-{
-    return _settings.getPath<int>("/graphics/msaa_samples", _defaults.graphics.msaaSamples);
-}
-
-int AuraSettings::getCpuThreads() const
-{
-    return _settings.getPath<int>("/graphics/cpu_threads", _defaults.graphics.cpuThreads);
-}
-
-wma::AudioBackend AuraSettings::getAudioBackend() const
-{
-    const std::string backendStr = _settings.getPath<std::string>("/audio/backend", std::string());
-
-    //! An absent key defers to the compiled-in choice; an explicit "auto" asks
-    //! for the platform's, which is what it has always meant.
-    if (backendStr.empty())
-    {
-        return _defaults.audio.backend ? *_defaults.audio.backend : wma::getDefaultAudioBackend();
-    }
-
-    if (backendStr == "auto")
+    const std::string name = get(setting::audioBackend);
+    if (name == "auto")
         return wma::getDefaultAudioBackend();
 
-    wma::AudioBackend backend;
-    if (AudioBackendFromString(backendStr, backend))
+    wma::AudioBackend backend = wma::getDefaultAudioBackend();
+    if (!AudioBackendFromString(name, backend))
+        return wma::getDefaultAudioBackend();
+
+    if (!wma::isAudioBackendAvailable(backend))
     {
-        if (!wma::isAudioBackendAvailable(backend))
-        {
-            INK_WARN << "AuraSettings: audio backend '" << backendStr
-                     << "' is not compiled into this build of wma; using the default";
-            return wma::getDefaultAudioBackend();
-        }
-        return backend;
+        INK_WARN << "Settings: audio backend '" << name
+                 << "' is not compiled into this build of wma; using the default";
+        return wma::getDefaultAudioBackend();
     }
-
-    INK_WARN << "AuraSettings: unsupported audio backend '" << backendStr << "'; falling back to the platform default";
-    return wma::getDefaultAudioBackend();
+    return backend;
 }
 
-f32 AuraSettings::getMasterVolume() const
+ink::LogLevel AuraSettings::logLevel() const
 {
-    return _settings.getPath<f32>("/audio/master_volume", _defaults.audio.masterVolume);
-}
-
-int AuraSettings::getAudioSampleRate() const
-{
-    return _settings.getPath<int>("/audio/sample_rate", _defaults.audio.sampleRate);
-}
-
-int AuraSettings::getAudioChannels() const
-{
-    return _settings.getPath<int>("/audio/channels", _defaults.audio.channels);
-}
-
-int AuraSettings::getAudioBufferFrames() const
-{
-    return _settings.getPath<int>("/audio/buffer_frames", _defaults.audio.bufferFrames);
-}
-
-int AuraSettings::getAudioMaxVoices() const
-{
-    return _settings.getPath<int>("/audio/max_voices", _defaults.audio.maxVoices);
-}
-
-std::string AuraSettings::getShadersPath() const
-{
-    return _settings.getPath<std::string>("/paths/shaders", _defaults.paths.shaders);
-}
-
-std::string AuraSettings::getTexturesPath() const
-{
-    return _settings.getPath<std::string>("/paths/textures", _defaults.paths.textures);
-}
-
-std::string AuraSettings::getModelsPath() const
-{
-    return _settings.getPath<std::string>("/paths/models", _defaults.paths.models);
-}
-
-std::string AuraSettings::getAudioPath() const
-{
-    return _settings.getPath<std::string>("/paths/audio", _defaults.paths.audio);
-}
-
-std::string AuraSettings::getLogsPath() const
-{
-    return _settings.getPath<std::string>("/paths/logs", _defaults.paths.logs);
-}
-
-ink::LogLevel AuraSettings::getLogLevel() const
-{
-#ifdef NDEBUG
-    constexpr ink::LogLevel kBuildDefault = ink::LogLevel::INFO;
-#else
-    constexpr ink::LogLevel kBuildDefault = ink::LogLevel::TRACE;
-#endif
-    const ink::LogLevel fallback = _defaults.logging.level.value_or(kBuildDefault);
-
-    const std::string levelStr = _settings.getPath<std::string>("/logging/level", std::string());
-    if (levelStr.empty())
-        return fallback;
-
-    std::string up;
-    up.reserve(levelStr.size());
-    for (const char c : levelStr)
-        up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-
+    const std::string name = get(setting::loggingLevel);
     for (u32 i = 0; i < std::to_underlying(ink::LogLevel::COUNT); ++i)
     {
-        if (up == ink::MAP_COLORS_FOR_LEVEL[i].desc)
+        if (name == lowerAscii(ink::MAP_COLORS_FOR_LEVEL[i].desc))
             return static_cast<ink::LogLevel>(i);
     }
-    return fallback;
-}
-
-bool AuraSettings::getLogToFile() const
-{
-    return _settings.getPath<bool>("/logging/write_to_file", _defaults.logging.toFile);
+    return ink::LogLevel::INFO;
 }
 
 } // namespace aura3d

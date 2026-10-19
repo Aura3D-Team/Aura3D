@@ -153,6 +153,9 @@ class VulkanRenderer : public IRenderer
     void recreateSurfaceAndSwapchain();
     void createResourceManagers();
     void buildSwapchainResources();
+    //! The window's details with the size swapped for the framebuffer's: what the swapchain is sized from.
+    [[nodiscard]] wma::WindowDetails drawableDetails() const;
+    [[nodiscard]] bool swapchainMatchesSurface();
     void destroySwapchainResources();
     void createDepthResources();
     void destroyDepthResources();
@@ -232,8 +235,9 @@ class VulkanRenderer : public IRenderer
     //! Opaque white in slot zero supplies untextured draws and invalid handles.
     TextureHandle _fallbackTexture;
 
-    //! Cameras this frame has written to its slot of the transform ring.
+    //! Cameras this frame has written to its slot of the transform ring, of _transformSlots.
     u32 _transformSlotsUsed = 0;
+    u32 _transformSlots = 0;
 
     VkFixedArray<VkCommandBuffer> _cmdBuffers;
 
@@ -247,13 +251,15 @@ class VulkanRenderer : public IRenderer
     std::vector<ResolvedDraw> _resolvedDraws;
 
     /*
-     * Workers for drawMeshes(). Sized from graphics.cpu_threads, the same
+     * Workers for drawMeshes(). Sized from renderer.cpu_threads, the same
      * setting (and same auto-detect-when-0 convention) the software renderer's
      * rasteriser uses -- only one backend is ever live per run, so the two
      * cannot contend for it. Built by the first drawMeshes() that fans out.
      */
     std::unique_ptr<ink::ParallelProcessor> _recordPool;
     u32 _recordWorkerCount = 1;
+    size_t _minDrawsToThread = 0;
+    size_t _minDrawsPerChunk = 1;
 
     u32 _currentFrame = 0;
     u32 _currentImageIndex = 0;

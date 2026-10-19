@@ -15,7 +15,7 @@ namespace
 /// shares, taken from the theme rather than restated per call site.
 void styleAsPopup(Widget &popup, const Theme &theme)
 {
-    const WidgetStyle &style = theme[Part::Tooltip];
+    const WidgetStyle &style = theme[Part::Popup];
 
     popup.style().fill(style.surface.normal).rounded(style.rounding);
     popup.layout().padding = Thickness::all(style.padding);
@@ -84,8 +84,8 @@ Selectable &Menu::addSubmenu(std::string text, std::function<void(Menu &)> build
 
             //! Owned by the row: that is how a command in the submenu finds the
             //! parent menu to close, and how the submenu goes with a torn-down parent.
-            build(
-                layer->open<Menu>(OverlayDesc{.anchor = item.bounds(), .placement = Placement::Right, .owner = &item}));
+            build(layer->open<Menu>(
+                OverlayDesc{.anchor = item.visualBounds(), .placement = Placement::Right, .owner = &item}));
         });
 
     return item;
@@ -262,7 +262,7 @@ void Dropdown::open()
         return;
 
     auto &list = layer->open<Column>(OverlayDesc{
-        .anchor = bounds(),
+        .anchor = visualBounds(),
         .placement = Placement::Below,
         .takeFocus = false,
         .owner = this,

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -56,6 +57,10 @@ class Control : public Widget
     void onFocusOut() override;
 
     bool onTick(f32 deltaSeconds) override;
+
+    /// Advances the hover transition. True while it moved, which is when a subclass that ticks for another reason
+    /// (a caret) must repaint, and when it must keep being ticked.
+    [[nodiscard]] bool tickHover(f32 deltaSeconds) noexcept;
 
     /// Interpolation between the style's normal and hovered colours.
     [[nodiscard]] f32 hoverAmount() const noexcept
@@ -430,6 +435,33 @@ class TextField final : public Control
 
     void selectAll();
     void setCaret(usize byte, bool extendSelection = false);
+
+    /// The text between the caret and the other end of the selection; empty when there is none.
+    [[nodiscard]] std::string selectedText() const;
+
+    /// @{
+    /// Through UIRoot::clipboard(); Ctrl+C, Ctrl+X and Ctrl+V, Ctrl+Insert, Shift+Delete and Shift+Insert do the same.
+    /// Copy and cut leave a passphrase alone, which other applications could read; cut and paste leave a read-only
+    /// field alone. A cut the clipboard did not take does not delete. A paste has its line breaks turned to spaces,
+    /// its control characters and invalid UTF-8 removed, and is cut short, at a character, to what still fits.
+    /// @return True when it did something.
+    bool copy();
+    bool cut();
+    bool paste();
+    /// @}
+
+    /// @{
+    /// The field's own history: Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z. A run of typing, or of deleting, is one step, and
+    /// moving the caret ends it. Assigning to @c text from outside forgets the history.
+    bool undo();
+    bool redo();
+    [[nodiscard]] bool canUndo() const noexcept;
+    [[nodiscard]] bool canRedo() const noexcept;
+
+    /// What history keeps, as steps and as bytes of text across them (a step is a copy of the text), the oldest going
+    /// first; the newest step stays whatever it weighs. Zero steps keeps nothing but that one.
+    void setHistoryLimit(usize steps, usize bytes);
+    /// @}
     [[nodiscard]] usize caret() const noexcept
     {
         return _caret;
@@ -464,16 +496,41 @@ class TextField final : public Control
     bool onTick(f32 deltaSeconds) override;
 
   private:
+    [[nodiscard]] bool _caretShown() const noexcept;
     void _reshape();
 
     /// Focuses the field and puts the caret under the press: on a mouse press at once, on a finger when it
     /// lifts, so a drag that scrolls the page past the field neither focuses it nor raises the keyboard.
     void _beginEdit(const PointerEvent &event, u32 clickCount);
 
-    /// Replaces the selection (or inserts at the caret) with @p insertion.
-    void _replaceSelection(std::string_view insertion);
+    /// The kinds of edit that history groups: a run of typing, or of deleting, is one step; anything else is its own.
+    enum class EditKind : u8
+    {
+        None,
+        Typing,
+        Deleting,
+        Other,
+    };
 
-    void _deleteSelection();
+    struct Snapshot
+    {
+        std::string text;
+        usize caret = 0;
+        usize selection = 0;
+    };
+
+    /// Replaces the selection (or inserts at the caret) with @p insertion.
+    void _replaceSelection(std::string_view insertion, EditKind kind);
+
+    void _deleteSelection(EditKind kind);
+    void _deleteRange(usize begin, usize end, EditKind kind);
+
+    /// Called before an edit, while the state it is about to change is still the field's: keeps that state to return
+    /// to, unless it continues the run the last edit began.
+    void _remember(EditKind kind);
+    [[nodiscard]] Snapshot _snapshot() const;
+    void _restore(Snapshot snapshot);
+    void _trimHistory() noexcept;
 
     [[nodiscard]] bool _hasSelection() const noexcept
     {
@@ -510,6 +567,13 @@ class TextField final : public Control
 
     f32 _scrollX = 0.0f;
     f32 _blink = 0.0f;
+
+    std::deque<Snapshot> _undo;
+    std::vector<Snapshot> _redo;
+    usize _maxUndoSteps = 100;
+    usize _maxHistoryBytes = static_cast<usize>(INK_MIB_TO_BYTES(4));
+    EditKind _lastEdit = EditKind::None;
+    bool _editing = false; //! This field is changing its own text, which is not an assignment from outside.
 
     bool _readOnly = false;
     bool _obscured = false;

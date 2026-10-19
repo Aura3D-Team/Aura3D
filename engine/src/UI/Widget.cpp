@@ -377,6 +377,12 @@ void Widget::paintTree(DrawList &out)
     if (_visibility != Visibility::Visible)
         return;
 
+    if (_hasEffect) [[unlikely]]
+    {
+        _paintEffected(out);
+        return;
+    }
+
     //! Nothing in this subtree can reach a pixel, so neither the widget nor
     //! any descendant is worth visiting. This is what keeps a long scrolled
     //! list cheap.
@@ -397,6 +403,78 @@ void Widget::paintTree(DrawList &out)
     }
 
     paintChildren(out);
+}
+
+void Widget::_paintEffected(DrawList &out)
+{
+    //! Opacity multiplies down the tree, so nothing under a transparent widget can reach a pixel either.
+    if (_opacity <= 0.0f)
+        return;
+
+    //! The same traversal, run again with the flag lowered, rather than a second copy of it: the common path through
+    //! paintTree() then pays one test for effects and nothing else.
+    struct Raised
+    {
+        Widget &widget;
+        ~Raised()
+        {
+            widget._updateEffect();
+        }
+    };
+    const EffectScope effect(out, _opacity, _translation);
+    _hasEffect = false;
+    const Raised raised{*this};
+    paintTree(out);
+}
+
+void Widget::setOpacity(f32 opacity) noexcept
+{
+    opacity = std::clamp(opacity, 0.0f, 1.0f);
+    if (opacity == _opacity)
+        return;
+    _opacity = opacity;
+    _updateEffect();
+    invalidatePaint();
+}
+
+void Widget::_updateEffect() noexcept
+{
+    _hasEffect = _opacity != 1.0f || _translation != glm::vec2{0.0f};
+}
+
+f32 Widget::opacity() const noexcept
+{
+    return _opacity;
+}
+
+void Widget::setTranslation(glm::vec2 translation) noexcept
+{
+    if (translation == _translation)
+        return;
+    _translation = translation;
+    _updateEffect();
+    invalidatePaint();
+    //! What is under a pointer that has not moved can change all the same.
+    if (_root)
+        _root->_requestHover();
+}
+
+glm::vec2 Widget::translation() const noexcept
+{
+    return _translation;
+}
+
+glm::vec2 Widget::visualOffset() const noexcept
+{
+    glm::vec2 offset{0.0f};
+    for (const Widget *node = this; node != nullptr; node = node->_parent)
+        offset += node->_translation;
+    return offset;
+}
+
+Rect Widget::visualBounds() const noexcept
+{
+    return _bounds.translated(visualOffset());
 }
 
 void Widget::paint(DrawList &out)
@@ -574,7 +652,8 @@ ITextShaper *Widget::shaper() const noexcept
 
 OverlayLayer *Widget::overlay() const noexcept
 {
-    return _root ? &_root->overlay() : nullptr;
+    //! Null while the root is destroying its overlay: widgets in it detach then, and a popup of theirs is already gone.
+    return _root ? _root->_overlay.get() : nullptr;
 }
 
 // -----------------------------------------------------------------------------
@@ -585,7 +664,7 @@ void Widget::accessibility(AccessibilityInfo &out) const
 {
     out.role = _children.empty() ? Role::None : Role::Group;
     out.name = !_accessibleName.empty() ? _accessibleName : _name;
-    out.description = _accessibleDescription;
+    out.description = !_accessibleDescription.empty() ? _accessibleDescription : _tooltip;
     out.enabled = effectivelyEnabled();
     out.focusable = focusable();
     out.focused = hasFocus();

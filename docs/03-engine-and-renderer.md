@@ -10,10 +10,10 @@ Engine engine("settings.json");
 
 The constructor, in order:
 1. Sets up logging (level and optional file output — see
-   [02-project-configuration.md](02-project-configuration.md#logging--live)).
-2. Loads `settings.json` into `AuraSettings::get()`.
+   [02-project-configuration.md](02-project-configuration.md#the-file)).
+2. Loads the settings layers into `AuraSettings::get()`.
 3. Builds a `wma::WindowDetails` from the `window.*` settings.
-4. Resolves `renderer.backend` through `RendererFactory` and constructs that
+4. Resolves `renderer.api` through `RendererFactory` and constructs that
    renderer, which creates the actual OS window.
 
 After construction you have a live window and a ready-to-draw renderer:
@@ -32,7 +32,7 @@ you don't call `new`/`delete` on either.
 
 ```cpp
 aura3d::AuraConfig config;
-config.window.decorations = wma::DecorationMode::ClientSide; // or "decorations": "client"
+config.set(aura3d::setting::windowDecorations, wma::DecorationMode::ClientSide); // or "decorations": "client"
 Engine engine(config, "settings.json");
 
 aura3d::ui::UIView ui(*engine.getRenderer()); // owns a DefaultWindowDecoration
@@ -163,7 +163,7 @@ frame's drawing. A loop that draws only on change must also draw while
 
 ## Backend resolution & fallback
 
-`renderer.backend` in `settings.json` is a request, not a guarantee.
+`renderer.api` in `settings.json` is a request, not a guarantee.
 `RendererFactory` resolves it:
 
 ```cpp
@@ -191,25 +191,26 @@ the requested string won.
 
 ## Present modes (Vulkan)
 
-`window.vsync_mode` maps to a Vulkan present mode via `aura3d::VSyncMode`:
+`present.mode` maps to a Vulkan present mode via `aura3d::VSyncMode`:
 
 | Value | Behavior |
 |---|---|
-| `AutoVsync` | Portable "vsync on": `FifoRelaxed` if the surface supports it, else `Fifo`. |
-| `AutoNoVsync` | Portable "vsync off": `Immediate` if supported, else `Mailbox`, else `Fifo`. |
-| `Fifo` | Guaranteed supported by every Vulkan implementation; classic double/triple-buffered vsync. |
-| `FifoRelaxed` | Fifo, but presents immediately if the app is already late (reduces stutter under load). |
-| `Immediate` | No sync — lowest latency, tearing possible. |
-| `Mailbox` | Triple-buffered, low-latency, no tearing. |
+| `fifo` | Guaranteed supported by every Vulkan implementation; waits for the display, never tears. The default. |
+| `fifo_relaxed` | Fifo, but presents immediately if the app is already late (reduces stutter under load; may tear). |
+| `immediate` | No sync — lowest latency, tearing possible. |
+| `mailbox` | Triple-buffered, low-latency, no tearing. |
+| `uncapped` | The best non-waiting mode the surface has: `immediate`, else `mailbox`, else `fifo`. |
 
-`Fifo` is the only mode every Vulkan implementation is required to support.
-Requesting `FifoRelaxed`, `Immediate`, or `Mailbox` explicitly on a surface
-that doesn't support it logs a warning and falls back to `Fifo`; the `Auto*`
-modes silently try their listed alternatives in order with no warning, since
-falling back is the whole point of asking for one of those.
+`fifo` is the only mode every Vulkan implementation is required to support.
+Requesting `fifo_relaxed`, `immediate`, or `mailbox` explicitly on a surface
+that doesn't support it logs a warning and falls back to `fifo`; `uncapped`
+silently tries its alternatives in order, since falling back is the whole point
+of asking for it.
 
-This only applies to Vulkan; OpenGL and the CPU backend use `window.vsync` as
-a plain on/off switch through their own present paths.
+Vulkan uses the mode itself. OpenGL and Metal take only on/off from it
+(`fifo` and `fifo_relaxed` = on). The CPU backend does not wait for the
+display (Wayland aside, where the compositor's buffer hand-back paces it); a
+loop that renders continuously there wants `immediate` with a `present.fps_limit`.
 
 ## Switching backends at runtime
 

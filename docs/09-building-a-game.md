@@ -35,9 +35,9 @@ add_custom_command(TARGET MyGame POST_BUILD
 
 ```json
 {
-    "window":   { "width": 1280, "height": 720, "title": "Orb Collector", "vsync": true },
-    "renderer": { "backend": "vulkan" },
-    "graphics": { "msaa_samples": 4 },
+    "window":   { "width": 1280, "height": 720, "title": "Orb Collector" },
+    "present":  { "mode": "fifo" },
+    "renderer": { "api": "vulkan", "msaa": 4 },
     "logging":  { "level": "info" }
 }
 ```
@@ -248,8 +248,8 @@ the same handful of calls above:
 - **Menus / pause screen**: a second keyboard context
   (`keyboard.createContext()`) plus a `drawBatch` panel — see
   [08-input.md](08-input.md) and [07-2d-rendering-and-text.md](07-2d-rendering-and-text.md).
-- **A different backend for comparison**: flip `renderer.backend` in
-  `settings.json` to `"opengl"` or `"cpu"` — no code changes.
+- **A different backend for comparison**: flip `renderer.api` in
+  `settings.json` to `"opengl"` or `"software"` — no code changes.
 - **Shipping to Android/WASM**: [10-platform-builds.md](10-platform-builds.md).
 
 The engine intentionally stops here — there's no built-in physics,

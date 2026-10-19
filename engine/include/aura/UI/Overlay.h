@@ -47,6 +47,24 @@ enum class Placement : u8
     Center, //! Centred in the surface, ignoring the anchor. Dialogs.
 };
 
+struct OverlayDesc;
+
+/// How an overlay arrives and leaves. AuraUI animates nothing itself; both hooks are the application's.
+struct OverlayTransition
+{
+    /// After the overlay is first placed and before it is first drawn, so bounds() are final and nothing shows in its
+    /// resting state first: set its starting state and start the entrance, with UIRoot::animate() for instance.
+    std::function<void(Widget &overlay, const OverlayDesc &desc)> enter;
+
+    /// From close(). The overlay keeps drawing, takes no input, and onClosed waits, until @p done is called: call it
+    /// once the exit has finished, from any later point. Unset, the overlay is gone at the next frame boundary.
+    std::function<void(Widget &overlay, const OverlayDesc &desc, std::function<void()> done)> exit;
+
+    /// An exit still running after this long is cut short as if @c done had been called, so a hook that never calls it
+    /// cannot leave a dead overlay on screen. Zero waits for ever.
+    f32 exitTimeoutSeconds = 5.0f;
+};
+
 /// How one overlay is placed and dismissed.
 struct OverlayDesc
 {
@@ -58,6 +76,10 @@ struct OverlayDesc
 
     /// Nudge applied after placement. Positive y pushes further down.
     glm::vec2 offset{0.0f};
+
+    /// How far a @ref Placement::Cursor overlay clears the pointer, so the thing it describes is not under the thing
+    /// describing it.
+    f32 cursorClearance = 14.0f;
 
     /// Swallows input to everything underneath, including other overlays below
     /// it. A dialog wants this; a tooltip must not have it.
@@ -71,6 +93,9 @@ struct OverlayDesc
     bool takeFocus = true;
     Widget *owner = nullptr;
     /// @}
+
+    /// This overlay's own; a hook left unset falls back to OverlayLayer::setDefaultTransition().
+    OverlayTransition transition{};
 
     /// Called once the overlay is gone, so an opener can forget its id. Runs
     /// after the widget is destroyed, never during the event that closed it.
@@ -113,9 +138,13 @@ class OverlayLayer final : public Widget
     /// The id of the most recently opened overlay. Pair it with open().
     [[nodiscard]] Id lastId() const noexcept;
 
-    /// Marks @p id closed. Takes effect visually at once and structurally at
-    /// the next collectClosed().
+    /// Marks @p id closed. It stops taking input at once, and drawing too unless an exit transition runs; it goes
+    /// structurally at the first collectClosed() after that.
     void close(Id id);
+
+    /// For every overlay whose desc leaves a hook unset, including the drop-downs, submenus and tooltips AuraUI
+    /// opens itself: the one place an application animates all of them. The desc says which kind each one is.
+    void setDefaultTransition(OverlayTransition transition);
 
     /**
      * @brief Closes the topmost overlay that dismisses on Escape.
@@ -144,6 +173,18 @@ class OverlayLayer final : public Widget
     /// The owner the overlay holding @p member was opened with, if any.
     [[nodiscard]] Widget *ownerOf(const Widget &member) const noexcept;
 
+    /// An overlay a user can reach, for the accessibility tree.
+    struct OpenOverlay
+    {
+        const Widget *widget = nullptr;
+        bool modal = false;
+    };
+
+    /// The overlays that are open and take the pointer, back to front. One that is closing, even while its exit
+    /// still draws, is gone to a screen reader; so is a click-through one, a tooltip, which is a description of its
+    /// owner and already part of it.
+    [[nodiscard]] std::vector<OpenOverlay> openOverlays() const;
+
     [[nodiscard]] bool isOpen(Id id) const noexcept;
     [[nodiscard]] bool empty() const noexcept
     {
@@ -168,8 +209,11 @@ class OverlayLayer final : public Widget
     /// True when @p point falls inside any open overlay.
     [[nodiscard]] bool contains(glm::vec2 point) const;
 
-    /// Destroys what close() marked. UIRoot calls this between frames.
+    /// Destroys what close() marked and has finished leaving. UIRoot calls this between frames.
     void collectClosed();
+
+    /// Runs the enter hook of every overlay that has just been placed. UIRoot calls this at the end of layout.
+    void runEnterTransitions();
 
     /// Overlays place themselves; a parent never arranges one.
     [[nodiscard]] bool clipsChildren() const noexcept override
@@ -191,6 +235,9 @@ class OverlayLayer final : public Widget
         WidgetRef owner;
         WidgetRef restoreFocus;
         bool focusPending = true;
+        bool placed = false;     //! Laid out at least once, which is when its enter hook runs and it can be seen.
+        bool exiting = false;    //! Closing, and still drawn until its exit transition calls done.
+        f32 exitDeadline = 0.0f; //! UIRoot::time() at which an exit that has not called done is cut short.
     };
 
     /// Top-left @p size should sit at, given @p desc, flipped and then clamped
@@ -201,7 +248,9 @@ class OverlayLayer final : public Widget
     //! open() appending to both and onChildRemoved() erasing from this one.
     std::vector<Entry> _entries;
     void _register(const OverlayDesc &desc);
+    void _finishExit(Id id);
 
+    OverlayTransition _defaultTransition{};
     Id _nextId = 1;
     bool _pendingClose = false;
 };

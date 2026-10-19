@@ -10,7 +10,10 @@
 #include <array>
 #include <cstdio>
 #include <exception>
+#include <functional>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "SmokeTest.h"
@@ -544,6 +547,81 @@ void buildTree(Column &into, const Theme &theme, GalleryState &gallery)
     }
 }
 
+/// The look of the overlays is the application's: AuraUI opens drop-downs, submenus and tooltips, and this is how
+/// they move here. A fade, and a few pixels away from the anchor.
+void installOverlayMotion(UIRoot &root)
+{
+    constexpr f32 kEnterSeconds = 0.18f;
+    constexpr f32 kExitSeconds = 0.11f;
+    constexpr f32 kSlide = 6.0f;
+
+    //! One tween per overlay at a time: an exit that starts during the entrance takes over from it.
+    auto running = std::make_shared<std::unordered_map<const Widget *, UIRoot::AnimationId>>();
+
+    //! Read off where the overlay landed, so a list that flipped above its trigger rises rather than drops.
+    const auto slide = [](const Widget &overlay, Rect anchor, Placement placement)
+    {
+        const glm::vec2 centre = overlay.bounds().center();
+        switch (placement)
+        {
+        case Placement::Below:
+        case Placement::Above:
+            return glm::vec2{0.0f, centre.y >= anchor.center().y ? -kSlide : kSlide};
+        case Placement::Right:
+        case Placement::Left:
+            return glm::vec2{centre.x >= anchor.center().x ? -kSlide : kSlide, 0.0f};
+        default:
+            return glm::vec2{0.0f};
+        }
+    };
+
+    root.overlay().setDefaultTransition(
+        {.enter =
+             [&root, running, slide](Widget &overlay, const OverlayDesc &desc)
+         {
+             Widget *target = &overlay;
+             (*running)[target] =
+                 root.animate(target, Tween{.seconds = kEnterSeconds,
+                                            .curve = easing::outCubic,
+                                            .step =
+                                                [target, slide, anchor = desc.anchor, placement = desc.placement](f32 t)
+                                            {
+                                                target->setOpacity(t);
+                                                target->setTranslation(slide(*target, anchor, placement) * (1.0f - t));
+                                            },
+                                            .done =
+                                                [running, target]
+                                            {
+                                                running->erase(target);
+                                            }});
+         },
+         .exit =
+             [&root, running, slide](Widget &overlay, const OverlayDesc &desc, std::function<void()> done)
+         {
+             Widget *target = &overlay;
+             if (const auto found = running->find(target); found != running->end())
+                 root.cancelAnimation(found->second);
+
+             const f32 from = overlay.opacity();
+             (*running)[target] = root.animate(
+                 target, Tween{.seconds = kExitSeconds * from,
+                               .curve = easing::inQuad,
+                               .step =
+                                   [target, slide, anchor = desc.anchor, placement = desc.placement, from](f32 t)
+                               {
+                                   const f32 shown = from * (1.0f - t);
+                                   target->setOpacity(shown);
+                                   target->setTranslation(slide(*target, anchor, placement) * (1.0f - shown));
+                               },
+                               .done =
+                                   [running, target, done = std::move(done)]
+                               {
+                                   running->erase(target);
+                                   done();
+                               }});
+         }});
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -553,7 +631,7 @@ try
 
     // The gallery shows off AuraUI's title bar; settings.json may still opt out.
     AuraConfig config;
-    config.window.decorations = wma::DecorationMode::ClientSide;
+    config.set(setting::windowDecorations, wma::DecorationMode::ClientSide);
     Engine engine(config, "settings.json");
 
     IRenderer *renderer = engine.getRenderer();
@@ -565,6 +643,7 @@ try
 
     UIView ui(*renderer, desc);
     ui.attachInput(*window);
+    installOverlayMotion(ui.root());
 
     const Theme &theme = ui.theme();
 

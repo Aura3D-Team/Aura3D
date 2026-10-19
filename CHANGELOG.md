@@ -2,6 +2,39 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.8.0]
+
+Needs libwma 0.8.2.
+
+### Added
+
+- Settings: one declaration (`AURA_SETTINGS`) generates keys, validation, JSON Schema and reference; layered sources.
+- Clipboard (`IClipboard`, `WindowClipboard`); `TextField` copy, cut, paste, undo, redo.
+- Animation: `UIRoot::animate()`, `Tween`; `Widget` opacity and translation; `DrawList` effects.
+- Overlay enter and exit transitions.
+- Accessibility: open overlays in the tree, modal dialogs.
+- Tunables: `Metrics`, `ScrollPhysics`, `WindowChrome`, `ViewScaling`, double click, caret blink, history limit, cursor clearance, Vulkan recording and ring sizes.
+- `Part::Popup`, `utf8::sanitize()`.
+- `UIView::setBottomInset()`, `touchDown`/`touchMoved`/`touchUp`.
+
+### Changed
+
+- **Breaking:** settings file layout (`present.*`, `renderer.api`, `renderer.vulkan.*`, `audio.volume`, `logging.file`).
+- **Breaking:** settings API (`get(setting::…)`, `configure()`).
+- `present.mode` decides vsync on every backend; `fifo` is the default.
+- `Menu` and `Dropdown` style from `Part::Popup`, not `Part::Tooltip`.
+- Licensing: full Apache-2.0, `NOTICE`, `THIRD_PARTY_LICENSES.md`.
+
+### Fixed
+
+- Vulkan: swapchain size and orientation on Android and X11; rebuild on every resize event.
+- Premultiplied-alpha colour interpolation.
+- `TextField`: idle redraw, control characters, invalid UTF-8, passphrase kept in history, typing not ended by a press elsewhere.
+- Overlays: enter before placement, exit that never finishes, `UIRoot` teardown with a drop-down open.
+- `AudioEngine`: NaN output, small listener axes.
+- `Box` NaN bounds, `ScrollView` division by zero.
+- Settings: trailing `--set`, oversized integers.
+
 ## [0.7.1]
 
 Needs libwma 0.7.0.

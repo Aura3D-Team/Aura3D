@@ -155,6 +155,15 @@ class DrawList
     }
     /// @}
 
+    /// @{
+    /// Everything recorded until the matching pop is drawn @p opacity as opaque and moved by @p offset. Nests:
+    /// opacities multiply and offsets add. A clip in force when it is pushed does not move; one pushed inside does.
+    /// Applied when the scope pops, to the commands recorded inside it, so drawing outside any scope costs nothing.
+    /// Pair with @ref EffectScope.
+    void pushEffect(f32 opacity, glm::vec2 offset = glm::vec2{0.0f});
+    void popEffect() noexcept;
+    /// @}
+
     [[nodiscard]] std::span<const DrawCommand> commands() const noexcept
     {
         return _commands;
@@ -169,6 +178,14 @@ class DrawList
     }
 
   private:
+    struct Effect
+    {
+        f32 opacity = 1.0f;
+        glm::vec2 offset{0.0f};
+        usize firstCommand = 0; //! Where its scope's commands begin.
+        usize clipDepth = 0;    //! The clip stack to restore at the pop.
+    };
+
     /// False when @p bounds cannot contribute a pixel, which is how a
     /// scrolled-away subtree costs nothing but its layout.
     [[nodiscard]] bool _visible(const Rect &bounds) const noexcept;
@@ -178,6 +195,9 @@ class DrawList
     //! Never empty: begin() seeds it with the surface, so clip() needs no
     //! null check on the path of every primitive.
     std::vector<Rect> _clips{Rect{}};
+
+    //! The open effect scopes; empty outside any, which is nearly always.
+    std::vector<Effect> _effects;
 };
 
 /**
@@ -205,6 +225,20 @@ class ClipScope
 
     ClipScope(const ClipScope &) = delete;
     ClipScope &operator=(const ClipScope &) = delete;
+
+  private:
+    DrawList &_list;
+};
+
+/// Pushes an opacity and offset for a scope and pops them however the scope exits.
+class EffectScope
+{
+  public:
+    EffectScope(DrawList &list, f32 opacity, glm::vec2 offset = glm::vec2{0.0f});
+    ~EffectScope();
+
+    EffectScope(const EffectScope &) = delete;
+    EffectScope &operator=(const EffectScope &) = delete;
 
   private:
     DrawList &_list;

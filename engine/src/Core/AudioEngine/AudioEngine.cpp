@@ -14,6 +14,22 @@ namespace
 constexpr u32 kVoiceSlotBits = 16;
 constexpr u32 kVoiceSlotMask = (1u << kVoiceSlotBits) - 1u;
 
+//! The listener's right as a unit vector, or zero when @p forward and @p up are not usable or do not span a plane.
+//! Both are normalized first, so the test for "parallel" does not depend on the scale the caller chose.
+[[nodiscard]] glm::vec3 listenerRight(const glm::vec3 &forward, const glm::vec3 &up) noexcept
+{
+    constexpr f32 kMinLengthSquared = 1.0e-12f;
+
+    const f32 forwardSquared = glm::dot(forward, forward);
+    const f32 upSquared = glm::dot(up, up);
+    if (!(forwardSquared > kMinLengthSquared) || !(upSquared > kMinLengthSquared))
+        return glm::vec3{0.0f};
+
+    const glm::vec3 right = glm::cross(forward * glm::inversesqrt(forwardSquared), up * glm::inversesqrt(upSquared));
+    const f32 rightSquared = glm::dot(right, right);
+    return rightSquared > kMinLengthSquared ? right * glm::inversesqrt(rightSquared) : glm::vec3{0.0f};
+}
+
 std::vector<f32> resample(const std::vector<f32> &input, u16 channels, u32 srcRate, u32 dstRate)
 {
     if (srcRate == dstRate || channels == 0 || input.empty())
@@ -458,14 +474,7 @@ void AudioEngine::computeSpatialGains(const Voice &voice, f32 &leftGain, f32 &ri
 
     constexpr f32 kMinPanDistance = 0.0001f;
     if (distance > kMinPanDistance)
-    {
-        const glm::vec3 forward = glm::normalize(_mixListener.forward);
-        const glm::vec3 up = glm::normalize(_mixListener.up);
-
-        const glm::vec3 right = glm::normalize(glm::cross(forward, up));
-
-        pan = std::clamp(glm::dot(toSource / distance, right), -1.0f, 1.0f);
-    }
+        pan = std::clamp(glm::dot(toSource / distance, _mixRight), -1.0f, 1.0f);
 
     const f32 angle = (pan + 1.0f) * 0.25f * std::numbers::pi_v<f32>;
     leftGain = std::cos(angle) * attenuation;
@@ -481,7 +490,8 @@ void AudioEngine::mix(std::span<f32> output)
 
     const f32 master = _masterVolume.load(std::memory_order_relaxed);
 
-    (void)_listenerCommands.consume(_mixListener);
+    if (_listenerCommands.consume(_mixListener))
+        _mixRight = listenerRight(_mixListener.forward, _mixListener.up);
     for (usize i = 0; i < _mixVoices.size(); ++i)
     {
         Voice command;
@@ -592,7 +602,10 @@ void AudioEngine::mix(std::span<f32> output)
     }
 
     for (f32 &sample : output)
-        sample = std::clamp(sample, -1.0f, 1.0f);
+    {
+        const f32 limited = std::clamp(sample, -1.0f, 1.0f);
+        sample = std::isnan(limited) ? 0.0f : limited;
+    }
     for (usize i = 0; i < _mixVoices.size(); ++i)
         if (!_mixVoices[i].active)
             _channels[i].finished.store(_mixVoices[i].serial, std::memory_order_release);

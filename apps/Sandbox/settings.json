@@ -1,56 +1,24 @@
 {
-    "application": {
-        "name": "Aura3D Game Engine",
-        "version": "1.0.0",
-        "headless": false
-    },
+    "$schema": "../../docs/aura.schema.json",
+    "schema_version": 1,
     "window": {
+        "backend": "wayland",
         "width": 1920,
         "height": 1080,
-        "title": "Aura Engine",
-        "backend": "wayland",
-        "resizable": true,
-        "fullscreen": false,
-        "vsync": false,
-        "vsync_mode": "Immediate",
-        "fps_limit": 0
+        "title": "Aura Engine"
+    },
+    "present": {
+        "mode": "immediate"
     },
     "renderer": {
-        "backend": "vulkan",
-        "validation_layers": false,
-        "max_frames_in_flight": 3
-    },
-    "graphics": {
-        "gpu_preference": "discrete",
-        "msaa_samples": 0,
-        "cpu_threads": 0
-    },
-    "audio": {
-        "backend": "auto",
-        "master_volume": 1.0,
-        "sample_rate": 48000,
-        "channels": 2,
-        "buffer_frames": 1024,
-        "max_voices": 32
-    },
-    "paths": {
-        "shaders": "./resources/shaders/",
-        "textures": "./resources/textures/",
-        "models": "./resources/models/",
-        "audio": "./resources/audio/",
-        "logs": "./logs/"
-    },
-    "memory": {
-        "vma": {
-            "buffer_device_address": true,
-            "prefer_device_memory": true,
-            "persistently_map_upload_buffers": true,
-            "vulkan_api_version": "1.4",
-            "preferred_large_heap_block_size_mb": 128
+        "api": "vulkan",
+        "msaa": 0,
+        "frames_in_flight": 3,
+        "vulkan": {
+            "validation": false
         }
     },
     "logging": {
-        "level": "info",
-        "write_to_file": false
+        "level": "info"
     }
 }

@@ -68,20 +68,18 @@ VulkanMemoryManager::Config VulkanMemoryManager::loadConfig(AuraSettings *settin
         return cfg;
     }
 
-    ink::EnhancedJson *json = settings->getSettings();
-    cfg.bufferDeviceAddress = json->getPath<bool>("/memory/vma/buffer_device_address", true);
-    cfg.preferDeviceMemory = json->getPath<bool>("/memory/vma/prefer_device_memory", true);
-    cfg.persistentlyMapUploadBuffers = json->getPath<bool>("/memory/vma/persistently_map_upload_buffers", true);
+    cfg.bufferDeviceAddress = settings->get(setting::vmaBufferDeviceAddress);
+    cfg.preferDeviceMemory = settings->get(setting::vmaPreferDeviceMemory);
+    cfg.persistentlyMapUploadBuffers = settings->get(setting::vmaMapUploadBuffers);
 
-    const u32 blockMb = json->getPath<u32>("/memory/vma/preferred_large_heap_block_size_mb", 128);
-    cfg.preferredLargeHeapBlockSize = static_cast<size_t>(blockMb) * 1024u * 1024u;
+    const u32 blockMb = static_cast<u32>(settings->get(setting::vmaHeapBlockMb));
+    cfg.preferredLargeHeapBlockSize = static_cast<size_t>(INK_MIB_TO_BYTES(blockMb));
 
-    const std::string apiVersion = json->getPath<std::string>("/memory/vma/vulkan_api_version", "1.4");
-    cfg.vulkanApiVersion = parseVulkanApiVersion(apiVersion);
+    cfg.vulkanApiVersion = parseVulkanApiVersion(settings->get(setting::vulkanApiVersion));
 
     // Clamp to whatever VMA was actually compiled to support: VMA_VULKAN_VERSION
     // (auto-detected by vk_mem_alloc.h above from the Vulkan headers available
-    // at compile time) can be lower than settings.json's configured version --
+    // at compile time) can be lower than the configured version --
     // Android's bundled Vulkan headers, for instance, don't define 1.4, so a
     // "1.4" here would otherwise pass a version to vmaCreateAllocator that VMA
     // asserts on: "vulkanApiVersion >= VK_API_VERSION_1_4 but required Vulkan

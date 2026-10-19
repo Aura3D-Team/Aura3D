@@ -15,17 +15,23 @@ namespace aura3d::ui
 namespace
 {
 
-/// Longest gap between two presses that still counts as a double click.
-constexpr f32 kDoubleClickSeconds = 0.40f;
-
-/// How far the pointer may move between them. A press-and-drag is not a
-/// double click even when it is fast.
-constexpr f32 kDoubleClickSlop = 5.0f;
+/// @p event, from surface pixels into the space @p node's bounds() are in.
+[[nodiscard]] PointerEvent inWidget(PointerEvent event, const Widget &node) noexcept
+{
+    const glm::vec2 offset = node.visualOffset();
+    event.position -= offset;
+    event.pressPosition -= offset;
+    event.local = event.position - node.bounds().min;
+    return event;
+}
 
 [[nodiscard]] Widget *pick(Widget &node, glm::vec2 point)
 {
     if (node.visibility() != Visibility::Visible)
         return nullptr;
+
+    //! Into the space the node's bounds are in: a translation moves the picture, and the target with it.
+    point -= node.translation();
 
     /*
      * A clipping widget hides its children outside its content rectangle, so
@@ -51,7 +57,7 @@ void collectAccessibility(const Widget &node, AccessibilityNode &out)
         return;
 
     node.accessibility(out.info);
-    out.bounds = node.bounds();
+    out.bounds = node.visualBounds();
 
     for (usize i = 0; i < node.childCount(); ++i)
     {
@@ -186,6 +192,9 @@ void UIRoot::update(f32 deltaSeconds)
 {
     _time += deltaSeconds;
 
+    //! First, so an exit that finishes here is collected in this same update.
+    _tickTweens(deltaSeconds);
+
     //! Between frames, where destroying a widget cannot pull the ground out
     //! from under a dispatch that is still running.
     _overlay->collectClosed();
@@ -215,8 +224,129 @@ void UIRoot::update(f32 deltaSeconds)
     if (layoutChanged)
         _layout();
     _overlay->syncFocus();
-    if (layoutChanged && _pointerInside && !_capture)
+    if ((layoutChanged || _hoverDirty) && _pointerInside && !_capture)
         _updateHover(_pointer);
+    _hoverDirty = false;
+}
+
+UIRoot::AnimationId UIRoot::animate(Widget *target, Tween tween)
+{
+    if (target != nullptr && target->root() != this)
+        return kNoAnimation;
+
+    const AnimationId id = _nextAnimationId++;
+    _tweens.push_back(std::make_unique<TweenEntry>(
+        TweenEntry{.id = id, .target = WidgetRef(target), .targeted = target != nullptr, .tween = std::move(tween)}));
+
+    TweenEntry &entry = *_tweens.back();
+    if (entry.tween.step)
+        entry.tween.step(0.0f);
+    return id;
+}
+
+void UIRoot::cancelAnimation(AnimationId id) noexcept
+{
+    if (id == kNoAnimation)
+        return;
+    for (const std::unique_ptr<TweenEntry> &entry : _tweens)
+        if (entry->id == id)
+            entry->id = kNoAnimation;
+}
+
+bool UIRoot::animating() const noexcept
+{
+    return !_animating.empty() || std::ranges::any_of(_tweens,
+                                                      [](const std::unique_ptr<TweenEntry> &entry)
+                                                      {
+                                                          return entry->id != kNoAnimation;
+                                                      });
+}
+
+void UIRoot::setDoubleClickSeconds(f32 seconds) noexcept
+{
+    _doubleClickSeconds = std::max(0.0f, seconds);
+}
+
+f32 UIRoot::doubleClickSeconds() const noexcept
+{
+    return _doubleClickSeconds;
+}
+
+void UIRoot::setDoubleClickSlop(f32 pixels) noexcept
+{
+    _doubleClickSlop = std::max(0.0f, pixels);
+}
+
+f32 UIRoot::doubleClickSlop() const noexcept
+{
+    return _doubleClickSlop;
+}
+
+void UIRoot::setCaretBlinkSeconds(f32 seconds) noexcept
+{
+    //! A zero interval would be a caret that is never on.
+    _caretBlinkSeconds = std::max(0.05f, seconds);
+}
+
+f32 UIRoot::caretBlinkSeconds() const noexcept
+{
+    return _caretBlinkSeconds;
+}
+
+void UIRoot::setClipboard(IClipboard *clipboard) noexcept
+{
+    _clipboard = clipboard;
+}
+
+IClipboard &UIRoot::clipboard() noexcept
+{
+    return _clipboard != nullptr ? *_clipboard : _memoryClipboard;
+}
+
+void UIRoot::_requestHover() noexcept
+{
+    _hoverDirty = true;
+}
+
+void UIRoot::_tickTweens(f32 deltaSeconds)
+{
+    //! Only the tweens that were running when the frame began: one started from a step waits for the next update().
+    for (usize i = 0, count = _tweens.size(); i < count; ++i)
+    {
+        TweenEntry &entry = *_tweens[i];
+        if (entry.id == kNoAnimation)
+            continue;
+
+        if (entry.targeted)
+        {
+            const Widget *target = entry.target.get();
+            if (target == nullptr || target->root() != this)
+            {
+                entry.id = kNoAnimation;
+                continue;
+            }
+        }
+
+        entry.elapsed += deltaSeconds;
+        const f32 seconds = entry.tween.seconds;
+        const f32 linear = seconds > 0.0f ? std::min(entry.elapsed / seconds, 1.0f) : 1.0f;
+        const bool finished = linear >= 1.0f;
+        if (entry.tween.step)
+            entry.tween.step(finished || !entry.tween.curve ? linear : entry.tween.curve(linear));
+
+        //! A step may cancel its own tween.
+        if (!finished || entry.id == kNoAnimation)
+            continue;
+        entry.id = kNoAnimation;
+        if (entry.tween.done)
+            entry.tween.done();
+    }
+
+    std::erase_if(_tweens,
+                  [](const std::unique_ptr<TweenEntry> &entry)
+                  {
+                      return entry->id == kNoAnimation;
+                  });
 }
 
 void UIRoot::_layout()
@@ -250,6 +380,9 @@ void UIRoot::_layout()
 
     _layoutDirty = false;
     _paintDirty = true;
+
+    //! After the flags: a hook that invalidates layout asks for the next pass, and is not overwritten by this one.
+    _overlay->runEnterTransitions();
 }
 
 bool UIRoot::paint(DrawList &out)
@@ -298,18 +431,38 @@ template <class Event, class Handler> bool UIRoot::_bubble(Widget *target, Event
     if (!target->effectivelyEnabled())
         return true;
 
+    //! Keyboard events have no position to re-base; only pointer ones do. Each node hears them in its own space,
+    //! where its bounds() are: the surface position less every translation above and on it.
+    constexpr bool kPositioned = requires { event.local = event.position; };
+    glm::vec2 surface{0.0f};
+    glm::vec2 surfacePress{0.0f};
+    glm::vec2 offset{0.0f};
+    if constexpr (kPositioned)
+    {
+        surface = event.position;
+        if constexpr (requires { event.pressPosition; })
+            surfacePress = event.pressPosition;
+        offset = target->visualOffset();
+    }
+
     for (Widget *node = target; node != nullptr;)
     {
         const WidgetRef current(node);
         const WidgetRef parent(node->parent());
-        //! Keyboard events have no position to re-base; only pointer ones do.
-        if constexpr (requires { event.local = event.position; })
+        const glm::vec2 own = node->translation();
+        if constexpr (kPositioned)
+        {
+            event.position = surface - offset;
+            if constexpr (requires { event.pressPosition; })
+                event.pressPosition = surfacePress - offset;
             event.local = event.position - node->bounds().min;
+        }
 
         if (handler(*node, event))
             return true;
         if (!current.get() || node->root() != this || !node->effectivelyVisible())
             return true;
+        offset -= own;
         node = parent.get();
     }
 
@@ -430,7 +583,7 @@ bool UIRoot::_offerIntercept(const PointerEvent &event)
             !node->effectivelyVisible())
             continue;
 
-        if (node->onPointerIntercept(event))
+        if (node->onPointerIntercept(inWidget(event, *node)))
         {
             _pressChain.clear();
             return true;
@@ -459,8 +612,7 @@ bool UIRoot::pointerMoved(glm::vec2 position)
 
     if (_capture)
     {
-        event.local = position - _capture->bounds().min;
-        _capture->onPointerMove(event);
+        _capture->onPointerMove(inWidget(event, *_capture));
         return true;
     }
 
@@ -485,9 +637,10 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
 
     _updateHover(position);
 
-    const bool nearby = glm::length(position - _lastPressPosition) <= kDoubleClickSlop;
-    const bool soon = _lastPressTime >= 0.0f && _time - _lastPressTime <= kDoubleClickSeconds &&
-                      button == _lastPressButton && _lastPressTarget.get() == hovered();
+    const bool nearby = glm::length(position - _lastPressPosition) <= _doubleClickSlop;
+    const bool soon = _doubleClickSeconds > 0.0f && _lastPressTime >= 0.0f &&
+                      _time - _lastPressTime <= _doubleClickSeconds && button == _lastPressButton &&
+                      _lastPressTarget.get() == hovered();
 
     _clickCount = (nearby && soon) ? _clickCount + 1 : 1;
     _lastPressTime = _time;
@@ -525,11 +678,27 @@ bool UIRoot::pointerDown(glm::vec2 position, PointerButton button, Modifiers mod
             return true;
     }
 
+    const WidgetRef typing(_focused != nullptr && _focused->wantsTextInput() ? _focused : nullptr);
     const bool handled = _bubble(target, event,
                                  [](Widget &node, PointerEvent &e)
                                  {
                                      return node.onPointerDown(e);
                                  });
+
+    //! A press elsewhere ends typing even when what it landed on takes the press (a scroll view always does), or the
+    //! on-screen keyboard of a phone would stay up over the board.
+    if (typing.get() != nullptr && typing.get() == _focused)
+    {
+        const auto inside = [&typing](const Widget *node)
+        {
+            for (; node != nullptr; node = node->parent())
+                if (node == typing.get())
+                    return true;
+            return false;
+        };
+        if (!inside(target))
+            clearFocus();
+    }
 
     /*
      * A press that landed on the UI but that no widget wanted still counts as
@@ -1002,6 +1171,26 @@ AccessibilityNode UIRoot::accessibilityTree() const
         AccessibilityNode child{};
         collectAccessibility(*_decoration, child);
         tree.children.push_back(std::move(child));
+    }
+
+    //! Last, as they are drawn: what floats is on top of everything else, and a modal one is all there is to reach.
+    for (const OverlayLayer::OpenOverlay &overlay : _overlay->openOverlays())
+    {
+        AccessibilityNode child{};
+        collectAccessibility(*overlay.widget, child);
+
+        if (overlay.modal)
+        {
+            child.info.modal = true;
+            child.info.role = Role::Window;
+        }
+
+        //! The same fold as inside the tree: a root that means nothing hands its children up.
+        if (!overlay.modal && child.info.role == Role::None && child.info.name.empty())
+            tree.children.insert(tree.children.end(), std::make_move_iterator(child.children.begin()),
+                                 std::make_move_iterator(child.children.end()));
+        else
+            tree.children.push_back(std::move(child));
     }
 
     return tree;
