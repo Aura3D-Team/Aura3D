@@ -6,6 +6,8 @@ tests/build
 .qtcreator
 .claude
 .zed
+__pycache__/
+*.pyc
 
 # Ignore compiled object files
 *.o
