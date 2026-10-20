@@ -176,11 +176,11 @@ jobs:
           # committed settings.json so the demo keeps its normal defaults.
           with open("settings.json") as f:
               config = json.load(f)
-          config["renderer"]["backend"] = "software"
-          config["window"]["backend"] = "SDL3"
+          config["renderer"]["api"] = "software"
+          config["window"]["backend"] = "sdl3"
           config["window"]["width"] = 640
           config["window"]["height"] = 480
-          config["audio"]["backend"] = "null"
+          config.setdefault("audio", {})["backend"] = "null"
           with open("settings.json", "w") as f:
               json.dump(config, f, indent=2)
           PY
