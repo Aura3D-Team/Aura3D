@@ -99,7 +99,7 @@ std::string platformSettingsPath(std::string_view path)
 {
     const std::filesystem::path file{path};
     return (file.parent_path() / (file.stem().string() + "." + std::string{platformName()} + file.extension().string()))
-        .string();
+        .generic_string();
 }
 
 AuraConfig &AuraConfig::set(Key<bool> key, bool value)
