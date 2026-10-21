@@ -2,6 +2,24 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.9.0]
+
+Needs libwma 0.10.0.
+
+### Added
+
+- `AURA_VULKAN_DYNAMIC_LOADER` (Linux, default ON): libvulkan is opened with `dlopen()`. Without a Vulkan loader `RendererFactory` falls back to OpenGL, then the software renderer, instead of the program failing to start. A call missing from `VkSymbols.inc` fails to link.
+- `AURA_STATIC_RUNTIME`: links libstdc++ and libgcc statically (Linux, GCC), so the program does not need the build machine's GLIBCXX.
+- `AURA_CPU_LEVEL`: x86-64 microarchitecture level for Release builds that are shipped.
+- `linux-dist` preset (`x86-64-v2`, static runtime) and `ci/dist/`: the old-glibc build image, a portability check for the binaries, and the tarball a release ships.
+- The window backend falls back through `wma::selectUsableBackend()` when the chosen one cannot run on this machine.
+
+### Changed
+
+- **`AURA_NATIVE_OPTIMIZE` defaults to OFF** (was ON). `linux-release` keeps it ON for machine-local builds.
+- Linux builds no longer link libvulkan or libGL.
+- `RendererFactory::isAvailable(VULKAN)` is false where the Vulkan loader is missing.
+
 ## [0.8.0]
 
 Needs libwma 0.8.2.

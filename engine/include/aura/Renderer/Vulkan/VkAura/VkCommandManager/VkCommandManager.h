@@ -3,13 +3,13 @@
 
 #pragma once
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <atomic>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
-#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 

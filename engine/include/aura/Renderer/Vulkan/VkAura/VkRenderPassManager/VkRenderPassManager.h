@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 
 namespace aura3d
 {

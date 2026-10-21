@@ -5,7 +5,7 @@
 
 #include <vector>
 
-#include <vulkan/vulkan.h>
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/Profiling/GpuTiming.h"

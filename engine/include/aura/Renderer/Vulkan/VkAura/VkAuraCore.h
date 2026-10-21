@@ -3,11 +3,11 @@
 
 #pragma once
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <algorithm>
 #include <array>
 #include <vector>
 #include <vk_mem_alloc.h>
-#include <vulkan/vulkan.h>
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"

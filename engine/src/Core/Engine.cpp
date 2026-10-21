@@ -2,7 +2,9 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Renderer/RendererFactory.h"
 
+#include <exception>
 #include <filesystem>
+#include <optional>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
@@ -99,7 +101,28 @@ void Engine::_createRenderer()
         requested = aura3d::RendererFactory::defaultChoice();
     }
 
-    _adoptRenderer(requested);
+    //! A backend that is available but cannot start here (no GPU driver, no display for GL) hands over to the
+    //! next one instead of ending the program.
+    for (;;)
+    {
+        try
+        {
+            _adoptRenderer(requested);
+            break;
+        }
+        catch (const std::exception &error)
+        {
+            //! The factory may already have swapped the request for an available one; that is the one that failed.
+            const aura3d::RendererChoice failed = aura3d::RendererFactory::resolve(requested);
+            const std::optional<aura3d::RendererChoice> next = aura3d::RendererFactory::fallbackAfter(failed);
+            if (!next)
+                throw;
+            INK_WARN << "Renderer '" << aura3d::RendererChoiceToString(failed) << "' failed to start (" << error.what()
+                     << "); trying '" << aura3d::RendererChoiceToString(*next) << "'";
+            _renderer.reset();
+            requested = *next;
+        }
+    }
 
     INK_INFO << "Window backend: " << aura3d::WindowBackendToString(config->windowBackend());
 }

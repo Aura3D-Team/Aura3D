@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <memory>
 #include <vector>
-#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkDebugger/VkDebugger.h"

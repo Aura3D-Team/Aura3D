@@ -1,6 +1,7 @@
 #include "aura/Renderer/RendererFactory.h"
 
 #ifdef AURA_HAS_VULKAN
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include "aura/Renderer/Vulkan/VulkanRenderer.h"
 #endif
 #ifdef AURA_HAS_OPENGL
@@ -99,7 +100,8 @@ bool RendererFactory::isAvailable(RendererChoice choice) noexcept
     {
     case RendererChoice::VULKAN:
 #ifdef AURA_HAS_VULKAN
-        return true;
+        //! Compiled in is not enough where libvulkan is opened at run time.
+        return vk::loader::load();
 #else
         return false;
 #endif
@@ -166,6 +168,19 @@ RendererChoice RendererFactory::resolve(RendererChoice choice) noexcept
     return choice;
 }
 
+std::optional<RendererChoice> RendererFactory::fallbackAfter(RendererChoice choice) noexcept
+{
+    bool reached = false;
+    for (RendererChoice candidate : kFallbackChain)
+    {
+        if (reached && isAvailable(candidate))
+            return candidate;
+        if (candidate == choice)
+            reached = true;
+    }
+    return std::nullopt;
+}
+
 std::unique_ptr<IRenderer> RendererFactory::create(RendererChoice choice, const wma::WindowDetails &details)
 {
     const RendererChoice resolved = resolve(choice);
@@ -173,7 +188,8 @@ std::unique_ptr<IRenderer> RendererFactory::create(RendererChoice choice, const 
     if (resolved != choice)
     {
         INK_WARN << "RendererFactory: backend '" << RendererChoiceToString(choice)
-                 << "' was not compiled into this build; falling back to '" << RendererChoiceToString(resolved) << "'";
+                 << "' is not available (not compiled in, or its system library is missing); falling back to '"
+                 << RendererChoiceToString(resolved) << "'";
     }
 
     std::unique_ptr<IRenderer> renderer;

@@ -39,10 +39,14 @@ add_executable(MyGame main.cpp)
 target_link_libraries(MyGame PRIVATE Aura3D::Aura3D)
 ```
 
-**To run** an app built this way (or a prebuilt binary someone hands you),
-the machine needs a working Vulkan driver + loader (or a Mesa OpenGL driver,
-depending which backend `settings.json` selects) — the same requirement any
-Vulkan/OpenGL application has, nothing Aura3D-specific.
+The archive is built on glibc 2.27 for `x86-64-v2` CPUs with a static C++ runtime, and
+links `libdl` and nothing else of the system. The static-runtime link flags travel in
+the CMake package, so your app gets the same.
+
+**To run** an app built this way (or a prebuilt binary someone hands you) the machine
+needs glibc 2.27 or newer, and whatever display and GPU stack it already has: Aura3D
+opens X11, Wayland, ALSA, Vulkan and GL at run time. A missing Vulkan loader falls back to
+OpenGL, then to the software renderer; nothing fails before `main()`.
 
 ## Windows
 

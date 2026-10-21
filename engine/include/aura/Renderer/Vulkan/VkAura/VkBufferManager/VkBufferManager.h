@@ -7,7 +7,7 @@
 #include <functional>
 #include <utility>
 
-#include <vulkan/vulkan.h>
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"

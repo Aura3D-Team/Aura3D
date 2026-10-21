@@ -7,14 +7,15 @@ endif()
 
 find_package(Threads REQUIRED)
 find_package(ink 0.6.0 CONFIG REQUIRED)
-find_package(wma 0.8.2 CONFIG REQUIRED)
+find_package(wma 0.10.0 CONFIG REQUIRED)
 
 # Graphics Backends Dependencies Tracking
 #
 # AURA_FIND_* is what the installed config repeats: an enabled backend is not
 # always a package. Emscripten/Android reach GL through link options and NDK
 # system libs, so find_dependency(OpenGL) there fails on a target that links.
-if(AURA_ENABLE_OPENGL AND NOT EMSCRIPTEN AND NOT ANDROID)
+# Linux needs no OpenGL package: glad opens libGL itself, and the headers come with it.
+if(AURA_ENABLE_OPENGL AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(OpenGL REQUIRED)
     set(AURA_FIND_OPENGL ON)
 else()

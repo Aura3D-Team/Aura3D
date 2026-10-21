@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <limits>
 
+#include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Core/ImageLoader/ImageLoader.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
 #include "aura/Renderer/RendererFactory.h"
+#include "aura/aura.h"
 
 namespace aura3d
 {
@@ -19,6 +21,20 @@ namespace
 }
 
 } // namespace
+
+std::unique_ptr<wma::IWindowManager> IRenderer::makeWindow(wma::WindowBackend backend,
+                                                           const wma::WindowDetails &details, wma::GraphicsAPI api)
+{
+    if (_windowFactory)
+        return _windowFactory(backend, details, api);
+
+    const wma::WindowBackend usable = wma::selectUsableBackend(backend);
+    if (usable != backend)
+        INK_WARN << "[Aura3D] window backend " << WindowBackendToString(backend)
+                 << " cannot run on this machine (a system library is missing); using "
+                 << WindowBackendToString(usable);
+    return wma::createWindowManager(usable, details, api);
+}
 
 void IRenderer::drawBatch(const gfx::Canvas &canvas, TextureHandle texture, gfx::BatchSpace space)
 {

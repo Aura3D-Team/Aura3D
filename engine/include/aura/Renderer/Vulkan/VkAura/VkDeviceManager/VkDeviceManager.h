@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <vector>
-#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkQueueManager/VkQueueManager.h"
