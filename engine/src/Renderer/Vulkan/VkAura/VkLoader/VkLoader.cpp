@@ -4,13 +4,14 @@
 
 #include <dlfcn.h>
 
+namespace aura3d
+{
+
 #define AURA_VK_FN(level, name) PFN_##name name = nullptr;
 #include "aura/Renderer/Vulkan/VkAura/VkLoader/VkSymbols.inc"
 #undef AURA_VK_FN
 PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = nullptr;
 
-namespace aura3d
-{
 namespace vk
 {
 namespace loader
@@ -73,10 +74,15 @@ bool load() noexcept
     return loaded;
 }
 
-void bindInstance(VkInstance instance) noexcept
+bool bindInstance(VkInstance instance) noexcept
 {
+    bool complete = true;
     for (const Binding &binding : kInstanceBindings)
+    {
         *binding.slot = reinterpret_cast<void *>(vkGetInstanceProcAddr(instance, binding.name));
+        complete = complete && *binding.slot != nullptr;
+    }
+    return complete;
 }
 
 } // namespace loader
@@ -97,8 +103,9 @@ bool load() noexcept
     return true;
 }
 
-void bindInstance(VkInstance) noexcept
+bool bindInstance(VkInstance) noexcept
 {
+    return true;
 }
 
 } // namespace loader

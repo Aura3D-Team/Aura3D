@@ -8,7 +8,8 @@ Needs libwma 0.10.0.
 
 ### Added
 
-- `AURA_VULKAN_DYNAMIC_LOADER` (Linux, default ON): libvulkan is opened with `dlopen()`. Without a Vulkan loader `RendererFactory` falls back to OpenGL, then the software renderer, instead of the program failing to start. A call missing from `VkSymbols.inc` fails to link.
+- `AURA_VULKAN_DYNAMIC_LOADER` (Linux, default ON): libvulkan is opened with `dlopen()`. Without a Vulkan loader `RendererFactory` falls back to OpenGL, then the software renderer, instead of the program failing to start. The entry points are pointers in `namespace aura3d`, so a program that also calls libvulkan keeps its own. A call missing from `VkSymbols.inc` fails to compile.
+- A renderer that is available but fails to start (no GPU driver, no display for GL) hands over to the next in the chain, at startup and in `Engine::switchBackend()`.
 - `AURA_STATIC_RUNTIME`: links libstdc++ and libgcc statically (Linux, GCC), so the program does not need the build machine's GLIBCXX.
 - `AURA_CPU_LEVEL`: x86-64 microarchitecture level for Release builds that are shipped.
 - `linux-dist` preset (`x86-64-v2`, static runtime) and `ci/dist/`: the old-glibc build image, a portability check for the binaries, and the tarball a release ships.
@@ -19,6 +20,12 @@ Needs libwma 0.10.0.
 - **`AURA_NATIVE_OPTIMIZE` defaults to OFF** (was ON). `linux-release` keeps it ON for machine-local builds.
 - Linux builds no longer link libvulkan or libGL.
 - `RendererFactory::isAvailable(VULKAN)` is false where the Vulkan loader is missing.
+- `linux-dist` and the release jobs build without LTO.
+
+### Fixed
+
+- Release archives held only LTO objects, which link with nothing but the exact compiler that built them.
+- `Engine::switchBackend()` to a backend that failed to start left it adopted half-built, with the asset cache pointing at the destroyed renderer.
 
 ## [0.8.0]
 

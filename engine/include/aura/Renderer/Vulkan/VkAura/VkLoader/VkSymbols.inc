@@ -1,6 +1,6 @@
 // X-macro list of the Vulkan entry points the Vulkan backend calls: AURA_VK_FN(level, name).
 // Global entry points come from vkGetInstanceProcAddr(nullptr, ...), the rest from the instance.
-// vkGetInstanceProcAddr itself is read straight from the library. A call missing from this list does not link.
+// vkGetInstanceProcAddr itself is read straight from the library. A call missing from this list does not compile.
 AURA_VK_FN(Global, vkCreateInstance)
 AURA_VK_FN(Global, vkEnumerateInstanceExtensionProperties)
 AURA_VK_FN(Global, vkEnumerateInstanceLayerProperties)

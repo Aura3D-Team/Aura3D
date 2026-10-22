@@ -23,7 +23,7 @@ if [[ -z "$wma" || -z "$ink" ]]; then
     exit 1
 fi
 
-# The archives hold LTO objects, which plain ar/ranlib cannot index: use the compiler's wrappers.
+# The compiler's wrappers, not plain ar/ranlib: they also index LTO objects, should a library be built with LTO.
 gcc_ar=$(command -v gcc-ar-15 || command -v gcc-ar)
 gcc_ranlib=$(command -v gcc-ranlib-15 || command -v gcc-ranlib)
 

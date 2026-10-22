@@ -101,30 +101,7 @@ void Engine::_createRenderer()
         requested = aura3d::RendererFactory::defaultChoice();
     }
 
-    //! A backend that is available but cannot start here (no GPU driver, no display for GL) hands over to the
-    //! next one instead of ending the program.
-    for (;;)
-    {
-        try
-        {
-            _adoptRenderer(requested);
-            break;
-        }
-        catch (const std::exception &error)
-        {
-            //! The factory may already have swapped the request for an available one; that is the one that failed.
-            const aura3d::RendererChoice failed = aura3d::RendererFactory::resolve(requested);
-            const std::optional<aura3d::RendererChoice> next = aura3d::RendererFactory::fallbackAfter(failed);
-            if (!next)
-                throw;
-            INK_WARN << "Renderer '" << aura3d::RendererChoiceToString(failed) << "' failed to start (" << error.what()
-                     << "); trying '" << aura3d::RendererChoiceToString(*next) << "'";
-            _renderer.reset();
-            requested = *next;
-        }
-    }
-
-    INK_INFO << "Window backend: " << aura3d::WindowBackendToString(config->windowBackend());
+    _adoptRenderer(requested);
 }
 
 void Engine::_createAudio()
@@ -159,14 +136,40 @@ void Engine::_createDebugMode()
 
 void Engine::_adoptRenderer(aura3d::RendererChoice choice)
 {
-    _renderer = aura3d::RendererFactory::create(choice, _windowDetails);
+    //! Started before it replaces _renderer, so a failed start never leaves a half-built renderer adopted. One that is
+    //! available but cannot start here (no GPU driver, no display for GL) hands over to the next.
+    std::unique_ptr<aura3d::IRenderer> renderer;
+    for (;;)
+    {
+        try
+        {
+            renderer = aura3d::RendererFactory::create(choice, _windowDetails);
+            renderer->setWindowFactory(_windowFactory);
+            renderer->setGpuTimingEnabled(aura3d::AuraSettings::get()->get(aura3d::setting::rendererGpuTiming));
+            renderer->initialize(aura3d::AuraSettings::get(), _jobs.get());
+            break;
+        }
+        catch (const std::exception &error)
+        {
+            //! The factory may already have swapped the request for an available one; that is the one that failed.
+            const aura3d::RendererChoice failed = aura3d::RendererFactory::resolve(choice);
+            const std::optional<aura3d::RendererChoice> next = aura3d::RendererFactory::fallbackAfter(failed);
+            if (!next)
+                throw;
+            INK_WARN << "Renderer '" << aura3d::RendererChoiceToString(failed) << "' failed to start (" << error.what()
+                     << "); trying '" << aura3d::RendererChoiceToString(*next) << "'";
+            renderer.reset();
+            choice = *next;
+        }
+    }
+
+    _renderer = std::move(renderer);
     _rendererChoice = _renderer->getBackendType();
 
     INK_INFO << "Backend: " << aura3d::RendererChoiceToString(_rendererChoice);
-
-    _renderer->setWindowFactory(_windowFactory);
-    _renderer->setGpuTimingEnabled(aura3d::AuraSettings::get()->get(aura3d::setting::rendererGpuTiming));
-    _renderer->initialize(aura3d::AuraSettings::get(), _jobs.get());
+    //! The window actually opened: makeWindow() may have replaced the configured backend.
+    if (const wma::IWindowManager *window = _renderer->getWindowManager())
+        INK_INFO << "Window backend: " << aura3d::WindowBackendToString(window->getBackendType());
 
     if (_resources)
         _resources->setRenderer(_renderer.get());
@@ -205,6 +208,9 @@ void Engine::switchBackend(aura3d::RendererChoice choice)
         _renderer->cleanup();
         _renderer.reset();
     }
+    //! Until _adoptRenderer() succeeds; if every backend fails it throws, and nothing may point at the old renderer.
+    if (_resources)
+        _resources->setRenderer(nullptr);
 
     _configureWindow();
 

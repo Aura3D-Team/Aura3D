@@ -41,7 +41,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_PREFIX_PATH": "$env{LOCAL_PREFIX}",
         "AURA_CPU_LEVEL": "x86-64-v2",
-        "AURA_STATIC_RUNTIME": "ON"
+        "AURA_STATIC_RUNTIME": "ON",
+        "AURA_ENABLE_LTO": "OFF"
       }
     },
     {

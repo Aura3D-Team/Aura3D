@@ -263,7 +263,7 @@ if(AURA_ENABLE_VULKAN)
     target_compile_definitions(Aura3D PUBLIC AURA_HAS_VULKAN)
     if(AURA_VULKAN_DYNAMIC_LOADER AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         # VK_NO_PROTOTYPES: the entry points are the pointers in VkLoader.h, so a call missing from VkSymbols.inc
-        # fails to link rather than quietly pulling libvulkan back in. PRIVATE: consumers of the public headers
+        # fails to compile rather than quietly pulling libvulkan back in. PRIVATE: consumers of the public headers
         # keep the prototypes, and link nothing they do not call.
         target_compile_definitions(Aura3D PRIVATE AURA_VULKAN_DYNAMIC_LOADER VK_NO_PROTOTYPES)
         target_link_libraries(Aura3D PUBLIC Vulkan::Headers ${CMAKE_DL_LIBS})
@@ -296,7 +296,8 @@ if(AURA_ENABLE_OPENGL)
         target_include_directories(Aura3D PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor>)
         target_sources(Aura3D PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/glad.c)
-        # glad opens libGL itself on Linux (dlopen), so nothing is linked there.
+        # Linux: the GL entry points come from the window, and wma opens libGL/libEGL with dlopen(), so nothing is
+        # linked there. libdl is for the loader inside glad.c.
         if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
             target_link_libraries(Aura3D PUBLIC OpenGL::GL)
         else()

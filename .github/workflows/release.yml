@@ -145,6 +145,8 @@ jobs:
       - name: Configure
         # Mirrors ci.yml's android-build job -- see its Configure step for why
         # CMAKE_PREFIX_PATH/CMAKE_FIND_ROOT_PATH_MODE_PACKAGE are set this way.
+        # LTO is off in every release job: an archive of LTO objects links only
+        # with the exact compiler that built it.
         run: >
           cmake -S . -B build-android
           -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake
@@ -153,6 +155,7 @@ jobs:
           -DANDROID_STL=c++_shared
           -DCMAKE_BUILD_TYPE=Release
           -DAURA_BUILD_TESTS=OFF
+          -DAURA_ENABLE_LTO=OFF
           -DCMAKE_PREFIX_PATH="/usr/local/android;/usr/local"
           -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 
@@ -242,6 +245,7 @@ jobs:
           emcmake cmake -S . -B build-wasm \
             -DCMAKE_BUILD_TYPE=Release \
             -DAURA_BUILD_TESTS=OFF \
+            -DAURA_ENABLE_LTO=OFF \
             -DCMAKE_PREFIX_PATH="/usr/local/wasm;/usr/local" \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 
@@ -318,6 +322,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DINK_BUILD_TESTS=OFF
           -DINK_NATIVE_OPTIMIZE=OFF
+          -DINK_ENABLE_LTO=OFF
 
       - name: Build ink
         run: cmake --build ink/build --parallel
@@ -332,6 +337,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DWMA_BUILD_EXAMPLES=OFF
           -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_LTO=OFF
           -DWMA_ENABLE_SDL=ON
           -DWMA_ENABLE_GLFW=OFF
 
@@ -352,6 +358,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DAURA_BUILD_TESTS=OFF
           -DAURA_NATIVE_OPTIMIZE=OFF
+          -DAURA_ENABLE_LTO=OFF
 
       - name: Build Aura3D
         run: cmake --build aura3d/build --parallel
@@ -462,6 +469,7 @@ jobs:
           -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
           -DINK_BUILD_TESTS=OFF
           -DINK_NATIVE_OPTIMIZE=OFF
+          -DINK_ENABLE_LTO=OFF
 
       - name: Build ink
         run: cmake --build ink/build --parallel
@@ -481,6 +489,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DWMA_BUILD_EXAMPLES=OFF
           -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_LTO=OFF
           -DWMA_ENABLE_SDL=ON
           -DWMA_ENABLE_GLFW=ON
 
@@ -505,6 +514,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DAURA_BUILD_TESTS=OFF
           -DAURA_NATIVE_OPTIMIZE=OFF
+          -DAURA_ENABLE_LTO=OFF
 
       - name: Build Aura3D
         run: cmake --build aura3d/build --parallel
