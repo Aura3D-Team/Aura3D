@@ -6,7 +6,7 @@
 #include <array>
 #include <span>
 
-#include <vulkan/vulkan.h>
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 
 #include "aura/Core/AuraMath.h"
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"

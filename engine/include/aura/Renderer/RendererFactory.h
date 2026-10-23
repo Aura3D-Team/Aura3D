@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include "aura/Core/Camera/Camera.h"
 #include "aura/Renderer/IRenderer.h"
@@ -32,8 +33,9 @@ class RendererFactory
     static RendererChoice defaultChoice() noexcept;
 
     /**
-     * @brief Reports whether @p choice was compiled into this build.
+     * @brief Reports whether @p choice can be used by this build on this machine.
      *
+     * Compiled in and, for Vulkan on Linux, the Vulkan loader is installed.
      * Lets application code query capability before committing to a backend,
      * instead of discovering the answer from a failed create().
      */
@@ -49,6 +51,14 @@ class RendererFactory
      * downwards. Purely a query: nothing is constructed or logged.
      */
     static RendererChoice resolve(RendererChoice choice) noexcept;
+
+    /**
+     * @brief The next available backend below @p choice in the VULKAN → METAL → OPENGL → SOFTWARE chain.
+     *
+     * For a backend that is available but failed to start (no driver, no display it can use), where
+     * resolve() has nothing to say. Empty once the chain is exhausted.
+     */
+    [[nodiscard]] static std::optional<RendererChoice> fallbackAfter(RendererChoice choice) noexcept;
 
     /**
      * @brief The clip-space convention @p choice's projections must target.

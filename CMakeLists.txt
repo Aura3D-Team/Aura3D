@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.3.3)
 
 project(Aura3D
-    VERSION 0.8.0
+    VERSION 0.9.0
     DESCRIPTION "Aura3D Multi Backend Engine"
     LANGUAGES C CXX
 )
@@ -33,7 +33,23 @@ option(AURA_ENABLE_METAL  "Compile the Metal backend (Apple only)" OFF)
 option(AURA_ENABLE_UI     "Compile the retained AuraUI toolkit"   ON)
 
 option(AURA_ENABLE_LTO      "Enable link-time optimization"       ON)
-option(AURA_NATIVE_OPTIMIZE "Tune codegen for the host CPU"       ON)
+
+# OFF by default: a program built for distribution must not contain instructions its users' CPUs may lack, and
+# -march=native on a newer machine ends in SIGILL on an older one. The linux-release preset turns it on for
+# machine-local builds; AURA_CPU_LEVEL is the portable alternative.
+option(AURA_NATIVE_OPTIMIZE "Tune codegen for the host CPU"       OFF)
+# x86-64 microarchitecture level (x86-64-v2, x86-64-v3, ...); ignored with AURA_NATIVE_OPTIMIZE and on other
+# architectures. Empty keeps the compiler's baseline.
+set(AURA_CPU_LEVEL "" CACHE STRING "x86-64 microarchitecture level for Release builds (e.g. x86-64-v2)")
+
+# Linux, GCC: ship libstdc++ and libgcc inside the program, so it does not need a newer GLIBCXX than the user's
+# system has. PUBLIC link options, i.e. every executable that links Aura3D gets it. It does not lower the glibc
+# floor: build in an old-glibc environment for that (ci/dist/Dockerfile).
+option(AURA_STATIC_RUNTIME "Link libstdc++ and libgcc statically (Linux, GCC)" OFF)
+
+# Linux: open libvulkan with dlopen() instead of linking it, so a machine without a Vulkan loader falls back to
+# OpenGL or the software renderer instead of failing to start. Ignored on every other platform.
+option(AURA_VULKAN_DYNAMIC_LOADER "Open libvulkan at run time (Linux)" ON)
 
 # Reports the CPU time drawMeshes() spends recording, averaged over 240 frames.
 # OFF by default: it is a profiling aid, not something a normal run should pay
@@ -245,7 +261,15 @@ endif()
 
 if(AURA_ENABLE_VULKAN)
     target_compile_definitions(Aura3D PUBLIC AURA_HAS_VULKAN)
-    target_link_libraries(Aura3D PUBLIC Vulkan::Vulkan)
+    if(AURA_VULKAN_DYNAMIC_LOADER AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # VK_NO_PROTOTYPES: the entry points are the pointers in VkLoader.h, so a call missing from VkSymbols.inc
+        # fails to compile rather than quietly pulling libvulkan back in. PRIVATE: consumers of the public headers
+        # keep the prototypes, and link nothing they do not call.
+        target_compile_definitions(Aura3D PRIVATE AURA_VULKAN_DYNAMIC_LOADER VK_NO_PROTOTYPES)
+        target_link_libraries(Aura3D PUBLIC Vulkan::Headers ${CMAKE_DL_LIBS})
+    else()
+        target_link_libraries(Aura3D PUBLIC Vulkan::Vulkan)
+    endif()
     target_include_directories(Aura3D PUBLIC $<BUILD_INTERFACE:${AURA_VMA_INCLUDE_DIR}>)
 endif()
 
@@ -272,7 +296,13 @@ if(AURA_ENABLE_OPENGL)
         target_include_directories(Aura3D PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor>)
         target_sources(Aura3D PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/glad.c)
-        target_link_libraries(Aura3D PUBLIC OpenGL::GL)
+        # Linux: the GL entry points come from the window, and wma opens libGL/libEGL with dlopen(), so nothing is
+        # linked there. libdl is for the loader inside glad.c.
+        if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_link_libraries(Aura3D PUBLIC OpenGL::GL)
+        else()
+            target_link_libraries(Aura3D PUBLIC ${CMAKE_DL_LIBS})
+        endif()
     endif()
 endif()
 
@@ -355,6 +385,12 @@ if(AURA_NATIVE_OPTIMIZE AND NOT EMSCRIPTEN AND NOT ANDROID)
     if(AURA_HAS_MARCH_NATIVE)
         target_compile_options(Aura3D PRIVATE -march=native)
     endif()
+elseif(AURA_CPU_LEVEL AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND NOT EMSCRIPTEN AND NOT ANDROID)
+    target_compile_options(Aura3D PRIVATE $<$<CONFIG:Release>:-march=${AURA_CPU_LEVEL}>)
+endif()
+
+if(AURA_STATIC_RUNTIME AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_options(Aura3D PUBLIC -static-libstdc++ -static-libgcc)
 endif()
 
 ################################################################################

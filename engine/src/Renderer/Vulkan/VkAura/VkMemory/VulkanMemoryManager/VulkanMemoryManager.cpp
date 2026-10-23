@@ -1,11 +1,12 @@
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 
-#ifdef ANDROID
+#if defined(ANDROID) || defined(AURA_VULKAN_DYNAMIC_LOADER)
 //! VMA defaults to linking Vulkan core functions statically, but the Android
 //! NDK's stub libvulkan.so (tied to the target API level) doesn't guarantee
 //! every newer core-1.3 function as a directly linkable symbol -- resolve
 //! them at runtime via vkGetInstanceProcAddr/vkGetDeviceProcAddr instead, as
-//! VMA's own docs recommend for Android.
+//! VMA's own docs recommend for Android. The same holds where the loader
+//! opens libvulkan itself: nothing is linked to resolve them against.
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 #endif
@@ -102,7 +103,7 @@ void VulkanMemoryManager::initialize(VkInstance instance, VkPhysicalDevice physi
 
     _config = config;
 
-#ifdef ANDROID
+#if defined(ANDROID) || defined(AURA_VULKAN_DYNAMIC_LOADER)
     //! VMA_DYNAMIC_VULKAN_FUNCTIONS requires these two seed pointers; it
     //! resolves every other Vulkan entry point itself from there.
     const VmaVulkanFunctions vulkanFunctions{
@@ -129,7 +130,7 @@ void VulkanMemoryManager::initialize(VkInstance instance, VkPhysicalDevice physi
          */
         .pDeviceMemoryCallbacks = VkDeviceMemoryCounters::vmaCallbacks(),
 #endif
-#ifdef ANDROID
+#if defined(ANDROID) || defined(AURA_VULKAN_DYNAMIC_LOADER)
         .pVulkanFunctions = &vulkanFunctions,
 #endif
         .instance = instance,

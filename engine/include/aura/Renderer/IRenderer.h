@@ -575,11 +575,9 @@ class IRenderer
     /// Clip transform the batch pipeline applies for @p space on this backend.
     [[nodiscard]] glm::mat4 batchTransform(gfx::BatchSpace space) const;
 
+    /// A backend that cannot run on this machine (X11 without libX11, ...) is replaced by one that can.
     [[nodiscard]] std::unique_ptr<wma::IWindowManager>
-    makeWindow(wma::WindowBackend backend, const wma::WindowDetails &details, wma::GraphicsAPI api)
-    {
-        return _windowFactory ? _windowFactory(backend, details, api) : wma::createWindowManager(backend, details, api);
-    }
+    makeWindow(wma::WindowBackend backend, const wma::WindowDetails &details, wma::GraphicsAPI api);
     WindowFactory _windowFactory;
 
     /**

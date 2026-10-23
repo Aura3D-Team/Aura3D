@@ -111,7 +111,8 @@ class Engine
      * @brief Tears the current renderer down and brings up @p choice instead.
      *
      * Resolved through RendererFactory, so an unavailable backend degrades
-     * rather than failing. Drops the asset cache -- reload through resources()
+     * rather than failing, and one that fails to start falls back further down
+     * the chain. Drops the asset cache -- reload through resources()
      * afterwards. No-op if @p choice already resolves to the active backend.
      */
     void switchBackend(aura3d::RendererChoice choice);
@@ -126,9 +127,9 @@ class Engine
     /// constructor needs no guard around calling it.
     void _createDebugMode();
 
-    /// Brings up @p choice through RendererFactory and adopts the result.
-    /// The one path to owning a renderer, shared by startup and
-    /// switchBackend() so the two cannot drift apart.
+    /// Brings up @p choice through RendererFactory, falling back past a backend
+    /// that fails to start, and adopts the result. The one path to owning a
+    /// renderer, shared by startup and switchBackend() so the two cannot drift apart.
     void _adoptRenderer(aura3d::RendererChoice choice);
 
   private:

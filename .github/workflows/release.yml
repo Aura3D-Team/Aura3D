@@ -68,73 +68,52 @@ jobs:
     name: Package Linux
     needs: create-release
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    container:
-      image: arthurrl/vulkan-dev:lts
-      credentials:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    timeout-minutes: 60
 
     steps:
-      - name: Checkout
+      - name: Checkout Aura3D
         uses: actions/checkout@v4
+        with:
+          path: Aura3D
 
-      - name: Configure
+      - name: Checkout ink
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: libink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: libwma
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the build image
+        # Ubuntu 18.04 (glibc 2.27): the archive runs wherever that does. See ci/dist/Dockerfile.
+        uses: docker/build-push-action@v6
+        with:
+          context: Aura3D/ci/dist
+          load: true
+          tags: aura-dist
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and check
         run: >
-          cmake -S . -B build/linux/release -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DAURA_BUILD_TESTS=OFF
+          docker run --rm -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -v "$GITHUB_WORKSPACE":/workspace -w /workspace
+          aura-dist bash Aura3D/ci/dist/build.sh
 
-      - name: Build
-        run: cmake --build build/linux/release --parallel
-
-      - name: Install
-        run: cmake --install build/linux/release --prefix stage/aura3d-linux-x86_64
-
-      - name: Merge wma/ink into a self-contained static library
-        # libwma.a and libink.a in this image are themselves static, so fold
-        # their object files into libaura3d.a: a consumer of the release
-        # archive then only needs Vulkan/OpenGL/Threads (system libraries,
-        # not bundled) rather than separately building wma/ink for their
-        # platform. Extract each archive into its own subdirectory first so
-        # identically-named object files (e.g. two libraries each with a
-        # "Utils.cpp.o") don't collide when re-archived together.
-        #
-        # ink::ThreadPool (used by CpuFrameBufferManager and VulkanRenderer)
-        # ships inside libink.a as of ink 0.3.0 -- there is no separate
-        # libthreading.a to merge any more.
-        run: |
-          FAT_LIB="$(pwd)/stage/aura3d-linux-x86_64/lib/libaura3d_linux_x86_64.a"
-          WMA_LIB="$(find /usr/local/lib -name 'libwma_linux_x86_64.a' | head -1)"
-          INK_LIB="$(find /usr/local/lib -name 'libink_linux_x86_64.a' | head -1)"
-
-          if [[ -z "$WMA_LIB" || -z "$INK_LIB" ]]; then
-            echo "❌  libwma/libink for linux_x86_64 not found under /usr/local/lib" >&2
-            exit 1
-          fi
-
-          MERGE_DIR="$(mktemp -d)"
-          n=0
-          for lib in "$FAT_LIB" "$WMA_LIB" "$INK_LIB"; do
-            dir="$MERGE_DIR/$n"
-            mkdir -p "$dir"
-            ar -x --output="$dir" "$lib"
-            n=$((n + 1))
-          done
-
-          ar -qc "$FAT_LIB.merged" $(find "$MERGE_DIR" -name '*.o')
-          ranlib "$FAT_LIB.merged"
-          mv "$FAT_LIB.merged" "$FAT_LIB"
-
-          # This staged Aura3D-deps-<tag>.cmake -- not Aura3DConfig.cmake itself,
-          # which is shared across every platform in the archive's prefix and
-          # carries no find_dependency() calls of its own -- no longer needs to
-          # find wma/ink separately: their code is now inside libaura3d.a. Leave
-          # the Vulkan/OpenGL/glm/Threads find_dependency calls alone; those stay
-          # external. Does not touch cmake/Aura3D-deps.cmake.in, so a normal
-          # (non-release) `cmake --install` elsewhere is unaffected.
-          DEPS="stage/aura3d-linux-x86_64/lib/cmake/Aura3D/Aura3D-deps-linux_x86_64.cmake"
-          sed -i '/find_dependency(wma)/d;/find_dependency(ink)/d' "$DEPS"
+      - name: Stage and merge wma/ink into a self-contained static library
+        # libwma.a and libink.a are static, so their object files are folded into libaura3d.a: a consumer of
+        # the archive then only needs the Vulkan headers rather than separately building wma/ink.
+        run: >
+          docker run --rm -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -v "$GITHUB_WORKSPACE":/workspace -w /workspace
+          aura-dist bash Aura3D/ci/dist/package.sh stage/aura3d-linux-x86_64
 
       - name: Package
         run: |
@@ -166,6 +145,8 @@ jobs:
       - name: Configure
         # Mirrors ci.yml's android-build job -- see its Configure step for why
         # CMAKE_PREFIX_PATH/CMAKE_FIND_ROOT_PATH_MODE_PACKAGE are set this way.
+        # LTO is off in every release job: an archive of LTO objects links only
+        # with the exact compiler that built it.
         run: >
           cmake -S . -B build-android
           -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake
@@ -174,6 +155,7 @@ jobs:
           -DANDROID_STL=c++_shared
           -DCMAKE_BUILD_TYPE=Release
           -DAURA_BUILD_TESTS=OFF
+          -DAURA_ENABLE_LTO=OFF
           -DCMAKE_PREFIX_PATH="/usr/local/android;/usr/local"
           -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 
@@ -263,6 +245,7 @@ jobs:
           emcmake cmake -S . -B build-wasm \
             -DCMAKE_BUILD_TYPE=Release \
             -DAURA_BUILD_TESTS=OFF \
+            -DAURA_ENABLE_LTO=OFF \
             -DCMAKE_PREFIX_PATH="/usr/local/wasm;/usr/local" \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 
@@ -339,6 +322,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DINK_BUILD_TESTS=OFF
           -DINK_NATIVE_OPTIMIZE=OFF
+          -DINK_ENABLE_LTO=OFF
 
       - name: Build ink
         run: cmake --build ink/build --parallel
@@ -353,6 +337,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DWMA_BUILD_EXAMPLES=OFF
           -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_LTO=OFF
           -DWMA_ENABLE_SDL=ON
           -DWMA_ENABLE_GLFW=OFF
 
@@ -373,6 +358,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DAURA_BUILD_TESTS=OFF
           -DAURA_NATIVE_OPTIMIZE=OFF
+          -DAURA_ENABLE_LTO=OFF
 
       - name: Build Aura3D
         run: cmake --build aura3d/build --parallel
@@ -483,6 +469,7 @@ jobs:
           -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
           -DINK_BUILD_TESTS=OFF
           -DINK_NATIVE_OPTIMIZE=OFF
+          -DINK_ENABLE_LTO=OFF
 
       - name: Build ink
         run: cmake --build ink/build --parallel
@@ -502,6 +489,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DWMA_BUILD_EXAMPLES=OFF
           -DWMA_BUILD_TESTS=OFF
+          -DWMA_ENABLE_LTO=OFF
           -DWMA_ENABLE_SDL=ON
           -DWMA_ENABLE_GLFW=ON
 
@@ -526,6 +514,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps"
           -DAURA_BUILD_TESTS=OFF
           -DAURA_NATIVE_OPTIMIZE=OFF
+          -DAURA_ENABLE_LTO=OFF
 
       - name: Build Aura3D
         run: cmake --build aura3d/build --parallel

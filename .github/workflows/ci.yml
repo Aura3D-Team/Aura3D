@@ -111,6 +111,87 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build/linux/release --output-on-failure
 
+  linux-portable-build:
+    name: Linux portable
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    # Builds on Ubuntu 18.04 (glibc 2.27) with the linux-dist preset and fails if a binary needs more than that, or
+    # links a system library that should be opened with dlopen(). See ci/dist/Dockerfile and docs/10-platform-builds.md.
+    steps:
+      - name: Checkout Aura3D
+        uses: actions/checkout@v4
+        with:
+          path: Aura3D
+
+      - name: Checkout ink
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libink
+          ref: main
+          path: libink
+
+      - name: Checkout wma
+        uses: actions/checkout@v4
+        with:
+          repository: Arthu-RL/libwma
+          ref: main
+          path: libwma
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the build image
+        uses: docker/build-push-action@v6
+        with:
+          context: Aura3D/ci/dist
+          load: true
+          tags: aura-dist
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build, test and check
+        run: >
+          docker run --rm -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -v "$GITHUB_WORKSPACE":/workspace -w /workspace
+          aura-dist bash Aura3D/ci/dist/build.sh
+
+      - name: Collect the demo
+        run: |
+          mkdir demo
+          cp Aura3D/build/linux/dist/apps/AuraUIDemo/AuraUIDemo demo/
+
+      - name: Upload demo
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-demo
+          path: demo/AuraUIDemo
+          retention-days: 1
+
+  linux-portable-run:
+    name: Runs on ${{ matrix.image }}
+    needs: linux-portable-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:18.04", "debian:10", "debian:12", "ubuntu:22.04", "ubuntu:24.04", "fedora:latest", "archlinux:latest"]
+
+    steps:
+      - name: Download demo
+        uses: actions/download-artifact@v4
+        with:
+          name: portable-demo
+
+      - name: Run the smoke test on a bare system
+        # No X11, Wayland, Vulkan, GL or ALSA libraries are installed in these images: the program must still
+        # start, and finish its checks on the software renderer with SDL's dummy video driver and no sound.
+        run: >
+          docker run --rm -v "$PWD":/app -w /tmp
+          -e SDL_VIDEODRIVER=dummy -e AURA_RENDERER__API=software -e AURA_WINDOW__BACKEND=sdl3 -e AURA_AUDIO__BACKEND=null
+          ${{ matrix.image }} sh -c 'chmod +x /app/AuraUIDemo && /app/AuraUIDemo --smoke-test'
+
   linux-benchmark:
     name: Linux Benchmark
     runs-on: ubuntu-latest
@@ -176,11 +257,11 @@ jobs:
           # committed settings.json so the demo keeps its normal defaults.
           with open("settings.json") as f:
               config = json.load(f)
-          config["renderer"]["backend"] = "software"
-          config["window"]["backend"] = "SDL3"
+          config["renderer"]["api"] = "software"
+          config["window"]["backend"] = "sdl3"
           config["window"]["width"] = 640
           config["window"]["height"] = 480
-          config["audio"]["backend"] = "null"
+          config.setdefault("audio", {})["backend"] = "null"
           with open("settings.json", "w") as f:
               json.dump(config, f, indent=2)
           PY

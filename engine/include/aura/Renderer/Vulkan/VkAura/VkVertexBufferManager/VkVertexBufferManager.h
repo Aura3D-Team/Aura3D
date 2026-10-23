@@ -3,10 +3,10 @@
 
 #pragma once
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"

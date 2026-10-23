@@ -5,7 +5,7 @@
 
 #include <atomic>
 
-#include <vulkan/vulkan.h>
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 
 #include "aura/Core/AuraCore.h"
 

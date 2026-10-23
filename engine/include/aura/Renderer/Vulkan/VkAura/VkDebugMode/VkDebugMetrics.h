@@ -5,8 +5,8 @@
 
 #include <atomic>
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <vk_mem_alloc.h>
-#include <vulkan/vulkan.h>
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/DebugMode/GpuDebugStats.h"

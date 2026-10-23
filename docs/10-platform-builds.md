@@ -33,6 +33,26 @@ cmake --build --preset linux-release
 Output lands under `build/linux/release/`. No Emscripten or NDK needed —
 this is the fast inner-loop target for actual gameplay iteration.
 
+### Building programs to ship
+
+`linux-release` is tuned to the machine it was built on. For a binary other people run:
+
+| | |
+|---|---|
+| preset | `linux-dist`: `x86-64-v2` code, static libstdc++ and libgcc |
+| glibc | a binary needs the glibc it was linked against, so build in the oldest system you support: `ci/dist/Dockerfile` (Ubuntu 18.04, glibc 2.27) |
+| libraries | X11, Wayland, ALSA, Vulkan and GL are opened at run time; the binary links only libc and libm |
+| check | `python3 ci/check-portability.py <binary>` fails on anything newer than the floor |
+
+```bash
+docker build -t aura-dist ci/dist
+docker run --rm -v "$PWD/..":/workspace aura-dist bash Aura3D/ci/dist/build.sh
+```
+
+Builds `libink`, `libwma` and Aura3D from sibling directories, runs the tests and the check.
+Without a Vulkan loader the engine falls back to OpenGL, then to the software renderer; without
+X11 or Wayland it uses SDL3; without ALSA it plays nothing instead of failing.
+
 ## Windows
 
 Prerequisites: a C++23 MSVC toolchain (Visual Studio 2022 17.10+, or the
@@ -286,7 +306,7 @@ Enabling it costs both build time and runtime size.
 
 See the [top-level README](../README.md#cmake-options) for the full table
 (`AURA_ENABLE_VULKAN/OPENGL/CPU`, `AURA_BUILD_SANDBOX/ORGLOGO/TESTS`,
-`AURA_ENABLE_LTO`, `AURA_NATIVE_OPTIMIZE`). `Platform.cmake` overrides the
+`AURA_ENABLE_LTO`, `AURA_NATIVE_OPTIMIZE`, `AURA_CPU_LEVEL`, `AURA_STATIC_RUNTIME`). `Platform.cmake` overrides the
 backend and optimization flags per platform as described above — anything
 you pass explicitly for a disabled backend on Android/WASM is silently
 forced back off, not an error.

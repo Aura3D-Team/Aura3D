@@ -16,6 +16,9 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableV
       _vkValidationLayers(std::move(vkInstanceData.vkValidationLayers)),
       _vkInstanceExtensions(std::move(vkInstanceData.vkInstanceExtensions))
 {
+    if (!loader::load())
+        throw AuraException("VkInstanceManager: the Vulkan loader (libvulkan.so.1) is not installed");
+
     initializeAppInfo(vkInstanceData);
     initializeInstanceInfo();
 
@@ -27,6 +30,15 @@ VkInstanceManager::VkInstanceManager(VkInstanceData vkInstanceData, bool enableV
     //! Paired with the vkDestroyInstance in the destructor; see
     //! hostAllocationCallbacks() for why neither site is #ifdef'd.
     VK_RESULT_CHECK(vkCreateInstance(&_instanceInfo, hostAllocationCallbacks(), &_vkInstance));
+    if (!loader::bindInstance(_vkInstance))
+    {
+        //! Looked up by name, since the bindings are incomplete; a throwing constructor gets no destructor.
+        const auto destroyInstance =
+            reinterpret_cast<PFN_vkDestroyInstance>(vkGetInstanceProcAddr(_vkInstance, "vkDestroyInstance"));
+        if (destroyInstance)
+            destroyInstance(_vkInstance, hostAllocationCallbacks());
+        throw AuraException("VkInstanceManager: the Vulkan loader lacks an entry point this backend calls");
+    }
 
     if (vkDebuggerPreparationResult == VK_SUCCESS)
     {

@@ -66,7 +66,12 @@ VkSurfaceManager::VkSurfaceManager(VkInstance *vkInstance, wma::WindowBackend wi
         createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
         createInfo.dpy = static_cast<Display *>(nativeDisplay);
         createInfo.window = reinterpret_cast<Window>(window);
-        VK_RESULT_CHECK(vkCreateXlibSurfaceKHR(*_vkInstance, &createInfo, nullptr, &_vkSurface));
+        //! Looked up by name: the loader binds no platform extension entry points.
+        const auto createSurface =
+            reinterpret_cast<PFN_vkCreateXlibSurfaceKHR>(vkGetInstanceProcAddr(*_vkInstance, "vkCreateXlibSurfaceKHR"));
+        if (!createSurface)
+            throw AuraException("VkSurfaceManager: VK_KHR_xlib_surface is not available");
+        VK_RESULT_CHECK(createSurface(*_vkInstance, &createInfo, nullptr, &_vkSurface));
         break;
     }
 #endif
@@ -80,7 +85,11 @@ VkSurfaceManager::VkSurfaceManager(VkInstance *vkInstance, wma::WindowBackend wi
         createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
         createInfo.display = static_cast<struct wl_display *>(nativeDisplay);
         createInfo.surface = static_cast<struct wl_surface *>(window);
-        VK_RESULT_CHECK(vkCreateWaylandSurfaceKHR(*_vkInstance, &createInfo, nullptr, &_vkSurface));
+        const auto createSurface = reinterpret_cast<PFN_vkCreateWaylandSurfaceKHR>(
+            vkGetInstanceProcAddr(*_vkInstance, "vkCreateWaylandSurfaceKHR"));
+        if (!createSurface)
+            throw AuraException("VkSurfaceManager: VK_KHR_wayland_surface is not available");
+        VK_RESULT_CHECK(createSurface(*_vkInstance, &createInfo, nullptr, &_vkSurface));
         break;
     }
 #endif

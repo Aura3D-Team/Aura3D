@@ -118,7 +118,10 @@ cmake --build . -j$(nproc)
 | `AURA_BUILD_UIDEMO` | `ON` | Build the AuraUI widget-toolkit demo app |
 | `AURA_BUILD_TESTS` | `OFF` | Build the automated test suite |
 | `AURA_ENABLE_LTO` | `ON` | Interprocedural optimization |
-| `AURA_NATIVE_OPTIMIZE` | `ON` | `-march=native` on desktop builds |
+| `AURA_NATIVE_OPTIMIZE` | `OFF` | `-march=native`; the `linux-release` preset turns it on. Machine-local builds only |
+| `AURA_CPU_LEVEL` | empty | x86-64 level for builds you ship, e.g. `x86-64-v2` |
+| `AURA_STATIC_RUNTIME` | `OFF` | Link libstdc++ and libgcc statically (Linux, GCC) |
+| `AURA_VULKAN_DYNAMIC_LOADER` | `ON` | Linux: open libvulkan at run time, so a missing loader falls back to OpenGL or software |
 | `AURA_WASM_ASYNCIFY` | `OFF` | Emscripten Asyncify (only if the app ever blocks synchronously) |
 | `AURA_PROFILE_FRAME` | `OFF` | Per-phase frame timing, logged periodically |
 | `AURA_ENABLE_DEBUG_MODE` | `OFF` | CPU/GPU allocation tracking + JSON benchmark report ([docs](docs/13-debug-benchmark-mode.md)); implies `AURA_PROFILE_FRAME` |

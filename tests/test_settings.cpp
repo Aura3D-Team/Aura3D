@@ -28,6 +28,24 @@ using namespace aura3d;
 namespace
 {
 
+void setEnv(const char *name, const char *value)
+{
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+void unsetEnv(const char *name)
+{
+#ifdef _WIN32
+    _putenv_s(name, ""); // an empty value removes the variable
+#else
+    unsetenv(name);
+#endif
+}
+
 //! Writes @p contents to a scratch file and returns its path.
 [[nodiscard]] std::string writeFile(const std::string &name, const std::string &contents)
 {
@@ -134,8 +152,8 @@ void testEnvironmentAndCommandLine()
 {
     AuraSettings &settings = fresh();
 
-    setenv("AURA_WINDOW__WIDTH", "900", 1);
-    setenv("AURA_PRESENT__MODE", "IMMEDIATE", 1);
+    setEnv("AURA_WINDOW__WIDTH", "900");
+    setEnv("AURA_PRESENT__MODE", "IMMEDIATE");
 
     std::array<const char *, 4> arguments{"app", "--set", "window.width=700", "--set=audio.volume=0.25"};
     AuraConfig config;
@@ -143,8 +161,8 @@ void testEnvironmentAndCommandLine()
 
     const std::string file = writeFile("env", R"({ "window": { "width": 800 } })");
     settings.configure(config, file);
-    unsetenv("AURA_WINDOW__WIDTH");
-    unsetenv("AURA_PRESENT__MODE");
+    unsetEnv("AURA_WINDOW__WIDTH");
+    unsetEnv("AURA_PRESENT__MODE");
     std::remove(file.c_str());
 
     AURA_CHECK(settings.get(setting::windowWidth) == 700, "the command line is the last word");

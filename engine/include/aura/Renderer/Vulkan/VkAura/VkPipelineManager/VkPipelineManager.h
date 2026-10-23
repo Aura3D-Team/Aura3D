@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include "aura/Renderer/Vulkan/VkAura/VkSwapChainManager/VkSwapChainManager.h"
-#include <vulkan/vulkan.h>
 
 namespace aura3d
 {

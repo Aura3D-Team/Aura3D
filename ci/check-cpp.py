@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Check owned C++ changes; CLANG_FORMAT/CLANG_TIDY override the LLVM 21 defaults."""
+"""Check owned C++ changes; CLANG_FORMAT/CLANG_TIDY or LLVM_VERSION pin the tools."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from functools import cache
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -14,8 +16,21 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = ("apps", "engine/include", "engine/src", "include", "src", "tests")
 EXTENSIONS = {".h", ".hpp", ".hxx", ".inl", ".ipp", ".c", ".cc", ".cpp", ".cxx", ".mm"}
 HEADERS = {".h", ".hpp", ".hxx", ".inl", ".ipp"}
-CLANG_FORMAT = os.environ.get("CLANG_FORMAT", "clang-format-22")
-CLANG_TIDY = os.environ.get("CLANG_TIDY", "clang-tidy-22")
+
+LLVM_VERSIONS = ("23", "22", "21")
+
+
+@cache
+def llvm_tool(name):
+    # Newest installed LLVM wins; CLANG_FORMAT/CLANG_TIDY or LLVM_VERSION pin one.
+    override = os.environ.get(name.upper().replace("-", "_"))
+    if override:
+        return override
+    wanted = [os.environ["LLVM_VERSION"]] if os.environ.get("LLVM_VERSION") else LLVM_VERSIONS
+    for version in wanted:
+        if shutil.which(f"{name}-{version}"):
+            return f"{name}-{version}"
+    raise OSError(f"{name}-{'/'.join(wanted)} not found")
 
 
 def git(*args):
@@ -57,7 +72,7 @@ def changes(args):
 def format_cpp(selected, args):
     failed = False
     for path, ranges in selected.items():
-        command = [CLANG_FORMAT, "--style=file", "--fallback-style=none"]
+        command = [llvm_tool("clang-format"), "--style=file", "--fallback-style=none"]
         command += ["-i"] if args.fix else ["--dry-run", "--Werror"]
         command += [f"--lines={start}:{end}" for start, end in ranges]
         failed |= subprocess.run([*command, str(path)], cwd=ROOT).returncode != 0
@@ -80,7 +95,7 @@ def lint_cpp(selected, args):
         return False
     header_filter = "^" + re.escape(str(ROOT)) + "/(" + "|".join(SOURCE_ROOTS) + ")/"
     line_filter = json.dumps([{"name": str(path), "lines": ranges} for path, ranges in selected.items()])
-    command = [CLANG_TIDY, "-p", str(build), "--quiet",
+    command = [llvm_tool("clang-tidy"), "-p", str(build), "--quiet",
                "--config-file=" + str(ROOT / ".clang-tidy"), "--header-filter=" + header_filter]
     if not args.all:
         command += ["--line-filter=" + line_filter]
@@ -109,12 +124,13 @@ def main():
     args = parser.parse_args()
     if args.jobs < 1 or (args.fix and args.check != "format"):
         parser.error("--jobs must be positive; --fix is only supported for format")
-    subprocess.run([CLANG_FORMAT if args.check == "format" else CLANG_TIDY, "--version"], check=True)
+    tool = llvm_tool("clang-format" if args.check == "format" else "clang-tidy")
+    subprocess.run([tool, "--version"], check=True)
     if args.check == "format":
-        subprocess.run([CLANG_FORMAT, "--style=file", "--dump-config"], cwd=ROOT,
+        subprocess.run([tool, "--style=file", "--dump-config"], cwd=ROOT,
                        stdout=subprocess.DEVNULL, check=True)
     else:
-        subprocess.run([CLANG_TIDY, "--verify-config", "--config-file=" + str(ROOT / ".clang-tidy")],
+        subprocess.run([tool, "--verify-config", "--config-file=" + str(ROOT / ".clang-tidy")],
                        cwd=ROOT, check=True)
     selected = changes(args)
     print(f"Checking {len(selected)} C++ files ({'all lines' if args.all or args.files else 'changed lines'}).", flush=True)

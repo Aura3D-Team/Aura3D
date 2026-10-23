@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <vk_mem_alloc.h>
-#include <vulkan/vulkan.h>
 
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"

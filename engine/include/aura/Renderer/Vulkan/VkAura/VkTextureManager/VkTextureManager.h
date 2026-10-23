@@ -3,10 +3,10 @@
 
 #pragma once
 
+#include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <array>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan.h>
 
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 #include "aura/aura.h"
