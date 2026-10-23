@@ -96,6 +96,8 @@ jobs:
       - name: Build the build image
         # Ubuntu 18.04 (glibc 2.27): the archive runs wherever that does. See ci/dist/Dockerfile.
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: Aura3D/ci/dist
           load: true
@@ -577,6 +579,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: "{linux,android,wasm,macos,windows}*"
 
       - name: Upload assets and publish
         env:
