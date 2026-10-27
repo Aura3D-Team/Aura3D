@@ -153,7 +153,11 @@ std::expected<std::unique_ptr<FontAtlas>, std::string> FontAtlas::fromMemory(std
     if (offset < 0)
         return std::unexpected("FontAtlas: no usable face in the font image");
 
-    if (!stbtt_InitFont(&atlas->_font->info, atlas->_font->data.data(), offset))
+    // The sized variant checks every font table against the buffer length, so a
+    // truncated or hostile font is rejected here instead of being read past its end.
+    if (static_cast<size_t>(offset) >= atlas->_font->data.size() ||
+        !stbtt_InitFontSized(&atlas->_font->info, atlas->_font->data.data(),
+                             static_cast<unsigned int>(atlas->_font->data.size()), offset))
         return std::unexpected("FontAtlas: stb_truetype rejected the font image");
 
     atlas->initializeMetrics();

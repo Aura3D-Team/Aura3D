@@ -2,6 +2,12 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.9.1]
+
+### Changed
+
+- `vendor/stb`: using stb code if some known fixes applied
+
 ## [0.9.0]
 
 Needs libwma 0.10.0.
