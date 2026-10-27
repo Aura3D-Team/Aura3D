@@ -550,8 +550,13 @@ enum STBVorbisError
 //////////////////////////////////////////////////////////////////////////////
 
 #ifdef STB_VORBIS_NO_PULLDATA_API
+   // guarded so defining these yourself as well doesn't warn about a redefinition
+   #ifndef STB_VORBIS_NO_INTEGER_CONVERSION
    #define STB_VORBIS_NO_INTEGER_CONVERSION
+   #endif
+   #ifndef STB_VORBIS_NO_STDIO
    #define STB_VORBIS_NO_STDIO
+   #endif
 #endif
 
 #if defined(STB_VORBIS_NO_CRT) && !defined(STB_VORBIS_NO_STDIO)
@@ -755,8 +760,8 @@ typedef struct
    uint16 coupling_steps;
    MappingChannel *chan;
    uint8  submaps;
-   uint8  submap_floor[15]; // varies
-   uint8  submap_residue[15]; // varies
+   uint8  submap_floor[16]; // varies; submaps can be up to 16 (#1312)
+   uint8  submap_residue[16]; // varies
 } Mapping;
 
 typedef struct
@@ -898,6 +903,9 @@ struct stb_vorbis
   // sample-access
    int channel_buffer_start;
    int channel_buffer_end;
+
+  // codebook setup temporaries, freed by vorbis_deinit if setup fails midway (#1174)
+   void *temp_lengths, *temp_values;
 };
 
 #if defined(STB_VORBIS_NO_PUSHDATA_API)
@@ -947,13 +955,18 @@ static void *make_block_array(void *mem, int count, int size)
    return p;
 }
 
-static void *setup_malloc(vorb *f, int sz)
+// sizes are size_t because callers compute them with sizeof() from counts read
+// from the file; these used to take an int, which silently truncated a huge
+// request into a small allocation that the caller then overran
+static void *setup_malloc(vorb *f, size_t size)
 {
-   sz = (sz+7) & ~7; // round up to nearest 8 for alignment of future allocs.
+   int sz;
+   if (size > INT_MAX - 7) return NULL;
+   sz = ((int) size+7) & ~7; // round up to nearest 8 for alignment of future allocs.
    f->setup_memory_required += sz;
    if (f->alloc.alloc_buffer) {
       void *p = (char *) f->alloc.alloc_buffer + f->setup_offset;
-      if (f->setup_offset + sz > f->temp_offset) return NULL;
+      if (sz > f->temp_offset - f->setup_offset) return NULL;
       f->setup_offset += sz;
       return p;
    }
@@ -966,9 +979,11 @@ static void setup_free(vorb *f, void *p)
    free(p);
 }
 
-static void *setup_temp_malloc(vorb *f, int sz)
+static void *setup_temp_malloc(vorb *f, size_t size)
 {
-   sz = (sz+7) & ~7; // round up to nearest 8 for alignment of future allocs.
+   int sz;
+   if (size > INT_MAX - 7) return NULL;
+   sz = ((int) size+7) & ~7; // round up to nearest 8 for alignment of future allocs.
    if (f->alloc.alloc_buffer) {
       if (f->temp_offset - sz < f->setup_offset) return NULL;
       f->temp_offset -= sz;
@@ -977,10 +992,10 @@ static void *setup_temp_malloc(vorb *f, int sz)
    return malloc(sz);
 }
 
-static void setup_temp_free(vorb *f, void *p, int sz)
+static void setup_temp_free(vorb *f, void *p, size_t sz)
 {
    if (f->alloc.alloc_buffer) {
-      f->temp_offset += (sz+7)&~7;
+      f->temp_offset += ((int) sz+7)&~7;
       return;
    }
    free(p);
@@ -1241,11 +1256,12 @@ static int vorbis_validate(uint8 *data)
 static int lookup1_values(int entries, int dim)
 {
    int r = (int) floor(exp((float) log((float) entries) / dim));
-   if ((int) floor(pow((float) r+1, dim)) <= entries)   // (int) cast for MinGW warning;
-      ++r;                                              // floor() to avoid _ftol() when non-CRT
+   // compare as double: casting a power that doesn't fit in an int to int is undefined (#1168)
+   if (floor(pow((float) r+1, dim)) <= entries)
+      ++r;
    if (pow((float) r+1, dim) <= entries)
       return -1;
-   if ((int) floor(pow((float) r, dim)) > entries)
+   if (floor(pow((float) r, dim)) > entries)
       return -1;
    return r;
 }
@@ -1363,7 +1379,8 @@ static uint32 get32(vorb *f)
 static int getn(vorb *z, uint8 *data, int n)
 {
    if (USE_MEMORY(z)) {
-      if (z->stream+n > z->stream_end) { z->eof = 1; return 0; }
+      // compare lengths: forming a pointer past the end to compare it is undefined
+      if (n > z->stream_end - z->stream) { z->eof = 1; return 0; }
       memcpy(data, z->stream, n);
       z->stream += n;
       return 1;
@@ -1382,8 +1399,11 @@ static int getn(vorb *z, uint8 *data, int n)
 static void skip(vorb *z, int n)
 {
    if (USE_MEMORY(z)) {
-      z->stream += n;
-      if (z->stream >= z->stream_end) z->eof = 1;
+      if (n >= z->stream_end - z->stream) {
+         z->stream = z->stream_end;
+         z->eof = 1;
+      } else
+         z->stream += n;
       return;
    }
    #ifndef STB_VORBIS_NO_STDIO
@@ -1394,6 +1414,7 @@ static void skip(vorb *z, int n)
    #endif
 }
 
+#ifndef STB_VORBIS_NO_PULLDATA_API // only the pull API seeks
 static int set_file_offset(stb_vorbis *f, unsigned int loc)
 {
    #ifndef STB_VORBIS_NO_PUSHDATA_API
@@ -1401,7 +1422,9 @@ static int set_file_offset(stb_vorbis *f, unsigned int loc)
    #endif
    f->eof = 0;
    if (USE_MEMORY(f)) {
-      if (f->stream_start + loc >= f->stream_end || f->stream_start + loc < f->stream_start) {
+      // the old 'stream_start + loc < stream_start' overflow test is undefined behavior
+      // and compilers may drop it; compare against the length instead
+      if (loc >= (unsigned int) (f->stream_end - f->stream_start)) {
          f->stream = f->stream_end;
          f->eof = 1;
          return 0;
@@ -1424,6 +1447,7 @@ static int set_file_offset(stb_vorbis *f, unsigned int loc)
    return 0;
    #endif
 }
+#endif // STB_VORBIS_NO_PULLDATA_API
 
 
 static uint8 ogg_page_header[4] = { 0x4f, 0x67, 0x67, 0x53 };
@@ -1582,9 +1606,11 @@ static int get8_packet(vorb *f)
 static int get32_packet(vorb *f)
 {
    uint32 x;
+   // shift as unsigned: at end of packet get8_packet returns EOP (-1), and
+   // shifting a negative int is undefined behavior
    x = get8_packet(f);
-   x += get8_packet(f) << 8;
-   x += get8_packet(f) << 16;
+   x += (uint32) get8_packet(f) << 8;
+   x += (uint32) get8_packet(f) << 16;
    x += (uint32) get8_packet(f) << 24;
    return x;
 }
@@ -1751,9 +1777,11 @@ static int codebook_decode_scalar(vorb *f, Codebook *c)
 
 #endif
 
+// a sparse codebook with no used entries has no sorted_values, so a failed
+// decode (var == -1) must not index it (CVE-2023-45682)
 #define DECODE(var,f,c)                                       \
    DECODE_RAW(var,f,c)                                        \
-   if (c->sparse) var = c->sorted_values[var];
+   if (c->sparse && var >= 0) var = c->sorted_values[var];
 
 #ifndef STB_VORBIS_DIVIDES_IN_CODEBOOK
   #define DECODE_VQ(var,f,c)   DECODE_RAW(var,f,c)
@@ -1888,7 +1916,8 @@ static int codebook_decode_deinterleave_repeat(vorb *f, Codebook *c, float **out
       // buffer (len*ch), our current offset within it (p_inter*ch)+(c_inter),
       // and the length we'll be using (effective)
       if (c_inter + p_inter*ch + effective > len * ch) {
-         effective = len*ch - (p_inter*ch - c_inter);
+         // was '- c_inter', which let the decode run 2*c_inter values past the end
+         effective = len*ch - (p_inter*ch + c_inter);
       }
 
    #ifdef STB_VORBIS_DIVIDES_IN_CODEBOOK
@@ -2067,7 +2096,7 @@ static __forceinline void draw_line(float *output, int x0, int y0, int x1, int y
    ady -= abs(base) * adx;
    if (x1 > n) x1 = n;
    if (x < x1) {
-      LINE_OP(output[x], inverse_db_table[y&255]);
+      LINE_OP(output[x], inverse_db_table[(uint32) y & 255]); // #1563
       for (++x; x < x1; ++x) {
          err += ady;
          if (err >= adx) {
@@ -2075,7 +2104,7 @@ static __forceinline void draw_line(float *output, int x0, int y0, int x1, int y
             y += sy;
          } else
             y += base;
-         LINE_OP(output[x], inverse_db_table[y&255]);
+         LINE_OP(output[x], inverse_db_table[(uint32) y & 255]); // #1563
       }
    }
 }
@@ -2108,7 +2137,8 @@ static void decode_residue(vorb *f, float *residue_buffers[], int ch, int n, int
    int rtype = f->residue_types[rn];
    int c = r->classbook;
    int classwords = f->codebooks[c].dimensions;
-   unsigned int actual_size = rtype == 2 ? n*2 : n;
+   // type 2 interleaves all ch channels into one vector, not just 2 of them (#1594)
+   unsigned int actual_size = rtype == 2 ? n*ch : n;
    unsigned int limit_r_begin = (r->begin < actual_size ? r->begin : actual_size);
    unsigned int limit_r_end   = (r->end   < actual_size ? r->end   : actual_size);
    int n_read = limit_r_end - limit_r_begin;
@@ -2736,15 +2766,22 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
    // iterates many times, and s few. So I have two copies of it and
    // switch between them halfway.
 
+   // iterations 0 and 1 are part of the ld-6,-5,-4 pass below when n is 64 or 128,
+   // so they must not run twice for those (legal) block sizes (#1977)
+
    // this is iteration 0 of step 3
-   imdct_step3_iter0_loop(n >> 4, u, n2-1-n4*0, -(n >> 3), A);
-   imdct_step3_iter0_loop(n >> 4, u, n2-1-n4*1, -(n >> 3), A);
+   if (ld > 6) {
+      imdct_step3_iter0_loop(n >> 4, u, n2-1-n4*0, -(n >> 3), A);
+      imdct_step3_iter0_loop(n >> 4, u, n2-1-n4*1, -(n >> 3), A);
+   }
 
    // this is iteration 1 of step 3
-   imdct_step3_inner_r_loop(n >> 5, u, n2-1 - n8*0, -(n >> 4), A, 16);
-   imdct_step3_inner_r_loop(n >> 5, u, n2-1 - n8*1, -(n >> 4), A, 16);
-   imdct_step3_inner_r_loop(n >> 5, u, n2-1 - n8*2, -(n >> 4), A, 16);
-   imdct_step3_inner_r_loop(n >> 5, u, n2-1 - n8*3, -(n >> 4), A, 16);
+   if (ld > 7) {
+      imdct_step3_inner_r_loop(n >> 5, u, n2-1 - n8*0, -(n >> 4), A, 16);
+      imdct_step3_inner_r_loop(n >> 5, u, n2-1 - n8*1, -(n >> 4), A, 16);
+      imdct_step3_inner_r_loop(n >> 5, u, n2-1 - n8*2, -(n >> 4), A, 16);
+      imdct_step3_inner_r_loop(n >> 5, u, n2-1 - n8*3, -(n >> 4), A, 16);
+   }
 
    l=2;
    for (; l < (ld-3)>>1; ++l) {
@@ -3099,8 +3136,9 @@ static int do_floor(vorb *f, Mapping *map, int i, int n, float *target, YTYPE *f
       }
       if (lx < n2) {
          // optimization of: draw_line(target, lx,ly, n,ly, n2);
+         // masked like draw_line does; the CVE-2019-13220 fix missed this copy
          for (j=lx; j < n2; ++j)
-            LINE_OP(target[j], inverse_db_table[ly]);
+            LINE_OP(target[j], inverse_db_table[ly&255]);
          CHECK(f);
       }
    }
@@ -3506,6 +3544,7 @@ static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
    return right - left;
 }
 
+#ifndef STB_VORBIS_NO_PULLDATA_API
 static int vorbis_pump_first_frame(stb_vorbis *f)
 {
    int len, right, left, res;
@@ -3514,6 +3553,7 @@ static int vorbis_pump_first_frame(stb_vorbis *f)
       vorbis_finish_frame(f, len, left, right);
    return res;
 }
+#endif
 
 #ifndef STB_VORBIS_NO_PUSHDATA_API
 static int is_whole_packet_present(stb_vorbis *f)
@@ -3650,7 +3690,10 @@ static int start_decoder(vorb *f)
    if (!vorbis_validate(header))                    return error(f, VORBIS_invalid_setup);
    //file vendor
    len = get32_packet(f);
-   f->vendor = (char*)setup_malloc(f, sizeof(char) * (len+1));
+   // these lengths and counts are 32-bit values from the file: a length of 0xffffffff
+   // made len+1 zero, and then vendor[len] wrote before the buffer (CVE-2023-45675)
+   if (len < 0)                                     return error(f, VORBIS_invalid_setup);
+   f->vendor = (char*)setup_malloc(f, sizeof(char) * ((size_t) len+1));
    if (f->vendor == NULL)                           return error(f, VORBIS_outofmem);
    for(i=0; i < len; ++i) {
       f->vendor[i] = get8_packet(f);
@@ -3659,15 +3702,22 @@ static int start_decoder(vorb *f)
    //user comments
    f->comment_list_length = get32_packet(f);
    f->comment_list = NULL;
+   if (f->comment_list_length < 0 || f->comment_list_length > INT_MAX / (int) sizeof(char*)) {
+      f->comment_list_length = 0;
+      return error(f, VORBIS_invalid_setup);
+   }
    if (f->comment_list_length > 0)
    {
       f->comment_list = (char**) setup_malloc(f, sizeof(char*) * (f->comment_list_length));
       if (f->comment_list == NULL)                  return error(f, VORBIS_outofmem);
+      // vorbis_deinit frees every entry, including ones we never get to on error
+      memset(f->comment_list, 0, sizeof(char*) * (f->comment_list_length));
    }
 
    for(i=0; i < f->comment_list_length; ++i) {
       len = get32_packet(f);
-      f->comment_list[i] = (char*)setup_malloc(f, sizeof(char) * (len+1));
+      if (len < 0)                                  return error(f, VORBIS_invalid_setup);
+      f->comment_list[i] = (char*)setup_malloc(f, sizeof(char) * ((size_t) len+1));
       if (f->comment_list[i] == NULL)               return error(f, VORBIS_outofmem);
 
       for(j=0; j < len; ++j) {
@@ -3737,7 +3787,7 @@ static int start_decoder(vorb *f)
       if (c->dimensions == 0 && c->entries != 0)    return error(f, VORBIS_invalid_setup);
 
       if (c->sparse)
-         lengths = (uint8 *) setup_temp_malloc(f, c->entries);
+         lengths = (uint8 *) (f->temp_lengths = setup_temp_malloc(f, c->entries));
       else
          lengths = c->codeword_lengths = (uint8 *) setup_malloc(f, c->entries);
 
@@ -3778,6 +3828,7 @@ static int start_decoder(vorb *f)
          if (c->codeword_lengths == NULL) return error(f, VORBIS_outofmem);
          memcpy(c->codeword_lengths, lengths, c->entries);
          setup_temp_free(f, lengths, c->entries); // note this is only safe if there have been no intervening temp mallocs!
+         f->temp_lengths = NULL;
          lengths = c->codeword_lengths;
          c->sparse = 0;
       }
@@ -3808,7 +3859,7 @@ static int start_decoder(vorb *f)
             if (!c->codeword_lengths)           return error(f, VORBIS_outofmem);
             c->codewords = (uint32 *) setup_temp_malloc(f, sizeof(*c->codewords) * c->sorted_entries);
             if (!c->codewords)                  return error(f, VORBIS_outofmem);
-            values = (uint32 *) setup_temp_malloc(f, sizeof(*values) * c->sorted_entries);
+            values = (uint32 *) (f->temp_values = setup_temp_malloc(f, sizeof(*values) * c->sorted_entries));
             if (!values)                        return error(f, VORBIS_outofmem);
          }
          size = c->entries + (sizeof(*c->codewords) + sizeof(*values)) * c->sorted_entries;
@@ -3817,8 +3868,7 @@ static int start_decoder(vorb *f)
       }
 
       if (!compute_codewords(c, lengths, c->entries, values)) {
-         if (c->sparse) setup_temp_free(f, values, 0);
-         return error(f, VORBIS_invalid_setup);
+         return error(f, VORBIS_invalid_setup); // vorbis_deinit frees the temporaries
       }
 
       if (c->sorted_entries) {
@@ -3839,6 +3889,7 @@ static int start_decoder(vorb *f)
          setup_temp_free(f, c->codewords, sizeof(*c->codewords)*c->sorted_entries);
          setup_temp_free(f, lengths, c->entries);
          c->codewords = NULL;
+         f->temp_lengths = f->temp_values = NULL;
       }
 
       compute_accelerated_huffman(c);
@@ -3857,6 +3908,8 @@ static int start_decoder(vorb *f)
             if (values < 0) return error(f, VORBIS_invalid_setup);
             c->lookup_values = (uint32) values;
          } else {
+            // entries is 24 bits and dimensions 16, so the product can overflow
+            if (c->dimensions != 0 && c->entries > INT_MAX / c->dimensions) return error(f, VORBIS_invalid_setup);
             c->lookup_values = c->entries * c->dimensions;
          }
          if (c->lookup_values == 0) return error(f, VORBIS_invalid_setup);
@@ -3875,11 +3928,16 @@ static int start_decoder(vorb *f)
             // pre-expand the lookup1-style multiplicands, to avoid a divide in the inner loop
             if (sparse) {
                if (c->sorted_entries == 0) goto skip;
-               c->multiplicands = (codetype *) setup_malloc(f, sizeof(c->multiplicands[0]) * c->sorted_entries * c->dimensions);
-            } else
-               c->multiplicands = (codetype *) setup_malloc(f, sizeof(c->multiplicands[0]) * c->entries        * c->dimensions);
-            if (c->multiplicands == NULL) { setup_temp_free(f,mults,sizeof(mults[0])*c->lookup_values); return error(f, VORBIS_outofmem); }
+            }
             len = sparse ? c->sorted_entries : c->entries;
+            // this product wrapped (and was truncated to int), giving a small buffer
+            // that the loop below filled with len*dimensions values
+            if (c->dimensions != 0 && len > INT_MAX / (int) sizeof(c->multiplicands[0]) / c->dimensions) {
+               setup_temp_free(f,mults,sizeof(mults[0])*c->lookup_values);
+               return error(f, VORBIS_invalid_setup);
+            }
+            c->multiplicands = (codetype *) setup_malloc(f, sizeof(c->multiplicands[0]) * len * c->dimensions);
+            if (c->multiplicands == NULL) { setup_temp_free(f,mults,sizeof(mults[0])*c->lookup_values); return error(f, VORBIS_outofmem); }
             for (j=0; j < len; ++j) {
                unsigned int z = sparse ? c->sorted_values[j] : j;
                unsigned int div=1;
@@ -3905,6 +3963,7 @@ static int start_decoder(vorb *f)
          {
             float last=0;
             CHECK(f);
+            if (c->lookup_values > INT_MAX / sizeof(c->multiplicands[0])) { setup_temp_free(f, mults,sizeof(mults[0])*c->lookup_values); return error(f, VORBIS_invalid_setup); }
             c->multiplicands = (codetype *) setup_malloc(f, sizeof(c->multiplicands[0]) * c->lookup_values);
             if (c->multiplicands == NULL) { setup_temp_free(f, mults,sizeof(mults[0])*c->lookup_values); return error(f, VORBIS_outofmem); }
             for (j=0; j < (int) c->lookup_values; ++j) {
@@ -4161,7 +4220,8 @@ static int start_decoder(vorb *f)
       int i,max_part_read=0;
       for (i=0; i < f->residue_count; ++i) {
          Residue *r = f->residue_config + i;
-         unsigned int actual_size = f->blocksize_1 / 2;
+         // must match decode_residue, where type 2 decodes n*ch values
+         unsigned int actual_size = f->residue_types[i] == 2 ? f->blocksize_1 / 2 * f->channels : f->blocksize_1 / 2;
          unsigned int limit_r_begin = r->begin < actual_size ? r->begin : actual_size;
          unsigned int limit_r_end   = r->end   < actual_size ? r->end   : actual_size;
          int n_read = limit_r_end - limit_r_begin;
@@ -4209,9 +4269,18 @@ static void vorbis_deinit(stb_vorbis *p)
 {
    int i,j;
 
+   // only non-NULL if start_decoder failed while setting up a codebook
+   if (!p->alloc.alloc_buffer) {
+      setup_temp_free(p, p->temp_lengths, 0);
+      setup_temp_free(p, p->temp_values, 0);
+   }
+
    setup_free(p, p->vendor);
-   for (i=0; i < p->comment_list_length; ++i) {
-      setup_free(p, p->comment_list[i]);
+   // comment_list is NULL if its allocation failed
+   if (p->comment_list) {
+      for (i=0; i < p->comment_list_length; ++i) {
+         setup_free(p, p->comment_list[i]);
+      }
    }
    setup_free(p, p->comment_list);
 
@@ -4648,11 +4717,13 @@ static int get_seek_page_info(stb_vorbis *f, ProbedPage *z)
    // record where the page starts
    z->page_start = stb_vorbis_get_file_offset(f);
 
-   // parse the header
-   getn(f, header, 27);
+   // parse the header; a short read would leave header/lacing uninitialized (#1172)
+   if (!getn(f, header, 27))
+      return 0;
    if (header[0] != 'O' || header[1] != 'g' || header[2] != 'g' || header[3] != 'S')
       return 0;
-   getn(f, lacing, header[26]);
+   if (!getn(f, lacing, header[26]))
+      return 0;
 
    // determine the length of the payload
    len = 0;
@@ -4663,7 +4734,7 @@ static int get_seek_page_info(stb_vorbis *f, ProbedPage *z)
    z->page_end = z->page_start + 27 + header[26] + len;
 
    // read the last-decoded sample out of the data
-   z->last_decoded_sample = header[6] + (header[7] << 8) + (header[8] << 16) + (header[9] << 24);
+   z->last_decoded_sample = header[6] + (header[7] << 8) + (header[8] << 16) + ((uint32) header[9] << 24);
 
    // restore file state to where we were
    set_file_offset(f, z->page_start);
@@ -4740,7 +4811,9 @@ static int seek_to_sample_coarse(stb_vorbis *f, uint32 sample_number)
    }
 
    while (left.page_end != right.page_start) {
-      assert(left.page_end < right.page_start);
+      // corrupt granule positions can make the bounds cross; that used to be an assert
+      if (left.page_end > right.page_start)
+         return error(f, VORBIS_seek_failed);
       // search range in bytes
       delta = right.page_start - left.page_end;
       if (delta <= 65536) {
@@ -4887,8 +4960,9 @@ int stb_vorbis_seek_frame(stb_vorbis *f, unsigned int sample_number)
    if (!seek_to_sample_coarse(f, sample_number))
       return 0;
 
-   assert(f->current_loc_valid);
-   assert(f->current_loc <= sample_number);
+   // a corrupt file can leave either of these false; they used to be asserts
+   if (!f->current_loc_valid || f->current_loc > sample_number)
+      return error(f, VORBIS_seek_failed);
 
    // linear search for the relevant packet
    max_frame_samples = (f->blocksize_1*3 - f->blocksize_0) >> 2;
@@ -4924,9 +4998,12 @@ int stb_vorbis_seek(stb_vorbis *f, unsigned int sample_number)
    if (sample_number != f->current_loc) {
       int n;
       uint32 frame_start = f->current_loc;
-      stb_vorbis_get_frame_float(f, &n, NULL);
-      assert(sample_number > frame_start);
-      assert(f->channel_buffer_start + (int) (sample_number-frame_start) <= f->channel_buffer_end);
+      // a corrupt file can fail to decode here or land outside the frame; these were
+      // an unchecked return and asserts, after which the buffer start ran past its end
+      if (!stb_vorbis_get_frame_float(f, &n, NULL))
+         return 0;
+      if (sample_number <= frame_start || f->channel_buffer_start + (int) (sample_number-frame_start) > f->channel_buffer_end)
+         return error(f, VORBIS_seek_failed);
       f->channel_buffer_start += (sample_number - frame_start);
    }
 
@@ -5154,7 +5231,9 @@ static int8 channel_position[7][6] =
    // add (1<<23) to convert to int, then divide by 2^SHIFT, then add 0.5/2^SHIFT to round
    #define MAGIC(SHIFT) (1.5f * (1 << (23-SHIFT)) + 0.5f/(1 << SHIFT))
    #define ADDEND(SHIFT) (((150-SHIFT) << 23) + (1 << 22))
-   #define FAST_SCALED_FLOAT_TO_INT(temp,x,s) (temp.f = (x) + MAGIC(s), temp.i - ADDEND(s))
+   // subtract as unsigned: for out-of-range samples from a corrupt stream the int
+   // subtraction overflowed (undefined behavior); callers clamp the result anyway
+   #define FAST_SCALED_FLOAT_TO_INT(temp,x,s) (temp.f = (x) + MAGIC(s), (int) ((unsigned int) temp.i - (unsigned int) ADDEND(s)))
    #define check_endianness()
 #else
    #define FAST_SCALED_FLOAT_TO_INT(temp,x,s) ((int) ((x) * (1 << (s))))
@@ -5169,7 +5248,7 @@ static void copy_samples(short *dest, float *src, int len)
    for (i=0; i < len; ++i) {
       FASTDEF(temp);
       int v = FAST_SCALED_FLOAT_TO_INT(temp, src[i],15);
-      if ((unsigned int) (v + 32768) > 65535)
+      if ((unsigned int) v + 32768u > 65535u)
          v = v < 0 ? -32768 : 32767;
       dest[i] = v;
    }
@@ -5193,7 +5272,7 @@ static void compute_samples(int mask, short *output, int num_c, float **data, in
       for (i=0; i < n; ++i) {
          FASTDEF(temp);
          int v = FAST_SCALED_FLOAT_TO_INT(temp,buffer[i],15);
-         if ((unsigned int) (v + 32768) > 65535)
+         if ((unsigned int) v + 32768u > 65535u)
             v = v < 0 ? -32768 : 32767;
          output[o+i] = v;
       }
@@ -5233,7 +5312,7 @@ static void compute_stereo_samples(short *output, int num_c, float **data, int d
       for (i=0; i < (n<<1); ++i) {
          FASTDEF(temp);
          int v = FAST_SCALED_FLOAT_TO_INT(temp,buffer[i],15);
-         if ((unsigned int) (v + 32768) > 65535)
+         if ((unsigned int) v + 32768u > 65535u)
             v = v < 0 ? -32768 : 32767;
          output[o2+i] = v;
       }
@@ -5283,7 +5362,7 @@ static void convert_channels_short_interleaved(int buf_c, short *buffer, int dat
             FASTDEF(temp);
             float f = data[i][d_offset+j];
             int v = FAST_SCALED_FLOAT_TO_INT(temp, f,15);//data[i][d_offset+j],15);
-            if ((unsigned int) (v + 32768) > 65535)
+            if ((unsigned int) v + 32768u > 65535u)
                v = v < 0 ? -32768 : 32767;
             *buffer++ = v;
          }

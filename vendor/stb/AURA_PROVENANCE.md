@@ -4,9 +4,9 @@ Sean Barrett's single-file public-domain libraries.
 
 | File | Version | Upstream |
 |---|---|---|
-| `stb_image.h` | see the header's own changelog | <https://github.com/nothings/stb> |
-| `stb_truetype.h` | see the header's own changelog | <https://github.com/nothings/stb> |
-| `stb_vorbis.c` | v1.22 (2026-08-13) | <https://raw.githubusercontent.com/nothings/stb/master/stb_vorbis.c> |
+| `stb_image.h` | v2.30 + security fixes | <https://github.com/Arthu-RL/stb-aura3d-fork> |
+| `stb_truetype.h` | v1.26 + security fixes | <https://github.com/Arthu-RL/stb-aura3d-fork> |
+| `stb_vorbis.c` | v1.22 + security fixes | <https://github.com/Arthu-RL/stb-aura3d-fork> |
 
 All three are dual-licensed public domain / MIT (see the license block at the
 end of each file).
@@ -26,6 +26,13 @@ decoder only ever needs the in-memory entry point) and `STB_VORBIS_NO_PUSHDATA_A
 
 ## Updating
 
-Copy the file straight from an upstream checkout and refresh the version above
-— the vendored copy is deliberately unmodified so a diff against upstream stays
-empty.
+These three files are copied from the hardened stb fork above, which is
+upstream stb plus bounds-checking, overflow and leak fixes (stb_image, stb_truetype,
+stb_vorbis). They are MIT / public domain like upstream. Update by copying the
+files from the fork; do not edit them here. The fork's changes are not sent
+upstream.
+
+`stb_truetype.h` gains `stbtt_InitFontSized(info, data, data_size, offset)`, which
+validates every font table against the buffer length. `FontAtlas::fromMemory`
+uses it instead of `stbtt_InitFont`, so a truncated or malformed font is rejected
+at load time rather than read past its end.
