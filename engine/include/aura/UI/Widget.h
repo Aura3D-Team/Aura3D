@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include <ink/ink_base.hpp>
+
 #include "aura/UI/Core/Accessibility.h"
 #include "aura/UI/Core/DrawList.h"
 #include "aura/UI/Core/Event.h"
@@ -71,6 +73,22 @@ enum class Visibility : u8
     Hidden,
     Collapsed
 };
+
+//! Widget's per-node switches, packed so a widget pays two bytes for all of them.
+enum class WidgetFlags : u16
+{
+    None = 0,
+    Enabled = 1u << 0u,
+    Focusable = 1u << 1u,
+    HitTestVisible = 1u << 2u,
+    Animating = 1u << 3u,
+    LayoutDirty = 1u << 4u,
+    HasEffect = 1u << 5u, //!< Opacity or translation set: the one thing paintTree() tests for either.
+    ChangingRoot = 1u << 6u,
+    FixedWidth = 1u << 7u, //!< A Length pinned the axis in measure(), so Stretch must not overrule it.
+    FixedHeight = 1u << 8u,
+};
+INK_ENUM_FLAGS(WidgetFlags) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
 
 /**
  * @class Widget
@@ -136,6 +154,8 @@ class Widget
     {
         return _root;
     }
+    /// True when @p node is this widget or one of its descendants.
+    [[nodiscard]] bool isAncestorOf(const Widget *node) const noexcept;
 
     [[nodiscard]] std::span<const std::unique_ptr<Widget>> children() const noexcept
     {
@@ -226,7 +246,7 @@ class Widget
 
     [[nodiscard]] bool layoutDirty() const noexcept
     {
-        return _layoutDirty;
+        return INK_FLAG_CHECK(_flags, WidgetFlags::LayoutDirty);
     }
 
     /// @}
@@ -243,7 +263,7 @@ class Widget
     void setEnabled(bool enabled);
     [[nodiscard]] bool enabled() const noexcept
     {
-        return _enabled;
+        return INK_FLAG_CHECK(_flags, WidgetFlags::Enabled);
     }
 
     /// False when this widget or any ancestor is disabled -- what a control
@@ -306,12 +326,16 @@ class Widget
     /// a decoration, a label on top of a card.
     void setHitTestVisible(bool visible) noexcept
     {
-        _hitTestVisible = visible;
+        setFlag(WidgetFlags::HitTestVisible, visible);
     }
     [[nodiscard]] bool hitTestVisible() const noexcept
     {
-        return _hitTestVisible;
+        return INK_FLAG_CHECK(_flags, WidgetFlags::HitTestVisible);
     }
+
+    /// The deepest visible widget in this subtree whose hitTest() takes @p point, given in the space this
+    /// widget's bounds are in; nullptr when none does.
+    [[nodiscard]] Widget *pick(glm::vec2 point);
 
     /// @{
     /// Return true to consume the event and stop it bubbling to the parent.
@@ -366,7 +390,7 @@ class Widget
 
     void setFocusable(bool focusable) noexcept
     {
-        _focusable = focusable;
+        setFlag(WidgetFlags::Focusable, focusable);
     }
 
     /// True when this widget can take keyboard focus *right now*: focusable,
@@ -377,6 +401,8 @@ class Widget
     void requestFocus(FocusReason reason = FocusReason::Programmatic);
 
     [[nodiscard]] bool isHovered() const noexcept;
+    //! Active when @p active, else Hovered while the pointer is over this widget: the state a ColorSet picks.
+    [[nodiscard]] Interaction interaction(bool active) const noexcept;
 
     /// True when this widget wants the platform's text input active while it
     /// has focus. Drives IWindowManager::setTextInputEnabled(), and tells the
@@ -453,6 +479,11 @@ class Widget
 
     [[nodiscard]] const Theme &theme() const noexcept;
 
+    /// 1, or the theme's disabledAlpha when this widget or an ancestor is disabled.
+    [[nodiscard]] f32 paintAlpha() const noexcept;
+    /// @p style's own height, else the theme's row height.
+    [[nodiscard]] f32 rowHeight(const WidgetStyle &style) const noexcept;
+
     /// @}
 
     /// @name Accessibility
@@ -502,7 +533,7 @@ class Widget
     void setAnimating(bool animating);
     [[nodiscard]] bool animating() const noexcept
     {
-        return _animating;
+        return INK_FLAG_CHECK(_flags, WidgetFlags::Animating);
     }
 
     /// @{
@@ -544,7 +575,6 @@ class Widget
     Rect _bounds{};
     glm::vec2 _translation{0.0f};
     f32 _opacity = 1.0f;
-    bool _hasEffect = false; //! Opacity or translation set: the one thing paintTree() tests for either.
 
     Widget *_parent = nullptr;
     UIRoot *_root = nullptr;
@@ -559,18 +589,9 @@ class Widget
     std::string _accessibleDescription;
 
     Visibility _visibility = Visibility::Visible;
-    bool _enabled = true;
-    bool _changingRoot = false;
-    bool _focusable = false;
-    bool _hitTestVisible = true;
-    bool _animating = false;
+    WidgetFlags _flags = WidgetFlags::Enabled | WidgetFlags::HitTestVisible | WidgetFlags::LayoutDirty;
 
-    bool _layoutDirty = true;
-
-    //! Set by measure() when a Length pinned the axis, so arrange() knows not
-    //! to let Alignment::Stretch overrule it.
-    bool _fixedWidth = false;
-    bool _fixedHeight = false;
+    void setFlag(WidgetFlags flag, bool on) noexcept;
 };
 
 } // namespace aura3d::ui

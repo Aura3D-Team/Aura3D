@@ -184,11 +184,7 @@ void Dropdown::_reshape()
 
 Thickness Dropdown::contentInsets() const noexcept
 {
-    Thickness insets = layout().padding;
-    const f32 inset = resolvedStyle().padding;
-    insets.left += inset;
-    insets.right += inset;
-    return insets;
+    return textInsets();
 }
 
 glm::vec2 Dropdown::measureContent(const Constraints &available)
@@ -196,7 +192,7 @@ glm::vec2 Dropdown::measureContent(const Constraints &available)
     _reshape();
 
     const WidgetStyle style = resolvedStyle();
-    const f32 row = style.height.value_or(theme().metrics.rowHeight);
+    const f32 row = rowHeight(style);
 
     //! Room for the caption, the gap and the chevron. Measured from the widest
     //! item rather than the current one, so choosing a longer option does not
@@ -224,11 +220,9 @@ glm::vec2 Dropdown::measureContent(const Constraints &available)
 void Dropdown::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
-    const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
+    const f32 alpha = paintAlpha();
 
-    out.drawRect(bounds(), withAlpha(surfaceColor(style), alpha),
-                 withAlpha(style.border.pick(isOpen(), isHovered()), alpha), style.borderWidth,
-                 Corners::all(style.rounding));
+    paintSurface(out, bounds(), style, isOpen(), alpha);
 
     const Rect content = contentRect();
     const f32 chevron = content.height() * 0.4f;
@@ -264,7 +258,7 @@ void Dropdown::open()
     auto &list = layer->open<Column>(OverlayDesc{
         .anchor = visualBounds(),
         .placement = Placement::Below,
-        .takeFocus = false,
+        .flags = OverlayFlags::DismissOnOutsideClick | OverlayFlags::DismissOnEscape,
         .owner = this,
     });
 
@@ -389,7 +383,7 @@ void Dropdown::accessibility(AccessibilityInfo &out) const
     Widget::accessibility(out);
 
     out.role = Role::Button;
-    out.expanded = isOpen();
+    out.set(AccessibilityState::Expanded, isOpen());
 
     if (out.name.empty())
         out.name = text();

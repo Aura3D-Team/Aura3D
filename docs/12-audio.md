@@ -32,10 +32,8 @@ alongside an ALSA device is a perfectly normal configuration, and
 ```cpp
 Engine engine("settings.json");
 AudioEngine* audio = engine.audio();
-ResourceManager* resources = engine.resources();
 
-// Cached by path, exactly like loadTexture/loadMesh.
-const AudioClipHandle blip = resources->loadSound("./resources/audio/blip.wav");
+const AudioClipHandle blip = audio->loadClip("./resources/audio/blip.wav");
 
 // One-shot at 80% volume.
 (void)audio->play(blip, 0.8f);

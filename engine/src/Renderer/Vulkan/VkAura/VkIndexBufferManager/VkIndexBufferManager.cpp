@@ -1,7 +1,5 @@
 #include "aura/Renderer/Vulkan/VkAura/VkIndexBufferManager/VkIndexBufferManager.h"
 
-#include <algorithm>
-#include <ranges>
 #include <span>
 
 #include "aura/Core/AuraException/AuraException.h"
@@ -19,14 +17,6 @@ void destroyBufferInfo(VulkanMemoryManager *memory, IndexBufferInfo &info)
 {
     AllocatedBuffer allocated{info.buffer, info.allocation, info.mappedPointer, info.memoryOffset};
 
-    //! Persistent buffers get their mappedPointer from
-    //! VMA_ALLOCATION_CREATE_MAPPED_BIT's automatic "0-th" mapping, never from
-    //! an explicit vmaMapMemory() call, so there's no matching unmap to make
-    //! here destroyBuffer() releases that mapping on its own. Calling
-    //! vmaUnmapMemory() here would be an extra, unbalanced call and asserts
-    //! inside VMA.
-    //! docs:
-    //! https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/group__group__alloc.html#ga9bc268595cb33f6ec4d519cfce81ff45
     memory->destroyBuffer(allocated);
     info = {};
 }
@@ -54,8 +44,7 @@ VkIndexBufferManager::~VkIndexBufferManager()
 template <typename IndexT>
 void VkIndexBufferManager::createIndexBufferImpl(const std::string &name, VkCommandPool commandPool,
                                                  VkSharingMode sharingMode, VkQueue graphicsQueue,
-                                                 std::vector<IndexT> &&indices, bool persistentMapping,
-                                                 VkIndexType indexType)
+                                                 std::vector<IndexT> &&indices, VkIndexType indexType)
 {
     cleanup(name);
 
@@ -65,124 +54,31 @@ void VkIndexBufferManager::createIndexBufferImpl(const std::string &name, VkComm
         return;
     }
 
-    const VkDeviceSize bufferSize = sizeof(IndexT) * indices.size();
     IndexBufferInfo bufferInfo{};
-    bufferInfo.capacityBytes = bufferSize;
     bufferInfo.indexCount = static_cast<u32>(indices.size());
     bufferInfo.indexType = indexType;
 
-    if (persistentMapping)
-    {
-        VmaAllocationCreateFlags flags =
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    fillFromAllocated(bufferInfo, VkBufferManager::uploadDeviceLocal(
+                                      *_memoryManager, *_vkDevice, commandPool, graphicsQueue, sharingMode,
+                                      std::as_bytes(std::span(indices)), VK_BUFFER_USAGE_INDEX_BUFFER_BIT));
 
-        AllocatedBuffer allocated = _memoryManager->createBuffer(bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                                                 sharingMode, VMA_MEMORY_USAGE_AUTO, flags);
-
-        fillFromAllocated(bufferInfo, allocated);
-        bufferInfo.persistent = true;
-
-        if (bufferInfo.mappedPointer)
-            std::ranges::copy(indices, static_cast<IndexT *>(bufferInfo.mappedPointer));
-
-        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0, bufferSize));
-
-        INK_TRACE << "Created persistently mapped index buffer: " << name << ", indices: " << bufferInfo.indexCount;
-    }
-    else
-    {
-        AllocatedBuffer staging = _memoryManager->createUploadBuffer(bufferSize, sharingMode);
-        const bool manuallyMapped = staging.mappedData == nullptr;
-        if (staging.mappedData)
-        {
-            std::ranges::copy(indices, static_cast<IndexT *>(staging.mappedData));
-        }
-        else
-        {
-            auto *data = static_cast<IndexT *>(_memoryManager->map(staging));
-            std::ranges::copy(indices, data);
-        }
-
-        const VkResult flushResult =
-            vmaFlushAllocation(_memoryManager->getAllocator(), staging.allocation, 0, bufferSize);
-        if (manuallyMapped)
-            _memoryManager->unmap(staging);
-        VK_RESULT_CHECK(flushResult);
-
-        AllocatedBuffer gpu =
-            _memoryManager->createDeviceLocalBuffer(bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, sharingMode);
-        fillFromAllocated(bufferInfo, gpu);
-        bufferInfo.persistent = false;
-
-        VkBufferManager::bufferCopy(*_vkDevice, commandPool, graphicsQueue, staging.buffer, bufferInfo.buffer,
-                                    VK_NULL_HANDLE, bufferSize);
-
-        _memoryManager->destroyBuffer(staging);
-
-        INK_TRACE << "Created device-local index buffer: " << name << ", indices: " << bufferInfo.indexCount;
-    }
+    INK_TRACE << "Created device-local index buffer: " << name << ", indices: " << bufferInfo.indexCount;
 
     _indexBuffers[name] = bufferInfo;
 }
 
 void VkIndexBufferManager::createIndexBuffer(const std::string &name, VkCommandPool commandPool,
                                              VkSharingMode sharingMode, VkQueue graphicsQueue,
-                                             std::vector<u16> &&indices, bool persistentMapping)
+                                             std::vector<u16> &&indices)
 {
-    createIndexBufferImpl(name, commandPool, sharingMode, graphicsQueue, std::move(indices), persistentMapping,
-                          VK_INDEX_TYPE_UINT16);
+    createIndexBufferImpl(name, commandPool, sharingMode, graphicsQueue, std::move(indices), VK_INDEX_TYPE_UINT16);
 }
 
 void VkIndexBufferManager::createIndexBuffer(const std::string &name, VkCommandPool commandPool,
                                              VkSharingMode sharingMode, VkQueue graphicsQueue,
-                                             std::vector<u32> &&indices, bool persistentMapping)
+                                             std::vector<u32> &&indices)
 {
-    createIndexBufferImpl(name, commandPool, sharingMode, graphicsQueue, std::move(indices), persistentMapping,
-                          VK_INDEX_TYPE_UINT32);
-}
-
-template <typename IndexT>
-void VkIndexBufferManager::updateIndexBufferImpl(const std::string &name, std::vector<IndexT> &&indices)
-{
-    auto it = _indexBuffers.find(name);
-    if (it == _indexBuffers.end())
-    {
-        INK_ERROR << "Failed to update buffer - buffer doesn't exist " << name;
-        return;
-    }
-
-    IndexBufferInfo &bufferInfo = it->second;
-
-    constexpr VkIndexType kIncomingType = sizeof(IndexT) == sizeof(u16) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
-
-    if (bufferInfo.indexType != kIncomingType)
-    {
-        INK_ERROR << "updateIndexBuffer: index width mismatch for " << name << " - recreate the buffer instead";
-        return;
-    }
-
-    if (bufferInfo.persistent && bufferInfo.mappedPointer)
-    {
-        if (indices.size() > bufferInfo.capacityBytes / sizeof(IndexT))
-            throw AuraException("Index buffer update exceeds its capacity");
-        std::ranges::copy(indices, static_cast<IndexT *>(bufferInfo.mappedPointer));
-        VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), bufferInfo.allocation, 0,
-                                           indices.size() * sizeof(IndexT)));
-        bufferInfo.indexCount = static_cast<u32>(indices.size());
-        return;
-    }
-
-    INK_WARN << "updateIndexBuffer: non-persistent buffer cannot be updated in place: " << name;
-}
-
-void VkIndexBufferManager::updateIndexBuffer(const std::string &name, std::vector<u16> &&indices)
-{
-    updateIndexBufferImpl(name, std::move(indices));
-}
-
-void VkIndexBufferManager::updateIndexBuffer(const std::string &name, std::vector<u32> &&indices)
-{
-    updateIndexBufferImpl(name, std::move(indices));
+    createIndexBufferImpl(name, commandPool, sharingMode, graphicsQueue, std::move(indices), VK_INDEX_TYPE_UINT32);
 }
 
 IndexBufferInfo VkIndexBufferManager::getIndexBuffer(const std::string &name)

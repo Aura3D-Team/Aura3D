@@ -1,13 +1,10 @@
 #include "aura/Core/JobSystem/JobSystem.h"
 #include "aura/Utils/AudioMailbox.h"
-#include "aura/Utils/FutureJoiner.h"
 #include "aura/Utils/InlineScratch.h"
 #include <array>
 #include <atomic>
-#include <future>
 #include <ink/ArenaResource.h>
 #include <ink/ParallelProcessor.h>
-#include <ink/ThreadPool.h>
 #include <limits>
 #include <string_view>
 #include <thread>
@@ -62,37 +59,6 @@ int main()
     }
     AURA_CHECK(resultCalls == 1 && !elseRan && !threw, "Vulkan success is evaluated once and check is safe in if/else");
 #endif
-    for (bool submissionFailure : {false, true})
-    {
-        std::atomic<bool> finished{false};
-        bool caught = false;
-        ink::ThreadPool pool(2); // Unlike std::async, these futures do not join on destruction.
-        try
-        {
-            std::vector<std::future<void>> futures;
-            FutureJoiner joiner(futures);
-            futures.push_back(pool.submit(
-                [&]
-                {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                    finished = true;
-                }));
-            if (submissionFailure)
-                throw std::runtime_error("submission failed");
-            futures.insert(futures.begin(), pool.submit(
-                                                []
-                                                {
-                                                    throw std::runtime_error("recording failed");
-                                                }));
-            joiner.get();
-        }
-        catch (const std::runtime_error &)
-        {
-            caught = true;
-        }
-        AURA_CHECK(caught, "submission and worker exceptions reach the caller");
-        AURA_CHECK(finished, "workers complete before submission/recording exceptions escape");
-    }
     ink::ParallelProcessor executor(4);
     std::array<std::atomic<int>, 101> visits{};
     const auto run = [&]

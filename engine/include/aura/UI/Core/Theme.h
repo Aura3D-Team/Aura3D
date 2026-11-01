@@ -70,6 +70,14 @@ enum class Part : u8
     Count
 };
 
+/// Which of a ColorSet's colours applies; Widget::interaction() works it out for a widget.
+enum class Interaction : u8
+{
+    Normal,
+    Hovered,
+    Active,
+};
+
 /**
  * @brief The three colours one surface takes as the pointer works on it.
  *
@@ -82,9 +90,9 @@ struct ColorSet
     glm::vec4 hovered{0.0f};
     glm::vec4 active{0.0f};
 
-    [[nodiscard]] constexpr const glm::vec4 &pick(bool isActive, bool isHovered) const noexcept
+    [[nodiscard]] constexpr const glm::vec4 &pick(Interaction state) const noexcept
     {
-        return isActive ? active : isHovered ? hovered : normal;
+        return state == Interaction::Active ? active : state == Interaction::Hovered ? hovered : normal;
     }
 
     /// One colour in all three states, for surfaces that don't react.

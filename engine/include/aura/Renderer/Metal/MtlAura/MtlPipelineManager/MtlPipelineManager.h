@@ -5,6 +5,7 @@
 
 #include "aura/Renderer/Metal/MtlAura/MtlAuraCore.h"
 #include "aura/Renderer/Metal/MtlAura/MtlShaderLibraryManager/MtlShaderLibraryManager.h"
+#include "aura/Renderer/PipelineState.h"
 
 namespace aura3d
 {
@@ -52,12 +53,12 @@ class MtlPipelineManager
     {
         const char *vertexFunction = kVertexFunction3D;     //! MSL vertex entry point.
         const char *fragmentFunction = kFragmentFunction3D; //! MSL fragment entry point.
-        bool depthTest = false;                             //! Enables the test; writes unless depthWrite is off.
-        bool depthWrite = true;                             //! Ignored without depthTest.
+        PipelineState state = PipelineState::DepthWrite;    //! CullBackFaces: see bind().
         MTL::CompareFunction depthCompare = MTL::CompareFunctionLess;
-        bool alphaBlend = false;               //! src*srcAlpha + dst*(1-srcAlpha).
-        bool cullBackFaces = false;            //! Discards back faces; see bind().
         const char *label = "Aura3D pipeline"; //! Shown in Xcode's GPU debugger.
+        //! The pass's attachment formats; a render target's differ from the drawable's.
+        MTL::PixelFormat colorFormat = kColorFormat;
+        MTL::PixelFormat depthFormat = kDepthFormat; //! PixelFormatInvalid for a pass without depth.
     };
 
     /**
@@ -87,7 +88,7 @@ class MtlPipelineManager
     /**
      * @brief The depth-stencil state pairing with this pipeline.
      *
-     * Always present, including for a pipeline with depthTest off -- in that
+     * Always present, including for a pipeline without DepthTest -- in that
      * case it compares Always and writes nothing, which is how the overlay
      * composites over a scene without disturbing the depth buffer. Binding a
      * state explicitly (rather than binding none) matters because depth-stencil

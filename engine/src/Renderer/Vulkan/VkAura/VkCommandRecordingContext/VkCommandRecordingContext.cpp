@@ -78,6 +78,7 @@ void bindDrawState(VkCommandBuffer cmd, RecordedState &state, const SceneBinding
     pushConstants.model = draw.model;
     pushConstants.normalMatrix = glm::mat4(normalMatrixOf(draw.model));
     pushConstants.normalMatrix[3].x = std::bit_cast<f32>(draw.textureIndex);
+    pushConstants.normalMatrix[3].y = std::bit_cast<f32>(draw.materialIndex);
     bindings.pipeline->cmdPushConstants(cmd, &pushConstants);
 
     if (draw.vertexBuffer != VK_NULL_HANDLE && state.vertexBuffer != draw.vertexBuffer)

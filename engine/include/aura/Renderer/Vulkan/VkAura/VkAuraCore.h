@@ -11,10 +11,13 @@
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Renderer/PipelineState.h"
 
 #define MAX_ATTRIBUTE_DESCRIPTION_BATCH 3
 #define MAX_ATTRIBUTE_DESCRIPTION_3D 4
-#define MAX_ATTRIBUTE_DESCRIPTION MAX_ATTRIBUTE_DESCRIPTION_3D
+//! drawMeshInstanced()'s pipeline: the four per-vertex inputs plus a model and a normal matrix per instance.
+#define MAX_ATTRIBUTE_DESCRIPTION_INSTANCED 11
+#define MAX_ATTRIBUTE_DESCRIPTION MAX_ATTRIBUTE_DESCRIPTION_INSTANCED
 #define MAX_SHADER_MODULES 8
 #define MAX_DESCRIPTOR_SETS 4
 #define MAX_BINDING_COUNT 16
@@ -111,6 +114,13 @@ namespace vk
  * because std430/push-constant rules pad a mat3 to the same footprint anyway,
  * and a mat4 avoids per-column alignment surprises.
  */
+//! One instance of drawMeshInstanced(), read through vertex binding 1 at instance rate.
+struct InstanceData
+{
+    glm::mat4 model{1.0f};
+    glm::mat4 normalMatrix{1.0f}; //! Columns 0-2 are used, as in PushConstantBlock.
+};
+
 struct PushConstantBlock
 {
     glm::mat4 model{1.0f};
@@ -137,11 +147,10 @@ struct BatchPushConstants
  */
 struct PipelineOptions
 {
-    bool depthTest = false; //! Enables the depth test, and writes unless depthWrite is off.
-    bool depthWrite = true;
+    PipelineState state = PipelineState::DepthWrite;
     VkCompareOp depthCompare = VK_COMPARE_OP_LESS;
-    bool alphaBlend = false;    //! src*srcAlpha + dst*(1-srcAlpha).
-    bool cullBackFaces = false; //! Discards clockwise-wound back faces.
+    VkPipelineCache cache = VK_NULL_HANDLE; //! Compiles land in, and are reused from, this cache.
+    u32 colorAttachments = 1;               //! 0 for a depth-only pass.
 
     //! Must match the sample count the render pass this pipeline is built
     //! against was created with (VkRenderPassManager::createRenderPass) --
@@ -280,10 +289,6 @@ struct AuraBufferInfo
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
     VkDeviceSize memoryOffset = 0;
-    //! Size the VkBuffer was created with, excluding allocation padding: the
-    //! bound an in-place update may write up to.
-    VkDeviceSize capacityBytes = 0;
-    bool persistent = false;
     void *mappedPointer = nullptr;
 };
 

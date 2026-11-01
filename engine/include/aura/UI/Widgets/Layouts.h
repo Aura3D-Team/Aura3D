@@ -334,10 +334,18 @@ class ScrollView final : public Widget
     bool _smooth = true;
     std::optional<ScrollPhysics> _physics;
 
+    //! One gesture at a time: a bar's thumb under the pointer, or a finger panning the content.
+    enum class Gesture : u8
+    {
+        None,
+        Thumb,
+        Pan,
+    };
+    Gesture _gesture = Gesture::None;
+
     //! Which bar is being dragged, and where inside its thumb the drag
     //! started -- without the grab offset the thumb would jump to the cursor.
     Axis _dragging = Axis::Vertical;
-    bool _dragActive = false;
     f32 _grab = 0.0f;
 
     /// Takes the gesture for a finger drag: captures the pointer and starts measuring from @p event.
@@ -349,7 +357,6 @@ class ScrollView final : public Widget
 
     //! A finger drag on the content. The offset it started from and where the finger was then, so the
     //! content stays under the finger; re-anchored when an edge stops it, so reversing responds at once.
-    bool _panActive = false;
     glm::vec2 _panOrigin{0.0f};
     glm::vec2 _panStart{0.0f};
     glm::vec2 _panLast{0.0f};

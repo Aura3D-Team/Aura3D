@@ -11,6 +11,7 @@
 #include <ink/ParallelProcessor.h>
 
 #include "aura/Core/AuraException/AuraException.h"
+#include "aura/Core/Files.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
 #include "aura/Renderer/Vulkan/VkAura/EmbeddedSpirv.h"
 #include "aura/aura.h"
@@ -124,6 +125,13 @@ void declareScene3DInterface(VkGraphicsPipelineManager &pipeline, u32 bindlessTe
     lightBinding.descriptorCount = 1;
     lightBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pipeline.addDescriptorBinding(2, lightBinding);
+
+    DescriptorBindingInfo materialBinding;
+    materialBinding.binding = 1;
+    materialBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    materialBinding.descriptorCount = 1;
+    materialBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pipeline.addDescriptorBinding(2, materialBinding);
 
     pipeline.setPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantBlock));
 }
@@ -261,6 +269,8 @@ void VulkanRenderer::createResourceManagers()
     _vkRenderPassManager = std::make_unique<VkRenderPassManager>(dev);
     _vkFrameBuffersManager = std::make_unique<VkFrameBuffersManager>(dev);
     _vkDescriptorManager = std::make_unique<VkDescriptorManager>(dev, _bindlessTextureCapacity);
+    _pipelineCache = std::make_unique<VkPipelineCacheFile>(*dev, *_vkDeviceManager->getPhysicalDevice(),
+                                                           AuraSettings::get()->get(setting::vulkanPipelineCache));
 
     _vkGraphicsPipelineManager = std::make_unique<VkGraphicsPipelineManager>(
         vk_shader3d_vert, vk_shader3d_vert_len, vk_shader3d_frag, vk_shader3d_frag_len, dev);
@@ -270,15 +280,19 @@ void VulkanRenderer::createResourceManagers()
                                                                           vk_batch_frag, vk_batch_frag_len, dev);
     declareBatchInterface(*_vkBatchPipelineManager, _bindlessTextureCapacity);
 
+    _vkInstancedPipelineManager = std::make_unique<VkGraphicsPipelineManager>(
+        vk_shader3d_instanced_vert, vk_shader3d_instanced_vert_len, vk_shader3d_frag, vk_shader3d_frag_len, dev);
+    declareScene3DInterface(*_vkInstancedPipelineManager, _bindlessTextureCapacity);
+
     _vkVertexBufferManager = std::make_unique<VkVertexBufferManager>(_memoryManager.get(), dev);
     _vkIndexBufferManager = std::make_unique<VkIndexBufferManager>(_memoryManager.get(), dev);
     _vkUniformBufferManager = std::make_unique<VkUniformBufferManager>(_memoryManager.get(), dev);
     _vkLightUniformBufferManager = std::make_unique<VkUniformBufferManager>(_memoryManager.get(), dev);
     _vkCommandManager = std::make_unique<VkCommandManager>(dev, _graphicsIndexFamily);
 
-    _vkTextureManager =
-        std::make_unique<VkTextureManager>(_memoryManager.get(), dev, _vkCommandManager->getThreadCommandPool(),
-                                           _queueDataFromExclusiveFlags.front()->queues.front());
+    _vkTextureManager = std::make_unique<VkTextureManager>(
+        _memoryManager.get(), dev, _vkCommandManager->getThreadCommandPool(),
+        _queueDataFromExclusiveFlags.front()->queues.front(), _vkDeviceManager->maxSamplerAnisotropy());
 
     _vkRenderSyncManager = std::make_unique<VkRenderSyncManager>(dev);
 
@@ -295,6 +309,29 @@ void VulkanRenderer::createResourceManagers()
     _minDrawsPerChunk = static_cast<size_t>(AuraSettings::get()->get(setting::vulkanMinDrawsPerChunk));
 }
 
+bool VulkanRenderer::reloadShaders(const std::filesystem::path &directory)
+{
+    if (!_isInitialized || _frameState != FrameState::Idle)
+        return false;
+    vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
+    const std::filesystem::path spirv = directory / "vulkan";
+    const auto reload = [&](VkGraphicsPipelineManager *manager, const char *vert, const char *frag)
+    {
+        const auto vertex = readFileBytes(spirv / vert);
+        const auto fragment = readFileBytes(spirv / frag);
+        if (!vertex || !fragment)
+        {
+            INK_ERROR << "VulkanRenderer: cannot read " << (spirv / (vertex ? frag : vert)).string();
+            return false;
+        }
+        return manager->reloadShaders(*vertex, *fragment);
+    };
+    bool reloaded = reload(_vkGraphicsPipelineManager.get(), "vk_shader3d.vert.spv", "vk_shader3d.frag.spv");
+    reloaded =
+        reload(_vkInstancedPipelineManager.get(), "vk_shader3d_instanced.vert.spv", "vk_shader3d.frag.spv") && reloaded;
+    return reloaded;
+}
+
 void VulkanRenderer::setupPipeline(const std::string &vertShaderPath, const std::string &fragShaderPath)
 {
     _vkGraphicsPipelineManager =
@@ -307,44 +344,6 @@ void VulkanRenderer::setupPipeline(const std::string &vertShaderPath, const std:
     {
         createDescriptorSets();
     }
-}
-
-wma::WindowDetails VulkanRenderer::drawableDetails() const
-{
-    const auto framebuffer = _windowManagerApi->getFramebufferSize();
-    auto details = *_windowManagerApi->getWindowDetails();
-    details.width = framebuffer.width;
-    details.height = framebuffer.height;
-    return details;
-}
-
-bool VulkanRenderer::swapchainMatchesSurface()
-{
-    auto details = drawableDetails();
-    return _vkSwapChainManager->matchesSurface(*_vkDeviceManager->getPhysicalDevice(), *_vkSurfaceManager->getSurface(),
-                                               &details);
-}
-
-void VulkanRenderer::buildSwapchainResources()
-{
-    auto details = drawableDetails();
-    _vkSwapChainManager->createSwapChain(&details, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get(), 2,
-                                         _windowManagerApi->transparentFramebuffer());
-    _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
-                                           _vkSwapChainManager->getChoosedSurfaceFormat()->format, _vkImageViewData);
-
-    createDepthResources();
-    createMsaaColorResources();
-
-    _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format, true, _depth.format,
-                                           _msaaSamples);
-
-    _vkFrameBuffersManager->createFrameBuffers(
-        _vkImageViewsManager->getImageViews(), *_vkRenderPassManager->getRenderPass(),
-        *_vkSwapChainManager->getExtent2D(), _vkImageViewsManager->getDepthImageView(),
-        _vkImageViewsManager->getColorMsaaImageView());
-
-    _imagesCount = static_cast<u32>(_vkSwapChainManager->getSwapChainImages().size());
 }
 
 void VulkanRenderer::createUniformBuffers()
@@ -374,7 +373,19 @@ void VulkanRenderer::createUniformBuffers()
     }
     _transformSlotsUsed = 0;
 
-    _vkLightUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight, sizeof(gfx::LightUBO));
+    _vkLightUniformBufferManager->createUniformBuffers(sharingMode, framesInFlight, sizeof(gfx::LightingUBO));
+
+    //! Fixed size and written only at new entries, so frames in flight never see one change under them.
+    if (_materialTable.buffer == VK_NULL_HANDLE)
+    {
+        _materialTable = _memoryManager->createBuffer(
+            sizeof(gfx::MaterialUniforms) * kMaterialCapacity, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_SHARING_MODE_EXCLUSIVE, VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+        writeMaterial(0, Material{});
+        for (usize i = 0; i < _materials.size(); ++i)
+            writeMaterial(static_cast<u32>(i + 1), _materials[i]);
+    }
 
     updateLightUniformBuffers();
 }
@@ -388,13 +399,52 @@ void VulkanRenderer::updateLightUniformBuffers()
     //! the light is set rarely and read every frame, so all slots are refreshed
     //! rather than tracking which ones are stale.
     for (u32 i = 0, frames = GetMaxFramesInFlight(); i < frames; ++i)
-        _vkLightUniformBufferManager->updateUniformBufferRaw(i, &_light, sizeof(gfx::LightUBO));
+    {
+        const gfx::LightingUBO block = lighting();
+        _vkLightUniformBufferManager->updateUniformBufferRaw(i, &block, sizeof(block));
+    }
 }
 
-void VulkanRenderer::setLight(const gfx::LightUBO &light)
+void VulkanRenderer::setLights(std::span<const gfx::Light> lights)
 {
-    IRenderer::setLight(light);
+    IRenderer::setLights(lights);
     updateLightUniformBuffers();
+}
+
+RendererCaps VulkanRenderer::caps() const noexcept
+{
+    return RendererCaps::Pbr | RendererCaps::Instancing | RendererCaps::RenderTargets | RendererCaps::Compute |
+           RendererCaps::CustomPipelines;
+}
+
+MaterialHandle VulkanRenderer::createMaterial(const Material &material)
+{
+    const MaterialHandle handle = IRenderer::createMaterial(material);
+    if (handle.value() >= kMaterialCapacity)
+        INK_WARN << "VulkanRenderer: material " << handle.value() << " is past the table's " << kMaterialCapacity
+                 << " entries; it draws as the default material";
+    else
+        writeMaterial(handle.value(), material);
+    return handle;
+}
+
+void VulkanRenderer::writeMaterial(u32 index, const Material &material)
+{
+    if (!_materialTable.mappedData || index >= kMaterialCapacity)
+        return;
+    gfx::MaterialUniforms entry = materialUniforms(material);
+    entry.normalMap = textureArrayIndexOf(material.normalMap);
+    entry.metallicRoughnessMap = textureArrayIndexOf(material.metallicRoughness);
+    entry.emissiveMap = textureArrayIndexOf(material.emissiveMap);
+    const VkDeviceSize offset = sizeof(entry) * index;
+    std::memcpy(static_cast<u8 *>(_materialTable.mappedData) + offset, &entry, sizeof(entry));
+    VK_RESULT_CHECK(
+        vmaFlushAllocation(_memoryManager->getAllocator(), _materialTable.allocation, offset, sizeof(entry)));
+}
+
+u32 VulkanRenderer::materialIndexOf(MaterialHandle handle) const noexcept
+{
+    return isValidHandle(handle) && handle.value() < kMaterialCapacity ? handle.value() : 0u;
 }
 
 void VulkanRenderer::createDescriptorSets()
@@ -444,21 +494,36 @@ void VulkanRenderer::createDescriptorSets()
         VkDescriptorBufferInfo lightInfo = _vkLightUniformBufferManager->getDescriptorBufferInfo(i);
         _vkDescriptorManager->updateDescriptorSet(_lightDescSets[i], 0, lightInfo.buffer, lightInfo.range,
                                                   lightInfo.offset);
+        _vkDescriptorManager->updateDescriptorSet(_lightDescSets[i], 1, _materialTable.buffer, VK_WHOLE_SIZE, 0,
+                                                  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     }
 
     std::vector<VkVertexInputBindingDescription> bindings = {VkVertexBufferManager::getBindingDescription()};
     auto attributes = VkVertexBufferManager::getAttributeDescriptions();
 
     PipelineOptions sceneOptions{};
-    sceneOptions.depthTest = true;
-    sceneOptions.cullBackFaces = true;
+    sceneOptions.cache = _pipelineCache->handle();
+    sceneOptions.state = PipelineState::DepthTest | PipelineState::DepthWrite | PipelineState::CullBackFaces;
     sceneOptions.sampleCount = _msaaSamples;
 
     _vkGraphicsPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(),
                                                *_vkSwapChainManager->getExtent2D(), bindings, attributes,
                                                VkVertexBufferManager::getAttributeDescriptionCount(), sceneOptions);
 
+    //! Binding 1 steps once per instance: a model matrix (locations 4-7) and a normal matrix's columns (8-10).
+    bindings.push_back({1, sizeof(InstanceData), VK_VERTEX_INPUT_RATE_INSTANCE});
+    for (u32 column = 0; column < 7; ++column)
+        attributes[MAX_ATTRIBUTE_DESCRIPTION_3D + column] = {
+            MAX_ATTRIBUTE_DESCRIPTION_3D + column, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+            static_cast<u32>(column < 4 ? offsetof(InstanceData, model) + column * sizeof(glm::vec4)
+                                        : offsetof(InstanceData, normalMatrix) + (column - 4) * sizeof(glm::vec4))};
+    _vkInstancedPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(),
+                                                *_vkSwapChainManager->getExtent2D(), bindings, attributes,
+                                                MAX_ATTRIBUTE_DESCRIPTION_INSTANCED, sceneOptions);
+
     createBatchPipeline();
+    for (CustomPipeline &custom : _customPipelines)
+        buildCustomPipeline(custom);
 
     _pipelineReady = true;
 }
@@ -468,10 +533,9 @@ void VulkanRenderer::createBatchPipeline()
     // Screen batches sit on the near plane; world batches test existing depth.
     // Blended texels never occlude subsequent geometry through depth writes.
     PipelineOptions options{};
-    options.depthTest = true;
-    options.depthWrite = false;
+    options.cache = _pipelineCache->handle();
+    options.state = PipelineState::DepthTest | PipelineState::AlphaBlend;
     options.depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
-    options.alphaBlend = true;
     options.sampleCount = _msaaSamples;
     _vkBatchPipelineManager->createPipeline(*_vkRenderPassManager->getRenderPass(), *_vkSwapChainManager->getExtent2D(),
                                             {batchBindingDescription()}, batchAttributeDescriptions(),
@@ -523,154 +587,9 @@ void VulkanRenderer::updateTextureDescriptorSets(TextureHandle textureHandle)
                                                     texture->view, texture->sampler);
 }
 
-void VulkanRenderer::destroySwapchainResources()
-{
-    _pipelineReady = false;
-
-    /*
-     * Only the per-image transform/light sets are actually invalidated by a
-     * resize (the swapchain image count can change) -- explicitly freeing
-     * just those back to the pool, rather than destroying and recreating the
-     * whole VkDescriptorManager as before, is what lets the persistent
-     * bindless texture table (_bindlessTextureSet) -- and every
-     * texture already written into them -- survive a resize untouched. No
-     * per-texture descriptor work is needed here at all anymore; compare the
-     * old handleWindowChanges()/recreateSurfaceAndSwapchain(), which used to
-     * redo it for every live texture.
-     */
-    _vkDescriptorManager->freeDescriptorSets(_descSets);
-    _vkDescriptorManager->freeDescriptorSets(_lightDescSets);
-
-    _vkFrameBuffersManager->cleanup();
-    _vkImageViewsManager->cleanup();
-    _vkSwapChainManager->cleanup();
-    _vkRenderPassManager->cleanup();
-    _vkRenderSyncManager->cleanup();
-    destroyDepthResources();
-    destroyMsaaColorResources();
-}
-
-void VulkanRenderer::createDepthResources()
-{
-    VkExtent2D extent = *_vkSwapChainManager->getExtent2D();
-
-    VkImageCreateInfo imgInfo = {};
-    imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imgInfo.imageType = VK_IMAGE_TYPE_2D;
-    imgInfo.format = _depth.format;
-    imgInfo.extent = {extent.width, extent.height, 1};
-    imgInfo.mipLevels = 1;
-    imgInfo.arrayLayers = 1;
-    // Must match the color attachment's sample count (see VkRenderPassManager);
-    // resolves to VK_SAMPLE_COUNT_1_BIT when MSAA is disabled.
-    imgInfo.samples = _msaaSamples;
-    imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imgInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    AllocatedImage depthImage = _memoryManager->createImage(imgInfo, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-    _depth.image = depthImage.image;
-    _depth.allocation = depthImage.allocation;
-
-    _vkImageViewsManager->createDepthImageView(_depth.image, _depth.format);
-}
-
-void VulkanRenderer::destroyDepthResources()
-{
-    if (!_depth.isValid())
-        return;
-
-    _vkImageViewsManager->cleanupDepthImageView();
-
-    AllocatedImage depthImage{_depth.image, _depth.allocation};
-    _memoryManager->destroyImage(depthImage);
-    _depth.reset();
-}
-
-void VulkanRenderer::createMsaaColorResources()
-{
-    if (_msaaSamples == VK_SAMPLE_COUNT_1_BIT)
-        return;
-
-    VkExtent2D extent = *_vkSwapChainManager->getExtent2D();
-    const VkFormat colorFormat = _vkSwapChainManager->getChoosedSurfaceFormat()->format;
-
-    VkImageCreateInfo imgInfo = {};
-    imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imgInfo.imageType = VK_IMAGE_TYPE_2D;
-    imgInfo.format = colorFormat;
-    imgInfo.extent = {extent.width, extent.height, 1};
-    imgInfo.mipLevels = 1;
-    imgInfo.arrayLayers = 1;
-    imgInfo.samples = _msaaSamples;
-    imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    // TRANSIENT: this attachment only ever exists inside a subpass and is
-    // resolved away before the render pass ends, so tiled GPUs never need to
-    // back it with real memory bandwidth.
-    imgInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-    imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    AllocatedImage colorImage = _memoryManager->createImage(imgInfo, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-    _msaaColor.image = colorImage.image;
-    _msaaColor.allocation = colorImage.allocation;
-
-    _vkImageViewsManager->createColorMsaaImageView(_msaaColor.image, colorFormat);
-}
-
-void VulkanRenderer::destroyMsaaColorResources()
-{
-    if (!_msaaColor.isValid())
-        return;
-
-    _vkImageViewsManager->cleanupColorMsaaImageView();
-
-    AllocatedImage colorImage{_msaaColor.image, _msaaColor.allocation};
-    _memoryManager->destroyImage(colorImage);
-    _msaaColor.reset();
-}
-
 void VulkanRenderer::setupCommandBuffers()
 {
     _cmdBuffers = _vkCommandManager->createCommandBuffer();
-    _vkRenderSyncManager->create(_imagesCount);
-}
-
-void VulkanRenderer::handleWindowChanges()
-{
-    vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
-    destroySwapchainResources();
-    _vkSwapChainManager->initSwapChainSupportDetails(*_vkDeviceManager->getPhysicalDevice(),
-                                                     *_vkSurfaceManager->getSurface());
-    buildSwapchainResources();
-    createUniformBuffers();
-    //! No per-texture descriptor work needed here: the bindless texture-array
-    //! sets are untouched by destroySwapchainResources() (see its comment),
-    //! so every texture created before this resize is still correctly bound.
-    createDescriptorSets();
-
-    _vkRenderSyncManager->create(_imagesCount);
-}
-
-void VulkanRenderer::recreateSurfaceAndSwapchain()
-{
-    vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
-
-    destroySwapchainResources();
-
-    _vkSurfaceManager.reset();
-    _vkSurfaceManager = std::make_unique<VkSurfaceManager>(
-        _vkInstance->getVkInstance(), _windowManagerApi->getBackendType(), _windowManagerApi->getWindowInstance(),
-        _windowManagerApi->getNativeDisplayHandle());
-
-    _vkSwapChainManager->initSwapChainSupportDetails(*_vkDeviceManager->getPhysicalDevice(),
-                                                     *_vkSurfaceManager->getSurface());
-    buildSwapchainResources();
-    createUniformBuffers();
-    //! No per-texture descriptor work needed here either -- see handleWindowChanges().
-    createDescriptorSets();
-
     _vkRenderSyncManager->create(_imagesCount);
 }
 
@@ -694,11 +613,8 @@ void VulkanRenderer::cleanup()
     _descSets.clear();
     _lightDescSets.clear();
     _bindlessTextureSet = VK_NULL_HANDLE;
-    _vbNames.clear();
-    _ibNames.clear();
     _pipelineReady = false;
-    _renderPassActive = false;
-    _frameBegun = false;
+    _frameState = FrameState::Idle;
     _fallbackTexture = {};
 
 #ifdef AURA_PROFILE_FRAME
@@ -720,6 +636,10 @@ void VulkanRenderer::cleanup()
 
     //! Before the allocator shuts down below, since these hold VMA allocations.
     destroyBatchBuffers();
+    //! Their framebuffers hold views the texture manager owns, so they go first.
+    destroyRenderTargets();
+    destroyCompute();
+    destroyCustomPipelines();
 
     if (_vkVertexBufferManager)
         _vkVertexBufferManager->cleanup();
@@ -729,6 +649,8 @@ void VulkanRenderer::cleanup()
         _vkUniformBufferManager->cleanup();
     if (_vkLightUniformBufferManager)
         _vkLightUniformBufferManager->cleanup();
+    if (_materialTable.buffer != VK_NULL_HANDLE)
+        _memoryManager->destroyBuffer(_materialTable);
     if (_vkTextureManager)
         _vkTextureManager->cleanup();
     if (_depth.isValid())
@@ -739,7 +661,9 @@ void VulkanRenderer::cleanup()
     _vkDescriptorManager.reset();
     _vkFrameBuffersManager.reset();
     _vkBatchPipelineManager.reset();
+    _vkInstancedPipelineManager.reset();
     _vkGraphicsPipelineManager.reset();
+    _pipelineCache.reset();
     _vkRenderPassManager.reset();
     _vkImageViewsManager.reset();
     _vkSwapChainManager.reset();
@@ -771,53 +695,37 @@ VertexBufferHandle VulkanRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>
     _vkVertexBufferManager->createVertexBuffer(name, _vkCommandManager->getThreadCommandPool(),
                                                _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
                                                _queueDataFromExclusiveFlags.front()->queues.front(),
-                                               std::move(vertices), false);
+                                               std::move(vertices));
 
-    _vbNames[handle] = name;
     //! Resolve once here so the draw path never has to (see _vbByHandle).
     _vbByHandle.resize(handle.value());
     _vbByHandle[handle.value() - 1] = _vkVertexBufferManager->getVertexBuffer(name);
     return handle;
 }
 
-IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16> &&indices)
+template <typename IndexT> IndexBufferHandle VulkanRenderer::createIndexBufferOf(std::vector<IndexT> &&indices)
 {
     auto handle = _nextIbHandle++;
     std::string name = "ib_" + std::to_string(handle.value());
 
     _vkIndexBufferManager->createIndexBuffer(name, _vkCommandManager->getThreadCommandPool(),
                                              _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
-                                             _queueDataFromExclusiveFlags.front()->queues.front(), std::move(indices),
-                                             false);
+                                             _queueDataFromExclusiveFlags.front()->queues.front(), std::move(indices));
 
-    _ibNames[handle] = name;
     //! Resolve once here so the draw path never has to (see _ibByHandle).
     _ibByHandle.resize(handle.value());
     _ibByHandle[handle.value() - 1] = _vkIndexBufferManager->getIndexBuffer(name);
     return handle;
+}
+
+IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u16> &&indices)
+{
+    return createIndexBufferOf(std::move(indices));
 }
 
 IndexBufferHandle VulkanRenderer::createIndexBuffer(std::vector<u32> &&indices)
 {
-    auto handle = _nextIbHandle++;
-    std::string name = "ib_" + std::to_string(handle.value());
-
-    _vkIndexBufferManager->createIndexBuffer(name, _vkCommandManager->getThreadCommandPool(),
-                                             _vkSwapChainManager->getSwapchainCreateInfoKHR()->imageSharingMode,
-                                             _queueDataFromExclusiveFlags.front()->queues.front(), std::move(indices),
-                                             false);
-
-    _ibNames[handle] = name;
-    //! Resolve once here so the draw path never has to (see _ibByHandle).
-    _ibByHandle.resize(handle.value());
-    _ibByHandle[handle.value() - 1] = _vkIndexBufferManager->getIndexBuffer(name);
-    return handle;
-}
-
-TextureHandle VulkanRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
-{
-    const u8 pixel[4] = {r, g, b, a};
-    return createTextureFromPixels(pixel, 1, 1);
+    return createIndexBufferOf(std::move(indices));
 }
 
 TextureHandle VulkanRenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height)
@@ -834,6 +742,22 @@ TextureHandle VulkanRenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 
     if (handle.value() == VkTextureManager::kInvalidTextureId)
         return {};
 
+    publishTexture(handle);
+    return handle;
+}
+
+TextureHandle VulkanRenderer::createTexture(const TextureDesc &desc, std::span<const std::byte> pixels)
+{
+    if (!_vkTextureManager)
+        return {};
+    if (desc.format == TextureFormat::Depth)
+    {
+        INK_ERROR << "VulkanRenderer: TextureFormat::Depth is for render targets";
+        return {};
+    }
+    const TextureHandle handle{_vkTextureManager->createTexture(desc, pixels)};
+    if (handle.value() == VkTextureManager::kInvalidTextureId)
+        return {};
     publishTexture(handle);
     return handle;
 }
@@ -891,8 +815,7 @@ void VulkanRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u3
 
 void VulkanRenderer::beginFrame()
 {
-    _frameBegun = false;
-    _renderPassActive = false;
+    _frameState = FrameState::Idle;
 
     auto *windowFlags = _windowManagerApi->getWindowFlags();
     if (!windowFlags)
@@ -1014,7 +937,8 @@ void VulkanRenderer::beginFrame()
     }
 
     _currentImageIndex = imageIndex;
-    _frameBegun = true;
+    _frameState = FrameState::Recording;
+    _windowPassRecorded = false;
 
     _vkRenderSyncManager->resetFences(_currentFrame);
 
@@ -1055,30 +979,62 @@ void VulkanRenderer::beginFrame()
         _memoryManager->destroyBuffer(retired);
 
     _batchRetiredBuffers[_currentFrame].clear();
+    resetComputePool();
+    resetCustomPool();
 }
 
 void VulkanRenderer::beginRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
-    _renderPassActive = false;
-    if (!_frameBegun || !_pipelineReady)
+    if (_frameState == FrameState::Idle)
+        return;
+    _frameState = FrameState::Recording;
+    if (!_pipelineReady)
         return;
 
+    beginPass(*_vkRenderPassManager->getRenderPass(), _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex],
+              *_vkSwapChainManager->getExtent2D(), _vkRenderPassManager->hasDepth());
+    _windowPassRecorded = true;
+}
+
+void VulkanRenderer::beginPass(VkRenderPass pass, VkFramebuffer framebuffer, VkExtent2D extent, bool clearDepth,
+                               bool depthOnly)
+{
     //! endRenderPass() appends the scene buffer after ending it, where it must not throw.
     _chunkCmds.reserve(1);
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
-    VkClearValue clearColor = {{{_clearR, _clearG, _clearB, _clearA}}};
 
-    VkFramebuffer framebuffer = _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex];
+    _vkGraphicsPipelineManager->selectPass(pass);
+    _vkBatchPipelineManager->selectPass(pass);
+    _vkInstancedPipelineManager->selectPass(pass);
+    for (CustomPipeline &custom : _customPipelines)
+        custom.manager->selectPass(pass);
+    _passRenderPass = pass;
+    _passFramebuffer = framebuffer;
+    _passExtent = extent;
 
-    _vkRenderPassManager->beginRenderPass(cmd, framebuffer, *_vkSwapChainManager->getExtent2D(), &clearColor,
-                                          /*useSecondaryCommandBuffers=*/true);
+    //! The swapchain pass's depth attachment sits at index 1 with or without MSAA, like a target's; a depth-only
+    //! pass has it alone, at index 0.
+    const VkClearValue depthClear{.depthStencil = {1.0f, 0}};
+    const std::array<VkClearValue, 2> clearValues =
+        depthOnly
+            ? std::array<VkClearValue, 2>{depthClear, depthClear}
+            : std::array<VkClearValue, 2>{VkClearValue{.color = {{_clearR, _clearG, _clearB, _clearA}}}, depthClear};
+    const VkRenderPassBeginInfo begin{
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = pass,
+        .framebuffer = framebuffer,
+        .renderArea = {{0, 0}, extent},
+        .clearValueCount = !depthOnly && clearDepth ? 2u : 1u,
+        .pClearValues = clearValues.data(),
+    };
+    vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-    _renderPassActive = true;
+    _frameState = FrameState::InPass;
 
     _sceneCmd = _vkCommandManager->acquireSecondaryCommandBuffer(_currentFrame);
-    VkCommandManager::beginSecondaryCommandBuffer(_sceneCmd, *_vkRenderPassManager->getRenderPass(), framebuffer);
+    VkCommandManager::beginSecondaryCommandBuffer(_sceneCmd, pass, framebuffer);
 
     // Secondary buffers inherit no pipeline bindings.
     _recorded.reset();
@@ -1091,7 +1047,7 @@ void VulkanRenderer::endRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::EndPass);
 
-    if (!_frameBegun || !_renderPassActive)
+    if (_frameState != FrameState::InPass)
         return;
 
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
@@ -1106,7 +1062,7 @@ void VulkanRenderer::endRenderPass()
         vkCmdExecuteCommands(cmd, static_cast<u32>(_chunkCmds.size()), _chunkCmds.data());
 
     VkRenderPassManager::endRenderPass(cmd);
-    _renderPassActive = false;
+    _frameState = FrameState::Recording;
 
     _sceneCmd = VK_NULL_HANDLE;
     _chunkCmds.clear();
@@ -1114,8 +1070,17 @@ void VulkanRenderer::endRenderPass()
 
 void VulkanRenderer::endFrame()
 {
-    if (!_frameBegun)
+    if (_frameState == FrameState::Idle)
         return;
+    //! The acquired image reaches PRESENT_SRC only through the window's pass: a frame that drew
+    //! offscreen alone still runs it, cleared and empty.
+    if (_frameState == FrameState::InPass)
+        endRenderPass();
+    if (!_windowPassRecorded && _pipelineReady)
+    {
+        beginRenderPass();
+        endRenderPass();
+    }
 
     _vkTextureManager->flushUploads();
 
@@ -1157,8 +1122,7 @@ void VulkanRenderer::endFrame()
 
     //! A present that fails raises resized or surfaceLost, which needsFrame() reports.
     _targetStale = false;
-    _frameBegun = false;
-    _renderPassActive = false;
+    _frameState = FrameState::Idle;
     advanceFrame();
 }
 
@@ -1173,7 +1137,7 @@ void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)
     const bool cameraChanged = ubo.view != _currentTransform.view || ubo.proj != _currentTransform.proj;
     _currentTransform = ubo;
     //! The model is a push constant, so only a new camera takes a slot; earlier meshes keep theirs.
-    if (_frameBegun && (cameraChanged || _transformSlotsUsed == 0))
+    if (_frameState != FrameState::Idle && (cameraChanged || _transformSlotsUsed == 0))
         publishTransform();
 }
 
@@ -1182,19 +1146,6 @@ void VulkanRenderer::publishTransform()
     //! Recorded draws read their slot at GPU time, so a full ring is never reused.
     if (_transformSlotsUsed < _transformSlots)
         _vkUniformBufferManager->updateUniformBuffer(_currentFrame, _currentTransform, _transformSlotsUsed++);
-}
-
-void VulkanRenderer::bindVertexBuffer(VertexBufferHandle handle)
-{
-    _currentVertexBuffer = handle;
-}
-void VulkanRenderer::bindIndexBuffer(IndexBufferHandle handle)
-{
-    _currentIndexBuffer = handle;
-}
-void VulkanRenderer::bindTexture(TextureHandle handle)
-{
-    _currentTexture = handle;
 }
 
 void VulkanRenderer::bindDrawState(VkCommandBuffer cmd)
@@ -1209,6 +1160,7 @@ void VulkanRenderer::bindDrawState(VkCommandBuffer cmd)
     ResolvedDraw draw;
     draw.model = _currentTransform.model;
     draw.textureIndex = textureArrayIndexOf(_currentTexture);
+    draw.materialIndex = materialIndexOf(_currentMaterialHandle);
 
     if (const VertexBufferInfo *vb = vertexBufferOf(_currentVertexBuffer))
         draw.vertexBuffer = vb->buffer;
@@ -1226,14 +1178,14 @@ SceneBindings VulkanRenderer::sceneBindings() const
 {
     return {_vkGraphicsPipelineManager.get(),
             {_descSets[_currentFrame], _bindlessTextureSet, _lightDescSets[_currentFrame]},
-            *_vkSwapChainManager->getExtent2D(),
+            _passExtent,
             static_cast<u32>(_vkUniformBufferManager->getSlotStride() *
                              (_transformSlotsUsed > 0 ? _transformSlotsUsed - 1 : 0))};
 }
 
 void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 {
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
+    if (_frameState != FrameState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
         return;
 
     //! The subpass was begun in SECONDARY_COMMAND_BUFFERS mode, so this must
@@ -1248,7 +1200,7 @@ void VulkanRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 
 void VulkanRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
+    if (_frameState != FrameState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
         return;
 
     //! See drawIndexed(): the pass records through secondary buffers.
@@ -1262,7 +1214,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
 
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady || items.empty() || _sceneCmd == VK_NULL_HANDLE)
+    if (_frameState != FrameState::InPass || !_pipelineReady || items.empty() || _sceneCmd == VK_NULL_HANDLE)
         return;
 
     /*
@@ -1278,13 +1230,14 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     _resolvedDraws.reserve(items.size());
 
     //! Each draw carries its model; _currentTransform stays the caller's for later World batches.
+    const Frustum frustum = viewFrustum();
     for (const DrawItem &item : items)
     {
         if (isValidHandle(item.material))
             bindMaterial(item.material);
 
         const MeshRecord *mesh = getMesh(item.mesh);
-        if (!mesh)
+        if (!mesh || culled(*mesh, item.model, frustum))
             continue;
 
         _currentVertexBuffer = mesh->vertexBuffer;
@@ -1301,14 +1254,15 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
         draw.indexType = ib->indexType;
         draw.indexCount = mesh->indexCount;
         draw.textureIndex = textureArrayIndexOf(_currentTexture);
+        draw.materialIndex = materialIndexOf(_currentMaterialHandle);
     }
 
     if (_resolvedDraws.empty())
         return;
 
     const SceneBindings bindings = sceneBindings();
-    VkRenderPass renderPass = *_vkRenderPassManager->getRenderPass();
-    VkFramebuffer framebuffer = _vkFrameBuffersManager->getFrameBuffers()[_currentImageIndex];
+    VkRenderPass renderPass = _passRenderPass;
+    VkFramebuffer framebuffer = _passFramebuffer;
 
     // Small batches stay inline to avoid worker wakeups and secondary-buffer setup.
     const size_t maxChunks = _resolvedDraws.size() / _minDrawsPerChunk;
@@ -1394,227 +1348,47 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     _recorded.reset();
 }
 
-std::optional<std::pair<u32, u32>> VulkanRenderer::uploadBatch(std::span<const gfx::BatchVertex> vertices,
-                                                               std::span<const u32> indices)
+void VulkanRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material, std::span<const glm::mat4> models)
 {
-    const u32 frame = _currentFrame;
-    // Write-combined mapped memory avoids a staging copy for transient geometry. System RAM rather
-    // than device-local BAR memory: the GPU reads each byte once during the draw, while a BAR copy
-    // crosses PCIe as the CPU writes (measured 2.8x slower on a discrete GPU).
-    constexpr VmaAllocationCreateFlags kDynamicFlags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    // Every recorded batch keeps its own slice until the frame fence completes.
-    const VkDeviceSize vertexOffset = _batchVertexUsed[frame];
-    const VkDeviceSize indexOffset = _batchIndexUsed[frame];
-    const VkDeviceSize vertexEnd = vertexOffset + vertices.size_bytes();
-    const VkDeviceSize indexEnd = indexOffset + indices.size_bytes();
-
-    // Old draws retain the old buffer; only new batches use the replacement.
-    const auto grow = [&](AllocatedBuffer &buffer, VkDeviceSize &capacity, VkDeviceSize needed, VkDeviceSize minimum,
-                          VkBufferUsageFlags usage)
-    {
-        if (needed <= capacity)
-            return;
-        auto &retired = _batchRetiredBuffers[frame];
-        retired.reserve(retired.size() + 1);
-        const VkDeviceSize newCapacity = std::max({needed, minimum, capacity * 2});
-        const AllocatedBuffer replacement = _memoryManager->createBuffer(
-            newCapacity, usage, VK_SHARING_MODE_EXCLUSIVE, VMA_MEMORY_USAGE_AUTO_PREFER_HOST, kDynamicFlags);
-        if (buffer.buffer != VK_NULL_HANDLE)
-            retired.push_back(buffer);
-        buffer = replacement;
-        capacity = newCapacity;
-    };
-    grow(_batchVertexBuffers[frame], _batchVertexCapacity[frame], vertexEnd, 65536, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    grow(_batchIndexBuffers[frame], _batchIndexCapacity[frame], indexEnd, 16384, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-
-    AllocatedBuffer &vertexBuffer = _batchVertexBuffers[frame];
-    AllocatedBuffer &indexBuffer = _batchIndexBuffers[frame];
-    if (!vertexBuffer.mappedData || !indexBuffer.mappedData)
-        return std::nullopt;
-
-    std::memcpy(static_cast<u8 *>(vertexBuffer.mappedData) + vertexOffset, vertices.data(), vertices.size_bytes());
-    std::memcpy(static_cast<u8 *>(indexBuffer.mappedData) + indexOffset, indices.data(), indices.size_bytes());
-
-    VK_RESULT_CHECK(vmaFlushAllocation(_memoryManager->getAllocator(), vertexBuffer.allocation, vertexOffset,
-                                       vertices.size_bytes()));
-    VK_RESULT_CHECK(
-        vmaFlushAllocation(_memoryManager->getAllocator(), indexBuffer.allocation, indexOffset, indices.size_bytes()));
-
-    _batchVertexUsed[frame] = vertexEnd;
-    _batchIndexUsed[frame] = indexEnd;
-    //! Both offsets advance in whole elements, so they divide exactly.
-    return std::pair{static_cast<u32>(vertexOffset / sizeof(gfx::BatchVertex)),
-                     static_cast<u32>(indexOffset / sizeof(u32))};
-}
-
-void VulkanRenderer::destroyBatchBuffers()
-{
-    if (!_memoryManager || !_memoryManager->isInitialized())
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+    if (_frameState != FrameState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
+        return;
+    if (isValidHandle(material))
+        bindMaterial(material);
+    const MeshRecord *record = getMesh(mesh);
+    const VertexBufferInfo *vb = record ? vertexBufferOf(record->vertexBuffer) : nullptr;
+    const IndexBufferInfo *ib = record ? indexBufferOf(record->indexBuffer) : nullptr;
+    if (!vb || !ib)
         return;
 
-    //! Bounded by the vector's own size rather than GetMaxFramesInFlight():
-    //! this can run before createDescriptorSets() ever has (a teardown after
-    //! a failed partial init), when these are still empty, and .size() is
-    //! then correctly 0 rather than indexing off the end.
-    for (u32 frame = 0; frame < _batchVertexBuffers.size(); ++frame)
-    {
-        if (_batchVertexBuffers[frame].buffer != VK_NULL_HANDLE)
-            _memoryManager->destroyBuffer(_batchVertexBuffers[frame]);
-        if (_batchIndexBuffers[frame].buffer != VK_NULL_HANDLE)
-            _memoryManager->destroyBuffer(_batchIndexBuffers[frame]);
-
-        //! Anything a mid-frame grow orphaned is still owed a free: teardown is
-        //! past every fence, so this is the last and safest chance to take it.
-        for (AllocatedBuffer &retired : _batchRetiredBuffers[frame])
-            _memoryManager->destroyBuffer(retired);
-
-        _batchRetiredBuffers[frame].clear();
-
-        _batchVertexBuffers[frame] = {};
-        _batchIndexBuffers[frame] = {};
-        _batchVertexCapacity[frame] = 0;
-        _batchIndexCapacity[frame] = 0;
-        _batchVertexUsed[frame] = 0;
-        _batchIndexUsed[frame] = 0;
-    }
-}
-
-glm::uvec2 VulkanRenderer::renderTargetSize() const noexcept
-{
-    if (!_vkSwapChainManager || !_vkSwapChainManager->getExtent2D())
-        return glm::uvec2{0};
-    const VkExtent2D extent = *_vkSwapChainManager->getExtent2D();
-    return {extent.width, extent.height};
-}
-
-void VulkanRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
-                               TextureHandle texture, gfx::BatchSpace space)
-{
-    AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
-
-    if (!_frameBegun || !_renderPassActive || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE ||
-        _bindlessTextureSet == VK_NULL_HANDLE || vertices.empty() || indices.empty())
+    const Frustum frustum = viewFrustum();
+    _instanceScratch.clear();
+    for (const glm::mat4 &model : models)
+        if (!culled(*record, model, frustum))
+            _instanceScratch.push_back({model, glm::mat4(normalMatrixOf(model))});
+    if (_instanceScratch.empty())
+        return;
+    const std::optional<VkDeviceSize> offset = uploadTransient(std::as_bytes(std::span(_instanceScratch)));
+    if (!offset)
         return;
 
-    const auto first = uploadBatch(vertices, indices);
-    if (!first)
-        return;
-
-    VkCommandBuffer cmd = _sceneCmd;
-    const VkPipeline pipeline = _vkBatchPipelineManager->getPipeline();
-    if (_recorded.pipeline != pipeline)
-    {
-        _vkBatchPipelineManager->cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-        _vkBatchPipelineManager->cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, 1, &_bindlessTextureSet,
-                                                       0, nullptr);
-        _recorded.pipeline = pipeline;
-        _recorded.staticSetsBound = false;
-    }
-    if (!_recorded.viewportSet)
-    {
-        VkGraphicsPipelineManager::cmdSetViewportAndScissor(cmd, *_vkSwapChainManager->getExtent2D());
-        _recorded.viewportSet = true;
-    }
-
-    const BatchPushConstants pushConstants{batchTransform(space), textureArrayIndexOf(texture)};
-    _vkBatchPipelineManager->cmdPushConstants(cmd, &pushConstants);
-
-    //! Bound once per run of batches: each draw addresses its own slice by offset.
-    const VkBuffer vertexBuffer = _batchVertexBuffers[_currentFrame].buffer;
-    const VkBuffer indexBuffer = _batchIndexBuffers[_currentFrame].buffer;
-    if (_recorded.vertexBuffer != vertexBuffer)
-    {
-        constexpr VkDeviceSize kOrigin = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &kOrigin);
-        _recorded.vertexBuffer = vertexBuffer;
-    }
-    if (_recorded.indexBuffer != indexBuffer || _recorded.indexType != VK_INDEX_TYPE_UINT32)
-    {
-        vkCmdBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        _recorded.indexBuffer = indexBuffer;
-        _recorded.indexType = VK_INDEX_TYPE_UINT32;
-    }
-
-    vkCmdDrawIndexed(cmd, static_cast<u32>(indices.size()), 1, first->second, static_cast<i32>(first->first), 0);
+    ResolvedDraw draw;
+    draw.vertexBuffer = vb->buffer;
+    draw.indexBuffer = ib->buffer;
+    draw.indexType = ib->indexType;
+    draw.indexCount = record->indexCount;
+    draw.textureIndex = textureArrayIndexOf(_currentTexture);
+    draw.materialIndex = materialIndexOf(_currentMaterialHandle);
+    SceneBindings bindings = sceneBindings();
+    bindings.pipeline = _vkInstancedPipelineManager.get();
+    aura3d::vk::bindDrawState(_sceneCmd, _recorded, bindings, draw);
+    vkCmdBindVertexBuffers(_sceneCmd, 1, 1, &_batchVertexBuffers[_currentFrame].buffer, &*offset);
+    vkCmdDrawIndexed(_sceneCmd, record->indexCount, static_cast<u32>(_instanceScratch.size()), 0, 0, 0);
 }
 
-void VulkanRenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
-{
-    _clearR = r;
-    _clearG = g;
-    _clearB = b;
-    _clearA = a;
-}
-
-wma::IWindowManager *VulkanRenderer::getWindowManager()
-{
-    return _windowManagerApi.get();
-}
 RendererChoice VulkanRenderer::getBackendType() const
 {
     return RendererChoice::VULKAN;
-}
-VkVertexBufferManager *VulkanRenderer::getVertexBufferManager()
-{
-    return _vkVertexBufferManager.get();
-}
-VkIndexBufferManager *VulkanRenderer::getIndexBufferManager()
-{
-    return _vkIndexBufferManager.get();
-}
-VkUniformBufferManager *VulkanRenderer::getUniformBufferManager()
-{
-    return _vkUniformBufferManager.get();
-}
-VkDescriptorManager *VulkanRenderer::getDescriptorManager()
-{
-    return _vkDescriptorManager.get();
-}
-VkGraphicsPipelineManager *VulkanRenderer::getGraphicsPipelineManager()
-{
-    return _vkGraphicsPipelineManager.get();
-}
-VkSwapChainManager *VulkanRenderer::getSwapChainManager()
-{
-    return _vkSwapChainManager.get();
-}
-VkRenderPassManager *VulkanRenderer::getRenderPassManager()
-{
-    return _vkRenderPassManager.get();
-}
-VkFrameBuffersManager *VulkanRenderer::getFrameBuffersManager()
-{
-    return _vkFrameBuffersManager.get();
-}
-VkCommandManager *VulkanRenderer::getCommandManager()
-{
-    return _vkCommandManager.get();
-}
-VkRenderSyncManager *VulkanRenderer::getRenderSyncManager()
-{
-    return _vkRenderSyncManager.get();
-}
-VkTextureManager *VulkanRenderer::getTextureManager()
-{
-    return _vkTextureManager.get();
-}
-VkDeviceManager *VulkanRenderer::getDeviceManager()
-{
-    return _vkDeviceManager.get();
-}
-VulkanMemoryManager *VulkanRenderer::getMemoryManager()
-{
-    return _memoryManager.get();
-}
-const std::vector<aura3d::vk::QueueData *> &VulkanRenderer::getQueues() const
-{
-    return _queueDataFromExclusiveFlags;
-}
-VkFixedArray<VkCommandBuffer> &VulkanRenderer::getCommandBuffers()
-{
-    return _cmdBuffers;
 }
 #ifdef AURA_PROFILE_FRAME
 GpuTimingStats VulkanRenderer::gpuTiming() const noexcept

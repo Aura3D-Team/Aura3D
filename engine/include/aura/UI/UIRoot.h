@@ -42,6 +42,17 @@
 namespace aura3d::ui
 {
 
+//! UIRoot's frame state: what is stale, and whether the pointer is over the surface.
+enum class UIRootFlags : u8
+{
+    None = 0,
+    LayoutDirty = 1u << 0u,
+    PaintDirty = 1u << 1u,
+    HoverDirty = 1u << 2u, //!< A translation moved what is under a pointer that did not move.
+    PointerInside = 1u << 3u,
+};
+INK_ENUM_FLAGS(UIRootFlags) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 class ITextShaper;
 
 /**
@@ -169,7 +180,7 @@ class UIRoot
 
     [[nodiscard]] bool needsPaint() const noexcept
     {
-        return _paintDirty || _layoutDirty;
+        return (_flags & (UIRootFlags::LayoutDirty | UIRootFlags::PaintDirty)) != UIRootFlags::None;
     }
 
     /// @}
@@ -366,11 +377,11 @@ class UIRoot
 
     void _requestLayout() noexcept
     {
-        _layoutDirty = true;
+        INK_FLAG_SET(_flags, UIRootFlags::LayoutDirty);
     }
     void _requestPaint() noexcept
     {
-        _paintDirty = true;
+        INK_FLAG_SET(_flags, UIRootFlags::PaintDirty);
     }
     void _setAnimating(Widget &widget, bool animating);
     void _requestHover() noexcept;
@@ -407,8 +418,6 @@ class UIRoot
 
     bool _moveFocus(int direction);
 
-    [[nodiscard]] static bool _isAncestorOf(const Widget &ancestor, const Widget *node) noexcept;
-
     ITextShaper *_shaper = nullptr;
     Theme _theme{};
 
@@ -423,8 +432,7 @@ class UIRoot
     u64 _decorationGeneration = 0;
     f32 _scale = 1.0f;
 
-    bool _layoutDirty = true;
-    bool _paintDirty = true;
+    UIRootFlags _flags = UIRootFlags::LayoutDirty | UIRootFlags::PaintDirty;
 
     Widget *_focused = nullptr;
     Widget *_capture = nullptr;
@@ -450,15 +458,12 @@ class UIRoot
     std::vector<std::unique_ptr<TweenEntry>> _tweens;
     AnimationId _nextAnimationId = 1;
 
-    //! A translation moved what is under a pointer that did not move.
-    bool _hoverDirty = false;
     std::vector<Widget *> _focusScratch;
 
     std::vector<ShortcutEntry> _shortcuts;
     u64 _nextShortcutId = 1;
 
     glm::vec2 _pointer{0.0f};
-    bool _pointerInside = false;
 
     //! The press in progress: the widgets under it that asked for its gesture (Widget::interceptsPointer),
     //! offered it on every move until it is taken or released. Empty for most presses, which then cost nothing.

@@ -23,6 +23,24 @@
 namespace aura3d::ui
 {
 
+enum class ControlFlags : u8
+{
+    None = 0,
+    Pressed = 1u << 0u,
+    ShowsFocusRing = 1u << 1u,
+    FocusRingVisible = 1u << 2u,
+};
+INK_ENUM_FLAGS(ControlFlags) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+
+enum class TextFieldFlags : u8
+{
+    None = 0,
+    Editing = 1u << 0u, //!< The field is changing its own text, which is not an assignment from outside.
+    ReadOnly = 1u << 1u,
+    Obscured = 1u << 2u,
+};
+INK_ENUM_FLAGS(TextFieldFlags) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 /**
  * @class Control
  * @brief Shared behaviour of anything that reacts to the pointer.
@@ -39,7 +57,8 @@ class Control : public Widget
     /// default; a control focused by a click does not show one.
     void setShowsFocusRing(bool shows) noexcept
     {
-        _showsFocusRing = shows;
+        shows ? INK_FLAG_SET(_controlFlags, ControlFlags::ShowsFocusRing)
+              : INK_FLAG_CLEAR(_controlFlags, ControlFlags::ShowsFocusRing);
     }
 
     /// A hand by default: everything a Control does, it does when clicked. Default defers to an ancestor, so window
@@ -69,12 +88,16 @@ class Control : public Widget
     }
     [[nodiscard]] bool pressed() const noexcept
     {
-        return _pressed;
+        return INK_FLAG_CHECK(_controlFlags, ControlFlags::Pressed);
     }
 
     /// The surface colour for the control's current state, blended across the
     /// hover transition.
     [[nodiscard]] glm::vec4 surfaceColor(const WidgetStyle &style) const;
+    //! The layout's padding, plus the style's padding left and right: room beside a text label.
+    [[nodiscard]] Thickness textInsets() const noexcept;
+    //! @p rect in surfaceColor() with @p style's border, the active border when @p active.
+    void paintSurface(DrawList &out, const Rect &rect, const WidgetStyle &style, bool active, f32 alpha) const;
 
     /// Draws the focus ring, if one is due. Call at the end of paint().
     void paintFocusRing(DrawList &out, const WidgetStyle &style, const Rect &bounds) const;
@@ -95,10 +118,8 @@ class Control : public Widget
 
   private:
     Transition<f32> _hover{0.0f};
-    bool _pressed = false;
-    bool _showsFocusRing = true;
+    ControlFlags _controlFlags = ControlFlags::ShowsFocusRing;
     wma::SystemCursor _cursor = wma::SystemCursor::Pointer;
-    bool _focusRingVisible = false;
 };
 
 /**
@@ -422,7 +443,7 @@ class TextField final : public Control
     void setReadOnly(bool readOnly);
     [[nodiscard]] bool readOnly() const noexcept
     {
-        return _readOnly;
+        return INK_FLAG_CHECK(_fieldFlags, TextFieldFlags::ReadOnly);
     }
 
     /// Draws one asterisk per byte in place of the text, for a passphrase.
@@ -430,7 +451,7 @@ class TextField final : public Control
     void setObscured(bool obscured);
     [[nodiscard]] bool obscured() const noexcept
     {
-        return _obscured;
+        return INK_FLAG_CHECK(_fieldFlags, TextFieldFlags::Obscured);
     }
 
     void selectAll();
@@ -469,7 +490,7 @@ class TextField final : public Control
 
     [[nodiscard]] bool wantsTextInput() const noexcept override
     {
-        return !_readOnly;
+        return !INK_FLAG_CHECK(_fieldFlags, TextFieldFlags::ReadOnly);
     }
 
     [[nodiscard]] wma::SystemCursor cursor() const noexcept override;
@@ -573,12 +594,15 @@ class TextField final : public Control
     usize _maxUndoSteps = 100;
     usize _maxHistoryBytes = static_cast<usize>(INK_MIB_TO_BYTES(4));
     EditKind _lastEdit = EditKind::None;
-    bool _editing = false; //! This field is changing its own text, which is not an assignment from outside.
+    TextFieldFlags _fieldFlags = TextFieldFlags::None;
 
-    bool _readOnly = false;
-    bool _obscured = false;
-    bool _dragging = false;
-    bool _touchPress = false; //! A finger is down and has not decided between tap and drag yet.
+    enum class Press : u8
+    {
+        None,
+        Touch, //!< A finger is down and has not decided between tap and drag yet.
+        Drag,  //!< The pointer is dragging the selection's far end.
+    };
+    Press _press = Press::None;
     u32 _touchClicks = 1;
     std::vector<Rect> _selectionRects;
 };

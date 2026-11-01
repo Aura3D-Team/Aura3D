@@ -16,12 +16,20 @@ struct IndexBufferTag;
 struct TextureTag;
 struct MeshTag;
 struct MaterialTag;
+struct RenderTargetTag;
+struct BufferTag;
+struct ComputeTag;
+struct PipelineTag;
 
 using VertexBufferHandle = Handle<VertexBufferTag>;
 using IndexBufferHandle = Handle<IndexBufferTag>;
 using TextureHandle = Handle<TextureTag>;
 using MeshHandle = Handle<MeshTag>;
 using MaterialHandle = Handle<MaterialTag>;
+using RenderTargetHandle = Handle<RenderTargetTag>;
+using BufferHandle = Handle<BufferTag>;
+using ComputeHandle = Handle<ComputeTag>;
+using PipelineHandle = Handle<PipelineTag>;
 
 } // namespace aura3d
 

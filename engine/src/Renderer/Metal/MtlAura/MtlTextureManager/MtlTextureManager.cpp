@@ -1,5 +1,6 @@
 #include "aura/Renderer/Metal/MtlAura/MtlTextureManager/MtlTextureManager.h"
 
+#include <algorithm>
 #include <vector>
 
 #include <ink/ink.hpp>
@@ -19,6 +20,41 @@ namespace
 [[nodiscard]] constexpr NS::UInteger rowBytes(u32 width) noexcept
 {
     return static_cast<NS::UInteger>(width) * 4u;
+}
+
+[[nodiscard]] MTL::PixelFormat metalFormat(TextureFormat format) noexcept
+{
+    switch (format)
+    {
+    case TextureFormat::Rgba8Unorm:
+        return MTL::PixelFormatRGBA8Unorm;
+    case TextureFormat::Rgba8Srgb:
+        return MTL::PixelFormatRGBA8Unorm_sRGB;
+    case TextureFormat::Rgba16Float:
+        return MTL::PixelFormatRGBA16Float;
+    case TextureFormat::Depth: //! Rejected before it gets here: Metal has no depth-only targets yet.
+        break;
+    }
+    return MTL::PixelFormatRGBA8Unorm;
+}
+
+[[nodiscard]] MTL::SamplerAddressMode metalWrap(TextureWrap wrap) noexcept
+{
+    switch (wrap)
+    {
+    case TextureWrap::Repeat:
+        return MTL::SamplerAddressModeRepeat;
+    case TextureWrap::MirroredRepeat:
+        return MTL::SamplerAddressModeMirrorRepeat;
+    case TextureWrap::ClampToEdge:
+        return MTL::SamplerAddressModeClampToEdge;
+    }
+    return MTL::SamplerAddressModeRepeat;
+}
+
+[[nodiscard]] MTL::SamplerMinMagFilter metalFilter(TextureFilter filter) noexcept
+{
+    return filter == TextureFilter::Nearest ? MTL::SamplerMinMagFilterNearest : MTL::SamplerMinMagFilterLinear;
 }
 
 } // namespace
@@ -124,6 +160,111 @@ TextureHandle MtlTextureManager::createFromPixels(const u8 *rgbaPixels, u32 widt
     return static_cast<TextureHandle>(_textures.size()); // 1-based
 }
 
+TextureHandle MtlTextureManager::createTexture(const TextureDesc &desc, std::span<const std::byte> pixels,
+                                               MTL::CommandQueue *queue)
+{
+    const u32 width = desc.width, height = desc.height;
+    const NS::UInteger stride = static_cast<NS::UInteger>(width) * bytesPerTexel(desc.format);
+    if (width == 0 || height == 0 || pixels.size() != static_cast<size_t>(stride) * height)
+    {
+        INK_ERROR << "MtlTextureManager: createTexture pixels do not match the descriptor's size and format";
+        return {};
+    }
+    const u32 levels = desc.mipmaps && queue ? mipLevelCount(width, height) : 1u;
+
+    NS::SharedPtr<MTL::TextureDescriptor> descriptor = adopt(MTL::TextureDescriptor::alloc()->init());
+    descriptor->setTextureType(MTL::TextureType2D);
+    descriptor->setPixelFormat(metalFormat(desc.format));
+    descriptor->setWidth(width);
+    descriptor->setHeight(height);
+    descriptor->setMipmapLevelCount(levels);
+    descriptor->setSampleCount(1);
+    descriptor->setUsage(MTL::TextureUsageShaderRead);
+    descriptor->setStorageMode(MTL::StorageModeShared);
+    NS::SharedPtr<MTL::Texture> texture = adopt(_device->newTexture(descriptor.get()));
+    if (!texture)
+    {
+        INK_ERROR << "MtlTextureManager: the device refused a " << width << "x" << height << " texture allocation";
+        return {};
+    }
+    const NS::SharedPtr<NS::String> textureLabel = makeString("Aura3D texture");
+    texture->setLabel(textureLabel.get());
+    texture->replaceRegion(MTL::Region::Make2D(0, 0, width, height), 0, pixels.data(), stride);
+
+    if (levels > 1)
+    {
+        //! Waited for: the texture is sampled by the next frame, and creation is a load-time cost.
+        MTL::CommandBuffer *commands = queue->commandBuffer();
+        MTL::BlitCommandEncoder *blit = commands->blitCommandEncoder();
+        blit->generateMipmaps(texture.get());
+        blit->endEncoding();
+        commands->commit();
+        commands->waitUntilCompleted();
+    }
+
+    const SamplerDesc &sampler = desc.sampler;
+    NS::SharedPtr<MTL::SamplerDescriptor> samplerDescriptor = adopt(MTL::SamplerDescriptor::alloc()->init());
+    samplerDescriptor->setMinFilter(metalFilter(sampler.minFilter));
+    samplerDescriptor->setMagFilter(metalFilter(sampler.magFilter));
+    samplerDescriptor->setMipFilter(levels == 1                                  ? MTL::SamplerMipFilterNotMipmapped
+                                    : sampler.mipFilter == TextureFilter::Linear ? MTL::SamplerMipFilterLinear
+                                                                                 : MTL::SamplerMipFilterNearest);
+    samplerDescriptor->setSAddressMode(metalWrap(sampler.wrapU));
+    samplerDescriptor->setTAddressMode(metalWrap(sampler.wrapV));
+    //! Metal accepts 1 to 16.
+    samplerDescriptor->setMaxAnisotropy(static_cast<NS::UInteger>(std::clamp(sampler.maxAnisotropy, 1.0f, 16.0f)));
+    NS::SharedPtr<MTL::SamplerState> state = adopt(_device->newSamplerState(samplerDescriptor.get()));
+    if (!state)
+    {
+        INK_ERROR << "MtlTextureManager: failed to create a sampler state";
+        return {};
+    }
+
+    _textures.push_back(std::move(texture));
+    _samplers.resize(_textures.size());
+    _samplers.back() = std::move(state);
+    return static_cast<TextureHandle>(_textures.size());
+}
+
+TextureHandle MtlTextureManager::createAttachment(u32 width, u32 height, TextureFormat format, TextureHandle replace)
+{
+    if (width == 0 || height == 0)
+        return {};
+    NS::SharedPtr<MTL::TextureDescriptor> descriptor = adopt(MTL::TextureDescriptor::alloc()->init());
+    descriptor->setTextureType(MTL::TextureType2D);
+    descriptor->setPixelFormat(metalFormat(format));
+    descriptor->setWidth(width);
+    descriptor->setHeight(height);
+    descriptor->setMipmapLevelCount(1);
+    descriptor->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageRenderTarget);
+    descriptor->setStorageMode(MTL::StorageModePrivate);
+    NS::SharedPtr<MTL::Texture> texture = adopt(_device->newTexture(descriptor.get()));
+    if (!texture)
+    {
+        INK_ERROR << "MtlTextureManager: the device refused a " << width << "x" << height << " render target";
+        return {};
+    }
+    const NS::SharedPtr<NS::String> label = makeString("Aura3D render target");
+    texture->setLabel(label.get());
+    //! Metal retains the old texture for the command buffers that still use it.
+    if (isValidHandle(replace) && replace.value() <= _textures.size())
+    {
+        _textures[replace.value() - 1] = std::move(texture);
+        return replace;
+    }
+    _textures.push_back(std::move(texture));
+    _samplers.resize(_textures.size());
+    return static_cast<TextureHandle>(_textures.size());
+}
+
+MTL::SamplerState *MtlTextureManager::samplerFor(TextureHandle handle) const noexcept
+{
+    if (isValidHandle(handle) && handle.value() <= _samplers.size())
+        if (MTL::SamplerState *own = _samplers[handle.value() - 1].get())
+            return own;
+    return _sampler.get();
+}
+
 TextureHandle MtlTextureManager::createDynamic(u32 width, u32 height)
 {
     NS::SharedPtr<MTL::Texture> texture = allocate(width, height, "Aura3D dynamic texture");
@@ -182,9 +323,12 @@ bool MtlTextureManager::updatePixels(TextureHandle handle, u32 x, u32 y, u32 wid
         return false;
     }
 
-    if (texture->pixelFormat() != (coverageOnly ? MTL::PixelFormatR8Unorm : kTextureFormat))
+    //! RGBA8 bytes fit either 8-bit colour format; a mip chain would go stale.
+    const MTL::PixelFormat format = texture->pixelFormat();
+    const bool colour = format == kTextureFormat || format == MTL::PixelFormatRGBA8Unorm_sRGB;
+    if ((coverageOnly ? format != MTL::PixelFormatR8Unorm : !colour) || texture->mipmapLevelCount() > 1)
     {
-        INK_ERROR << "MtlTextureManager: update format does not match texture format";
+        INK_ERROR << "MtlTextureManager: update format does not match texture format, or the texture is mipmapped";
         return false;
     }
 
@@ -200,9 +344,7 @@ bool MtlTextureManager::updatePixels(TextureHandle handle, u32 x, u32 y, u32 wid
      * that kills the process, so this check is what keeps a bad glyph rectangle a
      * logged warning.
      */
-    const u64 right = static_cast<u64>(x) + width;
-    const u64 bottom = static_cast<u64>(y) + height;
-    if (right > texture->width() || bottom > texture->height())
+    if (!regionFits(x, y, width, height, static_cast<u32>(texture->width()), static_cast<u32>(texture->height())))
     {
         INK_WARN << "MtlTextureManager: updateRegion rectangle (" << x << ", " << y << ", " << width << ", " << height
                  << ") reaches outside the " << texture->width() << "x" << texture->height() << " texture";
@@ -229,6 +371,7 @@ MTL::Texture *MtlTextureManager::resolve(TextureHandle handle) const noexcept
 void MtlTextureManager::clear() noexcept
 {
     _textures.clear();
+    _samplers.clear();
 }
 
 } // namespace mtl

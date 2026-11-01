@@ -43,13 +43,19 @@ namespace mtl
 inline constexpr NS::UInteger kVertexGeometrySlot = 0;
 //! Vertex stage, slot 1: TransformUniforms (meshes) or BatchUniforms (batches).
 inline constexpr NS::UInteger kVertexUniformSlot = 1;
-//! Fragment stage, slot 0: LightUniforms. Unused by the batch pipelines.
+//! drawMeshInstanced()'s InstanceUniforms array.
+inline constexpr NS::UInteger kVertexInstanceSlot = 2;
+//! Fragment stage, slot 0: LightingUniforms. Unused by the batch pipelines.
 inline constexpr NS::UInteger kFragmentLightSlot = 0;
+//! Fragment stage, slot 1: MaterialUniforms; texture/sampler slots 1-3 hold its maps.
+inline constexpr NS::UInteger kFragmentMaterialSlot = 1;
+inline constexpr NS::UInteger kFragmentFirstMapSlot = 1;
 //! Fragment stage texture/sampler slot 0: the albedo map.
 inline constexpr NS::UInteger kFragmentAlbedoSlot = 0;
 
 //! MSL entry points, as named in resources/shaders/metal/*.metal.
 inline constexpr const char *kVertexFunction3D = "aura_vertex_3d";
+inline constexpr const char *kVertexFunction3DInstanced = "aura_vertex_3d_instanced";
 inline constexpr const char *kFragmentFunction3D = "aura_fragment_3d";
 inline constexpr const char *kVertexFunctionBatch = "aura_vertex_batch";
 inline constexpr const char *kFragmentFunctionBatch = "aura_fragment_batch";
@@ -99,6 +105,13 @@ inline constexpr MTL::PixelFormat kTextureFormat = MTL::PixelFormatRGBA8Unorm;
  *
  * Layout must match the MSL struct of the same name in mtl_shader3d.metal.
  */
+//! One instance of drawMeshInstanced(); mirrors InstanceUniforms in mtl_shader3d.metal.
+struct InstanceUniforms
+{
+    glm::mat4 model{1.0f};
+    glm::mat4 normalMatrix{1.0f};
+};
+
 struct TransformUniforms
 {
     glm::mat4 model{1.0f};
@@ -138,16 +151,14 @@ static_assert(offsetof(gfx::Vertex3D, texCoord) == 12, "MSL Vertex3D::texCoord o
 static_assert(offsetof(gfx::Vertex3D, color) == 20, "MSL Vertex3D::color offset drifted");
 static_assert(offsetof(gfx::Vertex3D, normal) == 36, "MSL Vertex3D::normal offset drifted");
 
+static_assert(sizeof(gfx::LightingUBO) == 528 && offsetof(gfx::LightingUBO, lights) == 16,
+              "MSL LightingUniforms layout drifted");
+static_assert(sizeof(gfx::MaterialUniforms) == 64 && offsetof(gfx::MaterialUniforms, maps) == 36,
+              "MSL MaterialUniforms layout drifted");
 static_assert(sizeof(gfx::BatchVertex) == 36, "MSL BatchVertex expects 36 tightly packed bytes");
 static_assert(offsetof(gfx::BatchVertex, pos) == 0, "MSL BatchVertex::pos offset drifted");
 static_assert(offsetof(gfx::BatchVertex, texCoord) == 12, "MSL BatchVertex::texCoord offset drifted");
 static_assert(offsetof(gfx::BatchVertex, color) == 20, "MSL BatchVertex::color offset drifted");
-
-static_assert(sizeof(gfx::LightUBO) == 48, "MSL LightUniforms expects 48 bytes including tail padding");
-static_assert(offsetof(gfx::LightUBO, direction) == 0, "MSL LightUniforms::direction offset drifted");
-static_assert(offsetof(gfx::LightUBO, intensity) == 12, "MSL LightUniforms::intensity offset drifted");
-static_assert(offsetof(gfx::LightUBO, color) == 16, "MSL LightUniforms::color offset drifted");
-static_assert(offsetof(gfx::LightUBO, ambient) == 32, "MSL LightUniforms::ambient offset drifted");
 
 static_assert(sizeof(TransformUniforms) == 256, "MSL TransformUniforms expects four contiguous mat4s");
 static_assert(sizeof(BatchUniforms) == 64, "MSL BatchUniforms expects one mat4");

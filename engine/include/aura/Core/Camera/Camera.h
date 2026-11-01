@@ -9,6 +9,7 @@
 #include <glm/ext/matrix_clip_space.hpp>
 
 #include "aura/Core/AuraCore.h"
+#include "aura/Core/Collision.h"
 
 namespace aura3d
 {
@@ -406,6 +407,10 @@ class Camera
     {
         return _projection;
     }
+
+    /// The world ray through @p pixel (top-left origin) of a @p viewport sized target, from the near plane
+    /// away from the camera, with a unit direction. Matches the clip space set by setClipSpace().
+    [[nodiscard]] Ray rayFromScreen(glm::vec2 pixel, glm::vec2 viewport) const noexcept;
 
     /**
      * @brief Bundles model, view and projection into one GPU-ready struct.

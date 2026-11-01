@@ -50,7 +50,6 @@ set(AURA_CPU_LEVEL "" CACHE STRING "x86-64 microarchitecture level for Release b
 # system has. PUBLIC link options, i.e. every executable that links Aura3D gets it. It does not lower the glibc
 # floor: build in an old-glibc environment for that (ci/dist/Dockerfile).
 option(AURA_STATIC_RUNTIME "Link libstdc++ and libgcc statically (Linux, GCC)" OFF)
-
 # Linux: open libvulkan with dlopen() instead of linking it, so a machine without a Vulkan loader falls back to
 # OpenGL or the software renderer instead of failing to start. Ignored on every other platform.
 option(AURA_VULKAN_DYNAMIC_LOADER "Open libvulkan at run time (Linux)" ON)
@@ -217,6 +216,13 @@ target_sources(Aura3D PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/stb/stb_vorbis.
 target_compile_definitions(Aura3D PRIVATE
     STB_VORBIS_NO_STDIO
     STB_VORBIS_NO_PUSHDATA_API
+)
+
+# From VERSION, so aura.h cannot drift from it.
+target_compile_definitions(Aura3D PUBLIC
+    AURA_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    AURA_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    AURA_VERSION_PATCH=${PROJECT_VERSION_PATCH}
 )
 
 # stb_vorbis is third-party C that does not build warning-clean under the

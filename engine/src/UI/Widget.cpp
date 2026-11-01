@@ -139,7 +139,7 @@ void Widget::_setRoot(UIRoot *root)
         return;
 
     const WidgetRef alive(this);
-    _changingRoot = true;
+    INK_FLAG_SET(_flags, WidgetFlags::ChangingRoot);
     if (_root)
     {
         _root->_setAnimating(*this, false);
@@ -170,10 +170,10 @@ void Widget::_setRoot(UIRoot *root)
             return;
     }
 
-    _changingRoot = false;
+    INK_FLAG_CLEAR(_flags, WidgetFlags::ChangingRoot);
     if (_root)
     {
-        if (_animating)
+        if (INK_FLAG_CHECK(_flags, WidgetFlags::Animating))
             _root->_setAnimating(*this, true);
         onAttach();
     }
@@ -193,10 +193,10 @@ void Widget::invalidateLayout() noexcept
      */
     for (Widget *node = this; node != nullptr; node = node->_parent)
     {
-        if (node->_layoutDirty)
+        if (INK_FLAG_CHECK(node->_flags, WidgetFlags::LayoutDirty))
             break;
 
-        node->_layoutDirty = true;
+        INK_FLAG_SET(node->_flags, WidgetFlags::LayoutDirty);
     }
 
     if (_root)
@@ -219,7 +219,7 @@ glm::vec2 Widget::measure(const Constraints &space)
     {
         _measured = {0.0f, 0.0f};
         _desired = {0.0f, 0.0f};
-        _layoutDirty = false;
+        INK_FLAG_CLEAR(_flags, WidgetFlags::LayoutDirty);
         return _desired;
     }
 
@@ -228,8 +228,8 @@ glm::vec2 Widget::measure(const Constraints &space)
     const std::optional<f32> pinnedWidth = resolveLength(_layout.width, box.max.x);
     const std::optional<f32> pinnedHeight = resolveLength(_layout.height, box.max.y);
 
-    _fixedWidth = pinnedWidth.has_value() && !_layout.width.isFill();
-    _fixedHeight = pinnedHeight.has_value() && !_layout.height.isFill();
+    setFlag(WidgetFlags::FixedWidth, pinnedWidth.has_value() && !_layout.width.isFill());
+    setFlag(WidgetFlags::FixedHeight, pinnedHeight.has_value() && !_layout.height.isFill());
 
     //! Content is measured inside whatever the box will be, minus padding: a
     //! wrapping label inside a 200px panel must be told about the 200, not
@@ -253,7 +253,7 @@ glm::vec2 Widget::measure(const Constraints &space)
 
     _measured = size;
     _desired = size + _layout.margin.collapsed();
-    _layoutDirty = false;
+    INK_FLAG_CLEAR(_flags, WidgetFlags::LayoutDirty);
 
     return _desired;
 }
@@ -272,9 +272,9 @@ void Widget::arrange(const Rect &slot)
 
     //! Stretch yields to an explicit Length: a 120px button centred in a wide
     //! row stays 120px wide, whatever its alignment says.
-    if (_layout.hAlign == Alignment::Stretch && !_fixedWidth)
+    if (_layout.hAlign == Alignment::Stretch && !INK_FLAG_CHECK(_flags, WidgetFlags::FixedWidth))
         size.x = available.width();
-    if (_layout.vAlign == Alignment::Stretch && !_fixedHeight)
+    if (_layout.vAlign == Alignment::Stretch && !INK_FLAG_CHECK(_flags, WidgetFlags::FixedHeight))
         size.y = available.height();
 
     size = glm::max(size, _layout.minSize());
@@ -333,15 +333,15 @@ void Widget::setVisibility(Visibility visibility)
 
 void Widget::setEnabled(bool enabled)
 {
-    if (_enabled == enabled)
+    if (this->enabled() == enabled)
         return;
 
-    _enabled = enabled;
+    setFlag(WidgetFlags::Enabled, enabled);
 
     //! A control disabled while focused or hovered must not keep either, or it
     //! would still look live and still eat the next keystroke.
     const WidgetRef alive(this);
-    if (!_enabled && _root)
+    if (!enabled && _root)
         _root->_forget(*this);
     if (!alive.get())
         return;
@@ -353,7 +353,7 @@ bool Widget::effectivelyEnabled() const noexcept
 {
     for (const Widget *node = this; node != nullptr; node = node->_parent)
     {
-        if (!node->_enabled || node->_changingRoot)
+        if ((node->_flags & (WidgetFlags::Enabled | WidgetFlags::ChangingRoot)) != WidgetFlags::Enabled)
             return false;
     }
 
@@ -377,7 +377,7 @@ void Widget::paintTree(DrawList &out)
     if (_visibility != Visibility::Visible)
         return;
 
-    if (_hasEffect) [[unlikely]]
+    if (INK_FLAG_CHECK(_flags, WidgetFlags::HasEffect)) [[unlikely]]
     {
         _paintEffected(out);
         return;
@@ -422,7 +422,7 @@ void Widget::_paintEffected(DrawList &out)
         }
     };
     const EffectScope effect(out, _opacity, _translation);
-    _hasEffect = false;
+    INK_FLAG_CLEAR(_flags, WidgetFlags::HasEffect);
     const Raised raised{*this};
     paintTree(out);
 }
@@ -439,7 +439,7 @@ void Widget::setOpacity(f32 opacity) noexcept
 
 void Widget::_updateEffect() noexcept
 {
-    _hasEffect = _opacity != 1.0f || _translation != glm::vec2{0.0f};
+    setFlag(WidgetFlags::HasEffect, _opacity != 1.0f || _translation != glm::vec2{0.0f});
 }
 
 f32 Widget::opacity() const noexcept
@@ -480,7 +480,7 @@ Rect Widget::visualBounds() const noexcept
 void Widget::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
-    const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
+    const f32 alpha = paintAlpha();
 
     out.drawRect(_bounds, withAlpha(style.surface.normal, alpha), withAlpha(style.border.normal, alpha),
                  style.borderWidth, Corners::all(style.rounding));
@@ -496,9 +496,43 @@ void Widget::paintChildren(DrawList &out)
 // Input
 // -----------------------------------------------------------------------------
 
+Widget *Widget::pick(glm::vec2 point)
+{
+    if (_visibility != Visibility::Visible)
+        return nullptr;
+
+    //! Into the space the bounds are in: a translation moves the picture, and the target with it.
+    point -= _translation;
+
+    /*
+     * A clipping widget hides its children outside its content rectangle, so
+     * the point cannot belong to one of them -- but the widget itself (its
+     * frame, its scrollbar) may still own it.
+     */
+    if (clipsChildren() && !contentRect().contains(point))
+        return hitTest(point) ? this : nullptr;
+
+    //! Reverse order: later children paint on top, so they are hit first.
+    for (usize i = _children.size(); i-- > 0;)
+    {
+        if (Widget *hit = _children[i]->pick(point))
+            return hit;
+    }
+
+    return hitTest(point) ? this : nullptr;
+}
+
+bool Widget::isAncestorOf(const Widget *node) const noexcept
+{
+    for (; node != nullptr; node = node->_parent)
+        if (node == this)
+            return true;
+    return false;
+}
+
 bool Widget::hitTest(glm::vec2 point) const
 {
-    return _hitTestVisible && _bounds.contains(point);
+    return hitTestVisible() && _bounds.contains(point);
 }
 
 bool Widget::onPointerDown(const PointerEvent &)
@@ -577,12 +611,17 @@ bool Widget::onTick(f32)
     return false;
 }
 
+void Widget::setFlag(WidgetFlags flag, bool on) noexcept
+{
+    _flags = on ? _flags | flag : _flags & ~flag;
+}
+
 void Widget::setAnimating(bool animating)
 {
-    if (_animating == animating)
+    if (this->animating() == animating)
         return;
 
-    _animating = animating;
+    setFlag(WidgetFlags::Animating, animating);
 
     if (_root)
         _root->_setAnimating(*this, animating);
@@ -594,7 +633,7 @@ void Widget::setAnimating(bool animating)
 
 bool Widget::focusable() const noexcept
 {
-    return _focusable && effectivelyVisible() && effectivelyEnabled();
+    return INK_FLAG_CHECK(_flags, WidgetFlags::Focusable) && effectivelyVisible() && effectivelyEnabled();
 }
 
 bool Widget::hasFocus() const noexcept
@@ -611,6 +650,11 @@ void Widget::requestFocus(FocusReason reason)
 bool Widget::isHovered() const noexcept
 {
     return _root != nullptr && _root->isHovered(this);
+}
+
+Interaction Widget::interaction(bool active) const noexcept
+{
+    return active ? Interaction::Active : isHovered() ? Interaction::Hovered : Interaction::Normal;
 }
 
 void Widget::capturePointer()
@@ -639,6 +683,16 @@ const Theme &Widget::theme() const noexcept
     return _root ? std::as_const(*_root).theme() : detachedTheme();
 }
 
+f32 Widget::paintAlpha() const noexcept
+{
+    return effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
+}
+
+f32 Widget::rowHeight(const WidgetStyle &style) const noexcept
+{
+    return style.height.value_or(theme().metrics.rowHeight);
+}
+
 WidgetStyle Widget::resolvedStyle() const
 {
     const WidgetStyle &base = theme()[_part];
@@ -665,9 +719,9 @@ void Widget::accessibility(AccessibilityInfo &out) const
     out.role = _children.empty() ? Role::None : Role::Group;
     out.name = !_accessibleName.empty() ? _accessibleName : _name;
     out.description = !_accessibleDescription.empty() ? _accessibleDescription : _tooltip;
-    out.enabled = effectivelyEnabled();
-    out.focusable = focusable();
-    out.focused = hasFocus();
+    out.set(AccessibilityState::Enabled, effectivelyEnabled());
+    out.set(AccessibilityState::Focusable, focusable());
+    out.set(AccessibilityState::Focused, hasFocus());
 }
 
 } // namespace aura3d::ui

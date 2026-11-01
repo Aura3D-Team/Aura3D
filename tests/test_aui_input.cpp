@@ -1110,11 +1110,12 @@ void testAccessibilityTree()
 
     AccessibilityInfo info{};
     button.accessibility(info);
-    AURA_CHECK(info.role == Role::Button && info.name == "Launch" && info.focused,
+    AURA_CHECK(info.role == Role::Button && info.name == "Launch" && info.has(AccessibilityState::Focused),
                "a button reports its role, its label and its focus");
 
     check.accessibility(info = {});
-    AURA_CHECK(info.role == Role::CheckBox && info.checked, "a check box reports its checked state");
+    AURA_CHECK(info.role == Role::CheckBox && info.has(AccessibilityState::Checked),
+               "a check box reports its checked state");
 
     slider.accessibility(info = {});
     AURA_CHECK(info.role == Role::Slider && near(info.value, 4.0f) && near(info.maxValue, 10.0f),

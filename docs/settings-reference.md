@@ -33,6 +33,7 @@
 | `msaa` | int | 1 | MSAA sample count, clamped to what the device supports; 1 is off. Vulkan only. 0 to 64. |
 | `frames_in_flight` | int | 2 | Frames the CPU may record ahead of the GPU. Vulkan only. 1 to 8. |
 | `gpu_timing` | bool | on in AURA_PROFILE_FRAME builds | Measure each frame's GPU time. Ignored without AURA_PROFILE_FRAME. |
+| `shader_hot_reload` | bool | on in debug builds | While run() drives the loop, rebuild the built-in 3D shaders when a file under paths.shaders changes (the build restages them). |
 | `cpu_threads` | int | 0 | Worker threads of the job system and the software rasteriser. 0 detects the core count. 0 to 256. |
 | `vulkan.validation` | bool | on in debug builds | Enable the Khronos validation layer. |
 | `vulkan.gpu` | choice | "discrete" | Which kind of device to prefer. `any` lets capability decide alone. One of `discrete`, `integrated`, `any`. |
@@ -41,6 +42,7 @@
 | `vulkan.min_draws_to_thread` | int | 512 | Draws a batch needs before its recording is spread over the workers; fewer record inline. 0 to 1e+06. |
 | `vulkan.min_draws_per_chunk` | int | 128 | Fewest draws one worker records, which caps how many chunks a batch is cut into. 1 to 1e+06. |
 | `vulkan.descriptor_headroom` | int | 16 | Update-after-bind descriptors kept back for the engine's other bindings when sizing the texture table. 0 to 4096. |
+| `vulkan.pipeline_cache` | text | "./cache/vulkan-pipelines.bin" | File compiled pipelines are kept in between runs; a cache from another GPU or driver is ignored. Empty keeps them in memory only. |
 | `vulkan.vma.buffer_device_address` | bool | true | Allow buffer device addresses, where the device has them. |
 | `vulkan.vma.prefer_device_memory` | bool | true | Prefer device-local memory for resources. |
 | `vulkan.vma.map_upload_buffers` | bool | true | Keep upload buffers mapped for their whole life. |

@@ -4,8 +4,10 @@
 #pragma once
 
 #include <array>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "aura/Renderer/Vulkan/VkAura/VkAuraCore.h"
@@ -29,6 +31,8 @@ class VkGraphicsPipelineManager : public VkPipelineManager
 
     //! Add a descriptor binding to a specific set
     void addDescriptorBinding(u32 setIndex, const DescriptorBindingInfo &bindingInfo);
+    //! An empty set at @p setIndex, so a higher set can exist without the lower ones having a binding.
+    void declareSet(u32 setIndex);
 
     /**
      * @brief Declares a push-constant range on the pipeline layout.
@@ -65,6 +69,16 @@ class VkGraphicsPipelineManager : public VkPipelineManager
                         const AttributeDescriptionArray<VkVertexInputAttributeDescription> &vertexAttributeDescArray,
                         u32 attributeDescriptionCount = MAX_ATTRIBUTE_DESCRIPTION,
                         const PipelineOptions &options = PipelineOptions{});
+
+    //! New SPIR-V for both stages, the pipeline and its variants rebuilt with what createPipeline() was given.
+    //! False, with the old shaders still in use, when either module or pipeline is rejected. The GPU must be idle.
+    bool reloadShaders(std::span<const std::byte> vertSpirv, std::span<const std::byte> fragSpirv);
+    //! Builds, and rebuilds with every createPipeline(), a single-sampled copy for @p renderPass, which writes
+    //! @p colorAttachments colour images: 0 for a depth-only pass.
+    void addVariant(VkRenderPass renderPass, u32 colorAttachments = 1);
+    //! getPipeline() and cmdBindPipeline() use @p renderPass's pipeline until the next call. Outside
+    //! recording only: worker threads read the selection.
+    void selectPass(VkRenderPass renderPass) noexcept;
 
     //! Bind the pipeline and all descriptor sets to the command buffer
     void cmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint);
@@ -120,6 +134,26 @@ class VkGraphicsPipelineManager : public VkPipelineManager
     //! Optional push-constant range folded into the pipeline layout.
     VkPushConstantRange _pushConstantRange{};
     bool _hasPushConstants = false;
+
+    [[nodiscard]] VkPipeline build(VkRenderPass renderPass, const PipelineOptions &options);
+    [[nodiscard]] VkPipeline buildVariant(VkRenderPass renderPass);
+    void destroyPipelines() noexcept;
+
+    //! What the last createPipeline() was given, so variants can be built from it.
+    struct BuildInputs
+    {
+        VkExtent2D extent{};
+        std::vector<VkVertexInputBindingDescription> bindings;
+        AttributeDescriptionArray<VkVertexInputAttributeDescription> attributes{};
+        u32 attributeCount = 0;
+        PipelineOptions options{};
+    };
+    BuildInputs _inputs;
+    VkRenderPass _mainPass = VK_NULL_HANDLE;
+    VkPipeline _mainPipeline = VK_NULL_HANDLE;
+    std::vector<std::pair<VkRenderPass, VkPipeline>> _variants;
+    //! Colour attachment counts of the variants that are not the default.
+    std::unordered_map<VkRenderPass, u32> _variantColour;
 };
 
 } // namespace vk

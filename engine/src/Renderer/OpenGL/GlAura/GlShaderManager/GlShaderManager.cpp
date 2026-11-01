@@ -53,6 +53,27 @@ GLuint compileStage(GLenum type, const char *source)
 
 } // namespace
 
+#ifndef AURA_GLES
+GLuint GlShaderManager::createComputeProgram(const char *source)
+{
+    const GLuint stage = compileStage(GL_COMPUTE_SHADER, source);
+    const GLuint program = glCreateProgram();
+    glAttachShader(program, stage);
+    glLinkProgram(program);
+    glDeleteShader(stage);
+    GLint ok = GL_FALSE;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (!ok)
+    {
+        std::array<char, 512> log{};
+        glGetProgramInfoLog(program, static_cast<GLsizei>(log.size()), nullptr, log.data());
+        glDeleteProgram(program);
+        throw std::runtime_error(std::string("GL compute link failed: ") + log.data());
+    }
+    return program;
+}
+#endif
+
 GLuint GlShaderManager::createProgram(const char *vertexSource, const char *fragmentSource)
 {
     const GLuint vertex = compileStage(GL_VERTEX_SHADER, vertexSource);

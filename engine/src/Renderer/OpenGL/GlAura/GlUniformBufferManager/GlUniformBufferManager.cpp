@@ -1,5 +1,7 @@
 #include "aura/Renderer/OpenGL/GlAura/GlUniformBufferManager/GlUniformBufferManager.h"
 
+#include <utility>
+
 namespace aura3d
 {
 namespace gl
@@ -10,6 +12,7 @@ namespace
 
 constexpr GLuint kCameraBinding = 0;
 constexpr GLuint kLightBinding = 1;
+constexpr GLuint kMaterialBinding = 2;
 
 //! Allocates a uniform buffer of @p size bytes and wires @p block of @p program to it.
 GLuint createBlock(GLuint program, const char *block, GLuint binding, GLsizeiptr size)
@@ -39,8 +42,17 @@ void GlUniformBufferManager::create(GLuint shaderProgram)
     //! Std140 packs the two mat4s back to back, which is how TransformUBO lays out view and proj.
     static_assert(offsetof(gfx::TransformUBO, proj) == offsetof(gfx::TransformUBO, view) + sizeof(glm::mat4));
     _cameraUbo = createBlock(shaderProgram, "Camera", kCameraBinding, 2 * sizeof(glm::mat4));
-    _lightUbo = createBlock(shaderProgram, "LightBlock", kLightBinding, sizeof(gfx::LightUBO));
+    _lightUbo = createBlock(shaderProgram, "LightingBlock", kLightBinding, sizeof(gfx::LightingUBO));
+    _materialUbo = createBlock(shaderProgram, "MaterialBlock", kMaterialBinding, sizeof(gfx::MaterialUniforms));
     _cameraValid = false;
+}
+
+void GlUniformBufferManager::bindBlocks(GLuint shaderProgram)
+{
+    for (const auto &[block, binding] : {std::pair{"Camera", kCameraBinding}, std::pair{"LightingBlock", kLightBinding},
+                                         std::pair{"MaterialBlock", kMaterialBinding}})
+        if (const GLuint index = glGetUniformBlockIndex(shaderProgram, block); index != GL_INVALID_INDEX)
+            glUniformBlockBinding(shaderProgram, index, binding);
 }
 
 void GlUniformBufferManager::updateCamera(const gfx::TransformUBO &ubo)
@@ -56,21 +68,30 @@ void GlUniformBufferManager::updateCamera(const gfx::TransformUBO &ubo)
     _cameraValid = true;
 }
 
-void GlUniformBufferManager::updateLight(const gfx::LightUBO &light)
+void GlUniformBufferManager::updateLight(const gfx::LightingUBO &lighting)
 {
     if (!_lightUbo)
         return;
 
     glBindBuffer(GL_UNIFORM_BUFFER, _lightUbo);
-    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(gfx::LightUBO), &light);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lighting), &lighting);
+}
+
+void GlUniformBufferManager::updateMaterial(const gfx::MaterialUniforms &material)
+{
+    if (!_materialUbo)
+        return;
+
+    glBindBuffer(GL_UNIFORM_BUFFER, _materialUbo);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(material), &material);
 }
 
 void GlUniformBufferManager::cleanup()
 {
-    for (GLuint *buffer : {&_cameraUbo, &_lightUbo})
+    for (GLuint *buffer : {&_cameraUbo, &_lightUbo, &_materialUbo})
         if (*buffer)
             glDeleteBuffers(1, buffer);
-    _cameraUbo = _lightUbo = 0;
+    _cameraUbo = _lightUbo = _materialUbo = 0;
     _cameraValid = false;
 }
 

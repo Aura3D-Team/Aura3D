@@ -37,7 +37,7 @@ void Disclosure::setTitle(std::string title)
 f32 Disclosure::headerHeight() const
 {
     const WidgetStyle style = resolvedStyle();
-    return std::max(style.height.value_or(theme().metrics.rowHeight), _label->desiredSize().y);
+    return std::max(rowHeight(style), _label->desiredSize().y);
 }
 
 Rect Disclosure::headerRect() const
@@ -53,7 +53,7 @@ bool Disclosure::hitTest(glm::vec2 point) const
 glm::vec2 Disclosure::measureContent(const Constraints &available)
 {
     const WidgetStyle style = resolvedStyle();
-    const f32 row = style.height.value_or(theme().metrics.rowHeight);
+    const f32 row = rowHeight(style);
     const f32 gutter = row * theme().metrics.arrowScale + style.padding;
 
     Constraints headerSpace = available;
@@ -78,7 +78,7 @@ glm::vec2 Disclosure::measureContent(const Constraints &available)
 void Disclosure::arrangeContent(const Rect &content)
 {
     const WidgetStyle style = resolvedStyle();
-    const f32 row = style.height.value_or(theme().metrics.rowHeight);
+    const f32 row = rowHeight(style);
     const f32 gutter = row * theme().metrics.arrowScale + style.padding;
     const f32 header = headerHeight();
 
@@ -96,12 +96,10 @@ void Disclosure::arrangeContent(const Rect &content)
 void Disclosure::paint(DrawList &out)
 {
     const WidgetStyle style = resolvedStyle();
-    const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
+    const f32 alpha = paintAlpha();
     const Rect header = headerRect();
 
-    out.drawRect(header, withAlpha(surfaceColor(style), alpha),
-                 withAlpha(style.border.pick(expanded.get(), isHovered()), alpha), style.borderWidth,
-                 Corners::all(style.rounding));
+    paintSurface(out, header, style, expanded.get(), alpha);
 
     if (_foldable)
     {
@@ -132,7 +130,7 @@ void Disclosure::accessibility(AccessibilityInfo &out) const
     Widget::accessibility(out);
 
     out.role = Role::Group;
-    out.expanded = expanded.get();
+    out.set(AccessibilityState::Expanded, expanded.get());
 
     if (out.name.empty())
         out.name = _label->text.get();
@@ -180,7 +178,7 @@ void TreeNode::paint(DrawList &out)
     if (selected.get())
     {
         const WidgetStyle style = resolvedStyle();
-        const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
+        const f32 alpha = paintAlpha();
 
         out.fillRect(headerRect(), withAlpha(style.surface.active, alpha), Corners::all(style.rounding));
     }
@@ -206,7 +204,7 @@ void TreeNode::accessibility(AccessibilityInfo &out) const
     Disclosure::accessibility(out);
 
     out.role = Role::ListItem;
-    out.selected = selected.get();
+    out.set(AccessibilityState::Selected, selected.get());
 }
 
 // =============================================================================
@@ -324,7 +322,7 @@ void TabView::paint(DrawList &out)
         return;
 
     const WidgetStyle style = theme()[Part::Tab];
-    const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
+    const f32 alpha = paintAlpha();
 
     const f32 thickness = 2.0f;
     const f32 y = _bar->bounds().max.y - thickness;

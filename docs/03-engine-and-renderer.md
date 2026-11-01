@@ -20,12 +20,12 @@ After construction you have a live window and a ready-to-draw renderer:
 
 ```cpp
 IRenderer* r = engine.getRenderer();
-ResourceManager* resources = engine.resources();
+AudioEngine* audio = engine.audio();
 const AuraSettings* settings = engine.getSettings();
 aura3d::RendererChoice backend = engine.getBackend();
 ```
 
-`Engine` owns the renderer and the `ResourceManager` for its whole lifetime —
+`Engine` owns the renderer and the audio engine for its whole lifetime —
 you don't call `new`/`delete` on either.
 
 ## Window decorations
@@ -107,7 +107,7 @@ r->drawBatch(canvas, texture);               // a gfx::Canvas, one draw call —
 **State**
 ```cpp
 r->setClearColor(r, g, b, a);                  // linear, like every colour (doc 7)
-r->setLight(lightUBO);                         // see doc 6
+r->setLights(lights);                          // see doc 6
 ```
 
 **GPU time**
@@ -223,14 +223,14 @@ itself; do not clean up the active renderer before calling it.
 - is a no-op if the resolved choice is already active;
 - tears down the old renderer and window, then creates their replacements
   from the current configuration;
-- **invalidates every handle** the old renderer issued and clears/rebinds the
-  `ResourceManager` cache. Reload assets through `engine.resources()` and
-  recreate renderer-dependent helpers such as text overlays and UI views.
+- **invalidates every handle** the old renderer issued. Create textures and
+  meshes again, and recreate renderer-dependent helpers such as text overlays
+  and UI views.
 
 ```cpp
 engine.switchBackend(aura3d::RendererChoice::OPENGL);
 IRenderer* r = engine.getRenderer();               // re-fetch: it's a new object
-const TextureHandle tex = engine.resources()->loadTexture("crate.png"); // reload
+const TextureHandle tex = r->createTextureFromFile("crate.png");  // reload
 ```
 
 ## Software (CPU) backend notes

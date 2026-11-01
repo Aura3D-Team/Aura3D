@@ -1,5 +1,8 @@
 #include "aura/Renderer/Vulkan/VkAura/VkGraphicsPipelineManager/VkGraphicsPipelineManager.h"
 
+#include <algorithm>
+#include <cstring>
+
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/aura.h"
 
@@ -78,6 +81,8 @@ void VkGraphicsPipelineManager::_init()
 
 VkGraphicsPipelineManager::~VkGraphicsPipelineManager()
 {
+    destroyPipelines();
+
     // Clean up descriptor set layouts
     for (auto &pair : _descriptorSetLayouts)
     {
@@ -117,6 +122,16 @@ void VkGraphicsPipelineManager::addDescriptorBinding(u32 setIndex, const Descrip
 
     // Add the binding to the set
     _descriptorSetLayoutInfos[setIndex].bindings.push_back(bindingInfo);
+}
+
+void VkGraphicsPipelineManager::declareSet(u32 setIndex)
+{
+    if (_descriptorSetLayoutInfos.find(setIndex) == _descriptorSetLayoutInfos.end())
+    {
+        DescriptorSetLayoutInfo setInfo;
+        setInfo.setIndex = setIndex;
+        _descriptorSetLayoutInfos[setIndex] = setInfo;
+    }
 }
 
 void VkGraphicsPipelineManager::resetInterface()
@@ -205,7 +220,7 @@ void VkGraphicsPipelineManager::createDescriptorSetLayouts()
     }
 
     // Create a properly ordered array of layouts
-    layouts.resize(maxSetIndex + 1);
+    layouts.resize(_descriptorSetLayouts.empty() ? 0 : maxSetIndex + 1);
     for (const auto &pair : _descriptorSetLayouts)
     {
         layouts[pair.first] = pair.second;
@@ -253,12 +268,121 @@ void VkGraphicsPipelineManager::createPipeline(
     const AttributeDescriptionArray<VkVertexInputAttributeDescription> &vertexAttributeDescArray,
     u32 attributeDescriptionCount, const PipelineOptions &options)
 {
-    if (_pipeline != VK_NULL_HANDLE)
-    {
-        vkDestroyPipeline(*_device, _pipeline, nullptr);
+    destroyPipelines();
+    _inputs = {extent, vertexBindingDescArray, vertexAttributeDescArray, attributeDescriptionCount, options};
+    _mainPass = renderPass;
+    _mainPipeline = build(renderPass, options);
+    for (auto &[pass, pipeline] : _variants)
+        pipeline = buildVariant(pass);
+    _pipeline = _mainPipeline;
+}
 
-        _pipeline = VK_NULL_HANDLE;
+bool VkGraphicsPipelineManager::reloadShaders(std::span<const std::byte> vertSpirv,
+                                              std::span<const std::byte> fragSpirv)
+{
+    constexpr u32 kSpirvMagic = 0x07230203u;
+    const auto valid = [](std::span<const std::byte> code)
+    {
+        u32 magic = 0;
+        if (code.size() < sizeof(magic) || code.size() % 4 != 0)
+            return false;
+        std::memcpy(&magic, code.data(), sizeof(magic));
+        return magic == kSpirvMagic;
+    };
+    if (!valid(vertSpirv) || !valid(fragSpirv))
+        return false;
+
+    //! The new modules and pipelines are built beside the old, so a rejected shader leaves the running one.
+    VkShaderManager next(_device);
+    const std::array<VkPipelineShaderStageCreateInfo, 2> previous = _shaderStages;
+    VkPipeline main = VK_NULL_HANDLE;
+    std::vector<std::pair<VkRenderPass, VkPipeline>> variants;
+    try
+    {
+        next.createVertShaderModuleFromMemory(reinterpret_cast<const unsigned char *>(vertSpirv.data()),
+                                              static_cast<u32>(vertSpirv.size()));
+        next.createFragShaderModuleFromMemory(reinterpret_cast<const unsigned char *>(fragSpirv.data()),
+                                              static_cast<u32>(fragSpirv.size()));
+        _shaderStages[0].module = next.getVertShaderModule();
+        _shaderStages[1].module = next.getFragShaderModule();
+        if (_mainPass != VK_NULL_HANDLE)
+        {
+            main = build(_mainPass, _inputs.options);
+            for (const auto &[pass, pipeline] : _variants)
+                variants.emplace_back(pass, buildVariant(pass));
+        }
     }
+    catch (const std::exception &error)
+    {
+        INK_ERROR << "VkGraphicsPipelineManager: reloaded shaders rejected: " << error.what();
+        _shaderStages = previous;
+        if (main != VK_NULL_HANDLE)
+            vkDestroyPipeline(*_device, main, nullptr);
+        for (const auto &[pass, pipeline] : variants)
+            vkDestroyPipeline(*_device, pipeline, nullptr);
+        return false;
+    }
+    destroyPipelines();
+    _mainPipeline = _pipeline = main;
+    _variants = std::move(variants);
+    //! next now owns, and destroys, the old modules.
+    std::swap(_shaderManager.getVertShaderModule(), next.getVertShaderModule());
+    std::swap(_shaderManager.getFragShaderModule(), next.getFragShaderModule());
+    return true;
+}
+
+void VkGraphicsPipelineManager::addVariant(VkRenderPass renderPass, u32 colorAttachments)
+{
+    if (colorAttachments != _inputs.options.colorAttachments)
+        _variantColour[renderPass] = colorAttachments;
+    if (renderPass == _mainPass || std::ranges::any_of(_variants,
+                                                       [&](const auto &variant)
+                                                       {
+                                                           return variant.first == renderPass;
+                                                       }))
+        return;
+    _variants.emplace_back(renderPass, _mainPipeline != VK_NULL_HANDLE ? buildVariant(renderPass) : VK_NULL_HANDLE);
+}
+
+void VkGraphicsPipelineManager::selectPass(VkRenderPass renderPass) noexcept
+{
+    _pipeline = _mainPipeline;
+    for (const auto &[pass, pipeline] : _variants)
+        if (pass == renderPass)
+            _pipeline = pipeline;
+}
+
+VkPipeline VkGraphicsPipelineManager::buildVariant(VkRenderPass renderPass)
+{
+    //! Offscreen targets are single-sampled whatever the window's MSAA is.
+    PipelineOptions options = _inputs.options;
+    options.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+    if (const auto colour = _variantColour.find(renderPass); colour != _variantColour.end())
+        options.colorAttachments = colour->second;
+    return build(renderPass, options);
+}
+
+void VkGraphicsPipelineManager::destroyPipelines() noexcept
+{
+    if (_mainPipeline != VK_NULL_HANDLE)
+        vkDestroyPipeline(*_device, _mainPipeline, nullptr);
+    for (auto &[pass, pipeline] : _variants)
+        if (pipeline != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(*_device, pipeline, nullptr);
+            pipeline = VK_NULL_HANDLE;
+        }
+    _mainPipeline = VK_NULL_HANDLE;
+    //! The base class destroys _pipeline, which only ever aliases one of the above.
+    _pipeline = VK_NULL_HANDLE;
+}
+
+VkPipeline VkGraphicsPipelineManager::build(VkRenderPass renderPass, const PipelineOptions &options)
+{
+    const VkExtent2D extent = _inputs.extent;
+    const std::vector<VkVertexInputBindingDescription> &vertexBindingDescArray = _inputs.bindings;
+    const AttributeDescriptionArray<VkVertexInputAttributeDescription> &vertexAttributeDescArray = _inputs.attributes;
+    const u32 attributeDescriptionCount = _inputs.attributeCount;
 
     if (_descriptorSetLayouts.empty())
     {
@@ -319,14 +443,15 @@ void VkGraphicsPipelineManager::createPipeline(
     rasterizer.lineWidth = 1.0f;
     //! Screen-space overlay quads have no meaningful facing, so culling them
     //! would drop whichever winding the batch happened to emit.
-    rasterizer.cullMode = options.cullBackFaces ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+    rasterizer.cullMode =
+        INK_FLAG_CHECK(options.state, PipelineState::CullBackFaces) ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     /*
      * The dynamic viewport this pipeline is bound with (cmdIndexedDraw() /
      * cmdDraw()) uses a negative height to flip Y into GLM's convention (see
      * the comment there). That flip mirrors every triangle's 2D footprint in
      * framebuffer space, which reverses the winding the rasterizer measures:
      * geometry authored clockwise now arrives counter-clockwise on screen.
-     * VK_FRONT_FACE_COUNTER_CLOCKWISE compensates so cullBackFaces still
+     * VK_FRONT_FACE_COUNTER_CLOCKWISE compensates so CullBackFaces still
      * culls the actual back faces instead of the front ones -- without it, a
      * single-sided mesh like a ground plane is entirely invisible (its one
      * visible face is exactly the one now getting culled), while a closed
@@ -353,11 +478,11 @@ void VkGraphicsPipelineManager::createPipeline(
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
     colorBlendAttachment.colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = options.alphaBlend ? VK_TRUE : VK_FALSE;
+    colorBlendAttachment.blendEnable = INK_FLAG_CHECK(options.state, PipelineState::AlphaBlend) ? VK_TRUE : VK_FALSE;
     colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
-    if (options.alphaBlend)
+    if (INK_FLAG_CHECK(options.state, PipelineState::AlphaBlend))
     {
         /*
          * Straight (non-premultiplied) source-over:
@@ -385,7 +510,7 @@ void VkGraphicsPipelineManager::createPipeline(
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    colorBlending.attachmentCount = 1;
+    colorBlending.attachmentCount = options.colorAttachments;
     colorBlending.pAttachments = &colorBlendAttachment;
     colorBlending.blendConstants[0] = 0.0f; // Optional
     colorBlending.blendConstants[1] = 0.0f; // Optional
@@ -395,8 +520,9 @@ void VkGraphicsPipelineManager::createPipeline(
     // Depth stencil state (only meaningful when render pass has a depth attachment)
     VkPipelineDepthStencilStateCreateInfo depthStencil = {};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = options.depthTest ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable = options.depthTest && options.depthWrite ? VK_TRUE : VK_FALSE;
+    depthStencil.depthTestEnable = INK_FLAG_CHECK(options.state, PipelineState::DepthTest) ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable =
+        INK_FLAG_CHECK(options.state, PipelineState::DepthTest | PipelineState::DepthWrite) ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = options.depthCompare;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
@@ -416,10 +542,10 @@ void VkGraphicsPipelineManager::createPipeline(
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;
 
-    // Create the graphics pipeline
-    VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &_pipeline));
-
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VK_RESULT_CHECK(vkCreateGraphicsPipelines(*_device, options.cache, 1, &pipelineInfo, nullptr, &pipeline));
     INK_TRACE << "Graphics pipeline created";
+    return pipeline;
 }
 
 void VkGraphicsPipelineManager::cmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint)

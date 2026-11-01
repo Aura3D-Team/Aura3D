@@ -72,6 +72,9 @@ class VulkanMemoryManager
     void destroyBuffer(AllocatedBuffer &buffer);
 
     [[nodiscard]] AllocatedImage createImage(const VkImageCreateInfo &imageInfo, VmaMemoryUsage memoryUsage);
+    //! One layer, optimal tiling, exclusive, undefined layout, preferring device memory.
+    [[nodiscard]] AllocatedImage createImage2D(VkFormat format, VkExtent2D extent, VkSampleCountFlagBits samples,
+                                               VkImageUsageFlags usage, u32 mipLevels = 1);
     void destroyImage(AllocatedImage &image);
 
     void *map(AllocatedBuffer &buffer);

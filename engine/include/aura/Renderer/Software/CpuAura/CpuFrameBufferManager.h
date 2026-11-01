@@ -7,13 +7,10 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <span>
-#include <string>
 #include <vector>
 
-static const float PI_FLOAT = std::acos(-1.0f);
-
 #include "aura/Core/AuraCore.h"
-#include "aura/Core/AuraFont/AuraBitmapFont.h"
+#include "aura/Renderer/Texture.h"
 #include "aura/Utils/AlignedVector.h"
 
 /// wma owns the platform window and exposes the CPU framebuffer through its
@@ -82,16 +79,6 @@ struct Rectangle
     }
 };
 
-enum InterpolationMethod : u32
-{
-    Linear = 0,
-    Smoothstep = 1,
-    Accelerate = 2,
-    Decelerate = 3,
-    Sine = 4,
-    Cosine = 5
-};
-
 struct Texture
 {
     Texture(i32 w, i32 h, bool coverageOnly = false)
@@ -105,6 +92,12 @@ struct Texture
     AlignedVector<u8> coverage;
     i32 width;
     i32 height;
+    //! This level and the levels - 1 Textures stored right after it form a mip chain, each half the size.
+    u32 levels = 1;
+    //! Clamp and bilinear unless createTexture() asked otherwise; every level of a chain carries the same.
+    TextureWrap wrapU = TextureWrap::ClampToEdge;
+    TextureWrap wrapV = TextureWrap::ClampToEdge;
+    bool nearest = false;
 
     /// Texel at (x, y), clamped to the texture's bounds -- clamp-to-edge,
     /// matching the wrap mode every GPU backend sets on its dynamic textures.
@@ -251,6 +244,8 @@ class CpuFrameBufferManager
     ///                        constructed before any renderer and survives
     ///                        every backend switch.
     CpuFrameBufferManager(wma::IWindowManager &windowManager, Config config, const JobSystem &jobs);
+    /// Offscreen: rasterises like the window's, never presents (renderFramebuffer() returns false).
+    CpuFrameBufferManager(Config config, const JobSystem &jobs);
     ~CpuFrameBufferManager() = default;
 
     /// Deferred: flush() clears each band just before rasterizing it, so the frame is written once
@@ -266,16 +261,12 @@ class CpuFrameBufferManager
     // Memory management
     void resizeFramebuffer(int width, int height);
 
+    /// Every pixel as stored, row by row, top first: width * height words, the pending clear resolved.
+    void readColor(std::span<u32> out);
+
     // Basic drawing functions
     Pixel getPixel(Point p) const;
     void setPixel(Point p, u32 color);
-    void setPixelWithDepth(Point p, f32 z, u32 color);
-
-    void drawLine(Point p0, Point p1, u32 color);
-
-    void drawPolygon(const std::vector<Point> &points, u32 color, bool closed = true);
-    void drawPolygon(const std::vector<Point> &points, const std::vector<u32> &colors, bool closed = true);
-    void drawFilledPolygon(const std::vector<Point> &points, u32 color);
 
     /**
      * @brief Rasterises everything queued this frame, then empties the queue.
@@ -314,9 +305,6 @@ class CpuFrameBufferManager
     void queueScreenTriangles(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
                               const Texture *texture);
 
-    // Text rendering. fontSize is 8 px of line height per step; 2 is the embedded face's native size.
-    void drawText(const std::string &text, Point p, u32 color, u32 fontSize = 2);
-
     // Getters
     i32 getWidth() const
     {
@@ -331,16 +319,9 @@ class CpuFrameBufferManager
     {
         return _workerCount;
     }
-    i32 getTextWidth(const std::string &text, u32 fontSize = 2);
-    i32 getTextHeight(const std::string &text, u32 fontSize = 2);
 
     // Helper methods
-    void plotPixel(Point p, f32 intensity, u32 color);
     bool isInsideBounds(Point p) const;
-    u32 blendColors(u32 c1, u32 c2, f32 alpha);
-
-    template <typename T>
-    T interpolate(const T &a, const T &b, float t_param, InterpolationMethod method = InterpolationMethod::Linear);
 
   private:
     //! Bands a triangle's rows reach, before clamping to the frame; empty when first > last.
@@ -349,8 +330,6 @@ class CpuFrameBufferManager
         i32 first = 1;
         i32 last = 0;
     };
-
-    float get_eased_time(float t_param, InterpolationMethod method);
 
     /// Rows [yStart, yEnd) of one queued triangle; defined with the SIMD kernels in CpuRasterizer.cpp.
     /// @p depthCleared: the band's depth is still all 1.0, so a flat batch at z <= 1 cannot fail its test.
@@ -438,13 +417,6 @@ class CpuFrameBufferManager
     std::vector<u32> _binned;
     std::vector<u32> _bandFirst;
     std::vector<u32> _binCursors;
-
-    // Aura Font
-    const AuraBitmapFont &_font;
-    //! The face at the last text height drawn, so drawing text every frame costs no layout work.
-    AuraBitmapFont::Layout _textLayout;
-
-    [[nodiscard]] const AuraBitmapFont::Layout &textLayoutFor(u32 height);
 };
 
 } // namespace cpu

@@ -13,27 +13,6 @@ namespace aura3d::ui
 namespace
 {
 
-bool within(const Widget *ancestor, const Widget *node)
-{
-    for (; node; node = node->parent())
-        if (node == ancestor)
-            return true;
-    return false;
-}
-
-Widget *pickOverlay(Widget &node, glm::vec2 point)
-{
-    if (!node.effectivelyVisible())
-        return nullptr;
-    //! Into the space the node's bounds are in: a translation moves the target with the picture.
-    point -= node.translation();
-    if (!node.clipsChildren() || node.contentRect().contains(point))
-        for (usize i = node.childCount(); i-- > 0;)
-            if (Widget *hit = pickOverlay(node.childAt(i), point))
-                return hit;
-    return node.hitTest(point) ? &node : nullptr;
-}
-
 Widget *firstFocusable(Widget &node)
 {
     if (!node.effectivelyVisible() || !node.effectivelyEnabled())
@@ -57,9 +36,9 @@ OverlayLayer::OverlayLayer()
 
 void OverlayLayer::_register(const OverlayDesc &desc)
 {
-    _entries.push_back(
-        Entry{_nextId++, desc, false, WidgetRef(desc.owner), WidgetRef(root() ? root()->focused() : nullptr), true});
-    if (desc.modal && root())
+    _entries.push_back(Entry{_nextId++, desc, Stage::Fresh, WidgetRef(desc.owner),
+                             WidgetRef(root() ? root()->focused() : nullptr), true});
+    if (INK_FLAG_CHECK(desc.flags, OverlayFlags::Modal) && root())
         root()->capturePointer(nullptr);
 }
 
@@ -68,7 +47,7 @@ void OverlayLayer::runEnterTransitions()
     //! By id, and on copies: a hook may open or close overlays, which moves and erases entries under this loop.
     std::vector<Id> fresh;
     for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
-        if (!_entries[i].placed && !_entries[i].closing && childAt(i).visibility() != Visibility::Collapsed)
+        if (_entries[i].stage == Stage::Fresh && childAt(i).visibility() != Visibility::Collapsed)
             fresh.push_back(_entries[i].id);
 
     for (const Id id : fresh)
@@ -77,7 +56,7 @@ void OverlayLayer::runEnterTransitions()
         {
             if (_entries[i].id != id)
                 continue;
-            _entries[i].placed = true;
+            _entries[i].stage = Stage::Shown;
             const OverlayDesc desc = _entries[i].desc;
             const auto enter = desc.transition.enter ? desc.transition.enter : _defaultTransition.enter;
             if (enter && root())
@@ -96,9 +75,9 @@ void OverlayLayer::_finishExit(Id id)
 {
     for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
     {
-        if (_entries[i].id != id || !_entries[i].exiting)
+        if (_entries[i].id != id || _entries[i].stage != Stage::Exiting)
             continue;
-        _entries[i].exiting = false;
+        _entries[i].stage = Stage::Closed;
         _pendingClose = true;
         //! Off screen now, not one frame later when collectClosed() destroys it.
         childAt(i).setVisibility(Visibility::Collapsed);
@@ -109,7 +88,7 @@ void OverlayLayer::_finishExit(Id id)
 Widget *OverlayLayer::focusScope() const noexcept
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
-        if (!_entries[i].closing && childAt(i).effectivelyVisible() && childAt(i).hitTestVisible())
+        if (_entries[i].stage < Stage::Exiting && childAt(i).effectivelyVisible() && childAt(i).hitTestVisible())
             return &childAt(i);
     return nullptr;
 }
@@ -118,11 +97,11 @@ bool OverlayLayer::allowsFocus(const Widget *widget) const noexcept
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
     {
-        if (_entries[i].closing)
+        if (_entries[i].stage >= Stage::Exiting)
             continue;
-        if (within(&childAt(i), widget))
+        if (childAt(i).isAncestorOf(widget))
             return true;
-        if (_entries[i].desc.modal)
+        if (INK_FLAG_CHECK(_entries[i].desc.flags, OverlayFlags::Modal))
             return false;
     }
     return true;
@@ -132,13 +111,13 @@ Widget *OverlayLayer::widgetAt(glm::vec2 point) const
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
     {
-        if (_entries[i].closing)
+        if (_entries[i].stage >= Stage::Exiting)
             continue;
         Widget &child = childAt(i);
         if (child.hitTestVisible())
-            if (Widget *hit = pickOverlay(child, point))
+            if (Widget *hit = child.pick(point))
                 return hit;
-        if (_entries[i].desc.modal)
+        if (INK_FLAG_CHECK(_entries[i].desc.flags, OverlayFlags::Modal))
             return const_cast<OverlayLayer *>(this);
     }
     return nullptr;
@@ -155,7 +134,7 @@ void OverlayLayer::syncFocus()
     {
         if (&childAt(i) != scope)
             continue;
-        const bool take = _entries[i].focusPending && _entries[i].desc.takeFocus;
+        const bool take = _entries[i].focusPending && INK_FLAG_CHECK(_entries[i].desc.flags, OverlayFlags::TakeFocus);
         _entries[i].focusPending = false;
         if (take || !allowsFocus(root()->focused()))
             root()->setFocus(firstFocusable(*scope));
@@ -166,7 +145,7 @@ void OverlayLayer::syncFocus()
 void OverlayLayer::forgetOwner(Widget &owner)
 {
     for (usize i = _entries.size(); i-- > 0;)
-        if (!_entries[i].closing && within(&owner, _entries[i].owner.get()))
+        if (_entries[i].stage < Stage::Exiting && owner.isAncestorOf(_entries[i].owner.get()))
             close(_entries[i].id);
 }
 
@@ -175,9 +154,9 @@ bool OverlayLayer::dismissOutside(glm::vec2 point)
     bool closed = false;
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
     {
-        if (_entries[i].closing || !childAt(i).hitTestVisible())
+        if (_entries[i].stage >= Stage::Exiting || !childAt(i).hitTestVisible())
             continue;
-        if (pickOverlay(childAt(i), point) || !_entries[i].desc.dismissOnOutsideClick)
+        if (childAt(i).pick(point) || !INK_FLAG_CHECK(_entries[i].desc.flags, OverlayFlags::DismissOnOutsideClick))
             break;
         close(_entries[i].id);
         closed = true;
@@ -195,7 +174,7 @@ bool OverlayLayer::isOpen(Id id) const noexcept
     return std::ranges::any_of(_entries,
                                [id](const Entry &entry)
                                {
-                                   return entry.id == id && !entry.closing;
+                                   return entry.id == id && entry.stage < Stage::Exiting;
                                });
 }
 
@@ -205,9 +184,10 @@ std::vector<OverlayLayer::OpenOverlay> OverlayLayer::openOverlays() const
     for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
     {
         const Widget &child = childAt(i);
-        if (_entries[i].closing || !child.hitTestVisible() || child.visibility() == Visibility::Collapsed)
+        if (_entries[i].stage >= Stage::Exiting || !child.hitTestVisible() ||
+            child.visibility() == Visibility::Collapsed)
             continue;
-        open.push_back({&child, _entries[i].desc.modal});
+        open.push_back({&child, INK_FLAG_CHECK(_entries[i].desc.flags, OverlayFlags::Modal)});
     }
     return open;
 }
@@ -217,7 +197,8 @@ bool OverlayLayer::hasModal() const noexcept
     return std::ranges::any_of(_entries,
                                [](const Entry &entry)
                                {
-                                   return entry.desc.modal && !entry.closing;
+                                   return INK_FLAG_CHECK(entry.desc.flags, OverlayFlags::Modal) &&
+                                          entry.stage < Stage::Exiting;
                                });
 }
 
@@ -225,7 +206,8 @@ bool OverlayLayer::hasLightDismissible() const noexcept
 {
     for (usize i = 0, live = std::min(childCount(), _entries.size()); i < live; ++i)
     {
-        if (!_entries[i].closing && _entries[i].desc.dismissOnOutsideClick && childAt(i).hitTestVisible())
+        if (_entries[i].stage < Stage::Exiting &&
+            INK_FLAG_CHECK(_entries[i].desc.flags, OverlayFlags::DismissOnOutsideClick) && childAt(i).hitTestVisible())
             return true;
     }
     return false;
@@ -235,7 +217,7 @@ Widget *OverlayLayer::topmost() const noexcept
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
     {
-        if (!_entries[i].closing)
+        if (_entries[i].stage < Stage::Exiting)
             return &childAt(i);
     }
 
@@ -248,7 +230,7 @@ bool OverlayLayer::contains(glm::vec2 point) const
     {
         //! A click-through overlay -- a tooltip -- is not "inside" anything:
         //! it must not shield the menu below it from an outside click.
-        if (_entries[i].closing || !childAt(i).hitTestVisible())
+        if (_entries[i].stage >= Stage::Exiting || !childAt(i).hitTestVisible())
             continue;
 
         if (childAt(i).visualBounds().contains(point))
@@ -271,12 +253,11 @@ void OverlayLayer::close(Id id)
 
     for (usize i = 0; i < live; ++i)
     {
-        if (_entries[i].id != id || _entries[i].closing)
+        if (_entries[i].id != id || _entries[i].stage >= Stage::Exiting)
             continue;
 
         Entry &entry = _entries[i];
         Widget &child = childAt(i);
-        entry.closing = true;
         _pendingClose = true;
         const WidgetRef restore = entry.restoreFocus;
 
@@ -291,8 +272,8 @@ void OverlayLayer::close(Id id)
         const auto exit = entry.desc.transition.exit ? entry.desc.transition.exit : _defaultTransition.exit;
         //! One that was never placed was never seen: there is nothing to fade out, and fading it from full opacity
         //! would show a popup nobody opened.
-        entry.exiting = exit && root() != nullptr && entry.placed;
-        if (entry.exiting)
+        entry.stage = exit && root() != nullptr && entry.stage == Stage::Shown ? Stage::Exiting : Stage::Closed;
+        if (entry.stage == Stage::Exiting)
         {
             const OverlayTransition &own = entry.desc.transition;
             const f32 timeout = own.exit ? own.exitTimeoutSeconds : _defaultTransition.exitTimeoutSeconds;
@@ -301,16 +282,16 @@ void OverlayLayer::close(Id id)
 
         //! Read now: focus handlers and the hook itself may open or close overlays, which moves or erases the entry.
         std::optional<OverlayDesc> leaving;
-        if (entry.exiting)
+        if (entry.stage == Stage::Exiting)
             leaving = entry.desc;
         else
             child.setVisibility(Visibility::Collapsed);
 
         //! Focus left inside a widget that is still drawing would go on taking keys.
-        if (root() && (!root()->focused() || within(&child, root()->focused())))
+        if (root() && (!root()->focused() || child.isAncestorOf(root()->focused())))
         {
             root()->setFocus(restore.get());
-            if (root()->focused() && within(&child, root()->focused()))
+            if (root()->focused() && child.isAncestorOf(root()->focused()))
                 root()->setFocus(nullptr);
         }
 
@@ -333,7 +314,8 @@ bool OverlayLayer::closeTopmost()
     {
         //! Stepped over, not stopped at: an overlay Escape has no business
         //! with must not shield the one below it that does.
-        if (_entries[i].closing || !_entries[i].desc.dismissOnEscape)
+        if (_entries[i].stage >= Stage::Exiting ||
+            !INK_FLAG_CHECK(_entries[i].desc.flags, OverlayFlags::DismissOnEscape))
             continue;
 
         close(_entries[i].id);
@@ -347,7 +329,7 @@ void OverlayLayer::closeLightDismissible()
 {
     for (usize i = std::min(childCount(), _entries.size()); i-- > 0;)
     {
-        if (_entries[i].closing)
+        if (_entries[i].stage >= Stage::Exiting)
             continue;
 
         //! An overlay that cannot be clicked cannot be what stops a
@@ -358,7 +340,7 @@ void OverlayLayer::closeLightDismissible()
 
         //! Stops at the first overlay that holds its ground, so a click
         //! outside a submenu does not also tear down the dialog behind it.
-        if (!_entries[i].desc.dismissOnOutsideClick)
+        if (!INK_FLAG_CHECK(_entries[i].desc.flags, OverlayFlags::DismissOnOutsideClick))
             return;
 
         close(_entries[i].id);
@@ -370,13 +352,13 @@ void OverlayLayer::closeFrom(const Widget &member)
     const usize live = std::min(childCount(), _entries.size());
     usize from = live;
     for (usize i = 0; i < live; ++i)
-        if (within(&childAt(i), &member))
+        if (childAt(i).isAncestorOf(&member))
         {
             from = i;
             break;
         }
     for (usize i = from; i < live; ++i)
-        if (!_entries[i].closing)
+        if (_entries[i].stage < Stage::Exiting)
             close(_entries[i].id);
 }
 
@@ -384,7 +366,7 @@ Widget *OverlayLayer::ownerOf(const Widget &member) const noexcept
 {
     const usize live = std::min(childCount(), _entries.size());
     for (usize i = 0; i < live; ++i)
-        if (within(&childAt(i), &member))
+        if (childAt(i).isAncestorOf(&member))
             return _entries[i].owner.get();
     return nullptr;
 }
@@ -393,7 +375,7 @@ void OverlayLayer::closeAll()
 {
     for (const Entry &entry : _entries)
     {
-        if (!entry.closing)
+        if (entry.stage < Stage::Exiting)
             close(entry.id);
     }
 }
@@ -411,12 +393,12 @@ void OverlayLayer::collectClosed()
 
     for (usize i = _entries.size(); i-- > 0;)
     {
-        if (!_entries[i].closing)
+        if (_entries[i].stage < Stage::Exiting)
             continue;
 
         //! Still leaving; its done() asks for another collection, and a hook that never calls it is not waited for
         //! past its deadline.
-        if (_entries[i].exiting)
+        if (_entries[i].stage == Stage::Exiting)
         {
             if (root() != nullptr && root()->time() < _entries[i].exitDeadline)
             {
@@ -520,7 +502,7 @@ void OverlayLayer::arrangeContent(const Rect &content)
         Widget &child = childAt(i);
 
         const Entry &entry = _entries[i];
-        if ((entry.closing && !entry.exiting) || child.visibility() == Visibility::Collapsed)
+        if (entry.stage == Stage::Closed || child.visibility() == Visibility::Collapsed)
         {
             child.arrange(Rect{});
             continue;

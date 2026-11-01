@@ -116,23 +116,38 @@ struct TextEvent
  */
 struct Shortcut
 {
+    /// The modifiers a combination holds; Super is Windows or Command.
+    enum class Mods : u8
+    {
+        None = 0,
+        Ctrl = 1u << 0u,
+        Shift = 1u << 1u,
+        Alt = 1u << 2u,
+        Super = 1u << 3u,
+    };
+
     wma::Key key = wma::KEY_UNKNOWN;
-    bool ctrl = false;
-    bool shift = false;
-    bool alt = false;
-    bool super = false;
+    Mods mods = Mods::None;
+
+    [[nodiscard]] static constexpr Mods modsOf(const wma::KeyModifiers &held) noexcept
+    {
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): Mods is a flag set.
+        return static_cast<Mods>((held.ctrl ? 1u << 0u : 0u) | (held.shift ? 1u << 1u : 0u) |
+                                 (held.alt ? 1u << 2u : 0u) | (held.super ? 1u << 3u : 0u));
+    }
 
     [[nodiscard]] static constexpr Shortcut withCtrl(wma::Key key, bool shift = false) noexcept
     {
-        return {key, true, shift, false, false};
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): Mods is a flag set.
+        return {key, static_cast<Mods>(shift ? (1u << 0u) | (1u << 1u) : 1u << 0u)};
     }
 
     [[nodiscard]] constexpr bool matches(const KeyEvent &event) const noexcept
     {
-        return event.key == key && event.mods.ctrl == ctrl && event.mods.shift == shift && event.mods.alt == alt &&
-               event.mods.super == super;
+        return event.key == key && modsOf(event.mods) == mods;
     }
 };
+INK_ENUM_FLAGS(Shortcut::Mods) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
 
 } // namespace aura3d::ui
 

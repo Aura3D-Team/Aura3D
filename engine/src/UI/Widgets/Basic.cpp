@@ -122,7 +122,7 @@ void Label::paint(DrawList &out)
     if (_shaped.empty())
         return;
 
-    const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
+    const f32 alpha = paintAlpha();
 
     out.drawText(_shaped, textOrigin(contentRect()), withAlpha(resolvedStyle().text, alpha));
 }
@@ -211,7 +211,7 @@ void Image::paint(DrawList &out)
     if (!isValidHandle(_texture))
         return;
 
-    const f32 alpha = effectivelyEnabled() ? 1.0f : theme().metrics.disabledAlpha;
+    const f32 alpha = paintAlpha();
     const Rect destination = _destination(contentRect());
 
     //! Cover overflows its box by design; the clip is what turns that overflow

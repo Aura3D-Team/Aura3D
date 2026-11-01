@@ -99,14 +99,11 @@ int main()
 
 From [05-meshes-materials-textures.md](05-meshes-materials-textures.md) and
 [06-lighting.md](06-lighting.md) — built-in primitives, no asset files
-needed, one directional light for the whole scene:
+needed, one directional light and an ambient one for the whole scene:
 
 ```cpp
-    gfx::LightUBO light;
-    light.direction = {-0.4f, -1.0f, -0.3f};
-    light.intensity = 1.0f;
-    light.ambient   = 0.25f;
-    r->setLight(light);
+    r->setLights(std::array{gfx::Light{.direction = {-0.4f, -1.0f, -0.3f}},
+                            gfx::Light{.type = gfx::LightType::Ambient, .intensity = 0.25f}});
 
     const MeshHandle planeMesh = r->createMesh(MeshLoader::createPlane());
     const MeshHandle cubeMesh  = r->createMesh(MeshLoader::createCube());
@@ -243,7 +240,7 @@ Everything past this point is regular game-engine-agnostic C++ layered on
 the same handful of calls above:
 
 - **More object variety**: `MeshLoader::loadOBJ()` instead of the built-in
-  primitives, textures via `engine.resources()->loadTexture(...)` instead of
+  primitives, textures via `r->createTextureFromFile(...)` instead of
   solid colors — see [05-meshes-materials-textures.md](05-meshes-materials-textures.md).
 - **Menus / pause screen**: a second keyboard context
   (`keyboard.createContext()`) plus a `drawBatch` panel — see

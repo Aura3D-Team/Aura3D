@@ -1,16 +1,76 @@
 #include "aura/Renderer/OpenGL/GlAura/GlTextureManager/GlTextureManager.h"
 
+#include <algorithm>
+#include <cstring>
 #include <limits>
 #include <vector>
+
+//! Core in GL 4.6, the same values as EXT_texture_filter_anisotropic, which GLES and WebGL headers may lack.
+#ifndef GL_TEXTURE_MAX_ANISOTROPY
+#define GL_TEXTURE_MAX_ANISOTROPY 0x84FE
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY 0x84FF
+#endif
 
 namespace aura3d
 {
 namespace gl
 {
 
+namespace
+{
+
+[[nodiscard]] GLint glWrap(TextureWrap wrap) noexcept
+{
+    switch (wrap)
+    {
+    case TextureWrap::Repeat:
+        return GL_REPEAT;
+    case TextureWrap::MirroredRepeat:
+        return GL_MIRRORED_REPEAT;
+    case TextureWrap::ClampToEdge:
+        return GL_CLAMP_TO_EDGE;
+    }
+    return GL_REPEAT;
+}
+
+[[nodiscard]] GLint glMinFilter(const SamplerDesc &sampler, bool mipmapped) noexcept
+{
+    const bool linear = sampler.minFilter == TextureFilter::Linear;
+    if (!mipmapped)
+        return linear ? GL_LINEAR : GL_NEAREST;
+    if (sampler.mipFilter == TextureFilter::Linear)
+        return linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR;
+    return linear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST;
+}
+
+//! Sized internal format and upload type for @p format; the client format is always GL_RGBA.
+void glFormat(TextureFormat format, GLint &internal, GLenum &type) noexcept
+{
+    internal = format == TextureFormat::Rgba8Srgb     ? GL_SRGB8_ALPHA8
+               : format == TextureFormat::Rgba16Float ? GL_RGBA16F
+                                                      : GL_RGBA8;
+    type = format == TextureFormat::Rgba16Float ? GL_HALF_FLOAT : GL_UNSIGNED_BYTE;
+}
+
+} // namespace
+
 GlTextureManager::GlTextureManager()
 {
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &_maxTextureSize);
+#ifdef AURA_GLES
+    //! GLES and WebGL only through the extension, listed one name at a time.
+    GLint extensions = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &extensions);
+    bool anisotropic = false;
+    for (GLint i = 0; i < extensions && !anisotropic; ++i)
+        anisotropic = std::strcmp(reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i))),
+                                  "GL_EXT_texture_filter_anisotropic") == 0;
+#else
+    const bool anisotropic =
+        GLAD_GL_VERSION_4_6 || GLAD_GL_ARB_texture_filter_anisotropic || GLAD_GL_EXT_texture_filter_anisotropic;
+#endif
+    if (anisotropic)
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &_maxAnisotropy);
 }
 GlTextureManager::~GlTextureManager()
 {
@@ -53,6 +113,103 @@ TextureHandle GlTextureManager::createTextureFromPixels(const u8 *rgba, u32 widt
 
     restoreBinding();
 
+    _textures.push_back(data);
+    return TextureHandle{static_cast<u32>(_textures.size())};
+}
+
+TextureHandle GlTextureManager::createTexture(const TextureDesc &desc, std::span<const std::byte> pixels)
+{
+    const u32 width = desc.width, height = desc.height;
+    if (width == 0 || height == 0 || width > static_cast<u32>(_maxTextureSize) ||
+        height > static_cast<u32>(_maxTextureSize) ||
+        pixels.size() != static_cast<size_t>(width) * height * bytesPerTexel(desc.format))
+    {
+        INK_ERROR << "GlTextureManager: createTexture pixels do not match the descriptor's size and format";
+        return {};
+    }
+
+    GLint internal = GL_RGBA8;
+    GLenum type = GL_UNSIGNED_BYTE;
+    glFormat(desc.format, internal, type);
+    const bool mipmapped = desc.mipmaps && mipLevelCount(width, height) > 1;
+
+    GlTextureData data;
+    data.width = width;
+    data.height = height;
+    data.updatable = !mipmapped && desc.format != TextureFormat::Rgba16Float;
+
+    glGenTextures(1, &data.texture);
+    glBindTexture(GL_TEXTURE_2D, data.texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, internal, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA,
+                 type, pixels.data());
+    if (mipmapped)
+        glGenerateMipmap(GL_TEXTURE_2D);
+    else
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+
+    const SamplerDesc &sampler = desc.sampler;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glMinFilter(sampler, mipmapped));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                    sampler.magFilter == TextureFilter::Linear ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glWrap(sampler.wrapU));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glWrap(sampler.wrapV));
+    if (_maxAnisotropy > 1.0f)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY,
+                        std::clamp(sampler.maxAnisotropy, 1.0f, _maxAnisotropy));
+
+    restoreBinding();
+
+    _textures.push_back(data);
+    return TextureHandle{static_cast<u32>(_textures.size())};
+}
+
+TextureHandle GlTextureManager::createAttachment(u32 width, u32 height, TextureFormat format, TextureHandle replace)
+{
+    GLint internal = GL_RGBA8;
+    GLenum type = GL_UNSIGNED_BYTE;
+    glFormat(format, internal, type);
+    return createStorage(width, height, internal, GL_RGBA, type, GL_LINEAR, replace);
+}
+
+TextureHandle GlTextureManager::createDepthAttachment(u32 width, u32 height, TextureHandle replace)
+{
+    //! Read back as plain depth, so no compare mode, and nearest: PCF filters it in the shader.
+    return createStorage(width, height, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, GL_NEAREST, replace);
+}
+
+TextureHandle GlTextureManager::createStorage(u32 width, u32 height, GLint internal, GLenum format, GLenum type,
+                                              GLint filter, TextureHandle replace)
+{
+    if (width == 0 || height == 0 || width > static_cast<u32>(_maxTextureSize) ||
+        height > static_cast<u32>(_maxTextureSize))
+    {
+        INK_ERROR << "GlTextureManager: refusing invalid render target dimensions";
+        return {};
+    }
+    //! Respecified in place: the handle stays, and so does every framebuffer the texture is attached to.
+    const bool reuse = isValidHandle(replace) && replace.value() <= _textures.size();
+    GlTextureData data = reuse ? _textures[replace.value() - 1] : GlTextureData{};
+    data.width = width;
+    data.height = height;
+    data.updatable = false;
+    if (!reuse)
+        glGenTextures(1, &data.texture);
+    glBindTexture(GL_TEXTURE_2D, data.texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, internal, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, format, type,
+                 nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    restoreBinding();
+
+    if (reuse)
+    {
+        _textures[replace.value() - 1] = data;
+        return replace;
+    }
     _textures.push_back(data);
     return TextureHandle{static_cast<u32>(_textures.size())};
 }
@@ -132,12 +289,12 @@ void GlTextureManager::updatePixels(TextureHandle handle, u32 x, u32 y, u32 widt
     }
 
     const GlTextureData &data = *found;
-    if (data.coverageOnly != coverageOnly)
+    if (data.coverageOnly != coverageOnly || !data.updatable)
     {
-        INK_ERROR << "GlTextureManager: update format does not match texture format";
+        INK_ERROR << "GlTextureManager: update format does not match texture format, or the texture is mipmapped";
         return;
     }
-    if (x > data.width || y > data.height || width > data.width - x || height > data.height - y)
+    if (!regionFits(x, y, width, height, data.width, data.height))
     {
         INK_ERROR << "GlTextureManager: updateRegion rectangle exceeds the texture bounds";
         return;

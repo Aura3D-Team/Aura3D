@@ -210,27 +210,20 @@ void Grid::_resolveTracks(const Constraints &available)
 
     //! Fixed tracks first: an Auto track's budget is what the fixed ones left,
     //! so a wrapping label in an Auto column is told a truthful width.
-    f32 fixedWidth = 0.0f;
-    for (usize i = 0; i < columns; ++i)
+    const auto sizeFixed = [&](const std::vector<Length> &tracks, std::vector<f32> &sizes, f32 extent)
     {
-        if (const auto resolved = resolveLength(trackAt(_columns, i), available.max.x))
+        f32 fixed = 0.0f;
+        for (usize i = 0; i < sizes.size(); ++i)
         {
-            if (!trackAt(_columns, i).isFill())
-                _columnSizes[i] = *resolved;
+            const Length track = trackAt(tracks, i);
+            if (const auto resolved = resolveLength(track, extent); resolved && !track.isFill())
+                sizes[i] = *resolved;
+            fixed += sizes[i];
         }
-        fixedWidth += _columnSizes[i];
-    }
-
-    f32 fixedHeight = 0.0f;
-    for (usize i = 0; i < rows; ++i)
-    {
-        if (const auto resolved = resolveLength(trackAt(_rows, i), available.max.y))
-        {
-            if (!trackAt(_rows, i).isFill())
-                _rowSizes[i] = *resolved;
-        }
-        fixedHeight += _rowSizes[i];
-    }
+        return fixed;
+    };
+    const f32 fixedWidth = sizeFixed(_columns, _columnSizes, available.max.x);
+    const f32 fixedHeight = sizeFixed(_rows, _rowSizes, available.max.y);
 
     const f32 spareWidth = std::max(0.0f, available.max.x - fixedWidth);
     const f32 spareHeight = std::max(0.0f, available.max.y - fixedHeight);
@@ -593,7 +586,7 @@ bool ScrollView::interceptsPointer(PointerKind kind) const noexcept
 
 bool ScrollView::onPointerIntercept(const PointerEvent &event)
 {
-    if (event.kind != PointerKind::Touch || _panActive || _dragActive)
+    if (event.kind != PointerKind::Touch || _gesture != Gesture::None)
         return false;
 
     const glm::vec2 moved = event.position - event.pressPosition;
@@ -622,7 +615,7 @@ bool ScrollView::onPointerIntercept(const PointerEvent &event)
 
 bool ScrollView::_beginPan(const PointerEvent &event)
 {
-    _panActive = true;
+    _gesture = Gesture::Pan;
     _panOrigin = event.position;
     _panStart = _offset.target();
     _panLast = event.position;
@@ -635,7 +628,7 @@ bool ScrollView::_beginPan(const PointerEvent &event)
     capturePointer();
     if (!alive.get() || !hasPointerCapture())
     {
-        _panActive = false;
+        _gesture = Gesture::None;
         return false;
     }
 
@@ -755,10 +748,10 @@ void ScrollView::paintChildren(DrawList &out)
         const WidgetStyle track = theme()[Part::ScrollTrack];
         const WidgetStyle thumb = theme()[Part::ScrollThumb];
 
-        const bool dragging = _dragActive && _dragging == axis;
+        const bool dragging = _gesture == Gesture::Thumb && _dragging == axis;
 
         out.fillRect(bar.track, track.surface.normal, Corners::all(track.rounding));
-        out.fillRect(bar.thumb, thumb.surface.pick(dragging, isHovered()), Corners::all(thumb.rounding));
+        out.fillRect(bar.thumb, thumb.surface.pick(interaction(dragging)), Corners::all(thumb.rounding));
     };
 
     /*
@@ -783,7 +776,7 @@ bool ScrollView::onPointerDown(const PointerEvent &event)
             continue;
 
         _dragging = axis;
-        _dragActive = true;
+        _gesture = Gesture::Thumb;
         const WidgetRef alive(this);
         capturePointer();
         if (!alive.get() || !hasPointerCapture())
@@ -810,13 +803,13 @@ bool ScrollView::onPointerDown(const PointerEvent &event)
 
 bool ScrollView::onPointerMove(const PointerEvent &event)
 {
-    if (_panActive && hasPointerCapture())
+    if (_gesture == Gesture::Pan && hasPointerCapture())
     {
         _pan(event);
         return true;
     }
 
-    if (!_dragActive || !hasPointerCapture())
+    if (_gesture != Gesture::Thumb || !hasPointerCapture())
         return false;
 
     const Bar bar = _bar(_dragging);
@@ -847,9 +840,9 @@ bool ScrollView::onPointerMove(const PointerEvent &event)
 
 bool ScrollView::onPointerUp(const PointerEvent &event)
 {
-    if (_panActive && event.button == PointerButton::Left)
+    if (_gesture == Gesture::Pan && event.button == PointerButton::Left)
     {
-        _panActive = false;
+        _gesture = Gesture::None;
 
         const f32 rested = root() != nullptr ? root()->time() - _panLastTime : 0.0f;
         const f32 speed = glm::length(_velocity);
@@ -873,10 +866,10 @@ bool ScrollView::onPointerUp(const PointerEvent &event)
         return true;
     }
 
-    if (!_dragActive || event.button != PointerButton::Left)
+    if (_gesture != Gesture::Thumb || event.button != PointerButton::Left)
         return false;
 
-    _dragActive = false;
+    _gesture = Gesture::None;
     invalidatePaint();
     releasePointer();
     return true;
@@ -890,8 +883,7 @@ void ScrollView::accessibility(AccessibilityInfo &out) const
 
 void ScrollView::onPointerCancel()
 {
-    _dragActive = false;
-    _panActive = false;
+    _gesture = Gesture::None;
     _fling = glm::vec2{0.0f};
     invalidatePaint();
 }

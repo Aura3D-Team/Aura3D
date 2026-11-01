@@ -8,6 +8,8 @@ tests/build
 .zed
 __pycache__/
 *.pyc
+# renderer.vulkan.pipeline_cache's default, relative to wherever a program ran
+cache/
 
 # Ignore compiled object files
 *.o

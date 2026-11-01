@@ -4,11 +4,14 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <glad/glad.h>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "aura/Renderer/RenderHandles.h"
+#include "aura/Renderer/Texture.h"
 
 namespace aura3d
 {
@@ -21,6 +24,7 @@ struct GlTextureData
     u32 width = 0;
     u32 height = 0;
     bool coverageOnly = false;
+    bool updatable = true; //! False for a mip chain or half floats, which RGBA8 updates cannot reach.
 };
 
 class GlTextureManager
@@ -52,6 +56,14 @@ class GlTextureManager
      * @param height Texture height in pixels.
      */
     TextureHandle createDynamicTexture(u32 width, u32 height);
+
+    //! @p desc's format and sampler, with a glGenerateMipmap chain when it asks for one.
+    TextureHandle createTexture(const TextureDesc &desc, std::span<const std::byte> pixels);
+    //! A render target's colour: uninitialised, clamped, one level, never updated from the CPU.
+    //! A valid @p replace is respecified at the new size in place, keeping its handle.
+    TextureHandle createAttachment(u32 width, u32 height, TextureFormat format, TextureHandle replace = {});
+    //! A shadow atlas: 24-bit depth, sampled as a plain sampler2D. A valid @p replace is resized in place.
+    TextureHandle createDepthAttachment(u32 width, u32 height, TextureHandle replace = {});
 
     //! Zero-initialized linear R8; shaders remap red to white RGB plus alpha.
     TextureHandle createCoverageTexture(u32 width, u32 height);
@@ -86,6 +98,9 @@ class GlTextureManager
 
   private:
     TextureHandle createDynamic(u32 width, u32 height, bool coverageOnly);
+    //! One uninitialised, clamped, single-level texture for an attachment.
+    TextureHandle createStorage(u32 width, u32 height, GLint internal, GLenum format, GLenum type, GLint filter,
+                                TextureHandle replace);
     void updatePixels(TextureHandle handle, u32 x, u32 y, u32 width, u32 height, const u8 *pixels, bool coverageOnly);
 
     //! Texture units this manager tracks bindings for. The renderer samples
@@ -96,6 +111,8 @@ class GlTextureManager
     //! Indexed by handle - 1: handles are dense, so a lookup is a bounds check and a load.
     std::vector<GlTextureData> _textures;
     GLint _maxTextureSize = 0;
+    //! 1 when neither GL 4.6 nor an anisotropic-filtering extension is present.
+    GLfloat _maxAnisotropy = 1.0f;
 
     //! GL texture name bound to each tracked unit; 0 means none/unknown.
     std::array<GLuint, kTrackedUnits> _boundToUnit{};

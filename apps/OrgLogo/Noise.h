@@ -5,6 +5,8 @@
 
 #include <cstdint>
 
+#include <aura/Core/AuraMath.h>
+
 /**
  * @file Noise.h
  * @brief Deterministic, allocation-free noise primitives shared by every layer
@@ -24,10 +26,7 @@ namespace orglogo
     return x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x);
 }
 
-[[nodiscard]] constexpr float lerp(float a, float b, float t) noexcept
-{
-    return a + (b - a) * t;
-}
+using aura3d::lerp;
 
 /// Cubic Hermite fade, the classic value-noise interpolant.
 [[nodiscard]] constexpr float fade3(float t) noexcept

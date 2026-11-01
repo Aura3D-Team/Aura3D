@@ -58,6 +58,8 @@ void GlTargetManager::resize(glm::uvec2 size)
 void GlTargetManager::bind()
 {
     glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
+    //! An offscreen pass may have left its own viewport.
+    glViewport(0, 0, static_cast<GLsizei>(_size.x), static_cast<GLsizei>(_size.y));
 #ifndef AURA_GLES
     //! GLES encodes to an sRGB target unconditionally; desktop GL only when asked.
     glEnable(GL_FRAMEBUFFER_SRGB);
