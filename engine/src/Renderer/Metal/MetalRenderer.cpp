@@ -327,6 +327,8 @@ void MetalRenderer::beginRenderPass(RenderTargetHandle target)
     _activeInstanced = chosen.pipelines->instanced.get();
     _boundPipeline = nullptr;
     usePipeline(_activeScene);
+    _passColour = chosen.pipelines->colour;
+    _passDepth = chosen.pipelines->depth;
     _passTarget = target.value();
     _frameState = FrameState::InPass;
 }
@@ -456,6 +458,7 @@ void MetalRenderer::cleanup()
     _activeScene = _activeBatch = _activeInstanced = nullptr;
     _buffers.clear();
     _kernels.clear();
+    _customPipelines.clear();
     _instancedPipeline.reset();
     _renderTargets.clear();
     _targetPipelines.clear();
@@ -671,6 +674,8 @@ void MetalRenderer::beginRenderPass()
     _activeInstanced = _instancedPipeline.get();
     _boundPipeline = nullptr;
     usePipeline(_activeScene);
+    _passColour = kColorFormat;
+    _passDepth = true;
     _passTarget = 0;
     _frameState = FrameState::InPass;
 }
@@ -836,7 +841,8 @@ void MetalRenderer::bindSceneMaterial()
 
 RendererCaps MetalRenderer::caps() const noexcept
 {
-    return RendererCaps::Pbr | RendererCaps::Instancing | RendererCaps::RenderTargets | RendererCaps::Compute;
+    return RendererCaps::Pbr | RendererCaps::Instancing | RendererCaps::RenderTargets | RendererCaps::Compute |
+           RendererCaps::CustomPipelines;
 }
 
 void MetalRenderer::usePipeline(MtlPipelineManager *pipeline)
@@ -1041,6 +1047,198 @@ void MetalRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle ma
     _encoder->setVertexBuffer(instanceBuffer, 0, kVertexInstanceSlot);
     _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, indices->indexType, indices->buffer, 0, argumentBuffer,
                                     argumentOffset);
+}
+
+namespace
+{
+
+//! What the hardware gives a function: 16 sampler states, 31 buffer slots (the last is the mesh stream, the first the
+//! constants) and 4 KB through setBytes().
+constexpr u32 kMaxSamplers = 16;
+constexpr u32 kMaxPipelineBuffers = static_cast<u32>(kCustomVertexSlot - kCustomFirstBufferSlot);
+constexpr u32 kMaxPipelineConstantBytes = 4096;
+constexpr usize kPipelineBufferBytes = 64 * 1024;
+
+//! gfx::Vertex3D as location 0 position, 1 uv, 2 colour and 3 normal, one interleaved stream.
+NS::SharedPtr<MTL::VertexDescriptor> meshVertexDescriptor()
+{
+    struct Attribute
+    {
+        MTL::VertexFormat format;
+        usize offset;
+    };
+    const std::array<Attribute, 4> attributes{{{MTL::VertexFormatFloat3, offsetof(gfx::Vertex3D, pos)},
+                                               {MTL::VertexFormatFloat2, offsetof(gfx::Vertex3D, texCoord)},
+                                               {MTL::VertexFormatFloat4, offsetof(gfx::Vertex3D, color)},
+                                               {MTL::VertexFormatFloat3, offsetof(gfx::Vertex3D, normal)}}};
+    NS::SharedPtr<MTL::VertexDescriptor> descriptor = adopt(MTL::VertexDescriptor::alloc()->init());
+    for (NS::UInteger i = 0; i < attributes.size(); ++i)
+    {
+        MTL::VertexAttributeDescriptor *attribute = descriptor->attributes()->object(i);
+        attribute->setFormat(attributes[i].format);
+        attribute->setOffset(attributes[i].offset);
+        attribute->setBufferIndex(kCustomVertexSlot);
+    }
+    MTL::VertexBufferLayoutDescriptor *layout = descriptor->layouts()->object(kCustomVertexSlot);
+    layout->setStride(sizeof(gfx::Vertex3D));
+    layout->setStepFunction(MTL::VertexStepFunctionPerVertex);
+    return descriptor;
+}
+
+} // namespace
+
+PipelineLimits MetalRenderer::pipelineLimits() const noexcept
+{
+    if (!_deviceManager)
+        return {};
+    return {kMaxSamplers, kMaxPipelineBuffers, kMaxPipelineConstantBytes, kPipelineBufferBytes};
+}
+
+MtlPipelineManager &MetalRenderer::customVariant(CustomPipeline &pipeline, MTL::PixelFormat colour, bool depth) const
+{
+    for (const CustomPipeline::Variant &variant : pipeline.variants)
+        if (variant.colour == colour && variant.depth == depth)
+            return *variant.pipeline;
+    MtlPipelineManager::Options options;
+    options.vertexFunction = pipeline.vertexEntry.c_str();
+    options.fragmentFunction = pipeline.fragmentEntry.c_str();
+    options.fragmentLibrary = pipeline.fragment.get();
+    options.vertexDescriptor = pipeline.vertexDescriptor.get();
+    options.state = pipeline.state;
+    options.label = "Aura3D custom pipeline";
+    options.colorFormat = colour;
+    options.depthFormat = depth ? kDepthFormat : MTL::PixelFormatInvalid;
+    pipeline.variants.push_back(
+        {colour, depth, std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *pipeline.vertex, options)});
+    return *pipeline.variants.back().pipeline;
+}
+
+PipelineHandle MetalRenderer::createPipeline(const PipelineDesc &desc)
+{
+    if (!_deviceManager || desc.vertexMsl.empty() || desc.fragmentMsl.empty())
+    {
+        INK_ERROR << "MetalRenderer: createPipeline needs an initialised renderer and PipelineDesc::vertexMsl and "
+                     "fragmentMsl";
+        return {};
+    }
+    const PipelineLimits limits = pipelineLimits();
+    if (desc.textures > limits.textures || desc.buffers > limits.buffers || desc.constantBytes > limits.constantBytes ||
+        desc.constantBytes % 16 != 0)
+    {
+        INK_ERROR << "MetalRenderer: this device lets a pipeline read " << limits.textures << " textures, "
+                  << limits.buffers << " uniform buffers and " << limits.constantBytes
+                  << " bytes of constants (a multiple of 16)";
+        return {};
+    }
+    CustomPipeline pipeline;
+    pipeline.vertexEntry = desc.mslVertexEntry;
+    pipeline.fragmentEntry = desc.mslFragmentEntry;
+    pipeline.state = desc.state;
+    pipeline.input = desc.input;
+    pipeline.textures = desc.textures;
+    pipeline.buffers = desc.buffers;
+    pipeline.constantBytes = desc.constantBytes;
+    try
+    {
+        pipeline.vertex = std::make_unique<MtlShaderLibraryManager>(_deviceManager->getDevice(), desc.vertexMsl);
+        pipeline.fragment = std::make_unique<MtlShaderLibraryManager>(_deviceManager->getDevice(), desc.fragmentMsl);
+        if (desc.input == VertexInput::Mesh)
+            pipeline.vertexDescriptor = meshVertexDescriptor();
+        //! The window and every render target made so far; one made later gets its variant at its first draw.
+        customVariant(pipeline, kColorFormat, true);
+        for (const TargetPipelines &target : _targetPipelines)
+            customVariant(pipeline, target.colour, target.depth);
+    }
+    catch (const std::exception &error)
+    {
+        INK_ERROR << "MetalRenderer: pipeline rejected: " << error.what();
+        return {};
+    }
+    _customPipelines.push_back(std::move(pipeline));
+    return PipelineHandle{static_cast<u32>(_customPipelines.size())};
+}
+
+void MetalRenderer::drawPipeline(const PipelineDraw &draw)
+{
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+    if (_frameState != FrameState::InPass || !isValidHandle(draw.pipeline) ||
+        draw.pipeline.value() > _customPipelines.size())
+        return;
+    CustomPipeline &pipeline = _customPipelines[draw.pipeline.value() - 1];
+    if (draw.constants.size() > pipeline.constantBytes)
+    {
+        INK_ERROR << "MetalRenderer: drawPipeline given " << draw.constants.size()
+                  << " bytes of constants; the pipeline has " << pipeline.constantBytes;
+        return;
+    }
+    for (u32 i = 0; i < pipeline.buffers; ++i)
+        if (i >= draw.buffers.size() || !bufferOf(draw.buffers[i]))
+        {
+            INK_ERROR << "MetalRenderer: drawPipeline needs buffer " << i << " (createBuffer)";
+            return;
+        }
+
+    const MeshRecord *record = nullptr;
+    const IndexBufferRecord *indices = nullptr;
+    MTL::Buffer *vertices = nullptr;
+    if (pipeline.input == VertexInput::Mesh)
+    {
+        record = getMesh(draw.mesh);
+        indices = record ? _indexManager->resolve(record->indexBuffer) : nullptr;
+        vertices = record ? _vertexManager->resolve(record->vertexBuffer) : nullptr;
+        if (!indices || !indices->buffer || !vertices)
+            return;
+    }
+    MtlPipelineManager *variant = nullptr;
+    try
+    {
+        variant = &customVariant(pipeline, _passColour, _passDepth);
+    }
+    catch (const std::exception &error)
+    {
+        INK_ERROR << "MetalRenderer: pipeline rejected for this pass: " << error.what();
+        return;
+    }
+
+    usePipeline(variant);
+    for (u32 i = 0; i < pipeline.textures; ++i)
+    {
+        //! An unbound slot samples white, as an unbound texture does everywhere else.
+        const TextureHandle handle = i < draw.textures.size() && _textureManager->resolve(draw.textures[i])
+                                         ? draw.textures[i]
+                                         : _fallbackTexture;
+        MTL::Texture *texture = _textureManager->resolve(handle);
+        MTL::SamplerState *sampler = _textureManager->samplerFor(handle);
+        _encoder->setVertexTexture(texture, i);
+        _encoder->setVertexSamplerState(sampler, i);
+        _encoder->setFragmentTexture(texture, i);
+        _encoder->setFragmentSamplerState(sampler, i);
+    }
+    for (u32 i = 0; i < pipeline.buffers; ++i)
+    {
+        MTL::Buffer *buffer = bufferOf(draw.buffers[i]);
+        _encoder->setVertexBuffer(buffer, 0, kCustomFirstBufferSlot + i);
+        _encoder->setFragmentBuffer(buffer, 0, kCustomFirstBufferSlot + i);
+    }
+    if (pipeline.constantBytes > 0)
+    {
+        _customConstants.assign(pipeline.constantBytes, std::byte{0});
+        std::ranges::copy(draw.constants, _customConstants.begin());
+        _encoder->setVertexBytes(_customConstants.data(), pipeline.constantBytes, kCustomConstantsSlot);
+        _encoder->setFragmentBytes(_customConstants.data(), pipeline.constantBytes, kCustomConstantsSlot);
+    }
+
+    if (pipeline.input == VertexInput::None)
+    {
+        _encoder->drawPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(0),
+                                 static_cast<NS::UInteger>(draw.vertexCount),
+                                 static_cast<NS::UInteger>(draw.instanceCount));
+        return;
+    }
+    _encoder->setVertexBuffer(vertices, 0, kCustomVertexSlot);
+    _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(indices->indexCount),
+                                    indices->indexType, indices->buffer, 0,
+                                    static_cast<NS::UInteger>(draw.instanceCount));
 }
 
 void MetalRenderer::drawIndexed(u32 indexCount, u32 instanceCount)

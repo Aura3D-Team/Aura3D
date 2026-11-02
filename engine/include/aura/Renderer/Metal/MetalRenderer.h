@@ -137,6 +137,9 @@ class MetalRenderer : public IRenderer
                   std::span<const std::byte> constants = {}) override;
     void drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle material, BufferHandle instances,
                                    BufferHandle arguments, usize argumentOffset = 0) override;
+    PipelineHandle createPipeline(const PipelineDesc &desc) override;
+    [[nodiscard]] PipelineLimits pipelineLimits() const noexcept override;
+    void drawPipeline(const PipelineDraw &draw) override;
     bool reloadShaders(const std::filesystem::path &directory) override;
     using IRenderer::drawBatch;
     void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
@@ -251,6 +254,32 @@ class MetalRenderer : public IRenderer
         glm::uvec3 threads{64, 1, 1};
     };
     std::vector<Kernel> _kernels;
+
+    //! createPipeline()'s pipelines; handle - 1 == index. A pipeline is built for each attachment format it draws
+    //! into, as the built-in ones are.
+    struct CustomPipeline
+    {
+        struct Variant
+        {
+            MTL::PixelFormat colour;
+            bool depth;
+            std::unique_ptr<MtlPipelineManager> pipeline;
+        };
+        std::unique_ptr<MtlShaderLibraryManager> vertex, fragment;
+        NS::SharedPtr<MTL::VertexDescriptor> vertexDescriptor; //! VertexInput::Mesh only.
+        std::string vertexEntry, fragmentEntry;
+        PipelineState state = PipelineState::None;
+        VertexInput input = VertexInput::Mesh;
+        u32 textures = 0, buffers = 0, constantBytes = 0;
+        std::vector<Variant> variants;
+    };
+    std::vector<CustomPipeline> _customPipelines;
+    std::vector<std::byte> _customConstants;
+    //! The open pass's attachments: which variant of a custom pipeline to draw with.
+    MTL::PixelFormat _passColour = kColorFormat;
+    bool _passDepth = true;
+    //! Builds the variant for a pass of this format if it is new; throws AuraException as MtlPipelineManager does.
+    MtlPipelineManager &customVariant(CustomPipeline &pipeline, MTL::PixelFormat colour, bool depth) const;
     //! Blocks until every committed frame has completed: Metal's vkDeviceWaitIdle.
     void waitForFrames();
     //! Private Depth32Float, for a target's depth.

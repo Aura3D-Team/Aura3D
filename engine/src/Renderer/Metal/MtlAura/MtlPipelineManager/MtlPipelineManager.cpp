@@ -19,7 +19,8 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
         throw AuraException("MtlPipelineManager: device is null");
 
     const NS::SharedPtr<MTL::Function> vertexFunction = library.newFunction(options.vertexFunction);
-    const NS::SharedPtr<MTL::Function> fragmentFunction = library.newFunction(options.fragmentFunction);
+    const NS::SharedPtr<MTL::Function> fragmentFunction =
+        (options.fragmentLibrary ? *options.fragmentLibrary : library).newFunction(options.fragmentFunction);
 
     NS::SharedPtr<MTL::RenderPipelineDescriptor> descriptor = adopt(MTL::RenderPipelineDescriptor::alloc()->init());
 
@@ -27,6 +28,8 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
     descriptor->setLabel(label.get());
     descriptor->setVertexFunction(vertexFunction.get());
     descriptor->setFragmentFunction(fragmentFunction.get());
+    if (options.vertexDescriptor)
+        descriptor->setVertexDescriptor(options.vertexDescriptor);
 
     /*
      * Attachment formats, not an attachment set: this is the entire coupling

@@ -22,18 +22,24 @@ r->endRenderPass();
 
 ## What a shader reads
 
-| | Vulkan (SPIR-V) | OpenGL (GLSL 330 core, 300 es on GLES) |
-|---|---|---|
-| constants | `layout(push_constant) uniform Constants { ... };` | `layout(std140) uniform Constants { ... };` |
-| texture N | `layout(set = 0, binding = N) uniform sampler2D texN;` | `uniform sampler2D texN;` |
-| uniform buffer N | `layout(std140, set = 1, binding = N) uniform BufferN { ... };` | `layout(std140) uniform BufferN { ... };` |
-| vertex input, `VertexInput::Mesh` | location 0 position, 1 uv, 2 colour (vec4), 3 normal | the same |
-| vertex input, `VertexInput::None` | `gl_VertexIndex` | `gl_VertexID` |
+| | Vulkan (SPIR-V) | OpenGL (GLSL 330 core, 300 es on GLES) | Metal (MSL) |
+|---|---|---|---|
+| constants | `layout(push_constant) uniform Constants { ... };` | `layout(std140) uniform Constants { ... };` | `constant Constants &c [[buffer(0)]]` |
+| texture N | `layout(set = 0, binding = N) uniform sampler2D texN;` | `uniform sampler2D texN;` | `texture2d<float> texN [[texture(N)]]`, `sampler s [[sampler(N)]]` |
+| uniform buffer N | `layout(std140, set = 1, binding = N) uniform BufferN { ... };` | `layout(std140) uniform BufferN { ... };` | `constant BufferN &b [[buffer(1 + N)]]` |
+| vertex input, `VertexInput::Mesh` | location 0 position, 1 uv, 2 colour (vec4), 3 normal | the same | `[[stage_in]]` with `[[attribute(0..3)]]` |
+| vertex input, `VertexInput::None` | `gl_VertexIndex` | `gl_VertexID` | `[[vertex_id]]` |
 
 Constants and buffer blocks use only `vec4` and `mat4` members, so both layouts agree. Declare as many textures and
 buffers as the shader reads: the only ceiling is the device's, which `r->pipelineLimits()` reports and `createPipeline()`
 enforces (a `Constants` block of at most `constantBytes`, past which the data belongs in a buffer; a buffer shows its
 first `bufferBytes`). An unset texture slot samples white.
+
+Metal takes one MSL source per stage (`vertexMsl`, `fragmentMsl`, entry point `main0` unless `mslVertexEntry` and
+`mslFragmentEntry` say otherwise), and both stages see the same slots. Those slots do not depend on how many buffers a
+pipeline has, so one source serves every pipeline. `spirv-cross --msl` numbers a stage's buffers by what the stage
+uses, so give it these numbers (its resource-binding API) or edit the output; `tests/shaders/*.metal` are written by
+hand to them.
 
 ## One source for both
 
@@ -83,11 +89,11 @@ into a depth map too, writing depth alone.
 
 | | Vulkan | OpenGL | OpenGL ES, WebGL | Software | Metal |
 |---|---|---|---|---|---|
-| `createPipeline()`, `drawPipeline()` | yes | yes | yes, no `BufferN` | no | not yet |
+| `createPipeline()`, `drawPipeline()` | yes | yes | yes, no `BufferN` | no | yes, never run |
 | `TextureFormat::Depth` targets | yes | yes | yes | no | not yet |
-| `createBuffer()` as a uniform buffer | yes | yes | no | no | not yet |
+| `createBuffer()` as a uniform buffer | yes | yes | no | no | yes, never run |
 
-Tested on Vulkan and OpenGL; the OpenGL ES and WebGL paths compile but have not been run.
+Tested on Vulkan and OpenGL; the OpenGL ES, WebGL and Metal paths have not been run.
 Where `RendererCaps::CustomPipelines` is absent, `createPipeline()` logs why and returns an invalid handle. Shadows
 and post-processing are not part of the engine: [chapter 17](17-shadows-and-post-processing.md).
 

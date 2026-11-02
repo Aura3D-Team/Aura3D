@@ -53,6 +53,12 @@ inline constexpr NS::UInteger kFragmentFirstMapSlot = 1;
 //! Fragment stage texture/sampler slot 0: the albedo map.
 inline constexpr NS::UInteger kFragmentAlbedoSlot = 0;
 
+//! createPipeline()'s slots, in both stages: Constants at 0, BufferN at 1 + N, texN and its sampler at N.
+inline constexpr NS::UInteger kCustomConstantsSlot = 0;
+inline constexpr NS::UInteger kCustomFirstBufferSlot = 1;
+//! The mesh stream a VertexInput::Mesh pipeline reads through [[stage_in]]; Metal's last buffer slot.
+inline constexpr NS::UInteger kCustomVertexSlot = 30;
+
 //! MSL entry points, as named in resources/shaders/metal/*.metal.
 inline constexpr const char *kVertexFunction3D = "aura_vertex_3d";
 inline constexpr const char *kVertexFunction3DInstanced = "aura_vertex_3d_instanced";

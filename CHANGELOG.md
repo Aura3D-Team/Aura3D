@@ -7,7 +7,7 @@ All notable changes to Aura3D are documented in this file.
 ### Added
 
 - PBR shading on Vulkan, OpenGL and Metal (metallic-roughness GGX): `Material` gains `normalMap`, `metallicRoughness`, `emissiveMap` and `emissive`, and `setLights()` takes directional, point, spot and ambient lights. The software backend keeps Lambert.
-- Your own shaders: `createPipeline()` and `drawPipeline()` take SPIR-V (Vulkan) or GLSL (OpenGL) and read constants, textures and uniform buffers up to `pipelineLimits()`. Not on the software backend or Metal yet; OpenGL ES and WebGL compile but are untested. See docs/16.
+- Your own shaders: `createPipeline()` and `drawPipeline()` take SPIR-V (Vulkan), GLSL (OpenGL) or MSL (Metal) and read constants, textures and uniform buffers up to `pipelineLimits()`. Not on the software backend; OpenGL ES and WebGL compile but are untested, Metal has never run. See docs/16.
 - `TextureFormat::Depth` render targets (depth maps), `clipCorrection(target)`, and `createBuffer()` buffers as uniform buffers.
 - `IRenderer::caps()` / `RendererCaps`: what a backend supports beyond the common API.
 - Render targets (`createRenderTarget()`, `beginRenderPass(target)`, `renderTargetTexture()`, `readPixels()`, `resizeRenderTarget()`) and `createTexture(TextureDesc, pixels)` with formats, mip chain and sampler settings.
@@ -18,7 +18,7 @@ All notable changes to Aura3D are documented in this file.
 - `aura/Core/Culling.h` (`Aabb`, `Frustum`, `transformed()`): the boxes the renderer culls with, and `meshBounds()` for your own.
 - AuraUI: `Widget::interaction()`, `pick()`, `isAncestorOf()`, `paintAlpha()`, `rowHeight()`, `Control::paintSurface()` and `textInsets()`.
 - Golden-image tests for the software and GPU backends.
-- Metal: its side of the above, except pipelines and depth targets, is written but has not been compiled or run; no Apple machine was available.
+- Metal: its side of the above, except depth targets, is written and parses against metal-cpp on Linux (Apple headers stubbed), but has not been built, linked or run; no Apple machine was available.
 
 ### Changed
 

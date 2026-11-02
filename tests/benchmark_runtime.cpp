@@ -379,6 +379,14 @@ int main(int argc, char **argv)
                 }
                 desc.vertexGlsl = glsl(vert);
                 desc.fragmentGlsl = glsl(frag);
+                const auto msl = [&](const char *name)
+                {
+                    const auto source = readFileBytes(sourceDir / (std::string(name) + ".metal"));
+                    return source ? std::string(reinterpret_cast<const char *>(source->data()), source->size())
+                                  : std::string{};
+                };
+                desc.vertexMsl = msl(vert);
+                desc.fragmentMsl = msl(frag);
                 return renderer.createPipeline(desc);
             };
             struct Constants
@@ -458,6 +466,11 @@ int main(int argc, char **argv)
                 renderer.createRenderTarget({.width = kSize, .height = kSize, .format = TextureFormat::Depth});
             const RenderTargetHandle gradient = colourTarget(), culled = colourTarget(), shaded = colourTarget(),
                                      inverted = colourTarget(), shadedBuiltin = colourTarget();
+            if (!isValidHandle(depthMap) && renderer.getBackendType() == RendererChoice::METAL)
+            {
+                std::printf("PIPELINE backend=METAL skipped (no depth targets yet)\n");
+                return 0;
+            }
             if (!isValidHandle(buffer) || !isValidHandle(depthMap) || !isValidHandle(builtinMap) ||
                 !isValidHandle(gradient) || !isValidHandle(culled) || !isValidHandle(shaded) ||
                 !isValidHandle(inverted) || !isValidHandle(shadedBuiltin))

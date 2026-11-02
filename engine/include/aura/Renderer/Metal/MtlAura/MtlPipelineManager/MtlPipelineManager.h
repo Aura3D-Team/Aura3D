@@ -53,6 +53,10 @@ class MtlPipelineManager
     {
         const char *vertexFunction = kVertexFunction3D;     //! MSL vertex entry point.
         const char *fragmentFunction = kFragmentFunction3D; //! MSL fragment entry point.
+        //! Where the fragment function lives when it is not in the vertex function's library.
+        const MtlShaderLibraryManager *fragmentLibrary = nullptr;
+        //! The layout [[stage_in]] reads; null when the shader fetches its own vertices.
+        const MTL::VertexDescriptor *vertexDescriptor = nullptr;
         PipelineState state = PipelineState::DepthWrite;    //! CullBackFaces: see bind().
         MTL::CompareFunction depthCompare = MTL::CompareFunctionLess;
         const char *label = "Aura3D pipeline"; //! Shown in Xcode's GPU debugger.

@@ -25,12 +25,12 @@ enum class VertexInput : u8
  * @brief Your own vertex and fragment shaders: the engine draws with them and decides nothing about the look.
  *
  * Give the code of each backend you target; one GLSL source serves both GPU backends when it branches on VULKAN,
- * which glslc defines (tests/shaders has examples). A shader reads a Constants block, textures texN and uniform
- * blocks BufferN, as many as you declare here within IRenderer::pipelineLimits(); docs/16-custom-pipelines.md has the
- * declarations for each backend. Clip space is y-up on every backend, with the depth range of
- * Camera::setClipSpace(); a render target's texture holds its top row first, so sample it at
- * `vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5)`, and multiply a projection by IRenderer::clipCorrection(target) when
- * drawing into a target.
+ * which glslc defines (tests/shaders has examples). Metal takes MSL, one source per stage. A shader reads a Constants
+ * block, textures texN and uniform blocks BufferN, as many as you declare here within IRenderer::pipelineLimits();
+ * docs/16-custom-pipelines.md has the declarations for each backend. Clip space is y-up on every backend, with the
+ * depth range of Camera::setClipSpace(); a render target's texture holds its top row first, so sample it at `vec2(ndc.x
+ * * 0.5 + 0.5, 0.5 - ndc.y * 0.5)`, and multiply a projection by IRenderer::clipCorrection(target) when drawing into a
+ * target.
  */
 struct PipelineDesc
 {
@@ -38,6 +38,10 @@ struct PipelineDesc
     std::span<const std::byte> fragmentSpirv;
     std::string vertexGlsl;
     std::string fragmentGlsl;
+    std::string vertexMsl; //!< Metal; its slots are in docs/16-custom-pipelines.md.
+    std::string fragmentMsl;
+    std::string mslVertexEntry = "main0"; //!< spirv-cross names the entry point main0.
+    std::string mslFragmentEntry = "main0";
     PipelineState state = PipelineState::DepthTest | PipelineState::DepthWrite | PipelineState::CullBackFaces;
     VertexInput input = VertexInput::Mesh;
     u32 textures = 0;      //!< texN the shaders read, N from 0.
