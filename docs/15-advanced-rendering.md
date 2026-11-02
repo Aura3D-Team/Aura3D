@@ -3,7 +3,7 @@
 Everything past one lit pass to the window. Each section names the
 `RendererCaps` flag that says whether a backend has it
 (`INK_FLAG_CHECK(r->caps(), RendererCaps::Compute)`); the software rasterizer
-has render targets, instancing, glTF, skinning, picking, background loading
+has render targets, instancing, glTF, skinning, background loading
 and C++ compute. Your own shaders, shadows and post-processing are
 [chapter 16](16-custom-pipelines.md) and [chapter 17](17-shadows-and-post-processing.md).
 
@@ -42,21 +42,16 @@ keeps compiled pipelines on disk between runs.
 `drawMeshInstanced(mesh, material, models)` culls each model and draws the
 survivors in one instanced draw. `meshBounds(mesh)` gives a mesh's box.
 
-## Picking and world lines
+## Bounds
+
+`meshBounds(mesh)` is a mesh's box in its own space; `transformed(box, model)` (`aura/Core/Culling.h`) places it in
+the world.
 
 ```cpp
-const Ray ray = camera.rayFromScreen(mousePixel, viewportSize);
-if (const auto t = intersect(ray, transformed(r->meshBounds(crate), crateModel)))
-    select(ray.at(*t));
-
 gfx::Canvas debug;
-const gfx::CanvasView view = r->canvasView();
-debug.line(view, ray.origin, ray.at(10.0f), {1, 1, 0, 1});   // any shape: lines, triangles or append()
+debug.line(r->canvasView(), a, b, {1, 1, 0, 1});   // any shape: lines, triangles or append()
 r->drawBatch(debug);
 ```
-
-`aura/Core/Collision.h` also has spheres, planes, triangles, `overlaps()` and
-`Frustum::fromMatrix()` with `visible()`.
 
 ## glTF models and skinned animation
 

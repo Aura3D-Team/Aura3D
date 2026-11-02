@@ -82,7 +82,9 @@ VkRenderPass VulkanRenderer::buildColourPass(VkFormat colour, bool depth)
             .srcSubpass = 0,
             .dstSubpass = VK_SUBPASS_EXTERNAL,
             .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+            // NOLINTNEXTLINE(bugprone-signed-bitwise): Vulkan flag bits are C enums.
+            .dstStageMask = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                            VK_PIPELINE_STAGE_TRANSFER_BIT,
             .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
         }};
@@ -134,7 +136,8 @@ VkRenderPass VulkanRenderer::buildDepthOnlyPass()
             .srcSubpass = 0,
             .dstSubpass = VK_SUBPASS_EXTERNAL,
             .srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            // NOLINTNEXTLINE(bugprone-signed-bitwise): Vulkan flag bits are C enums.
+            .dstStageMask = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
             .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
         }};
@@ -178,6 +181,7 @@ bool VulkanRenderer::resizeRenderTarget(RenderTargetHandle handle, u32 width, u3
     //! Earlier frames may still draw into or sample the old images; this one must not have used it yet.
     vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
     _vkTextureManager->flushUploads();
+    _lastCustomSet = {};
     destroyTargetAttachments(target);
     target.desc.width = width;
     target.desc.height = height;

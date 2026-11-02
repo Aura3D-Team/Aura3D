@@ -21,20 +21,23 @@ PipelineLimits OpenGLRenderer::pipelineLimits() const noexcept
 {
     if (!_isInitialized)
         return {};
-    GLint units = 0, bindings = 0, blockBytes = 0;
+    GLint units = 0, blockBytes = 0;
     glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &units);
-    glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &bindings);
     glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &blockBytes);
-    //! Binding points are shared by every program, and Constants takes the first free one.
-    const u32 freeBindings = static_cast<u32>(std::max(bindings, 0)) > kPipelineConstantsBinding + 1
-                                 ? static_cast<u32>(bindings) - kPipelineConstantsBinding - 1
-                                 : 0u;
 #ifdef AURA_GLES
-    constexpr u32 kBuffers = 0; //! GLES and WebGL have no createBuffer().
+    constexpr u32 buffers = 0; //! GLES and WebGL have no createBuffer().
 #else
-    const u32 kBuffers = freeBindings;
+    //! Binding points are shared by every program, and Constants takes the first free one; a stage also holds
+    //! only so many blocks, Constants among them.
+    GLint bindings = 0, vertexBlocks = 0, fragmentBlocks = 0;
+    glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &bindings);
+    glGetIntegerv(GL_MAX_VERTEX_UNIFORM_BLOCKS, &vertexBlocks);
+    glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_BLOCKS, &fragmentBlocks);
+    const GLint blocks =
+        std::min({bindings - static_cast<GLint>(kPipelineConstantsBinding) - 1, vertexBlocks - 1, fragmentBlocks - 1});
+    const u32 buffers = static_cast<u32>(std::max(blocks, 0));
 #endif
-    return {static_cast<u32>(std::max(units, 0)), kBuffers, static_cast<u32>(blockBytes) & ~15u,
+    return {static_cast<u32>(std::max(units, 0)), buffers, static_cast<u32>(blockBytes) & ~15u,
             static_cast<usize>(blockBytes)};
 }
 

@@ -193,6 +193,9 @@ void VulkanRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle
         for (VkDescriptorPool &pool : _computePools)
             VK_RESULT_CHECK(vkCreateDescriptorPool(device, &poolInfo, nullptr, &pool));
     }
+    for (u32 i = 0; i < kernel.buffers; ++i)
+        if (!computeBufferOf(buffers[i]))
+            return;
     VkDescriptorSet set = VK_NULL_HANDLE;
     const VkDescriptorSetAllocateInfo allocation{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                                                  .descriptorPool = _computePools[_currentFrame],
@@ -208,8 +211,6 @@ void VulkanRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle
     for (u32 i = 0; i < kernel.buffers; ++i)
     {
         const ComputeBuffer *buffer = computeBufferOf(buffers[i]);
-        if (!buffer)
-            return;
         infos[i] = {buffer->buffer.buffer, 0, VK_WHOLE_SIZE};
         writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                      .dstSet = set,

@@ -18,7 +18,7 @@
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
-#include "aura/Core/Collision.h"
+#include "aura/Core/Culling.h"
 #include "aura/Core/Profiling/GpuTiming.h"
 #include "aura/Renderer/Canvas.h"
 #include "aura/Renderer/Compute.h"
@@ -277,7 +277,7 @@ class IRenderer
     virtual TextureHandle createTextureFromFile(const std::string &path);
 
     /// The box around @p mesh's vertices in its own space; empty for an unknown handle. With
-    /// transformed() it places the mesh in the world, for picking or culling of your own.
+    /// transformed() it places the mesh in the world, for culling or collision of your own.
     [[nodiscard]] Aabb meshBounds(MeshHandle mesh) const;
 
     /**
@@ -746,7 +746,7 @@ class IRenderer
         IndexBufferHandle indexBuffer;
         u32 indexCount = 0;
         u32 vertexCount = 0;
-        Aabb bounds; //! In the mesh's own space, for culling and picking.
+        Aabb bounds; //! In the mesh's own space, for culling.
     };
 
     //! The camera's view volume from the last setTransform().

@@ -108,21 +108,23 @@ void OpenGLRenderer::dispatch(ComputeHandle kernel, std::span<const BufferHandle
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
     if (!isValidHandle(kernel) || kernel.value() > _computePrograms.size() || constants.size() > kComputeConstantsBytes)
         return;
+    //! Before the program changes, so a bad handle leaves the scene's state alone.
+    if (!std::ranges::all_of(buffers,
+                             [this](BufferHandle handle)
+                             {
+                                 return bufferOf(handle) != nullptr;
+                             }))
+        return;
     flushBatches();
     glUseProgram(_computePrograms[kernel.value() - 1]);
     for (GLuint i = 0; i < buffers.size(); ++i)
-    {
-        const GlBuffer *buffer = bufferOf(buffers[i]);
-        if (!buffer)
-            return;
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, buffer->id);
-    }
-    if (!constants.empty())
-    {
-        glBindBuffer(GL_UNIFORM_BUFFER, _computeConstants);
-        glBufferSubData(GL_UNIFORM_BUFFER, 0, static_cast<GLsizeiptr>(constants.size()), constants.data());
-        glBindBufferBase(GL_UNIFORM_BUFFER, kComputeConstantsBinding, _computeConstants);
-    }
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, bufferOf(buffers[i])->id);
+    //! The whole block, so what this dispatch did not give reads as zero, as on Vulkan.
+    std::array<std::byte, kComputeConstantsBytes> block{};
+    std::ranges::copy(constants, block.begin());
+    glBindBuffer(GL_UNIFORM_BUFFER, _computeConstants);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, static_cast<GLsizeiptr>(block.size()), block.data());
+    glBindBufferBase(GL_UNIFORM_BUFFER, kComputeConstantsBinding, _computeConstants);
     glDispatchCompute(groups.x, groups.y, groups.z);
     //! What the kernel wrote, as every later reader takes it: storage, instance attributes, draw arguments, copies.
     // NOLINTNEXTLINE(bugprone-signed-bitwise): GL bitfields are C macros.

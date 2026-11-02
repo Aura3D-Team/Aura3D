@@ -15,7 +15,7 @@ All notable changes to Aura3D are documented in this file.
 - Compute and indirect drawing (`createCompute()`, `dispatch()`, `drawMeshInstancedIndirect()`; the software backend runs a C++ kernel), `drawMeshInstanced()` and frustum culling.
 - `AssetLoader`: models and images decoded on background threads, handed back by `poll()`.
 - Shader hot reload (`reloadShaders()`, `renderer.shader_hot_reload`) and `renderer.vulkan.pipeline_cache`.
-- `aura/Core/Collision.h` (rays, boxes, spheres, planes, frustum) and `Camera::rayFromScreen()`.
+- `aura/Core/Culling.h` (`Aabb`, `Frustum`, `transformed()`): the boxes the renderer culls with, and `meshBounds()` for your own.
 - AuraUI: `Widget::interaction()`, `pick()`, `isAncestorOf()`, `paintAlpha()`, `rowHeight()`, `Control::paintSurface()` and `textInsets()`.
 - Golden-image tests for the software and GPU backends.
 - Metal: its side of the above, except pipelines and depth targets, is written but has not been compiled or run; no Apple machine was available.
