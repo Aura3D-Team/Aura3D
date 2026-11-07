@@ -146,6 +146,7 @@ void Widget::_setRoot(UIRoot *root)
         _root->_forget(*this);
         if (!alive.get())
             return;
+        // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall): ~Widget gets the base no-op by design.
         onDetach();
         if (!alive.get())
             return;
@@ -175,6 +176,7 @@ void Widget::_setRoot(UIRoot *root)
     {
         if (INK_FLAG_CHECK(_flags, WidgetFlags::Animating))
             _root->_setAnimating(*this, true);
+        // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall): ~Widget gets the base no-op by design.
         onAttach();
     }
 }
