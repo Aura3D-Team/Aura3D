@@ -57,7 +57,7 @@ class MtlPipelineManager
         const MtlShaderLibraryManager *fragmentLibrary = nullptr;
         //! The layout [[stage_in]] reads; null when the shader fetches its own vertices.
         const MTL::VertexDescriptor *vertexDescriptor = nullptr;
-        PipelineState state = PipelineState::DepthWrite;    //! CullBackFaces: see bind().
+        PipelineState state = PipelineState::DepthWrite; //! CullBackFaces: see bind().
         MTL::CompareFunction depthCompare = MTL::CompareFunctionLess;
         const char *label = "Aura3D pipeline"; //! Shown in Xcode's GPU debugger.
         //! The pass's attachment formats; a render target's differ from the drawable's.
