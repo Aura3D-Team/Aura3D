@@ -120,8 +120,9 @@ void modalKeyboardAndPointer()
         {
             ++lowerClicks;
         });
-    auto &modal =
-        h.root.overlay().open<Column>({.placement = Placement::Center, .modal = true, .dismissOnOutsideClick = false});
+    auto &modal = h.root.overlay().open<Column>(
+        {.placement = Placement::Center,
+         .flags = OverlayFlags::Modal | OverlayFlags::DismissOnEscape | OverlayFlags::TakeFocus});
     modal.add<Button>("Inside");
     h.frame();
     h.root.keyDown(wma::KEY_SPACE);

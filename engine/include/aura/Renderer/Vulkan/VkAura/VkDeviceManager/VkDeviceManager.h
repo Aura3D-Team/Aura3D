@@ -145,6 +145,9 @@ class VkDeviceManager
         return _maxBindlessTextures;
     }
 
+    //! The anisotropy a sampler may ask for: the device limit, or 1 when samplerAnisotropy is unsupported.
+    [[nodiscard]] f32 maxSamplerAnisotropy() const noexcept;
+
   private:
     VkInstance *_vkInstance; ///< Vulkan instance pointer used bind the best device
 
@@ -158,6 +161,7 @@ class VkDeviceManager
     bool _bufferDeviceAddressSupported = false;   ///< See supportsBufferDeviceAddress()
     bool _bindlessTexturesSupported = false;      ///< See supportsBindlessTextures()
     u32 _maxBindlessTextures = 0;                 ///< See maxBindlessTextures()
+    f32 _maxSamplerAnisotropy = 1.0f;             ///< See maxSamplerAnisotropy()
     u32 _physicaldeviceCount;                     ///< Number of available physical devices
 
     VkQueueManager _vkQueueManager; ///< Queue manager to create queues in a organized way.

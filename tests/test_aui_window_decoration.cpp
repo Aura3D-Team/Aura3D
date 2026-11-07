@@ -260,10 +260,10 @@ void overlaysAndModals()
     AURA_CHECK(h.root.overlay().empty() && h.decoration->windowHit(bar) == Caption,
                "that press closes the menu and the bar drags again");
 
-    h.root.overlay().open<Column>(OverlayDesc{.anchor = Rect{{150, 80}, {330, 160}},
-                                              .placement = Placement::Over,
-                                              .modal = true,
-                                              .dismissOnOutsideClick = false});
+    h.root.overlay().open<Column>(
+        OverlayDesc{.anchor = Rect{{150, 80}, {330, 160}},
+                    .placement = Placement::Over,
+                    .flags = OverlayFlags::Modal | OverlayFlags::DismissOnEscape | OverlayFlags::TakeFocus});
     h.frame();
     AURA_CHECK(h.decoration->windowHit(bar) == Caption && h.decoration->windowHit({0.5f, 120}) == Left,
                "a modal dialog leaves the title bar and border working");

@@ -45,6 +45,8 @@ class MtlShaderLibraryManager
      *         the message rather than summarised.
      */
     explicit MtlShaderLibraryManager(MTL::Device *device);
+    /// A library compiled from @p source instead, as shader hot reload hands it over; throws as above.
+    MtlShaderLibraryManager(MTL::Device *device, const std::string &source);
 
     ~MtlShaderLibraryManager();
 
@@ -80,7 +82,7 @@ class MtlShaderLibraryManager
     void loadPrecompiledLibrary(MTL::Device *device);
 
     //! Compiles the embedded MSL source.
-    void compileSourceLibrary(MTL::Device *device);
+    void compileSourceLibrary(MTL::Device *device, const char *source);
 
     NS::SharedPtr<MTL::Library> _library;
     bool _precompiled = false;

@@ -437,8 +437,7 @@ void buildOverlays(Column &into, UIRoot &root, const Theme &theme)
             {
                 auto &box = root.overlay().open<Column>(OverlayDesc{
                     .placement = Placement::Center,
-                    .modal = true,
-                    .dismissOnOutsideClick = false,
+                    .flags = OverlayFlags::Modal | OverlayFlags::DismissOnEscape | OverlayFlags::TakeFocus,
                 });
 
                 box.style().fill(theme.palette().overlay).outline(theme.palette().border, 1.0f).rounded(10.0f);

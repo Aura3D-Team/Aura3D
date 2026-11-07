@@ -107,10 +107,14 @@ ImageData fallback = ImageLoader::makeCheckerboard(64, 8); // size, cells-per-ed
 
 ```cpp
 struct Material {
-    TextureHandle albedo; // default-constructed: invalid, see below
+    TextureHandle albedo;            // default-constructed: invalid, see below
     glm::vec4 tint = {1, 1, 1, 1};
-    float roughness = 0.5f;
+    float roughness = 1.0f;          // 0 a mirror, 1 matte
     float metallic = 0.0f;
+    TextureHandle normalMap;         // tangent space, +Y up the image (glTF, OpenGL), Rgba8Unorm
+    TextureHandle metallicRoughness; // green roughness, blue metallic (glTF)
+    TextureHandle emissiveMap;
+    glm::vec3 emissive{0.0f};        // light the surface gives off
 };
 ```
 
@@ -124,42 +128,16 @@ r->bindMaterial(handle);
 r->drawMesh(mesh);
 ```
 
-The built-in shaders currently consume `albedo` together with the
-directional light (see [06-lighting.md](06-lighting.md)); `tint`,
-`roughness`, and `metallic` are carried through and readable via
-`r->getCurrentMaterial()`, but not yet sampled by the default GLSL/SPIR-V —
-they're part of the API so the shading model can grow later without another
-break. If you write your own shaders, they're already there to read.
+This is glTF's metallic-roughness model, and the GPU backends shade with all
+of it (see [06-lighting.md](06-lighting.md)): a map multiplies its factor, and
+an absent map leaves the factor alone. Load colour images (albedo, emissive)
+as `TextureFormat::Rgba8Srgb` and data (normal, metallic-roughness) as
+`Rgba8Unorm`. The software backend uses `albedo` and `tint` alone. glTF files
+fill all of this in for you; see chapter 15.
 
 An invalid (default-constructed) `albedo` means "leave whatever texture is
 already bound" rather than "no texture" — bind a real texture (even the
 checkerboard) before the first draw that uses a material.
-
-## `ResourceManager`: caching by path
-
-Loading the same file twice from disk (and re-uploading it to the GPU) is
-wasted work. `Engine` owns one `ResourceManager` for its current renderer,
-reachable via `engine.resources()`:
-
-```cpp
-ResourceManager* resources = engine.resources();
-
-const TextureHandle crate = resources->loadTexture(settings->get(aura3d::setting::pathTextures) + "crate.png");
-const MeshHandle ship     = resources->loadMesh(settings->get(aura3d::setting::pathModels) + "ship.obj");
-
-resources->cachedTextureCount();
-resources->cachedMeshCount();
-```
-
-Repeated calls with the same path return the same handle instantly.
-`unloadAll()` drops the cache (not the GPU resources themselves, which
-belong to and are released by the renderer) — call it after
-`Engine::switchBackend()`, since handles minted by the old renderer mean
-nothing to the new one. `Engine::switchBackend` calls `resources->setRenderer(...)`
-for you, which does this automatically.
-
-Not thread-safe — use it from the thread that owns the renderer, like
-everything else on `IRenderer`.
 
 ## Handles
 

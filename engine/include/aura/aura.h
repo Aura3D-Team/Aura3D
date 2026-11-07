@@ -4,9 +4,6 @@
 #include <ink/Inkogger.h>
 #include <ink/ink_base.hpp>
 
-#define AURA_VERSION_MAJOR 0
-#define AURA_VERSION_MINOR 3
-#define AURA_VERSION_PATCH 0
 #define AURA_VERSION_STRING INK_STR(AURA_VERSION_MAJOR) "." INK_STR(AURA_VERSION_MINOR) "." INK_STR(AURA_VERSION_PATCH)
 
 #ifndef APPLICATION_NAME

@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 
 #include "aura/Core/AuraException/AuraException.h"
 #include "aura/Core/AuraMath.h"
+#include "aura/Core/Files.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
 #include "aura/aura.h"
 
@@ -105,24 +107,271 @@ void MetalRenderer::createWindow(const char *title, const wma::WindowBackend &wB
 
 void MetalRenderer::createPipelines()
 {
+    buildPipelines(kColorFormat, kDepthFormat, _scenePipeline, _batchPipeline, _instancedPipeline);
+}
+
+bool MetalRenderer::reloadShaders(const std::filesystem::path &directory)
+{
+    if (!_isInitialized || _frameState != FrameState::Idle)
+        return false;
+    //! Every .metal file in name order, one library, as cmake/EmbedShaderHeader.cmake builds it.
+    std::vector<std::filesystem::path> files;
+    std::error_code error;
+    for (const auto &entry : std::filesystem::directory_iterator(directory / "metal", error))
+        if (entry.path().extension() == ".metal")
+            files.push_back(entry.path());
+    std::ranges::sort(files);
+    std::string source;
+    for (const std::filesystem::path &file : files)
+    {
+        const auto bytes = readFileBytes(file);
+        if (!bytes)
+        {
+            INK_ERROR << "MetalRenderer: cannot read " << file.string();
+            return false;
+        }
+        source.append(reinterpret_cast<const char *>(bytes->data()), bytes->size());
+        source.push_back('\n');
+    }
+    if (files.empty())
+        return false;
+
+    //! Everything is built from the new library before anything running is replaced.
+    std::unique_ptr<MtlShaderLibraryManager> library;
+    try
+    {
+        library = std::make_unique<MtlShaderLibraryManager>(_deviceManager->getDevice(), source);
+    }
+    catch (const std::exception &failure)
+    {
+        INK_ERROR << "MetalRenderer: shader reload failed, keeping the running shaders: " << failure.what();
+        return false;
+    }
+    std::swap(library, _shaderLibrary);
+    std::unique_ptr<MtlPipelineManager> scene, batch, instanced;
+    std::vector<std::array<std::unique_ptr<MtlPipelineManager>, 3>> targets(_targetPipelines.size());
+    try
+    {
+        buildPipelines(kColorFormat, kDepthFormat, scene, batch, instanced);
+        for (usize i = 0; i < targets.size(); ++i)
+        {
+            const MTL::PixelFormat depth = _targetPipelines[i].depth ? kDepthFormat : MTL::PixelFormatInvalid;
+            buildPipelines(_targetPipelines[i].colour, depth, targets[i][0], targets[i][1], targets[i][2]);
+        }
+    }
+    catch (const std::exception &failure)
+    {
+        std::swap(library, _shaderLibrary);
+        INK_ERROR << "MetalRenderer: shader reload failed, keeping the running shaders: " << failure.what();
+        return false;
+    }
+    _scenePipeline = std::move(scene);
+    _batchPipeline = std::move(batch);
+    _instancedPipeline = std::move(instanced);
+    //! In place: render targets point at these entries.
+    for (usize i = 0; i < targets.size(); ++i)
+    {
+        _targetPipelines[i].scene = std::move(targets[i][0]);
+        _targetPipelines[i].batch = std::move(targets[i][1]);
+        _targetPipelines[i].instanced = std::move(targets[i][2]);
+    }
+    _activeScene = _activeBatch = _activeInstanced = nullptr;
+    _boundPipeline = nullptr;
+    return true;
+}
+
+NS::SharedPtr<MTL::Texture> MetalRenderer::newDepthTexture(u32 width, u32 height, MTL::TextureUsage usage) const
+{
+    NS::SharedPtr<MTL::TextureDescriptor> descriptor = adopt(MTL::TextureDescriptor::alloc()->init());
+    descriptor->setTextureType(MTL::TextureType2D);
+    descriptor->setPixelFormat(kDepthFormat);
+    descriptor->setWidth(width);
+    descriptor->setHeight(height);
+    descriptor->setUsage(usage);
+    descriptor->setStorageMode(MTL::StorageModePrivate);
+    return adopt(_deviceManager->getDevice()->newTexture(descriptor.get()));
+}
+
+void MetalRenderer::buildPipelines(MTL::PixelFormat colour, MTL::PixelFormat depth,
+                                   std::unique_ptr<MtlPipelineManager> &scene,
+                                   std::unique_ptr<MtlPipelineManager> &batch,
+                                   std::unique_ptr<MtlPipelineManager> &instanced) const
+{
     MtlPipelineManager::Options sceneOptions;
     sceneOptions.vertexFunction = kVertexFunction3D;
     sceneOptions.fragmentFunction = kFragmentFunction3D;
-    sceneOptions.depthTest = true;
-    sceneOptions.alphaBlend = false;
-    sceneOptions.cullBackFaces = true;
+    sceneOptions.state = PipelineState::DepthTest | PipelineState::DepthWrite | PipelineState::CullBackFaces;
     sceneOptions.label = "Aura3D scene 3D";
-    _scenePipeline = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, sceneOptions);
+    sceneOptions.colorFormat = colour;
+    sceneOptions.depthFormat = depth;
+    scene = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, sceneOptions);
+    sceneOptions.vertexFunction = kVertexFunction3DInstanced;
+    sceneOptions.label = "Aura3D scene 3D instanced";
+    instanced = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, sceneOptions);
 
     MtlPipelineManager::Options batchOptions;
     batchOptions.vertexFunction = kVertexFunctionBatch;
     batchOptions.fragmentFunction = kFragmentFunctionBatch;
-    batchOptions.depthTest = true;
-    batchOptions.depthWrite = false;
+    batchOptions.state = PipelineState::DepthTest | PipelineState::AlphaBlend;
     batchOptions.depthCompare = MTL::CompareFunctionLessEqual;
-    batchOptions.alphaBlend = true;
     batchOptions.label = "Aura3D batch";
-    _batchPipeline = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, batchOptions);
+    batchOptions.colorFormat = colour;
+    batchOptions.depthFormat = depth;
+    batch = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, batchOptions);
+}
+
+MetalRenderer::TargetPipelines &MetalRenderer::pipelinesFor(MTL::PixelFormat colour, bool depth)
+{
+    for (TargetPipelines &cached : _targetPipelines)
+        if (cached.colour == colour && cached.depth == depth)
+            return cached;
+    TargetPipelines &built = _targetPipelines.emplace_back();
+    built.colour = colour;
+    built.depth = depth;
+    buildPipelines(colour, depth ? kDepthFormat : MTL::PixelFormatInvalid, built.scene, built.batch, built.instanced);
+    return built;
+}
+
+RenderTargetHandle MetalRenderer::createRenderTarget(const RenderTargetDesc &desc)
+{
+    if (!_textureManager || !_shaderLibrary)
+        return {};
+    if (desc.format == TextureFormat::Depth)
+    {
+        INK_ERROR << "MetalRenderer: depth-only render targets are not supported yet";
+        return {};
+    }
+    RenderTarget target;
+    target.colour = _textureManager->createAttachment(desc.width, desc.height, desc.format);
+    if (!isValidHandle(target.colour))
+        return {};
+    target.width = desc.width;
+    target.height = desc.height;
+    if (desc.depth)
+    {
+        target.depth = newDepthTexture(desc.width, desc.height, MTL::TextureUsageRenderTarget);
+        if (!target.depth)
+            return {};
+    }
+    target.pipelines = &pipelinesFor(_textureManager->resolve(target.colour)->pixelFormat(), desc.depth);
+    _renderTargets.push_back(std::move(target));
+    return RenderTargetHandle{static_cast<u32>(_renderTargets.size())};
+}
+
+glm::uvec2 MetalRenderer::targetSize(RenderTargetHandle target) const
+{
+    return isValidHandle(target) && target.value() <= _renderTargets.size()
+               ? glm::uvec2{_renderTargets[target.value() - 1].width, _renderTargets[target.value() - 1].height}
+               : glm::uvec2{0};
+}
+
+bool MetalRenderer::resizeRenderTarget(RenderTargetHandle handle, u32 width, u32 height)
+{
+    if (!_textureManager || !isValidHandle(handle) || handle.value() > _renderTargets.size() || width == 0 ||
+        height == 0 || _frameState == FrameState::InPass)
+        return false;
+    RenderTarget &target = _renderTargets[handle.value() - 1];
+    MTL::Texture *current = _textureManager->resolve(target.colour);
+    if (!current)
+        return false;
+    const TextureFormat format = current->pixelFormat() == MTL::PixelFormatRGBA16Float  ? TextureFormat::Rgba16Float
+                                 : current->pixelFormat() == MTL::PixelFormatRGBA8Unorm ? TextureFormat::Rgba8Unorm
+                                                                                        : TextureFormat::Rgba8Srgb;
+    if (!isValidHandle(_textureManager->createAttachment(width, height, format, target.colour)))
+        return false;
+    if (target.depth)
+        target.depth = newDepthTexture(width, height, MTL::TextureUsageRenderTarget);
+    target.width = width;
+    target.height = height;
+    return !target.depth || target.depth->width() == width;
+}
+
+TextureHandle MetalRenderer::renderTargetTexture(RenderTargetHandle target) const
+{
+    return isValidHandle(target) && target.value() <= _renderTargets.size() ? _renderTargets[target.value() - 1].colour
+                                                                            : TextureHandle{};
+}
+
+void MetalRenderer::beginRenderPass(RenderTargetHandle target)
+{
+    if (!isValidHandle(target))
+        return beginRenderPass();
+    AURA_FRAME_SCOPE(FramePhase::BeginPass);
+    if (_frameState != FrameState::Recording || target.value() > _renderTargets.size())
+        return;
+    const RenderTarget &chosen = _renderTargets[target.value() - 1];
+
+    NS::SharedPtr<MTL::RenderPassDescriptor> pass = adopt(MTL::RenderPassDescriptor::alloc()->init());
+    MTL::RenderPassColorAttachmentDescriptor *colour = pass->colorAttachments()->object(0);
+    colour->setTexture(_textureManager->resolve(chosen.colour));
+    colour->setLoadAction(MTL::LoadActionClear);
+    colour->setStoreAction(MTL::StoreActionStore);
+    colour->setClearColor(MTL::ClearColor(static_cast<double>(_clearR), static_cast<double>(_clearG),
+                                          static_cast<double>(_clearB), static_cast<double>(_clearA)));
+    if (chosen.depth)
+    {
+        MTL::RenderPassDepthAttachmentDescriptor *depth = pass->depthAttachment();
+        depth->setTexture(chosen.depth.get());
+        depth->setLoadAction(MTL::LoadActionClear);
+        depth->setStoreAction(MTL::StoreActionDontCare);
+        depth->setClearDepth(1.0);
+    }
+    _encoder = _commandBuffer->renderCommandEncoder(pass.get());
+    if (!_encoder)
+    {
+        INK_WARN << "MetalRenderer: failed to open a render target encoder";
+        return;
+    }
+    _activeScene = chosen.pipelines->scene.get();
+    _activeBatch = chosen.pipelines->batch.get();
+    _activeInstanced = chosen.pipelines->instanced.get();
+    _boundPipeline = nullptr;
+    usePipeline(_activeScene);
+    _passColour = chosen.pipelines->colour;
+    _passDepth = chosen.pipelines->depth;
+    _passTarget = target.value();
+    _frameState = FrameState::InPass;
+}
+
+bool MetalRenderer::readPixels(RenderTargetHandle target, std::span<u8> rgba)
+{
+    if (!isValidHandle(target) || target.value() > _renderTargets.size() || !_textureManager)
+        return false;
+    const RenderTarget &chosen = _renderTargets[target.value() - 1];
+    if (rgba.size() != static_cast<usize>(chosen.width) * chosen.height * 4)
+        return false;
+    MTL::Texture *texture = _textureManager->resolve(chosen.colour);
+    const bool half = texture->pixelFormat() == MTL::PixelFormatRGBA16Float;
+    const NS::UInteger rowBytes = static_cast<NS::UInteger>(chosen.width) * (half ? 8u : 4u);
+    const NS::UInteger bytes = rowBytes * chosen.height;
+    NS::SharedPtr<MTL::Buffer> readback =
+        adopt(_deviceManager->getDevice()->newBuffer(bytes, MTL::ResourceStorageModeShared));
+    if (!readback)
+        return false;
+
+    //! On the same queue as the frames, after them: waiting for this command buffer waits for those too.
+    MTL::CommandBuffer *commands = _deviceManager->getCommandQueue()->commandBuffer();
+    MTL::BlitCommandEncoder *blit = commands->blitCommandEncoder();
+    blit->copyFromTexture(texture, 0, 0, MTL::Origin(0, 0, 0), MTL::Size(chosen.width, chosen.height, 1),
+                          readback.get(), 0, rowBytes, bytes);
+    blit->endEncoding();
+    commands->commit();
+    commands->waitUntilCompleted();
+
+    const auto *source = static_cast<const u8 *>(readback->contents());
+    if (!half)
+    {
+        std::memcpy(rgba.data(), source, rgba.size());
+        return true;
+    }
+    for (usize i = 0; i < rgba.size(); ++i)
+    {
+        u16 value = 0;
+        std::memcpy(&value, source + i * 2, sizeof(value));
+        const f32 linear = halfToFloat(value);
+        rgba[i] = linear > 0.0f ? static_cast<u8>(std::lround(std::min(linear, 1.0f) * 255.0f)) : u8{0};
+    }
+    return true;
 }
 
 void MetalRenderer::handleWindowChanges()
@@ -149,13 +398,12 @@ void MetalRenderer::cleanup()
      * without which the drain below would wait on a permit only this thread could
      * release.
      */
-    if (_frameBegun)
+    if (_frameState != FrameState::Idle)
     {
-        if (_renderPassActive)
+        if (_frameState == FrameState::InPass)
         {
             _encoder->endEncoding();
             _encoder = nullptr;
-            _renderPassActive = false;
         }
 
         //! Dropped without commit: an uncommitted command buffer is simply
@@ -167,7 +415,7 @@ void MetalRenderer::cleanup()
         if (_frameSlots)
             _frameSlots->release();
 
-        _frameBegun = false;
+        _frameState = FrameState::Idle;
     }
 
     /*
@@ -207,6 +455,13 @@ void MetalRenderer::cleanup()
      * the drawable manager references the layer, and the layer references the
      * window that wma owns.
      */
+    _activeScene = _activeBatch = _activeInstanced = nullptr;
+    _buffers.clear();
+    _kernels.clear();
+    _customPipelines.clear();
+    _instancedPipeline.reset();
+    _renderTargets.clear();
+    _targetPipelines.clear();
     _batchPipeline.reset();
     _scenePipeline.reset();
     _textureManager.reset();
@@ -241,6 +496,23 @@ VertexBufferHandle MetalRenderer::createVertexBuffer(std::vector<gfx::Vertex3D> 
     return _vertexManager->create(owned);
 }
 
+bool MetalRenderer::updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
+{
+    //! A blit in this frame's command buffer, so no render encoder may be open; Metal orders it against
+    //! earlier frames' reads of the buffer and this frame's.
+    MTL::Buffer *target = _vertexManager ? _vertexManager->resolve(handle) : nullptr;
+    if (!target || _frameState != FrameState::Recording || vertices.size_bytes() > target->length())
+        return false;
+    NS::SharedPtr<MTL::Buffer> staging = adopt(
+        _deviceManager->getDevice()->newBuffer(vertices.data(), vertices.size_bytes(), MTL::ResourceStorageModeShared));
+    if (!staging)
+        return false;
+    MTL::BlitCommandEncoder *blit = _commandBuffer->blitCommandEncoder();
+    blit->copyFromBuffer(staging.get(), 0, target, 0, vertices.size_bytes());
+    blit->endEncoding();
+    return true;
+}
+
 IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u16> &&indices)
 {
     if (!_indexManager)
@@ -259,13 +531,11 @@ IndexBufferHandle MetalRenderer::createIndexBuffer(std::vector<u32> &&indices)
     return _indexManager->create(owned);
 }
 
-TextureHandle MetalRenderer::createSolidColorTexture(u8 r, u8 g, u8 b, u8 a)
+TextureHandle MetalRenderer::createTexture(const TextureDesc &desc, std::span<const std::byte> pixels)
 {
-    if (!_textureManager)
+    if (!_textureManager || desc.format == TextureFormat::Depth)
         return {};
-
-    const std::array<u8, 4> texel = {r, g, b, a};
-    return _textureManager->createFromPixels(texel.data(), 1, 1);
+    return _textureManager->createTexture(desc, pixels, _deviceManager->getCommandQueue());
 }
 
 TextureHandle MetalRenderer::createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height)
@@ -311,14 +581,10 @@ void MetalRenderer::beginFrame()
     if (!_isInitialized)
         return;
 
-    _frameBegun = false;
+    _frameState = FrameState::Idle;
 
-    wma::WindowFlags *flags = _windowManagerApi->getWindowFlags();
-    if (flags->resized)
-    {
-        flags->resized = false;
+    if (consumeResize())
         handleWindowChanges();
-    }
 
     //! Nothing to draw into while the platform has no surface attached (an
     //! iOS app in the background). Cheap enough to poll every frame.
@@ -369,7 +635,7 @@ void MetalRenderer::beginFrame()
         return;
     }
 
-    _frameBegun = true;
+    _frameState = FrameState::Recording;
 }
 
 void MetalRenderer::beginRenderPass()
@@ -378,7 +644,7 @@ void MetalRenderer::beginRenderPass()
 
     //! cleanup() can run mid-frame (the ESC key action calls it), which drops the
     //! managers while the application's frame callback is still executing.
-    if (!_frameBegun || _renderPassActive || !_drawableManager)
+    if (_frameState != FrameState::Recording || !_drawableManager)
         return;
 
     MTL::RenderPassDescriptor *pass = _drawableManager->buildRenderPass(_clearR, _clearG, _clearB, _clearA);
@@ -403,21 +669,27 @@ void MetalRenderer::beginRenderPass()
      * with a [0,1] depth range, which is exactly what is wanted. Vulkan needs an
      * explicit one only because it flips Y through a negative height there.
      */
-    _scenePipeline->bind(_encoder);
-    _batchPipelineBound = false;
-    _renderPassActive = true;
+    _activeScene = _scenePipeline.get();
+    _activeBatch = _batchPipeline.get();
+    _activeInstanced = _instancedPipeline.get();
+    _boundPipeline = nullptr;
+    usePipeline(_activeScene);
+    _passColour = kColorFormat;
+    _passDepth = true;
+    _passTarget = 0;
+    _frameState = FrameState::InPass;
 }
 
 void MetalRenderer::endRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::EndPass);
 
-    if (!_renderPassActive)
+    if (_frameState != FrameState::InPass)
         return;
 
     _encoder->endEncoding();
     _encoder = nullptr;
-    _renderPassActive = false;
+    _frameState = FrameState::Recording;
 }
 
 #ifdef AURA_PROFILE_FRAME
@@ -442,14 +714,14 @@ void MetalRenderer::endFrame()
     //! samples for any phase, rather than a Present entry with nothing behind
     //! it. AURA_FRAME_END() below is reached only past this point, so a
     //! skipped frame closes nothing and biases no average.
-    if (!_frameBegun)
+    if (_frameState == FrameState::Idle)
         return;
 
     //! Tolerate a caller that never closed its pass: an encoder still open when
     //! the command buffer is committed is a hard Metal error, not a warning.
     //! endRenderPass() opens its own EndPass scope, so this is not double-timed
     //! by wrapping it in one here too.
-    if (_renderPassActive)
+    if (_frameState == FrameState::InPass)
         endRenderPass();
 
     {
@@ -510,34 +782,11 @@ void MetalRenderer::endFrame()
     _framePool.reset();
 
     _currentFrame = (_currentFrame + 1) % MTL_MAX_FRAMES_IN_FLIGHT;
-    _frameBegun = false;
+    _frameState = FrameState::Idle;
 
     //! Outside the Present scope so it is closed and counted before the frame
     //! is.
     AURA_FRAME_END();
-}
-
-void MetalRenderer::setTransform(const gfx::TransformUBO &ubo)
-{
-    //! Recorded rather than pushed: the bytes travel to the GPU at each draw,
-    //! from bindDrawState(). IRenderer::drawMeshes() also reads this back to vary
-    //! only the model matrix per item.
-    _currentTransform = ubo;
-}
-
-void MetalRenderer::bindVertexBuffer(VertexBufferHandle handle)
-{
-    _currentVertexBuffer = handle;
-}
-
-void MetalRenderer::bindIndexBuffer(IndexBufferHandle handle)
-{
-    _currentIndexBuffer = handle;
-}
-
-void MetalRenderer::bindTexture(TextureHandle handle)
-{
-    _currentTexture = handle;
 }
 
 MTL::Texture *MetalRenderer::resolveSampledTexture(TextureHandle handle)
@@ -550,11 +799,7 @@ MTL::Texture *MetalRenderer::resolveSampledTexture(TextureHandle handle)
 
 void MetalRenderer::bindDrawState()
 {
-    if (_batchPipelineBound)
-    {
-        _scenePipeline->bind(_encoder);
-        _batchPipelineBound = false;
-    }
+    usePipeline(_activeScene);
 
     TransformUniforms transform;
     transform.model = _currentTransform.model;
@@ -569,18 +814,436 @@ void MetalRenderer::bindDrawState()
      * side. 256 + 48 bytes is well inside the 4 KB the API allows.
      */
     _encoder->setVertexBytes(&transform, sizeof(transform), kVertexUniformSlot);
-    _encoder->setFragmentBytes(&_light, sizeof(_light), kFragmentLightSlot);
+    bindSceneMaterial();
 
     _encoder->setFragmentTexture(resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
-    _encoder->setFragmentSamplerState(_textureManager->getSampler(), kFragmentAlbedoSlot);
+    _encoder->setFragmentSamplerState(_textureManager->samplerFor(_currentTexture), kFragmentAlbedoSlot);
 
     if (MTL::Buffer *vertexBuffer = _vertexManager->resolve(_currentVertexBuffer))
         _encoder->setVertexBuffer(vertexBuffer, 0, kVertexGeometrySlot);
 }
 
+void MetalRenderer::bindSceneMaterial()
+{
+    const gfx::LightingUBO block = lighting();
+    _encoder->setFragmentBytes(&block, sizeof(block), kFragmentLightSlot);
+    const gfx::MaterialUniforms material = materialUniforms(_currentMaterial);
+    _encoder->setFragmentBytes(&material, sizeof(material), kFragmentMaterialSlot);
+    //! An absent map samples the fallback texture, which its flag tells the shader to ignore.
+    const std::array<TextureHandle, 3> maps{_currentMaterial.normalMap, _currentMaterial.metallicRoughness,
+                                            _currentMaterial.emissiveMap};
+    for (NS::UInteger i = 0; i < maps.size(); ++i)
+    {
+        _encoder->setFragmentTexture(resolveSampledTexture(maps[i]), kFragmentFirstMapSlot + i);
+        _encoder->setFragmentSamplerState(_textureManager->samplerFor(maps[i]), kFragmentFirstMapSlot + i);
+    }
+}
+
+RendererCaps MetalRenderer::caps() const noexcept
+{
+    return RendererCaps::Pbr | RendererCaps::Instancing | RendererCaps::RenderTargets | RendererCaps::Compute |
+           RendererCaps::CustomPipelines;
+}
+
+void MetalRenderer::usePipeline(MtlPipelineManager *pipeline)
+{
+    if (_boundPipeline == pipeline)
+        return;
+    pipeline->bind(_encoder);
+    _boundPipeline = pipeline;
+}
+
+void MetalRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material, std::span<const glm::mat4> models)
+{
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+    if (_frameState != FrameState::InPass || !_activeInstanced)
+        return;
+    if (isValidHandle(material))
+        bindMaterial(material);
+    const MeshRecord *record = getMesh(mesh);
+    const IndexBufferRecord *indices = record ? _indexManager->resolve(record->indexBuffer) : nullptr;
+    MTL::Buffer *vertices = record ? _vertexManager->resolve(record->vertexBuffer) : nullptr;
+    if (!indices || !indices->buffer || !vertices)
+        return;
+
+    const Frustum frustum = viewFrustum();
+    _instanceScratch.clear();
+    for (const glm::mat4 &model : models)
+        if (!culled(*record, model, frustum))
+            _instanceScratch.push_back({model, glm::mat4(gfx::normalMatrixOf(model))});
+    if (_instanceScratch.empty())
+        return;
+
+    usePipeline(_activeInstanced);
+    TransformUniforms transform;
+    transform.view = _currentTransform.view;
+    transform.proj = _currentTransform.proj;
+    _encoder->setVertexBytes(&transform, sizeof(transform), kVertexUniformSlot);
+    bindSceneMaterial();
+    _encoder->setFragmentTexture(resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
+    _encoder->setFragmentSamplerState(_textureManager->samplerFor(_currentTexture), kFragmentAlbedoSlot);
+    _encoder->setVertexBuffer(vertices, 0, kVertexGeometrySlot);
+
+    const NS::UInteger bytes = _instanceScratch.size() * sizeof(InstanceUniforms);
+    //! setVertexBytes() copies up to 4 KB into the command buffer; more goes through a buffer it retains.
+    constexpr NS::UInteger kInlineLimit = 4096;
+    if (bytes <= kInlineLimit)
+        _encoder->setVertexBytes(_instanceScratch.data(), bytes, kVertexInstanceSlot);
+    else
+    {
+        const NS::SharedPtr<MTL::Buffer> buffer = adopt(
+            _deviceManager->getDevice()->newBuffer(_instanceScratch.data(), bytes, MTL::ResourceStorageModeShared));
+        if (!buffer)
+            return;
+        _encoder->setVertexBuffer(buffer.get(), 0, kVertexInstanceSlot);
+    }
+    _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(indices->indexCount),
+                                    indices->indexType, indices->buffer, 0,
+                                    static_cast<NS::UInteger>(_instanceScratch.size()));
+}
+
+void MetalRenderer::waitForFrames()
+{
+    //! Every committed frame's completion handler hands its permit back; this frame, if open, holds one.
+    if (!_frameSlots)
+        return;
+    const u32 committed = MTL_MAX_FRAMES_IN_FLIGHT - (_frameState == FrameState::Idle ? 0u : 1u);
+    for (u32 slot = 0; slot < committed; ++slot)
+        _frameSlots->acquire();
+    for (u32 slot = 0; slot < committed; ++slot)
+        _frameSlots->release();
+}
+
+BufferHandle MetalRenderer::createBuffer(usize bytes, std::span<const std::byte> initial)
+{
+    if (!_deviceManager || bytes == 0 || initial.size() > bytes)
+        return {};
+    NS::SharedPtr<MTL::Buffer> buffer =
+        adopt(_deviceManager->getDevice()->newBuffer(bytes, MTL::ResourceStorageModeShared));
+    if (!buffer)
+        return {};
+    std::memset(buffer->contents(), 0, bytes);
+    std::memcpy(buffer->contents(), initial.data(), initial.size());
+    _buffers.push_back(std::move(buffer));
+    return BufferHandle{static_cast<u32>(_buffers.size())};
+}
+
+MTL::Buffer *MetalRenderer::bufferOf(BufferHandle handle) const noexcept
+{
+    return isValidHandle(handle) && handle.value() <= _buffers.size() ? _buffers[handle.value() - 1].get() : nullptr;
+}
+
+bool MetalRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<const std::byte> bytes)
+{
+    MTL::Buffer *buffer = bufferOf(handle);
+    if (!buffer || offset > buffer->length() || bytes.size() > buffer->length() - offset ||
+        _frameState == FrameState::InPass)
+        return false;
+    if (_frameState == FrameState::Idle)
+    {
+        waitForFrames();
+        std::memcpy(static_cast<std::byte *>(buffer->contents()) + offset, bytes.data(), bytes.size());
+        return true;
+    }
+    //! A blit in this frame's command buffer, ordered by Metal against the buffer's other uses.
+    NS::SharedPtr<MTL::Buffer> staging =
+        adopt(_deviceManager->getDevice()->newBuffer(bytes.data(), bytes.size(), MTL::ResourceStorageModeShared));
+    if (!staging)
+        return false;
+    MTL::BlitCommandEncoder *blit = _commandBuffer->blitCommandEncoder();
+    blit->copyFromBuffer(staging.get(), 0, buffer, offset, bytes.size());
+    blit->endEncoding();
+    return true;
+}
+
+bool MetalRenderer::readBuffer(BufferHandle handle, usize offset, std::span<std::byte> out)
+{
+    MTL::Buffer *buffer = bufferOf(handle);
+    if (!buffer || offset > buffer->length() || out.size() > buffer->length() - offset)
+        return false;
+    waitForFrames();
+    std::memcpy(out.data(), static_cast<const std::byte *>(buffer->contents()) + offset, out.size());
+    return true;
+}
+
+ComputeHandle MetalRenderer::createCompute(const ComputeDesc &desc)
+{
+    if (!_deviceManager || desc.msl.empty())
+    {
+        INK_ERROR << "MetalRenderer: createCompute needs ComputeDesc::msl";
+        return {};
+    }
+    MTL::Device *device = _deviceManager->getDevice();
+    const NS::SharedPtr<NS::String> source = makeString(desc.msl.c_str());
+    NS::SharedPtr<MTL::CompileOptions> options = adopt(MTL::CompileOptions::alloc()->init());
+    options->setLanguageVersion(MTL::LanguageVersion3_0);
+    NS::Error *error = nullptr;
+    const NS::SharedPtr<MTL::Library> library = adopt(device->newLibrary(source.get(), options.get(), &error));
+    const NS::SharedPtr<NS::String> entry = makeString(desc.mslEntry.c_str());
+    const NS::SharedPtr<MTL::Function> function =
+        library ? adopt(library->newFunction(entry.get())) : NS::SharedPtr<MTL::Function>{};
+    NS::SharedPtr<MTL::ComputePipelineState> pipeline =
+        function ? adopt(device->newComputePipelineState(function.get(), &error))
+                 : NS::SharedPtr<MTL::ComputePipelineState>{};
+    if (!pipeline)
+    {
+        INK_ERROR << "MetalRenderer: compute kernel rejected"
+                  << (error ? std::string(": ") + error->localizedDescription()->utf8String() : std::string{});
+        return {};
+    }
+    _kernels.push_back({std::move(pipeline), desc.buffers, desc.mslThreadsPerGroup});
+    return ComputeHandle{static_cast<u32>(_kernels.size())};
+}
+
+void MetalRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle> buffers, glm::uvec3 groups,
+                             std::span<const std::byte> constants)
+{
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+    //! An encoder of its own, so no render pass may be open.
+    if (_frameState != FrameState::Recording || !isValidHandle(handle) || handle.value() > _kernels.size())
+        return;
+    const Kernel &kernel = _kernels[handle.value() - 1];
+    if (buffers.size() < kernel.buffers)
+        return;
+    MTL::ComputeCommandEncoder *encoder = _commandBuffer->computeCommandEncoder();
+    if (!encoder)
+        return;
+    encoder->setComputePipelineState(kernel.pipeline.get());
+    for (NS::UInteger i = 0; i < kernel.buffers; ++i)
+        encoder->setBuffer(bufferOf(buffers[i]), 0, i);
+    if (!constants.empty())
+        encoder->setBytes(constants.data(), constants.size(), kernel.buffers);
+    encoder->dispatchThreadgroups(MTL::Size(groups.x, groups.y, groups.z),
+                                  MTL::Size(kernel.threads.x, kernel.threads.y, kernel.threads.z));
+    encoder->endEncoding();
+}
+
+void MetalRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle material, BufferHandle instances,
+                                              BufferHandle arguments, usize argumentOffset)
+{
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+    MTL::Buffer *instanceBuffer = bufferOf(instances);
+    MTL::Buffer *argumentBuffer = bufferOf(arguments);
+    const MeshRecord *record = getMesh(mesh);
+    if (_frameState != FrameState::InPass || !_activeInstanced || !instanceBuffer || !argumentBuffer || !record ||
+        argumentOffset % 4 != 0 || argumentOffset + sizeof(DrawIndexedIndirect) > argumentBuffer->length())
+        return;
+    if (isValidHandle(material))
+        bindMaterial(material);
+    MTL::Buffer *vertices = _vertexManager->resolve(record->vertexBuffer);
+    const IndexBufferRecord *indices = _indexManager->resolve(record->indexBuffer);
+    if (!vertices || !indices || !indices->buffer)
+        return;
+    usePipeline(_activeInstanced);
+    TransformUniforms transform;
+    transform.view = _currentTransform.view;
+    transform.proj = _currentTransform.proj;
+    _encoder->setVertexBytes(&transform, sizeof(transform), kVertexUniformSlot);
+    bindSceneMaterial();
+    _encoder->setFragmentTexture(resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
+    _encoder->setFragmentSamplerState(_textureManager->samplerFor(_currentTexture), kFragmentAlbedoSlot);
+    _encoder->setVertexBuffer(vertices, 0, kVertexGeometrySlot);
+    static_assert(sizeof(InstanceUniforms) == sizeof(InstanceTransform));
+    _encoder->setVertexBuffer(instanceBuffer, 0, kVertexInstanceSlot);
+    _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, indices->indexType, indices->buffer, 0, argumentBuffer,
+                                    argumentOffset);
+}
+
+namespace
+{
+
+//! What the hardware gives a function: 16 sampler states, 31 buffer slots (the last is the mesh stream, the first the
+//! constants) and 4 KB through setBytes().
+constexpr u32 kMaxSamplers = 16;
+constexpr u32 kMaxPipelineBuffers = static_cast<u32>(kCustomVertexSlot - kCustomFirstBufferSlot);
+constexpr u32 kMaxPipelineConstantBytes = 4096;
+constexpr usize kPipelineBufferBytes = 64 * 1024;
+
+//! gfx::Vertex3D as location 0 position, 1 uv, 2 colour and 3 normal, one interleaved stream.
+NS::SharedPtr<MTL::VertexDescriptor> meshVertexDescriptor()
+{
+    struct Attribute
+    {
+        MTL::VertexFormat format;
+        usize offset;
+    };
+    const std::array<Attribute, 4> attributes{{{MTL::VertexFormatFloat3, offsetof(gfx::Vertex3D, pos)},
+                                               {MTL::VertexFormatFloat2, offsetof(gfx::Vertex3D, texCoord)},
+                                               {MTL::VertexFormatFloat4, offsetof(gfx::Vertex3D, color)},
+                                               {MTL::VertexFormatFloat3, offsetof(gfx::Vertex3D, normal)}}};
+    NS::SharedPtr<MTL::VertexDescriptor> descriptor = adopt(MTL::VertexDescriptor::alloc()->init());
+    for (NS::UInteger i = 0; i < attributes.size(); ++i)
+    {
+        MTL::VertexAttributeDescriptor *attribute = descriptor->attributes()->object(i);
+        attribute->setFormat(attributes[i].format);
+        attribute->setOffset(attributes[i].offset);
+        attribute->setBufferIndex(kCustomVertexSlot);
+    }
+    MTL::VertexBufferLayoutDescriptor *layout = descriptor->layouts()->object(kCustomVertexSlot);
+    layout->setStride(sizeof(gfx::Vertex3D));
+    layout->setStepFunction(MTL::VertexStepFunctionPerVertex);
+    return descriptor;
+}
+
+} // namespace
+
+PipelineLimits MetalRenderer::pipelineLimits() const noexcept
+{
+    if (!_deviceManager)
+        return {};
+    return {kMaxSamplers, kMaxPipelineBuffers, kMaxPipelineConstantBytes, kPipelineBufferBytes};
+}
+
+MtlPipelineManager &MetalRenderer::customVariant(CustomPipeline &pipeline, MTL::PixelFormat colour, bool depth) const
+{
+    for (const CustomPipeline::Variant &variant : pipeline.variants)
+        if (variant.colour == colour && variant.depth == depth)
+            return *variant.pipeline;
+    MtlPipelineManager::Options options;
+    options.vertexFunction = pipeline.vertexEntry.c_str();
+    options.fragmentFunction = pipeline.fragmentEntry.c_str();
+    options.fragmentLibrary = pipeline.fragment.get();
+    options.vertexDescriptor = pipeline.vertexDescriptor.get();
+    options.state = pipeline.state;
+    options.label = "Aura3D custom pipeline";
+    options.colorFormat = colour;
+    options.depthFormat = depth ? kDepthFormat : MTL::PixelFormatInvalid;
+    pipeline.variants.push_back(
+        {colour, depth, std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *pipeline.vertex, options)});
+    return *pipeline.variants.back().pipeline;
+}
+
+PipelineHandle MetalRenderer::createPipeline(const PipelineDesc &desc)
+{
+    if (!_deviceManager || desc.vertexMsl.empty() || desc.fragmentMsl.empty())
+    {
+        INK_ERROR << "MetalRenderer: createPipeline needs an initialised renderer and PipelineDesc::vertexMsl and "
+                     "fragmentMsl";
+        return {};
+    }
+    const PipelineLimits limits = pipelineLimits();
+    if (desc.textures > limits.textures || desc.buffers > limits.buffers || desc.constantBytes > limits.constantBytes ||
+        desc.constantBytes % 16 != 0)
+    {
+        INK_ERROR << "MetalRenderer: this device lets a pipeline read " << limits.textures << " textures, "
+                  << limits.buffers << " uniform buffers and " << limits.constantBytes
+                  << " bytes of constants (a multiple of 16)";
+        return {};
+    }
+    CustomPipeline pipeline;
+    pipeline.vertexEntry = desc.mslVertexEntry;
+    pipeline.fragmentEntry = desc.mslFragmentEntry;
+    pipeline.state = desc.state;
+    pipeline.input = desc.input;
+    pipeline.textures = desc.textures;
+    pipeline.buffers = desc.buffers;
+    pipeline.constantBytes = desc.constantBytes;
+    try
+    {
+        pipeline.vertex = std::make_unique<MtlShaderLibraryManager>(_deviceManager->getDevice(), desc.vertexMsl);
+        pipeline.fragment = std::make_unique<MtlShaderLibraryManager>(_deviceManager->getDevice(), desc.fragmentMsl);
+        if (desc.input == VertexInput::Mesh)
+            pipeline.vertexDescriptor = meshVertexDescriptor();
+        //! The window and every render target made so far; one made later gets its variant at its first draw.
+        customVariant(pipeline, kColorFormat, true);
+        for (const TargetPipelines &target : _targetPipelines)
+            customVariant(pipeline, target.colour, target.depth);
+    }
+    catch (const std::exception &error)
+    {
+        INK_ERROR << "MetalRenderer: pipeline rejected: " << error.what();
+        return {};
+    }
+    _customPipelines.push_back(std::move(pipeline));
+    return PipelineHandle{static_cast<u32>(_customPipelines.size())};
+}
+
+void MetalRenderer::drawPipeline(const PipelineDraw &draw)
+{
+    AURA_FRAME_SCOPE(FramePhase::RecordScene);
+    if (_frameState != FrameState::InPass || !isValidHandle(draw.pipeline) ||
+        draw.pipeline.value() > _customPipelines.size())
+        return;
+    CustomPipeline &pipeline = _customPipelines[draw.pipeline.value() - 1];
+    if (draw.constants.size() > pipeline.constantBytes)
+    {
+        INK_ERROR << "MetalRenderer: drawPipeline given " << draw.constants.size()
+                  << " bytes of constants; the pipeline has " << pipeline.constantBytes;
+        return;
+    }
+    for (u32 i = 0; i < pipeline.buffers; ++i)
+        if (i >= draw.buffers.size() || !bufferOf(draw.buffers[i]))
+        {
+            INK_ERROR << "MetalRenderer: drawPipeline needs buffer " << i << " (createBuffer)";
+            return;
+        }
+
+    const MeshRecord *record = nullptr;
+    const IndexBufferRecord *indices = nullptr;
+    MTL::Buffer *vertices = nullptr;
+    if (pipeline.input == VertexInput::Mesh)
+    {
+        record = getMesh(draw.mesh);
+        indices = record ? _indexManager->resolve(record->indexBuffer) : nullptr;
+        vertices = record ? _vertexManager->resolve(record->vertexBuffer) : nullptr;
+        if (!indices || !indices->buffer || !vertices)
+            return;
+    }
+    MtlPipelineManager *variant = nullptr;
+    try
+    {
+        variant = &customVariant(pipeline, _passColour, _passDepth);
+    }
+    catch (const std::exception &error)
+    {
+        INK_ERROR << "MetalRenderer: pipeline rejected for this pass: " << error.what();
+        return;
+    }
+
+    usePipeline(variant);
+    for (u32 i = 0; i < pipeline.textures; ++i)
+    {
+        //! An unbound slot samples white, as an unbound texture does everywhere else.
+        const TextureHandle handle = i < draw.textures.size() && _textureManager->resolve(draw.textures[i])
+                                         ? draw.textures[i]
+                                         : _fallbackTexture;
+        MTL::Texture *texture = _textureManager->resolve(handle);
+        MTL::SamplerState *sampler = _textureManager->samplerFor(handle);
+        _encoder->setVertexTexture(texture, i);
+        _encoder->setVertexSamplerState(sampler, i);
+        _encoder->setFragmentTexture(texture, i);
+        _encoder->setFragmentSamplerState(sampler, i);
+    }
+    for (u32 i = 0; i < pipeline.buffers; ++i)
+    {
+        MTL::Buffer *buffer = bufferOf(draw.buffers[i]);
+        _encoder->setVertexBuffer(buffer, 0, kCustomFirstBufferSlot + i);
+        _encoder->setFragmentBuffer(buffer, 0, kCustomFirstBufferSlot + i);
+    }
+    if (pipeline.constantBytes > 0)
+    {
+        _customConstants.assign(pipeline.constantBytes, std::byte{0});
+        std::ranges::copy(draw.constants, _customConstants.begin());
+        _encoder->setVertexBytes(_customConstants.data(), pipeline.constantBytes, kCustomConstantsSlot);
+        _encoder->setFragmentBytes(_customConstants.data(), pipeline.constantBytes, kCustomConstantsSlot);
+    }
+
+    if (pipeline.input == VertexInput::None)
+    {
+        _encoder->drawPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(0),
+                                 static_cast<NS::UInteger>(draw.vertexCount),
+                                 static_cast<NS::UInteger>(draw.instanceCount));
+        return;
+    }
+    _encoder->setVertexBuffer(vertices, 0, kCustomVertexSlot);
+    _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(indices->indexCount),
+                                    indices->indexType, indices->buffer, 0,
+                                    static_cast<NS::UInteger>(draw.instanceCount));
+}
+
 void MetalRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 {
-    if (!_renderPassActive || instanceCount == 0)
+    if (_frameState != FrameState::InPass || instanceCount == 0)
         return;
 
     const IndexBufferRecord *record = _indexManager->resolve(_currentIndexBuffer);
@@ -610,7 +1273,7 @@ void MetalRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 
 void MetalRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
-    if (!_renderPassActive || vertexCount == 0 || instanceCount == 0)
+    if (_frameState != FrameState::InPass || vertexCount == 0 || instanceCount == 0)
         return;
 
     if (!_vertexManager->resolve(_currentVertexBuffer))
@@ -656,6 +1319,8 @@ glm::uvec2 MetalRenderer::renderTargetSize() const noexcept
      * batch has to cover (the same reason the Vulkan path uses its swapchain
      * extent).
      */
+    if (_frameState == FrameState::InPass && _passTarget != 0)
+        return {_renderTargets[_passTarget - 1].width, _renderTargets[_passTarget - 1].height};
     return _layerManager ? glm::uvec2{_layerManager->getWidth(), _layerManager->getHeight()} : glm::uvec2{0};
 }
 
@@ -664,7 +1329,7 @@ void MetalRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::s
 {
     AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
 
-    if (!_renderPassActive || !_batchPipeline || vertices.empty() || indices.empty())
+    if (_frameState != FrameState::InPass || !_activeBatch || vertices.empty() || indices.empty())
         return;
 
     // Every encoded draw retains its own slice until this frame slot completes.
@@ -681,25 +1346,13 @@ void MetalRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::s
     _batchIndexUsed[_currentFrame] = indexOffset + indices.size_bytes();
 
     const BatchUniforms batch{batchTransform(space)};
-    if (!_batchPipelineBound)
-    {
-        _batchPipeline->bind(_encoder);
-        _batchPipelineBound = true;
-    }
+    usePipeline(_activeBatch);
     _encoder->setVertexBuffer(vertexBuffer, vertexOffset, kVertexGeometrySlot);
     _encoder->setVertexBytes(&batch, sizeof(batch), kVertexUniformSlot);
     _encoder->setFragmentTexture(resolveSampledTexture(texture), kFragmentAlbedoSlot);
-    _encoder->setFragmentSamplerState(_textureManager->getSampler(), kFragmentAlbedoSlot);
+    _encoder->setFragmentSamplerState(_textureManager->samplerFor(texture), kFragmentAlbedoSlot);
     _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(indices.size()),
                                     MTL::IndexTypeUInt32, indexBuffer, static_cast<NS::UInteger>(indexOffset));
-}
-
-void MetalRenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)
-{
-    _clearR = r;
-    _clearG = g;
-    _clearB = b;
-    _clearA = a;
 }
 
 } // namespace mtl

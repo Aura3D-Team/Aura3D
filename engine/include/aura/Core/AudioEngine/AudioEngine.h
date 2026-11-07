@@ -118,8 +118,6 @@ class AudioEngine
      *
      * @return An always-valid handle. A missing or undecodable file yields a
      *         short silent clip and a warning.
-     *
-     * @note Not cached here; use ResourceManager::loadSound() for that.
      */
     [[nodiscard]] AudioClipHandle loadClip(const std::string &path, AudioClipMode mode = AudioClipMode::Static);
 
@@ -219,6 +217,13 @@ class AudioEngine
     /// One playing instance of a clip. `generation` makes recycled slots
     /// safe: a stale handle's generation no longer matches its slot's, so the
     /// operation is ignored rather than applied to the voice that replaced it.
+    enum class VoiceState : u8
+    {
+        Free,
+        Playing,
+        Paused,
+    };
+
     struct Voice
     {
         AudioClipHandle clip;
@@ -233,8 +238,7 @@ class AudioEngine
         glm::vec3 position{0.0f};
         bool spatial = false;
         bool loop = false;
-        bool active = false;
-        bool paused = false;
+        VoiceState state = VoiceState::Free;
         f32 minDistance = 1.0f;
         f32 maxDistance = 100.0f;
         u16 generation = 0;

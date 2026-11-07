@@ -14,19 +14,21 @@ namespace aura3d
  * @struct Material
  * @brief Defines how a surface looks and reflects light (Visuals only).
  *
- * @note The built-in shaders currently consume @c albedo together with the
- *       directional light; @c tint, @c roughness and @c metallic are carried
- *       through the renderer state and exposed to callers, but are not yet read
- *       by the default GLSL. They are here so the shading model can grow
- *       without another API break.
+ * Metallic-roughness PBR on the GPU backends, glTF's model: a map multiplies its factor. The
+ * software backend lights albedo with the directional light alone (see RendererCaps::Pbr).
+ * The defaults, rough and non-metallic, light an albedo much as plain Lambert would.
  */
 struct Material
 {
     /// Albedo texture. An invalid handle leaves whatever texture is already bound.
     TextureHandle albedo;                      //! The base color image/texture.
     glm::vec4 tint = {1.0f, 1.0f, 1.0f, 1.0f}; //! Color multiplier applied over the texture.
-    float roughness = 0.5f;                    //! How shiny it is (0.0 = mirror, 1.0 = matte).
+    float roughness = 1.0f;                    //! How shiny it is (0.0 = mirror, 1.0 = matte).
     float metallic = 0.0f;                     //! What it's made of (0.0 = plastic/wood, 1.0 = pure metal).
+    TextureHandle normalMap;                   //! Tangent space, +Y up the image (glTF, OpenGL), Rgba8Unorm.
+    TextureHandle metallicRoughness;           //! Green roughness, blue metallic, scaling the factors (glTF).
+    TextureHandle emissiveMap;                 //! Scales @c emissive.
+    glm::vec3 emissive{0.0f};                  //! Light the surface gives off, unaffected by the lights.
 };
 
 } // namespace aura3d

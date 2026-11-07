@@ -21,10 +21,17 @@ MtlShaderLibraryManager::MtlShaderLibraryManager(MTL::Device *device)
 #if AURA_METAL_HAS_EMBEDDED_METALLIB
     loadPrecompiledLibrary(device);
 #else
-    compileSourceLibrary(device);
+    compileSourceLibrary(device, mtl_library_source);
 #endif
 
     INK_INFO << "Metal shader library loaded from " << (_precompiled ? "embedded metallib" : "embedded MSL source");
+}
+
+MtlShaderLibraryManager::MtlShaderLibraryManager(MTL::Device *device, const std::string &source)
+{
+    if (!device)
+        throw AuraException("MtlShaderLibraryManager: device is null");
+    compileSourceLibrary(device, source.c_str());
 }
 
 MtlShaderLibraryManager::~MtlShaderLibraryManager()
@@ -68,9 +75,9 @@ void MtlShaderLibraryManager::loadPrecompiledLibrary(MTL::Device *device)
 #endif
 }
 
-void MtlShaderLibraryManager::compileSourceLibrary(MTL::Device *device)
+void MtlShaderLibraryManager::compileSourceLibrary(MTL::Device *device, const char *text)
 {
-    const NS::SharedPtr<NS::String> source = makeString(mtl_library_source);
+    const NS::SharedPtr<NS::String> source = makeString(text);
 
     NS::SharedPtr<MTL::CompileOptions> options = adopt(MTL::CompileOptions::alloc()->init());
     /*

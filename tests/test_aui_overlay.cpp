@@ -177,7 +177,7 @@ void testStickyOverlayIgnoresOutsideClick()
     Harness harness;
     harness.root.setContent<Column>();
 
-    harness.root.overlay().open<Column>(OverlayDesc{.dismissOnOutsideClick = false});
+    harness.root.overlay().open<Column>(OverlayDesc{.flags = OverlayFlags::DismissOnEscape | OverlayFlags::TakeFocus});
     const OverlayLayer::Id id = harness.root.overlay().lastId();
     harness.frame();
 
@@ -204,7 +204,8 @@ void testModalBlocksTheContentBeneath()
 
     harness.frame();
 
-    auto &dialog = harness.root.overlay().open<Column>(OverlayDesc{.placement = Placement::Center, .modal = true});
+    auto &dialog = harness.root.overlay().open<Column>(
+        OverlayDesc{.placement = Placement::Center, .flags = OverlayFlags::Default | OverlayFlags::Modal});
     dialog.layout().minWidth = 100.0f;
     dialog.layout().minHeight = 60.0f;
 
@@ -490,16 +491,19 @@ void testModalOverlayIsADialog()
     Harness harness;
     harness.root.setContent<Column>().add<Button>("Behind");
 
-    auto &dialog = harness.root.overlay().open<Column>(OverlayDesc{.placement = Placement::Center, .modal = true});
+    auto &dialog = harness.root.overlay().open<Column>(
+        OverlayDesc{.placement = Placement::Center, .flags = OverlayFlags::Default | OverlayFlags::Modal});
     dialog.add<Label>("Delete everything?");
     dialog.add<Button>("Cancel");
     harness.frame();
 
     const AccessibilityNode tree = harness.root.accessibilityTree();
     const AccessibilityNode &top = tree.children.back();
-    AURA_CHECK(top.info.modal && top.info.role == Role::Window, "a modal overlay is a modal window");
+    AURA_CHECK(top.info.has(AccessibilityState::Modal) && top.info.role == Role::Window,
+               "a modal overlay is a modal window");
     AURA_CHECK(reads(top, "Delete everything?") && reads(top, "Cancel"), "and holds what is in the dialog");
-    AURA_CHECK(!tree.info.modal, "the page behind is not marked: it is the bridge that hides it");
+    AURA_CHECK(!tree.info.has(AccessibilityState::Modal),
+               "the page behind is not marked: it is the bridge that hides it");
 }
 
 void testTooltipIsADescriptionNotANode()
@@ -535,7 +539,8 @@ void testFocusIsTrappedInTheTopmostOverlay()
     harness.frame();
     outside.requestFocus();
 
-    auto &dialog = harness.root.overlay().open<Column>(OverlayDesc{.modal = true});
+    auto &dialog =
+        harness.root.overlay().open<Column>(OverlayDesc{.flags = OverlayFlags::Default | OverlayFlags::Modal});
     auto &first = dialog.add<Button>("First");
     auto &second = dialog.add<Button>("Second");
 
@@ -785,7 +790,7 @@ void testClickThroughOverlayDoesNotBlockDismissal()
      * dismissal stack at all.
      */
     auto &veil = harness.root.overlay().open<Column>(
-        OverlayDesc{.placement = Placement::Center, .dismissOnOutsideClick = false});
+        OverlayDesc{.placement = Placement::Center, .flags = OverlayFlags::DismissOnEscape | OverlayFlags::TakeFocus});
     veil.setHitTestVisible(false);
     veil.layout().minWidth = 400.0f;
     veil.layout().minHeight = 300.0f;

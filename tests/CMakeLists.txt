@@ -14,14 +14,18 @@ set(AURA_TEST_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 # which reports the skip rather than passing silently.
 set(AURA_TEST_SUITES
     test_allocation_tracker
+    test_asset_loader
     test_audio_clip_loader
     test_audio_engine
     test_audio_realtime
     test_benchmark_stats
     test_canvas
     test_cpu_raster
+    test_culling
     test_debug_mode_report
     test_font_atlas
+    test_golden
+    test_gltf
     test_image_loader
     test_mesh_loader
     test_renderer_factory
@@ -82,4 +86,30 @@ add_dependencies(test_shader_loader aura3d_embedded_shaders)
 if(AURA_ENABLE_UI AND NOT CMAKE_CROSSCOMPILING)
     add_executable(benchmark_runtime benchmark_runtime.cpp)
     target_link_libraries(benchmark_runtime PRIVATE Aura3D::Aura3D)
+    # The compute and pipeline checks' shaders: SPIR-V next to the binary when a compiler is found; GL reads the source.
+    target_compile_definitions(benchmark_runtime PRIVATE
+        AURA_TEST_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+        AURA_TEST_SPIRV_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders")
+    if(AURA_GLSL_COMPILER)
+        set(_test_spirv "")
+        foreach(_name grid.comp pipeline.vert pipeline.frag depth.frag shade.frag fullscreen.vert invert.frag many.frag)
+            set(_source "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${_name}")
+            set(_spirv "${CMAKE_CURRENT_BINARY_DIR}/shaders/${_name}.spv")
+            if(AURA_GLSL_COMPILER MATCHES "glslang")
+                set(_compile "${AURA_GLSL_COMPILER}" -V "${_source}" -o "${_spirv}")
+            else()
+                set(_compile "${AURA_GLSL_COMPILER}" "${_source}" -o "${_spirv}")
+            endif()
+            add_custom_command(
+                OUTPUT "${_spirv}"
+                COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+                COMMAND ${_compile}
+                DEPENDS "${_source}"
+                COMMENT "Compiling SPIR-V: ${_name}"
+                VERBATIM)
+            list(APPEND _test_spirv "${_spirv}")
+        endforeach()
+        add_custom_target(benchmark_runtime_shaders DEPENDS ${_test_spirv})
+        add_dependencies(benchmark_runtime benchmark_runtime_shaders)
+    endif()
 endif()

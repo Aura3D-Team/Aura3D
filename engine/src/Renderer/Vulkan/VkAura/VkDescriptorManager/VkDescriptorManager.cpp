@@ -25,7 +25,7 @@ VkDescriptorManager::VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTexture
      * per-texture-per-image-per-pipeline scheme exhausted a 256-descriptor
      * pool around the 42nd texture).
      */
-    std::array<VkDescriptorPoolSize, 3> poolSizes = {};
+    std::array<VkDescriptorPoolSize, 4> poolSizes = {};
 
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<u32>(_pool_size);
@@ -36,6 +36,10 @@ VkDescriptorManager::VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTexture
     //! The transform set: one camera slot per setTransform(), picked by dynamic offset.
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     poolSizes[2].descriptorCount = static_cast<u32>(_pool_size);
+
+    //! The material table, once per light set.
+    poolSizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[3].descriptorCount = static_cast<u32>(_pool_size);
 
     _poolCreateInfo = {};
     _poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;

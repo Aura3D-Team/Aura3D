@@ -305,6 +305,66 @@ void checkTexturedSpans()
     }
 }
 
+void checkTextureAddressing()
+{
+    test::FakeWindow window;
+    JobSystem jobs{4};
+    Framebuffer frame{window, {.width = 16, .height = 16}, jobs};
+    const glm::vec4 white{1};
+    const auto quad = [&](f32 size, f32 uvSpan, const cpu::Texture *texture)
+    {
+        frame.clear();
+        const ScreenVertex a{0, 0, 0, 1, {0, 0}, white}, b{size, 0, 0, 1, {uvSpan, 0}, white};
+        const ScreenVertex c{size, size, 0, 1, {uvSpan, uvSpan}, white}, d{0, size, 0, 1, {0, uvSpan}, white};
+        frame.queueTriangle({a, b, c}, texture, Mode::Batch);
+        frame.queueTriangle({a, c, d}, texture, Mode::Batch);
+        frame.flush();
+    };
+
+    //! Levels are stored back to back, as CPURenderer::createTexture() lays a chain out.
+    std::vector<cpu::Texture> chain;
+    chain.emplace_back(16, 16);
+    chain.emplace_back(8, 8);
+    std::ranges::fill(chain[0].data, 0xFFFF0000u);
+    std::ranges::fill(chain[1].data, 0xFF00FF00u);
+    chain[0].levels = 2;
+    quad(16, 1, chain.data());
+    AURA_CHECK(sameColor(frame.getPixel({8, 8}).rgb, 0xFFFF0000u), "mips: a texel per pixel samples level 0");
+    quad(4, 1, chain.data());
+    AURA_CHECK(sameColor(frame.getPixel({2, 2}).rgb, 0xFF00FF00u), "mips: a minified quad samples the smaller level");
+
+    cpu::Texture stripes(2, 1);
+    stripes.data = {0xFF000000u, 0xFFFFFFFFu};
+    stripes.nearest = true;
+    const auto row = [&]
+    {
+        std::array<bool, 8> bright{};
+        for (i32 x = 0; x < 8; ++x)
+            bright[static_cast<usize>(x)] = (frame.getPixel({x, 0}).rgb & 0xFFu) > 128u;
+        return bright;
+    };
+    stripes.wrapU = stripes.wrapV = TextureWrap::Repeat;
+    quad(8, 2, &stripes);
+    AURA_CHECK((row() == std::array<bool, 8>{false, false, true, true, false, false, true, true}),
+               "repeat: two periods of black, white across the quad");
+    stripes.wrapU = stripes.wrapV = TextureWrap::MirroredRepeat;
+    quad(8, 2, &stripes);
+    AURA_CHECK((row() == std::array<bool, 8>{false, false, true, true, true, true, false, false}),
+               "mirrored repeat: the second period runs backwards");
+    stripes.wrapU = stripes.wrapV = TextureWrap::ClampToEdge;
+    quad(8, 2, &stripes);
+    AURA_CHECK((row() == std::array<bool, 8>{false, false, true, true, true, true, true, true}),
+               "clamp: past 1 the edge texel repeats");
+
+    AURA_CHECK(mipLevelCount(1, 1) == 1 && mipLevelCount(16, 9) == 5 && mipLevelCount(0, 4) == 0,
+               "mipLevelCount: a full chain down to 1x1");
+    AURA_CHECK(regionFits(0, 0, 4, 4, 4, 4) && regionFits(4, 4, 0, 0, 4, 4) && regionFits(1, 2, 3, 2, 4, 4),
+               "regionFits: up to and including the far edge");
+    AURA_CHECK(!regionFits(1, 0, 4, 1, 4, 4) && !regionFits(5, 0, 0, 0, 4, 4) &&
+                   !regionFits(1, 0, 0xFFFFFFFFu, 1, 4, 4),
+               "regionFits: past the edge, a start outside, and a width that would wrap");
+}
+
 void checkDeferredClear()
 {
     test::FakeWindow window;
@@ -361,7 +421,7 @@ void checkSingularLighting()
                                                            {{1, -1, 0}, {}, {1, 1, 1, 1}, {0, 0, 1}},
                                                            {{-1, 1, 0}, {}, {1, 1, 1, 1}, {0, 0, 1}}}));
     renderer.bindIndexBuffer(renderer.createIndexBuffer(std::vector<u32>{0, 1, 2}));
-    renderer.setLight({.direction = {0, 0, -1}, .intensity = 1, .ambient = 0});
+    renderer.setLights(std::array{gfx::Light{.direction = {0, 0, -1}}});
     for (f32 scale : {0.f, 1.f, 2.f})
         for (bool indexed : {false, true})
         {
@@ -403,6 +463,7 @@ int main()
 
     checkRasterization();
     checkTexturedSpans();
+    checkTextureAddressing();
     checkDeferredClear();
     checkBandBoundaries();
 #ifdef AURA_HAS_CPU

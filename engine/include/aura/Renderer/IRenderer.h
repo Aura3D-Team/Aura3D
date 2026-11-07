@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <string>
@@ -17,10 +18,14 @@
 
 #include "aura/Core/AuraCore.h"
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Core/Culling.h"
 #include "aura/Core/Profiling/GpuTiming.h"
 #include "aura/Renderer/Canvas.h"
+#include "aura/Renderer/Compute.h"
 #include "aura/Renderer/Material.h"
+#include "aura/Renderer/Pipeline.h"
 #include "aura/Renderer/RenderHandles.h"
+#include "aura/Renderer/Texture.h"
 
 //! Forward-declared, not included: only initialize()'s parameter type needs
 //! the name, and every backend but the software rasteriser ignores it, so
@@ -119,6 +124,18 @@ inline const char *RendererChoiceToString(RendererChoice c)
  * * Serves as the abstraction layer for resource allocation, windowing setups,
  * pipeline bindings, and frame cycle management regardless of the targeted backend API.
  */
+/// What a backend supports beyond the API every backend has.
+enum class RendererCaps : u8
+{
+    None = 0,
+    Pbr = 1u << 0u,           //!< Material maps, metallic-roughness shading, point and spot lights.
+    Instancing = 1u << 1u,    //!< drawMeshInstanced() is one instanced draw rather than a loop.
+    RenderTargets = 1u << 2u, //!< createRenderTarget().
+    Compute = 1u << 3u,       //!< Buffers, dispatch() and drawMeshInstancedIndirect(); software runs ComputeDesc::cpu.
+    CustomPipelines = 1u << 4u, //!< createPipeline() and drawPipeline(): your own shaders.
+};
+INK_ENUM_FLAGS(RendererCaps) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 class IRenderer
 {
   public:
@@ -163,6 +180,8 @@ class IRenderer
      * @return VertexBufferHandle Opaque pointer abstraction for pipeline binding.
      */
     virtual VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices) = 0;
+    //! Overwrites @p handle's vertices from the start; updateMesh() has checked the count fits.
+    virtual bool updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices);
 
     /**
      * @brief Allocates an indexed layout element buffer using 16-bit short tags.
@@ -186,7 +205,7 @@ class IRenderer
      * @param[in] a Alpha transparency channel value (0-255, defaults to 255).
      * @return TextureHandle Opaque address binding reference tag.
      */
-    virtual TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) = 0;
+    virtual TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255);
 
     /**
      * @brief Uploads tightly packed 8-bit RGBA pixels as a sampleable texture.
@@ -257,6 +276,57 @@ class IRenderer
      */
     virtual TextureHandle createTextureFromFile(const std::string &path);
 
+    /// The box around @p mesh's vertices in its own space; empty for an unknown handle. With
+    /// transformed() it places the mesh in the world, for culling or collision of your own.
+    [[nodiscard]] Aabb meshBounds(MeshHandle mesh) const;
+
+    /**
+     * @brief The full texture path: format, mip chain and sampler.
+     *
+     * @p pixels holds width * height * bytesPerTexel(format) bytes, rows tightly packed. A mipmapped
+     * texture is immutable: updateTextureRegion() rejects it. The other create* functions keep their
+     * historical state -- RGBA8 sampled as stored, one level -- so existing scenes render unchanged.
+     *
+     * @code
+     * const TextureHandle albedo = renderer.createTexture(
+     *     {.width = w, .height = h, .format = TextureFormat::Rgba8Srgb, .sampler = {.maxAnisotropy = 8}},
+     *     std::as_bytes(std::span(pixels)));
+     * @endcode
+     */
+    virtual TextureHandle createTexture(const TextureDesc &desc, std::span<const std::byte> pixels);
+
+    /**
+     * @brief An offscreen target: draws between beginRenderPass(target) and endRenderPass() land in it,
+     *        and renderTargetTexture() samples the result in any later pass.
+     *
+     * Single-sampled whatever the window's MSAA, cleared to the clear colour at the start of every pass.
+     * Screen batches and canvasView() use the target's size while it is bound.
+     *
+     * @code
+     * const RenderTargetHandle mirror = renderer.createRenderTarget({.width = 512, .height = 512});
+     * renderer.beginRenderPass(mirror);
+     * drawScene(renderer);
+     * renderer.endRenderPass();
+     * renderer.beginRenderPass();
+     * renderer.drawMesh(mirrorQuad, renderer.renderTargetTexture(mirror));
+     * renderer.endRenderPass();
+     * @endcode
+     */
+    virtual RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc);
+    [[nodiscard]] virtual TextureHandle renderTargetTexture(RenderTargetHandle target) const;
+    /// New storage at @p width x @p height, its contents undefined; the handle and its texture handle stay valid,
+    /// so a window-sized target follows the window. Between frames only, since the GPU may still use the old.
+    virtual bool resizeRenderTarget(RenderTargetHandle target, u32 width, u32 height);
+
+    /// The target's pixels as RGBA8 rows, top row first, as stored: an sRGB target reads back encoded,
+    /// half floats clamp to [0, 1]. Waits for the GPU to go idle, so it is for tests and captures, not
+    /// every frame. False when @p target is unknown or @p rgba is not width * height * 4 bytes.
+    virtual bool readPixels(RenderTargetHandle target, std::span<u8> rgba);
+
+    /// createTextureFromFile() with @p desc's format, mipmaps and sampler; the size comes from the file.
+    /// An 8-bit image cannot fill Rgba16Float, so @p desc must name an Rgba8 format.
+    TextureHandle createTextureFromFile(const std::string &path, TextureDesc desc);
+
     /**
      * @brief Generates the embedded magenta/black "missing texture" pattern.
      *
@@ -292,6 +362,17 @@ class IRenderer
      * @return MeshHandle referencing the uploaded pair.
      */
     MeshHandle createMesh(gfx::Mesh3D &&mesh);
+
+    /**
+     * @brief Replaces @p mesh's vertices, as many as it was created with; its indices stay. For skinned or
+     *        otherwise deforming geometry, every frame if need be.
+     *
+     * A copy recorded into the frame on Vulkan and Metal, so call it between beginFrame() and the pass that
+     * draws the mesh, with no pass open. The bounds culling uses follow.
+     *
+     * @return false for an unknown mesh, a different vertex count, or outside that window.
+     */
+    bool updateMesh(MeshHandle mesh, std::span<const gfx::Vertex3D> vertices);
 
     /**
      * @brief Draws a whole mesh, replacing the bind-VB / bind-IB / drawIndexed triple.
@@ -331,9 +412,20 @@ class IRenderer
      * Prefer this for scene submission at high object counts; the per-item
      * calls remain available and unchanged.
      *
+     * Items whose bounds lie wholly outside the camera set by setTransform() are
+     * skipped; their material still becomes the current one.
+     *
      * @param[in] items Drawables for this frame, drawn in the given order.
      */
     virtual void drawMeshes(std::span<const DrawItem> items);
+
+    /**
+     * @brief @p mesh once per entry of @p models, with @p material, culled like drawMeshes().
+     *
+     * The GPU backends draw every visible instance in one instanced call, so a forest of one tree
+     * costs one draw; the software backend runs it through drawMeshes().
+     */
+    virtual void drawMeshInstanced(MeshHandle mesh, MaterialHandle material, std::span<const glm::mat4> models);
 
     /**
      * @brief Registers a material so it can be bound by handle.
@@ -345,21 +437,55 @@ class IRenderer
      */
     virtual void bindMaterial(MaterialHandle handle);
 
-    /**
-     * @brief Sets the directional light consumed by the built-in shaders.
-     *
-     * Backends override this to push the data to the GPU; the base
-     * implementation records it so getLight() always reflects the last value.
-     */
-    virtual void setLight(const gfx::LightUBO &light);
+    /// Every light the built-in shaders use, replacing the last set; the first kMaxLights count. Until called, one
+    /// default Light and a 0.15 ambient. A backend without RendererCaps::Pbr uses only directional and ambient ones.
+    virtual void setLights(std::span<const gfx::Light> lights);
 
-    /**
-     * @brief Returns the directional light currently in effect.
-     */
-    const gfx::LightUBO &getLight() const
-    {
-        return _light;
-    }
+    /// What this backend can do beyond the common API.
+    [[nodiscard]] virtual RendererCaps caps() const noexcept;
+
+    /// @name Your own shaders (RendererCaps::CustomPipelines)
+    /// @{
+    /// Builds a pipeline from @p desc's shaders, for the window and for every render target: an invalid handle,
+    /// logged, when the backend takes none or a shader is rejected.
+    virtual PipelineHandle createPipeline(const PipelineDesc &desc);
+    /// How many textures, uniform buffers and bytes of constants a pipeline may read here; all zero without
+    /// RendererCaps::CustomPipelines.
+    [[nodiscard]] virtual PipelineLimits pipelineLimits() const noexcept;
+    /// Draws with @p draw's pipeline into the open pass. The built-in shaders' bindings are left as they were.
+    virtual void drawPipeline(const PipelineDraw &draw);
+    /// Multiply a projection by this when you draw a pipeline into @p target (invalid: the window): identity, except
+    /// where a backend stores its targets upside down (OpenGL), so a target reads the same everywhere.
+    [[nodiscard]] virtual glm::mat4 clipCorrection(RenderTargetHandle target = {}) const noexcept;
+    /// @}
+
+    /// @name Buffers, compute and indirect drawing (buffers: RendererCaps::CustomPipelines; compute: Compute)
+    /// @{
+    /// GPU memory that kernels write and draws read: a pipeline's uniform buffers (BufferN, up to 16 KiB), storage,
+    /// per-instance data and draw arguments at once. The rest past @p initial is zero.
+    virtual BufferHandle createBuffer(usize bytes, std::span<const std::byte> initial = {});
+    /// Overwrites @p bytes at @p offset: a copy recorded into the frame between passes, like updateMesh(), or
+    /// immediately (after the GPU goes idle) outside a frame.
+    virtual bool updateBuffer(BufferHandle buffer, usize offset, std::span<const std::byte> bytes);
+    /// What frames already ended wrote. Waits for the GPU, so it is for tests and tools.
+    virtual bool readBuffer(BufferHandle buffer, usize offset, std::span<std::byte> out);
+    virtual ComputeHandle createCompute(const ComputeDesc &desc);
+    /// @p groups workgroups of @p kernel over @p buffers, with no pass open; what it writes is visible to the draws,
+    /// dispatches and copies after it.
+    virtual void dispatch(ComputeHandle kernel, std::span<const BufferHandle> buffers, glm::uvec3 groups,
+                          std::span<const std::byte> constants = {});
+    /// drawMeshInstanced() with its instances (InstanceTransform) and its DrawIndexedIndirect read from buffers a
+    /// kernel may have filled, so the GPU decides how many; inside a pass, with no culling of its own. The software
+    /// backend draws the whole mesh per instance whatever the arguments' index range.
+    virtual void drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle material, BufferHandle instances,
+                                           BufferHandle arguments, usize argumentOffset = 0);
+    /// The index count to put in a DrawIndexedIndirect for @p mesh; 0 for an unknown mesh.
+    [[nodiscard]] u32 meshIndexCount(MeshHandle mesh) const;
+    /// @}
+    /// @p target's size in pixels; zero for an unknown handle.
+    [[nodiscard]] virtual glm::uvec2 targetSize(RenderTargetHandle target) const;
+
+    [[nodiscard]] std::span<const gfx::Light> lights() const noexcept;
 
     /**
      * @brief Returns the material bound by the most recent bindMaterial() call.
@@ -418,6 +544,8 @@ class IRenderer
      * run()'s callback or a hand-rolled loop.
      */
     virtual void beginRenderPass() = 0;
+    /// The same into @p target, from createRenderTarget(); an invalid handle is the window.
+    virtual void beginRenderPass(RenderTargetHandle target);
 
     /**
      * @brief Closes the render pass opened by beginRenderPass(), submitting
@@ -438,25 +566,25 @@ class IRenderer
      * @brief Submits projection matrix variables to Uniform Buffer Objects.
      * @param[in] ubo Constant transformation memory blocks containing view values.
      */
-    virtual void setTransform(const gfx::TransformUBO &ubo) = 0;
+    virtual void setTransform(const gfx::TransformUBO &ubo);
 
     /**
      * @brief Connects selected vector vertex details into the dynamic draw pipeline.
      * @param[in] handle Reference descriptor token identifying the intended vertex dataset.
      */
-    virtual void bindVertexBuffer(VertexBufferHandle handle) = 0;
+    virtual void bindVertexBuffer(VertexBufferHandle handle);
 
     /**
      * @brief Connects index reference tables into the dynamic draw pipeline.
      * @param[in] handle Reference descriptor token identifying the intended index arrangement.
      */
-    virtual void bindIndexBuffer(IndexBufferHandle handle) = 0;
+    virtual void bindIndexBuffer(IndexBufferHandle handle);
 
     /**
      * @brief Connects image texture mappings into active material execution environments.
      * @param[in] handle Reference descriptor token identifying the target texture layout map.
      */
-    virtual void bindTexture(TextureHandle handle) = 0;
+    virtual void bindTexture(TextureHandle handle);
 
     /**
      * @brief Instructs backend pipelines to map visual constructs from indexed connection tables.
@@ -495,7 +623,7 @@ class IRenderer
      * @param[in] b Blue element normalized value (0.0f - 1.0f).
      * @param[in] a Alpha channel transparency scale (0.0f - 1.0f, defaults to 1.0f).
      */
-    virtual void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f) = 0;
+    virtual void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f);
 
     /**
      * @brief Drives the render loop: polls window events, then wraps
@@ -509,10 +637,20 @@ class IRenderer
     void run(move_only_function<void()> onFrame);
 
     /**
+     * @brief Rebuilds the built-in 3D pipelines (lit, instanced) from the shaders under @p directory,
+     * laid out as an app's staged resources/shaders: vulkan/ *.spv, opengl/ and common/ GLSL, metal/ MSL.
+     *
+     * Between frames only. What fails to compile or link leaves the running shader in place and is logged; run()
+     * calls this by itself when renderer.shader_hot_reload is on and a file under paths.shaders changes.
+     * @return true when every pipeline was rebuilt; false where the backend has no shaders (software) or any failed.
+     */
+    virtual bool reloadShaders(const std::filesystem::path &directory);
+
+    /**
      * @brief Fetches access coordinates belonging to the overarching client operating window instance.
      * @return wma::IWindowManager* Raw address reference to backend window properties.
      */
-    virtual wma::IWindowManager *getWindowManager() = 0;
+    virtual wma::IWindowManager *getWindowManager();
 
     /**
      * @brief Identifies which rendering driver choice is managing the internal abstract interface.
@@ -572,6 +710,17 @@ class IRenderer
     }
 
   protected:
+    //! Clears the window's resized flag; true when it was set.
+    [[nodiscard]] bool consumeResize() noexcept;
+
+    //! A GPU backend's recording state: no frame, a frame, or a render pass inside it.
+    enum class FrameState : u8
+    {
+        Idle,
+        Recording,
+        InPass,
+    };
+
     /// Clip transform the batch pipeline applies for @p space on this backend.
     [[nodiscard]] glm::mat4 batchTransform(gfx::BatchSpace space) const;
 
@@ -596,7 +745,14 @@ class IRenderer
         VertexBufferHandle vertexBuffer;
         IndexBufferHandle indexBuffer;
         u32 indexCount = 0;
+        u32 vertexCount = 0;
+        Aabb bounds; //! In the mesh's own space, for culling.
     };
+
+    //! The camera's view volume from the last setTransform().
+    [[nodiscard]] Frustum viewFrustum() const noexcept;
+    //! @p mesh at @p model lies wholly outside @p frustum, so drawing it would draw nothing.
+    [[nodiscard]] static bool culled(const MeshRecord &mesh, const glm::mat4 &model, const Frustum &frustum) noexcept;
 
     //! Resolves a 1-based MeshHandle, or nullptr when it does not refer to a mesh.
     const MeshRecord *getMesh(MeshHandle handle) const;
@@ -609,14 +765,26 @@ class IRenderer
     void clearSharedResources();
 
     wma::WindowDetails _windowDetails; //! Copy of current platform dimension attributes
+    //! Declared before anything a backend builds on it, and reset by each backend's cleanup().
+    std::unique_ptr<wma::IWindowManager> _windowManagerApi;
     bool _running = false;             //! Control status tracker managing main loop life
     //! Backends create their queries lazily, on the first frame that sees this set.
     bool _gpuTimingEnabled = false;
 
     std::vector<MeshRecord> _meshes;  //! Mesh registry; handle == index + 1
+    std::vector<DrawItem> _instanceItems; //! drawMeshInstanced()'s scratch, kept so a frame does not allocate
     std::vector<Material> _materials; //! Material registry; handle == index + 1
-    gfx::LightUBO _light{};           //! Directional light for the built-in shaders
+    std::vector<gfx::Light> _lights{gfx::Light{}, gfx::Light{.type = gfx::LightType::Ambient, .intensity = 0.15f}};
+    //! The directional and punctual lights packed for a shader.
+    [[nodiscard]] gfx::LightingUBO lighting() const noexcept;
+    //! @p material's factors and map flags; Vulkan fills in the bindless indices itself.
+    [[nodiscard]] static gfx::MaterialUniforms materialUniforms(const Material &material) noexcept;
     Material _currentMaterial{};      //! Material bound by the last bindMaterial()
+    MaterialHandle _currentMaterialHandle; //! Its handle; invalid until a material is bound
+    VertexBufferHandle _currentVertexBuffer;
+    IndexBufferHandle _currentIndexBuffer;
+    TextureHandle _currentTexture;
+    f32 _clearR = 0.05f, _clearG = 0.05f, _clearB = 0.05f, _clearA = 1.0f;
 
     /*
      * Transform from the last setTransform(). Lives here rather than being

@@ -16,10 +16,13 @@ set(_AURA_EMBED_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/EmbedShaderHeader.cmake")
 
 # Registers one generated header; SOURCES are extra build inputs, INPUTS what the script embeds.
 function(_aura_embed_header KIND HEADER)
-    cmake_parse_arguments(PARSE_ARGV 2 ARG "" "METALLIB" "INPUTS;SOURCES")
+    cmake_parse_arguments(PARSE_ARGV 2 ARG "" "METALLIB;INCLUDE_DIR" "INPUTS;SOURCES")
     set(_metallib_arg "")
     if(ARG_METALLIB)
         set(_metallib_arg "-DMETALLIB=${ARG_METALLIB}")
+    endif()
+    if(ARG_INCLUDE_DIR)
+        list(APPEND _metallib_arg "-DINCLUDE_DIR=${ARG_INCLUDE_DIR}")
     endif()
     add_custom_command(
         OUTPUT  "${HEADER}"
@@ -35,6 +38,8 @@ endfunction()
 
 function(aura_embed_shaders TARGET)
     set(_shaders "${PROJECT_SOURCE_DIR}/resources/shaders")
+    # #include targets shared by the GLSL backends: glslc resolves them, the GL embedder splices them in.
+    file(GLOB _common CONFIGURE_DEPENDS "${_shaders}/common/*.glsl")
     set(_include "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
     set(_renderer "${_include}/aura/Renderer")
 
@@ -45,7 +50,8 @@ function(aura_embed_shaders TARGET)
 
     if(AURA_ENABLE_OPENGL)
         file(GLOB _glsl CONFIGURE_DEPENDS "${_shaders}/opengl/*.vert" "${_shaders}/opengl/*.frag")
-        _aura_embed_header(glsl "${_renderer}/OpenGL/EmbeddedGlsl.h" INPUTS ${_glsl})
+        _aura_embed_header(glsl "${_renderer}/OpenGL/EmbeddedGlsl.h" INPUTS ${_glsl} SOURCES ${_common}
+                           INCLUDE_DIR "${_shaders}/common")
     endif()
 
     if(AURA_ENABLE_VULKAN)
@@ -62,15 +68,15 @@ function(aura_embed_shaders TARGET)
             get_filename_component(_name "${_shader}" NAME)
             set(_module "${CMAKE_CURRENT_BINARY_DIR}/generated/spirv/${_name}.spv")
             if(AURA_GLSL_COMPILER MATCHES "glslang")
-                set(_compile "${AURA_GLSL_COMPILER}" -V "${_shader}" -o "${_module}")
+                set(_compile "${AURA_GLSL_COMPILER}" -V "-I${_shaders}/common" "${_shader}" -o "${_module}")
             else()
-                set(_compile "${AURA_GLSL_COMPILER}" "${_shader}" -o "${_module}")
+                set(_compile "${AURA_GLSL_COMPILER}" "-I${_shaders}/common" "${_shader}" -o "${_module}")
             endif()
             add_custom_command(
                 OUTPUT  "${_module}"
                 COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated/spirv"
                 COMMAND ${_compile}
-                DEPENDS "${_shader}"
+                DEPENDS "${_shader}" ${_common}
                 COMMENT "Compiling SPIR-V: ${_name}"
                 VERBATIM
             )

@@ -117,9 +117,6 @@ void Engine::_createAudio()
                                                    static_cast<u32>(config->get(aura3d::setting::audioMaxVoices)));
 
     _audio->setMasterVolume(static_cast<f32>(config->get(aura3d::setting::audioVolume)));
-
-    if (_resources)
-        _resources->setAudioEngine(_audio.get());
 }
 
 void Engine::_createDebugMode()
@@ -171,11 +168,6 @@ void Engine::_adoptRenderer(aura3d::RendererChoice choice)
     if (const wma::IWindowManager *window = _renderer->getWindowManager())
         INK_INFO << "Window backend: " << aura3d::WindowBackendToString(window->getBackendType());
 
-    if (_resources)
-        _resources->setRenderer(_renderer.get());
-    else
-        _resources = std::make_unique<aura3d::ResourceManager>(_renderer.get());
-
 #ifdef AURA_ENABLE_DEBUG_MODE
     if (_debugMode)
         _debugMode->attachRenderer(_renderer.get());
@@ -195,9 +187,6 @@ void Engine::switchBackend(aura3d::RendererChoice choice)
     INK_INFO << "switchBackend: " << aura3d::RendererChoiceToString(_rendererChoice) << " -> "
              << aura3d::RendererChoiceToString(resolved);
 
-    if (_resources)
-        _resources->unloadAll();
-
 #ifdef AURA_ENABLE_DEBUG_MODE
     if (_debugMode)
         _debugMode->attachRenderer(nullptr);
@@ -208,10 +197,6 @@ void Engine::switchBackend(aura3d::RendererChoice choice)
         _renderer->cleanup();
         _renderer.reset();
     }
-    //! Until _adoptRenderer() succeeds; if every backend fails it throws, and nothing may point at the old renderer.
-    if (_resources)
-        _resources->setRenderer(nullptr);
-
     _configureWindow();
 
     _adoptRenderer(resolved);

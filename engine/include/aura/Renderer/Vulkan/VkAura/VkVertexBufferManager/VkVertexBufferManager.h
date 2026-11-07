@@ -23,13 +23,9 @@ class VkVertexBufferManager
     ~VkVertexBufferManager();
 
     void createVertexBuffer(const std::string &name, VkCommandPool commandPool, VkSharingMode sharingMode,
-                            VkQueue graphicsQueue, std::vector<gfx::Vertex3D> &&vertices3d,
-                            bool persistentMapping = true);
-
-    void updateVertexBuffer(const std::string &name, std::vector<gfx::Vertex3D> &&vertices3d);
+                            VkQueue graphicsQueue, std::vector<gfx::Vertex3D> &&vertices3d);
 
     VertexBufferInfo getVertexBuffer(const std::string &name);
-    size_t getVertexCount(const std::string &name);
 
     static VkVertexInputBindingDescription getBindingDescription();
     static AttributeDescriptionArray<VkVertexInputAttributeDescription> getAttributeDescriptions();

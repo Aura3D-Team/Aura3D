@@ -1,0 +1,43 @@
+#version 450
+
+// benchmark_runtime's compute check: every even cell of a grid becomes an instance, counted into the draw's
+// arguments with an atomic, so the GPU decides how many drawMeshInstancedIndirect() draws. Compiled for Vulkan
+// (glslc defines VULKAN) and read as GLSL 4.3 for OpenGL, its first line swapped.
+layout(local_size_x = 64) in;
+
+struct Instance {
+    mat4 model;
+    mat4 normal;
+};
+
+struct DrawArgs {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+
+#ifdef VULKAN
+layout(std430, set = 0, binding = 0) buffer Instances { Instance instances[]; };
+layout(std430, set = 0, binding = 1) buffer Args { DrawArgs args; };
+layout(push_constant) uniform Constants { uint count; uint columns; float spacing; float scale; } constants;
+#else
+layout(std430, binding = 0) buffer Instances { Instance instances[]; };
+layout(std430, binding = 1) buffer Args { DrawArgs args; };
+layout(std140, binding = 3) uniform Constants { uint count; uint columns; float spacing; float scale; } constants;
+#endif
+
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= constants.count || (i & 1u) != 0u)
+        return;
+    uint slot = atomicAdd(args.instanceCount, 1u);
+    float middle = float(constants.columns - 1u) * 0.5;
+    vec2 at = (vec2(float(i % constants.columns), float(i / constants.columns)) - middle) * constants.spacing;
+    mat4 model = mat4(constants.scale);
+    model[3] = vec4(at, 0.0, 1.0);
+    instances[slot].model = model;
+    instances[slot].normal = mat4(1.0);
+}

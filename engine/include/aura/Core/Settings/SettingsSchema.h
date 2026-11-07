@@ -60,6 +60,9 @@
         "Frames the CPU may record ahead of the GPU. Vulkan only.")                                                    \
     BOOL_BUILD(rendererGpuTiming, "renderer.gpu_timing", kProfileFrameBuild, "on in AURA_PROFILE_FRAME builds",        \
                "Measure each frame's GPU time. Ignored without AURA_PROFILE_FRAME.")                                   \
+    BOOL_BUILD(rendererShaderHotReload, "renderer.shader_hot_reload", kDebugBuild, "on in debug builds",               \
+               "While run() drives the loop, rebuild the built-in 3D shaders when a file under paths.shaders changes " \
+               "(the build restages them).")                                                                           \
     INT(rendererCpuThreads, "renderer.cpu_threads", 0, 0, 256,                                                         \
         "Worker threads of the job system and the software rasteriser. 0 detects the core count.")                     \
     BOOL_BUILD(vulkanValidation, "renderer.vulkan.validation", kDebugBuild, "on in debug builds",                      \
@@ -76,6 +79,9 @@
         "Fewest draws one worker records, which caps how many chunks a batch is cut into.")                            \
     INT(vulkanDescriptorHeadroom, "renderer.vulkan.descriptor_headroom", 16, 0, 4096,                                  \
         "Update-after-bind descriptors kept back for the engine's other bindings when sizing the texture table.")       \
+    TEXT(vulkanPipelineCache, "renderer.vulkan.pipeline_cache", "./cache/vulkan-pipelines.bin",                        \
+         "File compiled pipelines are kept in between runs; a cache from another GPU or driver is ignored. Empty "     \
+         "keeps them in memory only.")                                                                                 \
     BOOL(vmaBufferDeviceAddress, "renderer.vulkan.vma.buffer_device_address", true,                                    \
          "Allow buffer device addresses, where the device has them.")                                                  \
     BOOL(vmaPreferDeviceMemory, "renderer.vulkan.vma.prefer_device_memory", true,                                      \

@@ -181,50 +181,6 @@ void VkRenderPassManager::createRenderPass(VkFormat swapchainImageFormat, bool e
     VK_RESULT_CHECK(vkCreateRenderPass(*_device, &renderPassInfo, nullptr, &_renderPass));
 }
 
-void VkRenderPassManager::beginRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer framebuffer,
-                                          VkExtent2D swapChainExtent, const VkClearValue *clearColorValue,
-                                          bool useSecondaryCommandBuffers)
-{
-    VkRenderPassBeginInfo renderPassBeginInfo = {};
-    renderPassBeginInfo.pNext = nullptr;
-    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassBeginInfo.renderPass = _renderPass;
-    renderPassBeginInfo.framebuffer = framebuffer;
-    renderPassBeginInfo.renderArea.offset = {0, 0};
-    renderPassBeginInfo.renderArea.extent = swapChainExtent;
-
-    VkClearValue clearColor = {};
-
-    if (clearColorValue)
-        clearColor = *clearColorValue;
-    else
-        clearColor.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-
-    /*
-     * All-or-nothing per subpass instance: with SECONDARY_COMMAND_BUFFERS,
-     * every command in the subpass must arrive via vkCmdExecuteCommands and a
-     * direct vkCmdDraw* on the primary is invalid -- there is no mixed mode.
-     */
-    const VkSubpassContents contents =
-        useSecondaryCommandBuffers ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE;
-
-    if (_hasDepth)
-    {
-        std::array<VkClearValue, 2> clearValues = {};
-        clearValues[0] = clearColor;
-        clearValues[1].depthStencil = {1.0f, 0};
-        renderPassBeginInfo.clearValueCount = static_cast<u32>(clearValues.size());
-        renderPassBeginInfo.pClearValues = clearValues.data();
-        vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, contents);
-    }
-    else
-    {
-        renderPassBeginInfo.clearValueCount = 1;
-        renderPassBeginInfo.pClearValues = &clearColor;
-        vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, contents);
-    }
-}
-
 void VkRenderPassManager::endRenderPass(VkCommandBuffer commandBuffer)
 {
     vkCmdEndRenderPass(commandBuffer);

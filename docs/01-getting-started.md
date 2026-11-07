@@ -84,11 +84,8 @@ int main()
     Engine engine("settings.json");
     IRenderer* r = engine.getRenderer();
 
-    // A flat-lit scene: ambient=1, intensity=0 means "show colors as-is".
-    gfx::LightUBO light;
-    light.intensity = 0.0f;
-    light.ambient   = 1.0f;
-    r->setLight(light);
+    // Ambient light alone shows colors as-is.
+    r->setLights(std::array{gfx::Light{.type = gfx::LightType::Ambient}});
 
     const TextureHandle tex = r->createCheckerboardTexture(256);
     Material mat;

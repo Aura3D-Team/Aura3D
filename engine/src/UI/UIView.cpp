@@ -100,14 +100,13 @@ void UIView::detachInput()
         _window->setTextInputEnabled(false);
         _window->setHitTest({});
     }
-    _frameHitTest = false;
+    INK_FLAG_CLEAR(_flags, UIViewFlags::FrameHitTest);
     if (_mouse && _cursor != wma::SystemCursor::Default)
         _mouse->setSystemCursor(wma::SystemCursor::Default);
     _cursor = wma::SystemCursor::Default;
     _window = nullptr;
     _mouse = nullptr;
-    _touchActive = false;
-    _pointerKnown = false;
+    INK_FLAG_CLEAR(_flags, UIViewFlags::TouchActive | UIViewFlags::PointerKnown);
 }
 
 // -----------------------------------------------------------------------------
@@ -129,14 +128,15 @@ void UIView::attachInput(wma::IWindowManager &window)
     }
 
     //! The decoration's regions drive native move, resize and caption double-click.
-    _frameHitTest = window.setHitTest(
-        [this](f64 x, f64 y)
-        {
-            const IWindowDecoration *decoration = windowDecoration();
-            return decoration && decoration->visibility() == Visibility::Visible
-                       ? decoration->windowHit(glm::vec2{static_cast<f32>(x), static_cast<f32>(y)} / _contentScale)
-                       : wma::WindowHit::Client;
-        });
+    if (window.setHitTest(
+            [this](f64 x, f64 y)
+            {
+                const IWindowDecoration *decoration = windowDecoration();
+                return decoration && decoration->visibility() == Visibility::Visible
+                           ? decoration->windowHit(glm::vec2{static_cast<f32>(x), static_cast<f32>(y)} / _contentScale)
+                           : wma::WindowHit::Client;
+            }))
+        INK_FLAG_SET(_flags, UIViewFlags::FrameHitTest);
     _syncSurface();
 
     for (const i32 button : {wma::MouseButton::WMALeft, wma::MouseButton::WMARight, wma::MouseButton::WMAMiddle})
@@ -144,7 +144,8 @@ void UIView::attachInput(wma::IWindowManager &window)
         _mouse->addButtonAction(button,
                                 wma::MouseAction{[this, button, alive]()
                                                  {
-                                                     if (alive.expired() || _touchActive)
+                                                     if (alive.expired() ||
+                                                         INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive))
                                                          return;
                                                      //! The cursor is read here rather than
                                                      //! trusted from the last frame: a
@@ -155,7 +156,8 @@ void UIView::attachInput(wma::IWindowManager &window)
                                                  },
                                                  [this, button, alive]()
                                                  {
-                                                     if (alive.expired() || _touchActive)
+                                                     if (alive.expired() ||
+                                                         INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive))
                                                          return;
                                                      _syncPointer();
                                                      _root.pointerUp(_pointer, toPointerButton(button),
@@ -193,7 +195,7 @@ void UIView::attachInput(wma::IWindowManager &window)
     const auto trackFinger = [this](const wma::WMATouchPoint &point)
     {
         _pointer = glm::vec2{static_cast<f32>(point.x), static_cast<f32>(point.y)} / _contentScale;
-        _pointerKnown = true;
+        INK_FLAG_SET(_flags, UIViewFlags::PointerKnown);
     };
 
     touch.setDownAction(wma::TouchInputCallback::from(
@@ -202,11 +204,11 @@ void UIView::attachInput(wma::IWindowManager &window)
             if (alive.expired())
                 return;
             touchDown.emit(point);
-            if (_touchActive)
+            if (INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive))
                 return;
             _finger = point.fingerId;
             trackFinger(point);
-            _touchActive = true;
+            INK_FLAG_SET(_flags, UIViewFlags::TouchActive);
 
             //! A finger arrives already on the widget, so hover has to be
             //! established before the press or the press has nothing to land on.
@@ -220,7 +222,7 @@ void UIView::attachInput(wma::IWindowManager &window)
             if (alive.expired())
                 return;
             touchMoved.emit(point);
-            if (!_touchActive || point.fingerId != _finger)
+            if (!INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive) || point.fingerId != _finger)
                 return;
             trackFinger(point);
             _root.pointerMoved(_pointer);
@@ -232,12 +234,12 @@ void UIView::attachInput(wma::IWindowManager &window)
             if (alive.expired())
                 return;
             touchUp.emit(point);
-            if (!_touchActive || point.fingerId != _finger)
+            if (!INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive) || point.fingerId != _finger)
                 return;
             trackFinger(point);
             _root.pointerUp(_pointer, PointerButton::Left, {}, PointerKind::Touch);
             _root.pointerLeft();
-            _touchActive = false;
+            INK_FLAG_CLEAR(_flags, UIViewFlags::TouchActive);
         }));
 }
 
@@ -282,17 +284,17 @@ void UIView::zoomStep(int direction)
 
 void UIView::_syncPointer()
 {
-    if (!_mouse || _touchActive)
+    if (!_mouse || INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive))
         return;
 
     const wma::WMAMousePosition position = _mouse->getCurrentPosition();
     const glm::vec2 current = glm::vec2{static_cast<f32>(position.x), static_cast<f32>(position.y)} / _contentScale;
 
-    if (_pointerKnown && current == _pointer)
+    if (INK_FLAG_CHECK(_flags, UIViewFlags::PointerKnown) && current == _pointer)
         return;
 
     _pointer = current;
-    _pointerKnown = true;
+    INK_FLAG_SET(_flags, UIViewFlags::PointerKnown);
     _root.pointerMoved(_pointer);
 }
 
@@ -350,8 +352,8 @@ void UIView::_syncSurface()
         auto *window = _renderer->getWindowManager();
         const auto *details = window ? window->getWindowDetails() : nullptr;
         //! Without a native hit test nothing could move the window from the bar.
-        const bool visible = details && _frameHitTest && window->isToplevel() && !details->fullscreen &&
-                             window->getDecorationMode() == wma::DecorationMode::ClientSide;
+        const bool visible = details && INK_FLAG_CHECK(_flags, UIViewFlags::FrameHitTest) && window->isToplevel() &&
+                             !details->fullscreen && window->getDecorationMode() == wma::DecorationMode::ClientSide;
         decoration->setVisibility(visible ? Visibility::Visible : Visibility::Collapsed);
         if (window)
             decoration->update(*window, _windowTitle);
@@ -366,7 +368,7 @@ void UIView::render(f32 deltaSeconds)
 
 bool UIView::needsDraw() const noexcept
 {
-    return !_drawn || _root.needsPaint() || _renderer->needsFrame();
+    return !INK_FLAG_CHECK(_flags, UIViewFlags::Drawn) || _root.needsPaint() || _renderer->needsFrame();
 }
 
 void UIView::draw()
@@ -377,7 +379,7 @@ void UIView::draw()
         _backend.build(_list, _root.scale());
 
     _backend.submit();
-    _drawn = true;
+    INK_FLAG_SET(_flags, UIViewFlags::Drawn);
 }
 
 void UIView::update(f32 deltaSeconds)
@@ -389,17 +391,16 @@ void UIView::update(f32 deltaSeconds)
         if (std::exchange(flags.textInputDismissed, false) && _root.capturesTextInput())
             _root.clearFocus();
         const bool focused = flags.focused;
-        if (_windowFocused && !focused)
+        if (INK_FLAG_CHECK(_flags, UIViewFlags::WindowFocused) && !focused)
         {
             _root.cancelInput();
-            _touchActive = false;
-            _pointerKnown = false;
+            INK_FLAG_CLEAR(_flags, UIViewFlags::TouchActive | UIViewFlags::PointerKnown);
         }
-        _windowFocused = focused;
+        focused ? INK_FLAG_SET(_flags, UIViewFlags::WindowFocused) : INK_FLAG_CLEAR(_flags, UIViewFlags::WindowFocused);
     }
     _syncPointer();
 
-    if (_mouse && !_touchActive)
+    if (_mouse && !INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive))
     {
         const wma::WMAMouseScroll scroll = _mouse->consumeScrollDelta();
 
@@ -411,7 +412,7 @@ void UIView::update(f32 deltaSeconds)
     _root.update(deltaSeconds);
 
     // A finger has no pointer image, and a resize border from the window's hit test overrides this one.
-    if (_mouse && !_touchActive)
+    if (_mouse && !INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive))
     {
         const wma::SystemCursor shape = _root.cursor();
         if (shape != _cursor)

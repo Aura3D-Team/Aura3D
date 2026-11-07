@@ -8,7 +8,6 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Core/DebugMode/DebugMode.h"
 #include "aura/Core/JobSystem/JobSystem.h"
-#include "aura/Core/ResourceManager/ResourceManager.h"
 #include "aura/Renderer/IRenderer.h"
 
 /**
@@ -55,12 +54,6 @@ class Engine
     //! Engine-wide configuration. Use the typed accessors rather than reaching
     //! for the raw JSON.
     const aura3d::AuraSettings *getSettings() const;
-
-    //! Path-keyed texture/mesh/sound cache bound to the current renderer.
-    aura3d::ResourceManager *resources()
-    {
-        return _resources.get();
-    }
 
     /**
      * @brief Clip playback, mixing and 3D positional audio.
@@ -112,8 +105,9 @@ class Engine
      *
      * Resolved through RendererFactory, so an unavailable backend degrades
      * rather than failing, and one that fails to start falls back further down
-     * the chain. Drops the asset cache -- reload through resources()
-     * afterwards. No-op if @p choice already resolves to the active backend.
+     * the chain. Every handle the old renderer gave out is invalid afterwards:
+     * create textures and meshes again. No-op if @p choice already resolves to
+     * the active backend.
      */
     void switchBackend(aura3d::RendererChoice choice);
 
@@ -136,7 +130,6 @@ class Engine
     aura3d::IRenderer::WindowFactory _windowFactory;
     std::unique_ptr<aura3d::JobSystem> _jobs;
     std::unique_ptr<aura3d::IRenderer> _renderer;
-    std::unique_ptr<aura3d::ResourceManager> _resources;
     std::unique_ptr<aura3d::AudioEngine> _audio;
 #ifdef AURA_ENABLE_DEBUG_MODE
     //! Declared after _renderer: the final report reads the renderer's GPU

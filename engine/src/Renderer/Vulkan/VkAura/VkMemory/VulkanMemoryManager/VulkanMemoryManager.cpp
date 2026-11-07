@@ -215,6 +215,25 @@ AllocatedImage VulkanMemoryManager::createImage(const VkImageCreateInfo &imageIn
     return result;
 }
 
+AllocatedImage VulkanMemoryManager::createImage2D(VkFormat format, VkExtent2D extent, VkSampleCountFlagBits samples,
+                                                  VkImageUsageFlags usage, u32 mipLevels)
+{
+    const VkImageCreateInfo imageInfo{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent = {extent.width, extent.height, 1},
+        .mipLevels = mipLevels,
+        .arrayLayers = 1,
+        .samples = samples,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    return createImage(imageInfo, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+}
+
 void VulkanMemoryManager::destroyImage(AllocatedImage &image)
 {
     if (image.allocation != VK_NULL_HANDLE || image.image != VK_NULL_HANDLE)

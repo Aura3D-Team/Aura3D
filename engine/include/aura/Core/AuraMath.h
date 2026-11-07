@@ -11,7 +11,7 @@
 
 /**
  * @file AuraMath.h
- * @brief Math operations shared by every renderer backend.
+ * @brief Math operations shared by the renderer backends, the UI and the apps.
  *
  * Header-only, free-function only, no state or device access -- so Vulkan,
  * Metal and the software path can all call it directly instead of reaching
@@ -21,6 +21,13 @@
 
 namespace aura3d
 {
+
+//! Linear interpolation without std::lerp's exactness branches: hot paths call it per vertex and per sample.
+[[nodiscard]] constexpr f32 lerp(f32 a, f32 b, f32 t) noexcept
+{
+    return a + (b - a) * t;
+}
+
 namespace gfx
 {
 

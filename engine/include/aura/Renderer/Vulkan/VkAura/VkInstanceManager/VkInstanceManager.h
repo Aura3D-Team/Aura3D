@@ -89,7 +89,7 @@ class VkInstanceManager
      * apps, including this one, don't do), this logs a warning and clears
      * the layer list rather than throwing: validation layers are a debug
      * aid, and their absence shouldn't be fatal any more than a missing
-     * texture is (see ResourceManager's fallback-to-checkerboard behavior).
+     * texture is (createTextureFromFile() falls back to a checkerboard).
      *
      * @param enableValidationLayers Whether validation layers were requested
      *        at all (AuraSettings::getValidationLayers()).

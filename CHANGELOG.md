@@ -2,6 +2,42 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [0.10.0]
+
+### Added
+
+- PBR shading on Vulkan, OpenGL and Metal (metallic-roughness GGX): `Material` gains `normalMap`, `metallicRoughness`, `emissiveMap` and `emissive`, and `setLights()` takes directional, point, spot and ambient lights. The software backend keeps Lambert.
+- Your own shaders: `createPipeline()` and `drawPipeline()` take SPIR-V (Vulkan), GLSL (OpenGL) or MSL (Metal) and read constants, textures and uniform buffers up to `pipelineLimits()`. Not on the software backend; OpenGL ES and WebGL compile but are untested, Metal has never run. See docs/16.
+- `TextureFormat::Depth` render targets (depth maps), `clipCorrection(target)`, and `createBuffer()` buffers as uniform buffers.
+- `IRenderer::caps()` / `RendererCaps`: what a backend supports beyond the common API.
+- Render targets (`createRenderTarget()`, `beginRenderPass(target)`, `renderTargetTexture()`, `readPixels()`, `resizeRenderTarget()`) and `createTexture(TextureDesc, pixels)` with formats, mip chain and sampler settings.
+- glTF 2.0 import (`gltf::load()`, `uploadModel()`) with skins and animations, CPU skinning (`gltf::animate()`, `updateSkins()`), and `IRenderer::updateMesh()`.
+- Compute and indirect drawing (`createCompute()`, `dispatch()`, `drawMeshInstancedIndirect()`; the software backend runs a C++ kernel), `drawMeshInstanced()` and frustum culling.
+- `AssetLoader`: models and images decoded on background threads, handed back by `poll()`.
+- Shader hot reload (`reloadShaders()`, `renderer.shader_hot_reload`) and `renderer.vulkan.pipeline_cache`.
+- `aura/Core/Culling.h` (`Aabb`, `Frustum`, `transformed()`): the boxes the renderer culls with, and `meshBounds()` for your own.
+- AuraUI: `Widget::interaction()`, `pick()`, `isAncestorOf()`, `paintAlpha()`, `rowHeight()`, `Control::paintSurface()` and `textInsets()`.
+- Golden-image tests for the software and GPU backends.
+- Metal: its side of the above, except depth targets, is written and parses against metal-cpp on Linux (Apple headers stubbed), but has not been built, linked or run; no Apple machine was available.
+
+### Changed
+
+- **API break:** one light model. `setLights(std::span<const gfx::Light>)` replaces `setLight()`, `getLight()`, `gfx::LightUBO` and `gfx::PunctualLight`; ambient is a light of its own.
+- **API break (AuraUI):** `OverlayDesc`'s flags are one `OverlayFlags`, `AccessibilityInfo`'s bools one `AccessibilityState`, `Shortcut`'s modifiers one `Shortcut::Mods`, and `ColorSet::pick()` takes an `Interaction`.
+- Scene shading is PBR on the GPU backends; `Material::roughness` defaults to 1.0 (was 0.5, unused).
+- Apps' resources and SPIR-V are restaged on every build, so a shader edit reaches a running app without relinking.
+- `AURA_VERSION_*` come from `VERSION` (it said 0.3.0).
+- Internal: state bools became flag and state enums, `IRenderer` owns the window and bound state, `ColorsDefinitions.h` declares colours with `AURA_COLOR` (`NAME_F` values are now exact), and large files were split.
+
+### Fixed
+
+- Vulkan: a frame that drew only into render targets presented the swapchain image in the wrong layout; RGBA16F uploads used misaligned staging offsets; a pipeline with no descriptor sets got a null set layout.
+
+### Removed
+
+- `ResourceManager` and `Engine::resources()` (use `createTextureFromFile()`, `MeshLoader::loadOBJ()` and `AudioEngine::loadClip()`), and `aura/Utils/FutureJoiner.h`.
+- Unused code: `CpuFrameBufferManager`'s 2D API and the Vulkan buffer managers' in-place updates and mapped path.
+
 ## [0.9.1]
 
 ### Changed

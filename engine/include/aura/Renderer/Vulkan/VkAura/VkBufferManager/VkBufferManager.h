@@ -4,7 +4,9 @@
 #pragma once
 
 #include <concepts>
+#include <cstddef>
 #include <functional>
+#include <span>
 #include <utility>
 
 #include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
@@ -23,6 +25,12 @@ class VkBufferManager
     static void bufferCopy(VkDevice device, VkCommandPool commandPool, VkQueue queue, VkBuffer srcBuffer,
                            VkBuffer dstBuffer, VkFence fence, VkDeviceSize size, VkDeviceSize srcOffset = 0,
                            VkDeviceSize dstOffset = 0);
+
+    //! A device-local buffer holding @p bytes, filled through a transient staging buffer; blocks until the copy
+    //! retires.
+    static AllocatedBuffer uploadDeviceLocal(VulkanMemoryManager &memory, VkDevice device, VkCommandPool commandPool,
+                                             VkQueue queue, VkSharingMode sharingMode, std::span<const std::byte> bytes,
+                                             VkBufferUsageFlags usage);
 
     /**
      * @brief Records @p command into a throwaway primary buffer, submits it,

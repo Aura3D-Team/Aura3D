@@ -20,11 +20,6 @@ namespace cpu
 namespace
 {
 
-//! drawText()'s fontSize keeps its meaning from the 5x8 face the embedded font
-//! replaced: an 8 px line per step, so callers keep their layout. The default
-//! of 2 draws the face at its native 16 px.
-constexpr u32 kLinePixelsPerFontSize = 8;
-
 //! Bands per worker, and the band height's bounds: thinner balances better, taller splits fewer
 //! small triangles across band boundaries, where each piece pays the full setup.
 constexpr i32 kBandsPerWorker = 4;
@@ -43,10 +38,28 @@ i32 CpuFrameBufferManager::paddedStride(i32 width) noexcept
 CpuFrameBufferManager::CpuFrameBufferManager(wma::IWindowManager &windowManager, Config config, const JobSystem &jobs)
     : settings(config), _stride(paddedStride(config.width)),
       _color(static_cast<size_t>(_stride) * static_cast<size_t>(std::max(config.height, 0)), 0),
-      _depth(_color.size(), 1.0f), _windowManager(&windowManager), _jobs(&jobs), _workerCount(jobs.workerCount()),
-      _font(GetDefaultBitmapFont())
+      _depth(_color.size(), 1.0f), _windowManager(&windowManager), _jobs(&jobs), _workerCount(jobs.workerCount())
 {
     updateBandRows();
+}
+
+CpuFrameBufferManager::CpuFrameBufferManager(Config config, const JobSystem &jobs)
+    : settings(config), _stride(paddedStride(config.width)),
+      _color(static_cast<size_t>(_stride) * static_cast<size_t>(std::max(config.height, 0)), 0),
+      _depth(_color.size(), 1.0f), _windowManager(nullptr), _jobs(&jobs), _workerCount(jobs.workerCount())
+{
+    updateBandRows();
+}
+
+void CpuFrameBufferManager::readColor(std::span<u32> out)
+{
+    const auto width = static_cast<size_t>(std::max(settings.width, 0));
+    if (out.size() != width * static_cast<size_t>(std::max(settings.height, 0)))
+        return;
+    resolvePendingClear();
+    for (i32 y = 0; y < settings.height; ++y)
+        std::memcpy(out.data() + static_cast<size_t>(y) * width,
+                    _color.data() + static_cast<size_t>(y) * static_cast<size_t>(_stride), width * sizeof(u32));
 }
 
 void CpuFrameBufferManager::clear(u32 color)
@@ -155,40 +168,6 @@ void CpuFrameBufferManager::setPixel(Point p, u32 color)
 }
 
 /**
- * Sets a pixel color and its depth value, without a depth test.
- * @param p Point coordinates
- * @param z Depth value (smaller values are closer to camera)
- * @param color 32-bit color value (0xRRGGBB format)
- */
-void CpuFrameBufferManager::setPixelWithDepth(Point p, f32 z, u32 color)
-{
-    if (!isInsideBounds(p))
-        return;
-    if (_clearPending)
-        resolvePendingClear();
-    const size_t index = static_cast<size_t>(p.y) * static_cast<size_t>(_stride) + static_cast<size_t>(p.x);
-    _color[index] = color;
-    if (settings.useDepthBuffer)
-        _depth[index] = z;
-}
-
-/**
- * Helper function for anti-aliased line drawing
- * @param p Coordinates
- * @param intensity Alpha value (0.0 to 1.0)
- * @param color Line color
- */
-void CpuFrameBufferManager::plotPixel(Point p, f32 intensity, u32 color)
-{
-    if (!isInsideBounds(p))
-        return;
-    // Get existing color from the Pixel struct and blend with new color
-    u32 bg = getPixel(p).rgb;
-    u32 blended = blendColors(bg, color, intensity);
-    setPixel(p, blended);
-}
-
-/**
  * Gets the Pixel object (color and depth) at the specified coordinates
  * @param p Point coordinate
  * @return Pixel object, or a default black pixel if coordinates are invalid
@@ -201,166 +180,6 @@ Pixel CpuFrameBufferManager::getPixel(Point p) const
         return Pixel{_clearColor, 1.0f};
     const size_t index = static_cast<size_t>(p.y) * static_cast<size_t>(_stride) + static_cast<size_t>(p.x);
     return Pixel{_color[index], _depth[index]};
-}
-
-/**
- * Draws a line using Bresenham's algorithm
- * @param p0 Starting point coordinates
- * @param p1 Ending point coordinates
- * @param color Line color
- */
-void CpuFrameBufferManager::drawLine(Point p0, Point p1, u32 color)
-{
-    i32 x0 = p0.x, y0 = p0.y;
-    i32 x1 = p1.x, y1 = p1.y;
-
-    i32 dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    i32 dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    i32 err = dx + dy; // error value
-
-    while (true)
-    {
-        setPixel({x0, y0}, color);
-        if (x0 == x1 && y0 == y1)
-            break;
-        i32 e2 = 2 * err;
-        if (e2 >= dy)
-        {
-            err += dy;
-            x0 += sx;
-        }
-        if (e2 <= dx)
-        {
-            err += dx;
-            y0 += sy;
-        }
-    }
-}
-
-float CpuFrameBufferManager::get_eased_time(float t_param, InterpolationMethod method)
-{
-    //! NaN eases from the start.
-    float t = t_param > 0.0f ? std::min(t_param, 1.0f) : 0.0f;
-    switch (method)
-    {
-    case InterpolationMethod::Linear:
-        return t;
-    case InterpolationMethod::Smoothstep:
-        return t * t * (3.0f - 2.0f * t);
-    case InterpolationMethod::Accelerate:
-        return t * t;
-    case InterpolationMethod::Decelerate:
-        return 1.0f - (1.0f - t) * (1.0f - t);
-    case InterpolationMethod::Sine:
-        return std::sin(t * PI_FLOAT * 0.5f);
-    case InterpolationMethod::Cosine:
-        return (1.0f - std::cos(t * PI_FLOAT)) * 0.5f;
-    default:
-        return t; // Fallback to linear
-    }
-}
-
-// Generic interpolate function
-template <typename T>
-T CpuFrameBufferManager::interpolate(const T &a, const T &b, float t_param, InterpolationMethod method)
-{
-    float t_eased = get_eased_time(t_param, method);
-    return a + (b - a) * t_eased;
-}
-
-// Polygon outline drawer function
-void CpuFrameBufferManager::drawPolygon(const std::vector<Point> &points, u32 color, bool closed)
-{
-    if (points.size() < 2)
-        return;
-
-    for (size_t i = 0; i < points.size() - 1; ++i)
-    {
-        drawLine(points[i], points[i + 1], color);
-    }
-
-    if (closed && points.size() > 2)
-    {
-        drawLine(points.back(), points.front(), color);
-    }
-}
-
-void CpuFrameBufferManager::drawPolygon(const std::vector<Point> &points, const std::vector<u32> &colors, bool closed)
-{
-    if (points.size() < 2)
-        return;
-
-    if (colors.size() < (closed ? points.size() : points.size() - 1))
-    {
-        drawPolygon(points, colors.empty() ? 0xFFFFFFFF : colors[0], closed);
-        return;
-    }
-
-    for (size_t i = 0; i < points.size() - 1; ++i)
-    {
-        drawLine(points[i], points[i + 1], colors[i]);
-    }
-
-    if (closed && points.size() > 2)
-    {
-        drawLine(points.back(), points.front(), colors[points.size() - 1]);
-    }
-}
-
-void CpuFrameBufferManager::drawFilledPolygon(const std::vector<Point> &points, u32 color)
-{
-    if (points.size() < 3)
-        return;
-
-    int minY = getHeight();
-    int maxY = 0;
-
-    for (const auto &p : points)
-    {
-        minY = std::min(minY, p.y);
-        maxY = std::max(maxY, p.y);
-    }
-
-    minY = std::max(minY, 0);
-    maxY = std::min(maxY, getHeight() - 1);
-
-    std::vector<int> intersections;
-    intersections.reserve(points.size());
-
-    for (int y = minY; y <= maxY; y++)
-    {
-        intersections.clear();
-
-        for (size_t i = 0; i < points.size(); i++)
-        {
-            const Point &p1 = points[i];
-            const Point &p2 = points[(i + 1) % points.size()];
-
-            if ((p1.y == p2.y) || (y < std::min(p1.y, p2.y)) || (y >= std::max(p1.y, p2.y)))
-                continue;
-
-            float t = static_cast<float>(y - p1.y) / static_cast<float>(p2.y - p1.y);
-            int x = p1.x + static_cast<int>(t * (p2.x - p1.x));
-
-            intersections.push_back(x);
-        }
-
-        std::sort(intersections.begin(), intersections.end());
-
-        for (size_t i = 0; i < intersections.size(); i += 2)
-        {
-            if (i + 1 >= intersections.size())
-                break;
-
-            int startX = std::max(intersections[i], 0);
-            int endX = std::min(intersections[i + 1], getWidth() - 1);
-
-            for (int x = startX; x <= endX; x++)
-            {
-                setPixel(Point(x, y), color);
-            }
-        }
-    }
 }
 
 i32 CpuFrameBufferManager::bandCount() const noexcept
@@ -596,134 +415,6 @@ void CpuFrameBufferManager::flush()
     //! The queue keeps its storage: the next frame reuses it without constructing anything.
     _queuedCount = 0;
     _queuedBatches.clear();
-}
-
-/**
- * Blends two colors according to an alpha value
- * @param c1 Background color
- * @param c2 Foreground color
- * @param alpha Blend factor (0.0 = all c1, 1.0 = all c2)
- * @return Blended color
- */
-u32 CpuFrameBufferManager::blendColors(u32 c1, u32 c2, f32 alpha)
-{
-    if (alpha <= 0.0f)
-        return c1;
-    if (alpha >= 1.0f)
-        return c2;
-
-    u8 r1 = (c1 >> 16) & 0xFF;
-    u8 g1 = (c1 >> 8) & 0xFF;
-    u8 b1 = c1 & 0xFF;
-    u8 r2 = (c2 >> 16) & 0xFF;
-    u8 g2 = (c2 >> 8) & 0xFF;
-    u8 b2 = c2 & 0xFF;
-
-    u8 r = static_cast<u8>(r1 * (1.0f - alpha) + r2 * alpha);
-    u8 g = static_cast<u8>(g1 * (1.0f - alpha) + g2 * alpha);
-    u8 b = static_cast<u8>(b1 * (1.0f - alpha) + b2 * alpha);
-
-    return (r << 16) | (g << 8) | b;
-}
-
-const AuraBitmapFont::Layout &CpuFrameBufferManager::textLayoutFor(u32 height)
-{
-    if (_textLayout.rows.size() != height)
-        _textLayout = _font.layout(height);
-    return _textLayout;
-}
-
-void CpuFrameBufferManager::drawText(const std::string &text, Point p, u32 color, u32 fontSize)
-{
-    const u32 height = kLinePixelsPerFontSize * fontSize;
-    if (height == 0)
-        return;
-    const AuraBitmapFont::Layout &layout = textLayoutFor(height);
-    const i32 lineAdvance = static_cast<i32>(height + static_cast<u32>(_font.charSpacing) * fontSize);
-
-    i32 cursorX = p.x;
-    for (char c : text)
-    {
-        if (c == '\n')
-        {
-            cursorX = p.x;
-            p.y += lineAdvance;
-            continue;
-        }
-
-        if ((c < 0) || (c > 127))
-            c = '?';
-
-        const auto &glyph = _font.data[static_cast<unsigned char>(c)];
-        const AuraBitmapFont::ScaledGlyph &scaled = layout.glyphs[static_cast<unsigned char>(c)];
-        const auto width = static_cast<u32>(scaled.columns.size());
-        const auto advance = static_cast<i32>(scaled.advance);
-
-        if (width == 0 || cursorX >= settings.width || p.y >= settings.height ||
-            cursorX + static_cast<i32>(width) <= 0 || p.y + static_cast<i32>(height) <= 0)
-        {
-            cursorX += advance;
-            continue;
-        }
-
-        for (u32 y = 0; y < height; ++y)
-        {
-            const i32 pixelY = p.y + static_cast<i32>(y);
-            if (pixelY < 0 || pixelY >= settings.height)
-                continue;
-            const u8 row = glyph[scaled.rows[y]];
-            for (u32 x = 0; x < width; ++x)
-            {
-                const i32 pixelX = cursorX + static_cast<i32>(x);
-                if (pixelX >= 0 && pixelX < settings.width && _font.inked(row, scaled.columns[x]))
-                    setPixel({pixelX, pixelY}, color);
-            }
-        }
-        cursorX += advance;
-    }
-}
-
-int CpuFrameBufferManager::getTextWidth(const std::string &text, u32 fontSize)
-{
-    const u32 height = kLinePixelsPerFontSize * fontSize;
-    if (height == 0)
-        return 0;
-    const AuraBitmapFont::Layout &layout = textLayoutFor(height);
-
-    i32 width = 0;
-    i32 maxWidth = 0;
-
-    for (char c : text)
-    {
-        if (c == '\n')
-        {
-            maxWidth = std::max(maxWidth, width);
-            width = 0;
-            continue;
-        }
-
-        if ((c < 0) || (c > 127))
-            c = '?';
-        width += static_cast<i32>(layout.glyphs[static_cast<unsigned char>(c)].advance);
-    }
-
-    return std::max(maxWidth, width);
-}
-
-int CpuFrameBufferManager::getTextHeight(const std::string &text, u32 fontSize)
-{
-    const int scaledHeight = static_cast<int>(kLinePixelsPerFontSize * fontSize);
-    int lines = 1;
-
-    for (char c : text)
-    {
-        if (c == '\n')
-        {
-            lines++;
-        }
-    }
-
-    return lines * (scaledHeight + 1) - 1;
 }
 
 } // namespace cpu

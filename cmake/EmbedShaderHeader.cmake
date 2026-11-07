@@ -54,6 +54,13 @@ if(KIND STREQUAL "glsl")
         _aura_symbol("${input}" symbol)
         file(READ "${input}" source)
         string(REPLACE "\r\n" "\n" source "${source}")
+        # GL compiles at runtime, so each #include "x" is replaced by INCLUDE_DIR/x here.
+        string(REGEX MATCHALL "#include \"[^\"]+\"" includes "${source}")
+        foreach(directive IN LISTS includes)
+            string(REGEX REPLACE "#include \"([^\"]+)\"" "\\1" included "${directive}")
+            file(READ "${INCLUDE_DIR}/${included}" body)
+            string(REPLACE "${directive}" "${body}" source "${source}")
+        endforeach()
         # One source per stage: WebGL2/GLES differs only in its preamble.
         if(NOT source MATCHES "^#version 330 core\n")
             message(FATAL_ERROR "${input}: must start with '#version 330 core' so the GLES variant can be derived.")

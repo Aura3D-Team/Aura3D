@@ -21,6 +21,7 @@
 // Nothing here reaches inside the engine: the logo is built entirely on the
 // public IRenderer surface.
 
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <vector>
@@ -136,12 +137,7 @@ int main()
      * the colours it was baked with. The overlay path is unlit by definition,
      * so this only concerns the backdrop.
      */
-    gfx::LightUBO light;
-    light.direction = {0.0f, -1.0f, 0.0f};
-    light.color = {1.0f, 1.0f, 1.0f, 1.0f};
-    light.intensity = 0.0f;
-    light.ambient = 1.0f;
-    renderer->setLight(light);
+    renderer->setLights(std::array{gfx::Light{.type = gfx::LightType::Ambient}});
 
     /*
      * The sky is baked at the framebuffer's own resolution rather than at some

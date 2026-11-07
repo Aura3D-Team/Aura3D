@@ -33,6 +33,7 @@ unset(_aura_ndk_shader_tools)
 # modules are embedded by aura_embed_shaders() (cmake/EmbedShaders.cmake), so a
 # missing compiler only skips this step.
 function(aura_compile_shaders TARGET INPUT_DIR OUTPUT_DIR)
+    file(GLOB _aura_common_shaders CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/resources/shaders/common/*.glsl")
     file(GLOB _aura_shader_sources CONFIGURE_DEPENDS
         "${INPUT_DIR}/*.vert"
         "${INPUT_DIR}/*.frag"
@@ -67,45 +68,48 @@ function(aura_compile_shaders TARGET INPUT_DIR OUTPUT_DIR)
         get_filename_component(_shader_name "${_shader}" NAME)
         set(_spv "${_stage_dir}/${_shader_name}.spv")
 
+        # The engine's shared #include files, as aura_embed_shaders() compiles them.
+        set(_includes "-I${PROJECT_SOURCE_DIR}/resources/shaders/common")
         if(AURA_GLSL_COMPILER MATCHES "glslangValidator")
-            set(_compile_cmd "${AURA_GLSL_COMPILER}" -V "${_shader}" -o "${_spv}")
+            set(_compile_cmd "${AURA_GLSL_COMPILER}" -V ${_includes} "${_shader}" -o "${_spv}")
         else()
-            set(_compile_cmd "${AURA_GLSL_COMPILER}" "${_shader}" -o "${_spv}")
+            set(_compile_cmd "${AURA_GLSL_COMPILER}" ${_includes} "${_shader}" -o "${_spv}")
         endif()
 
         add_custom_command(
             OUTPUT  "${_spv}"
             COMMAND "${CMAKE_COMMAND}" -E make_directory "${_stage_dir}"
             COMMAND ${_compile_cmd}
-            DEPENDS "${_shader}"
+            DEPENDS "${_shader}" ${_aura_common_shaders}
             COMMENT "Compiling SPIR-V: ${_shader_name}"
             VERBATIM
         )
         list(APPEND _aura_spv_outputs "${_spv}")
     endforeach()
 
-    add_custom_target(${TARGET}_shaders DEPENDS ${_aura_spv_outputs})
-    add_dependencies(${TARGET} ${TARGET}_shaders)
-
-    add_custom_command(TARGET ${TARGET} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory
-                "${_stage_dir}"
-                "${OUTPUT_DIR}"
+    # Staged by the shaders target itself, not after linking: a shader edit then reaches a running debug build's
+    # hot reload without relinking the app, and unchanged files keep their timestamps.
+    add_custom_target(${TARGET}_shaders
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different "${_stage_dir}" "${OUTPUT_DIR}"
+        DEPENDS ${_aura_spv_outputs}
         COMMENT "Staging compiled SPIR-V for ${TARGET}"
         VERBATIM
     )
+    add_dependencies(${TARGET} ${TARGET}_shaders)
 endfunction()
 
 # Stage runtime assets next to the target binary so the app can be run
 # straight from the build tree.
 function(aura_copy_assets TARGET)
-    add_custom_command(TARGET ${TARGET} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+    # Every build, changed files only, so shader hot reload sees edits and nothing else.
+    add_custom_target(${TARGET}_resources
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different
                 "${PROJECT_SOURCE_DIR}/resources"
                 "$<TARGET_FILE_DIR:${TARGET}>/resources"
         COMMENT "Staging resources/ for ${TARGET}"
         VERBATIM
     )
+    add_dependencies(${TARGET} ${TARGET}_resources)
 
     # settings.json, and any settings.<platform>.json beside it: the engine reads the one for the platform it runs on
     # over settings.json, so the others are staged and ignored.

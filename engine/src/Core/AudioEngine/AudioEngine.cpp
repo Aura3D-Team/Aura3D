@@ -7,6 +7,8 @@
 #include <numbers>
 #include <utility>
 
+#include "aura/Core/AuraMath.h"
+
 namespace aura3d
 {
 namespace
@@ -56,7 +58,7 @@ std::vector<f32> resample(const std::vector<f32> &input, u16 channels, u32 srcRa
         {
             const f32 a = input[base * channels + channel];
             const f32 b = input[next * channels + channel];
-            output[frame * channels + channel] = a + (b - a) * frac;
+            output[frame * channels + channel] = lerp(a, b, frac);
         }
     }
 
@@ -158,7 +160,7 @@ void AudioEngine::retireClip(AudioClipHandle handle) noexcept
     {
         if (_voices[i].clip != handle)
             continue;
-        _voices[i].active = false;
+        _voices[i].state = VoiceState::Free;
         _voices[i].clip = {};
         _voices[i].data = nullptr;
         publishVoice(i);
@@ -211,12 +213,12 @@ AudioSourceHandle AudioEngine::play(const AudioSourceDesc &desc)
         return {};
     for (usize i = 0; i < _voices.size(); ++i)
         if (_channels[i].finished.load(std::memory_order_acquire) == _voices[i].serial)
-            _voices[i].active = false;
+            _voices[i].state = VoiceState::Free;
 
     const auto slot = std::find_if(_voices.begin(), _voices.end(),
                                    [](const Voice &v)
                                    {
-                                       return !v.active;
+                                       return v.state == VoiceState::Free;
                                    });
 
     if (slot == _voices.end())
@@ -241,8 +243,7 @@ AudioSourceHandle AudioEngine::play(const AudioSourceDesc &desc)
     slot->loop = desc.loop;
     slot->minDistance = std::max(0.0f, desc.minDistance);
     slot->maxDistance = std::max(slot->minDistance + 0.001f, desc.maxDistance);
-    slot->paused = false;
-    slot->active = true;
+    slot->state = VoiceState::Playing;
 
     publishVoice(index);
     return makeSourceHandle(index, slot->generation);
@@ -264,7 +265,7 @@ void AudioEngine::stop(AudioSourceHandle source) noexcept
     if (!resolveVoice(source, slot))
         return;
 
-    _voices[slot].active = false;
+    _voices[slot].state = VoiceState::Free;
     _voices[slot].clip = {};
     _voices[slot].data = nullptr;
     publishVoice(slot);
@@ -276,7 +277,7 @@ void AudioEngine::stopAll() noexcept
 
     for (usize i = 0; i < _voices.size(); ++i)
     {
-        _voices[i].active = false;
+        _voices[i].state = VoiceState::Free;
         _voices[i].clip = {};
         _voices[i].data = nullptr;
         publishVoice(i);
@@ -290,7 +291,7 @@ void AudioEngine::pause(AudioSourceHandle source) noexcept
     usize slot = 0;
     if (resolveVoice(source, slot))
     {
-        _voices[slot].paused = true;
+        _voices[slot].state = VoiceState::Paused;
         publishVoice(slot);
     }
 }
@@ -302,7 +303,7 @@ void AudioEngine::resume(AudioSourceHandle source) noexcept
     usize slot = 0;
     if (resolveVoice(source, slot))
     {
-        _voices[slot].paused = false;
+        _voices[slot].state = VoiceState::Playing;
         publishVoice(slot);
     }
 }
@@ -312,7 +313,7 @@ bool AudioEngine::isPlaying(AudioSourceHandle source) const noexcept
     const std::scoped_lock lock(_voiceMutex);
 
     usize slot = 0;
-    return resolveVoice(source, slot) && !_voices[slot].paused;
+    return resolveVoice(source, slot) && _voices[slot].state == VoiceState::Playing;
 }
 
 bool AudioEngine::isPaused(AudioSourceHandle source) const noexcept
@@ -320,7 +321,7 @@ bool AudioEngine::isPaused(AudioSourceHandle source) const noexcept
     const std::scoped_lock lock(_voiceMutex);
 
     usize slot = 0;
-    return resolveVoice(source, slot) && _voices[slot].paused;
+    return resolveVoice(source, slot) && _voices[slot].state == VoiceState::Paused;
 }
 
 u32 AudioEngine::activeVoiceCount() const noexcept
@@ -329,7 +330,8 @@ u32 AudioEngine::activeVoiceCount() const noexcept
 
     u32 count = 0;
     for (usize i = 0; i < _voices.size(); ++i)
-        if (_voices[i].active && _channels[i].finished.load(std::memory_order_acquire) != _voices[i].serial)
+        if (_voices[i].state != VoiceState::Free &&
+            _channels[i].finished.load(std::memory_order_acquire) != _voices[i].serial)
             ++count;
     return count;
 }
@@ -450,7 +452,7 @@ bool AudioEngine::resolveVoice(AudioSourceHandle handle, usize &slotOut) const n
 
     const Voice &voice = _voices[slot];
 
-    if (!voice.active || voice.generation != generation ||
+    if (voice.state == VoiceState::Free || voice.generation != generation ||
         _channels[slot].finished.load(std::memory_order_acquire) == voice.serial)
         return false;
 
@@ -500,12 +502,12 @@ void AudioEngine::mix(std::span<f32> output)
             continue;
         const bool restart = command.serial != voice.serial;
         const usize cursor = voice.cursor;
-        const bool ended = !voice.active && !restart;
+        const bool ended = voice.state == VoiceState::Free && !restart;
         voice = command;
         if (!restart)
             voice.cursor = cursor;
         if (ended)
-            voice.active = false;
+            voice.state = VoiceState::Free;
     }
 
     const u16 outChannels = _channelCount;
@@ -513,19 +515,19 @@ void AudioEngine::mix(std::span<f32> output)
 
     for (Voice &voice : _mixVoices)
     {
-        if (!voice.active || voice.paused || !isValidHandle(voice.clip))
+        if (voice.state != VoiceState::Playing || !isValidHandle(voice.clip))
             continue;
 
         if (!voice.data)
         {
-            voice.active = false;
+            voice.state = VoiceState::Free;
             continue;
         }
         const Clip &clip = *voice.data;
         const u16 clipChannels = clip.channelCount;
         if (clipChannels == 0 || clip.samples.empty())
         {
-            voice.active = false;
+            voice.state = VoiceState::Free;
             continue;
         }
 
@@ -548,7 +550,7 @@ void AudioEngine::mix(std::span<f32> output)
                 if (voice.loop)
                     voice.cursor %= clipFrames;
                 else
-                    voice.active = false;
+                    voice.state = VoiceState::Free;
             }
             continue;
         }
@@ -559,7 +561,7 @@ void AudioEngine::mix(std::span<f32> output)
             {
                 if (!voice.loop)
                 {
-                    voice.active = false;
+                    voice.state = VoiceState::Free;
                     break;
                 }
                 voice.cursor = 0;
@@ -607,7 +609,7 @@ void AudioEngine::mix(std::span<f32> output)
         sample = std::isnan(limited) ? 0.0f : limited;
     }
     for (usize i = 0; i < _mixVoices.size(); ++i)
-        if (!_mixVoices[i].active)
+        if (_mixVoices[i].state == VoiceState::Free)
             _channels[i].finished.store(_mixVoices[i].serial, std::memory_order_release);
     _mixEpoch.fetch_add(1, std::memory_order_release);
 }

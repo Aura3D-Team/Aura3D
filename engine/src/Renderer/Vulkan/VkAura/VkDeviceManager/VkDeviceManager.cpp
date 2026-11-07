@@ -148,6 +148,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
                                                  .pNext = &supportedVk12Features};
     vkGetPhysicalDeviceFeatures2(_physicalDevice, &supportedFeatures2);
     _bufferDeviceAddressSupported = supportedVk12Features.bufferDeviceAddress == VK_TRUE;
+    const bool anisotropy = supportedFeatures2.features.samplerAnisotropy == VK_TRUE;
 
     if (!_bufferDeviceAddressSupported)
     {
@@ -195,8 +196,18 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         //! only when the device actually supports it (see above).
         .bufferDeviceAddress = _bufferDeviceAddressSupported ? VK_TRUE : VK_FALSE};
 
+    VkPhysicalDeviceFeatures2 enabledFeatures2{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                               .pNext = &enabledVk12Features};
+    enabledFeatures2.features.samplerAnisotropy = anisotropy ? VK_TRUE : VK_FALSE;
+    if (anisotropy)
+    {
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(_physicalDevice, &properties);
+        _maxSamplerAnisotropy = properties.limits.maxSamplerAnisotropy;
+    }
+
     const std::vector<VkDeviceQueueCreateInfo> vkDeviceQueueCreateInfos = _vkQueueManager.getDeviceQueueCreateInfos();
-    _deviceInfo.pNext = &enabledVk12Features;
+    _deviceInfo.pNext = &enabledFeatures2;
     _deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     _deviceInfo.queueCreateInfoCount = static_cast<u32>(vkDeviceQueueCreateInfos.size());
     _deviceInfo.pQueueCreateInfos = vkDeviceQueueCreateInfos.data();
@@ -343,6 +354,11 @@ VkSampleCountFlagBits VkDeviceManager::getMaxUsableSampleCount() const
     if (counts & VK_SAMPLE_COUNT_2_BIT)
         return VK_SAMPLE_COUNT_2_BIT;
     return VK_SAMPLE_COUNT_1_BIT;
+}
+
+f32 VkDeviceManager::maxSamplerAnisotropy() const noexcept
+{
+    return _maxSamplerAnisotropy;
 }
 
 } // namespace vk

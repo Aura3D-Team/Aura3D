@@ -8,7 +8,7 @@ never changes.
 Aura3D builds as a static library you link into your own executable. It owns
 windowing, input, the render loop, and GPU resource management; you write
 game logic on top of `aura3d::IRenderer` and the small set of helpers layered
-over it (`Camera`, `Material`, `ResourceManager`, `TextOverlay`, ...).
+over it (`Camera`, `Material`, `TextOverlay`, ...).
 
 ---
 
@@ -77,7 +77,7 @@ game:
 | 2 | [Project Configuration](docs/02-project-configuration.md) | Full `settings.json` reference |
 | 3 | [Engine & Renderer](docs/03-engine-and-renderer.md) | `Engine`, `IRenderer`, backend switching, the run loop |
 | 4 | [Camera](docs/04-camera.md) | Perspective/ortho projections, target vs. free-look |
-| 5 | [Meshes, Materials & Textures](docs/05-meshes-materials-textures.md) | Loading OBJ/images, `ResourceManager`, `Material` |
+| 5 | [Meshes, Materials & Textures](docs/05-meshes-materials-textures.md) | Loading OBJ/images, `Material` |
 | 6 | [Lighting](docs/06-lighting.md) | The directional light model |
 | 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch`, lines and shapes, `TextOverlay` |
 | 8 | [Input](docs/08-input.md) | Keyboard/mouse contexts and bindings |
@@ -87,6 +87,8 @@ game:
 | 12 | [Audio](docs/12-audio.md) | `AudioEngine`: clips, one-shots, looping music, 3D positional sound |
 | 13 | [Debug & Benchmark Mode](docs/13-debug-benchmark-mode.md) | CPU/GPU allocation tracking, per-phase frame timing, the JSON metrics report |
 | 14 | [AuraUI — The Widget Toolkit](docs/14-auraui-toolkit.md) | Widget tree, flex/grid layout, shaped text, signals, animation, accessibility |
+| 16 | [Your Own Shaders](docs/16-custom-pipelines.md) | `createPipeline()`, `drawPipeline()`, depth-map targets |
+| 17 | [Shadows and Post-Processing](docs/17-shadows-and-post-processing.md) | Built from your own shaders; references |
 
 ---
 

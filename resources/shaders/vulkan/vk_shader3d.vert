@@ -10,6 +10,8 @@ layout(location = 1) out vec4 fragColor;
 layout(location = 2) out vec3 fragNormal;
 layout(location = 3) out vec3 fragPos;
 layout(location = 4) flat out uint fragTextureIndex;
+layout(location = 5) flat out vec3 fragCameraPos;
+layout(location = 6) flat out uint fragMaterialIndex;
 
 // Written once per frame. The model matrix lives in the push constants instead,
 // so that many objects can be drawn from one render pass.
@@ -39,4 +41,8 @@ void main()
     fragNormal = mat3(pc.normalMatrix) * inNormal;
     fragPos = worldPos.xyz;
     fragTextureIndex = floatBitsToUint(pc.normalMatrix[3].x);
+    // normalMatrix[3].y carries the material table index the same way (see VulkanRenderer::bindDrawState()).
+    fragMaterialIndex = floatBitsToUint(pc.normalMatrix[3].y);
+    // The view matrix is rigid, so its inverse rotation undoes the translation.
+    fragCameraPos = -transpose(mat3(ubo.view)) * ubo.view[3].xyz;
 }

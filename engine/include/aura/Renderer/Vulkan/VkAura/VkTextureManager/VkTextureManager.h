@@ -5,9 +5,12 @@
 
 #include "aura/Renderer/Vulkan/VkAura/VkLoader/VkLoader.h"
 #include <array>
+#include <cstddef>
+#include <span>
 #include <string>
 #include <vector>
 
+#include "aura/Renderer/Texture.h"
 #include "aura/Renderer/Vulkan/VkAura/VkMemory/VulkanMemoryManager/VulkanMemoryManager.h"
 #include "aura/aura.h"
 
@@ -47,10 +50,13 @@ class VkTextureManager
         u32 height = 0;
         VkFormat format = VK_FORMAT_UNDEFINED;
         u32 bytesPerTexel = 0;
+        u32 mipLevels = 1;
+        bool attachment = false; //! A render target's colour: drawn by the GPU, never updated from the CPU.
     };
 
+    //! @p maxAnisotropy: what samplers are clamped to, 1 where the device has no anisotropic filtering.
     VkTextureManager(VulkanMemoryManager *memoryManager, VkDevice *device, VkCommandPool commandPool,
-                     VkQueue graphicsQueue);
+                     VkQueue graphicsQueue, f32 maxAnisotropy);
 
     ~VkTextureManager();
 
@@ -96,6 +102,23 @@ class VkTextureManager
 
     //! Linear R8 coverage, sampled as white RGB with coverage in alpha.
     TextureId createCoverageTexture(u32 width, u32 height);
+
+    /// @p desc's format, sampler and, when the format can be blitted with linear filtering, mip chain;
+    /// a format that cannot keeps one level. @p pixels is level 0, tightly packed.
+    TextureId createTexture(const TextureDesc &desc, std::span<const std::byte> pixels);
+
+    /// A render target's colour image, left SHADER_READ_ONLY_OPTIMAL between passes, sampled clamped.
+    /// A valid @p replace is destroyed and its id reused (a resized target keeps its handle); the GPU must be done
+    /// with it and its uploads flushed.
+    TextureId createAttachment(u32 width, u32 height, TextureFormat format, TextureId replace = kInvalidTextureId);
+
+    /// A depth image to render into and then sample, as a shadow atlas is: nearest, clamped. Its layout is
+    /// the render pass's business; nothing is recorded here. A valid @p replace is destroyed and its id
+    /// reused, so a resized atlas keeps its handle and bindless slot; the GPU must be done with it.
+    TextureId createDepthAttachment(u32 width, u32 height, VkFormat format, TextureId replace = kInvalidTextureId);
+
+    /// Level 0 as RGBA8 rows, top first. Blocks on the copy; the caller makes sure earlier work is done.
+    bool readPixels(TextureId id, std::span<u8> rgba);
 
     /**
      * @brief Uploads RGBA8 texels into a sub-rectangle of an existing texture.
@@ -152,7 +175,12 @@ class VkTextureManager
     void flushUploads();
 
   private:
-    TextureId createTexture(u32 width, u32 height, VkFormat format, const u8 *pixels = nullptr);
+    TextureId createTexture(u32 width, u32 height, VkFormat format, const void *pixels = nullptr, u32 mipLevels = 1,
+                            const SamplerDesc &sampler = {}, VkImageUsageFlags extraUsage = 0,
+                            TextureId replace = kInvalidTextureId);
+    //! Blits level 0 down the chain, leaving every level SHADER_READ_ONLY_OPTIMAL.
+    void recordMipChain(VkCommandBuffer cmd, VkImage image, u32 width, u32 height, u32 mipLevels) const;
+    [[nodiscard]] bool canGenerateMips(VkFormat format) const;
     void updateRegion(TextureId id, u32 x, u32 y, u32 width, u32 height, const u8 *pixels, VkFormat format);
 
     /**
@@ -174,10 +202,13 @@ class VkTextureManager
         VkCommandBuffer command = VK_NULL_HANDLE;
         //! Signalled when the submitted batch has retired; created on first submit.
         VkFence fence = VK_NULL_HANDLE;
-        //! Submitted and not yet waited for: @c staging must not be overwritten.
-        bool pending = false;
-        //! @c command is begun and accepting more patches.
-        bool recording = false;
+        enum class State : u8
+        {
+            Idle,
+            Recording, //!< @c command is begun and accepting more patches.
+            Submitted, //!< Not yet waited for: @c staging must not be overwritten.
+        };
+        State state = State::Idle;
         //! @c staging was mapped by an explicit map() this class must unmap,
         //! rather than by VMA's persistent mapping.
         bool manuallyMapped = false;
@@ -219,11 +250,11 @@ class VkTextureManager
     //! slot's staging buffer. Safe on an empty slot.
     void releaseStagingBuffer();
 
-    //! 2D colour view over @p image with a single mip level.
-    VkImageView createImageView(VkImage image, VkFormat format);
+    //! 2D colour view over @p image's @p mipLevels levels.
+    VkImageView createImageView(VkImage image, VkFormat format, u32 mipLevels);
 
-    //! Linear filtering, repeat addressing, no anisotropy; shared by every texture.
-    VkSampler createSampler();
+    //! @p sampler over @p mipLevels levels; anisotropy is clamped to the device's limit.
+    VkSampler createSampler(const SamplerDesc &sampler, u32 mipLevels);
 
     //! Destroys the image, view, sampler and allocation of @p texture.
     void destroyTextureData(TextureData &texture);
@@ -235,8 +266,8 @@ class VkTextureManager
      * an upload put its two transitions and the copy between them into a single
      * command buffer.
      */
-    void recordLayoutTransition(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout,
-                                VkImageLayout newLayout) const;
+    void recordLayoutTransition(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
+                                u32 baseMip = 0, u32 levelCount = 1) const;
 
     /**
      * @brief Records a buffer -> image sub-rectangle copy into @p cmd, reading
@@ -253,6 +284,7 @@ class VkTextureManager
     //! buffers can be recycled without freeing them.
     VkCommandPool _commandPool;
     VkQueue _graphicsQueue;
+    f32 _maxAnisotropy;
     //! Dense, id-indexed (id - 1). Textures are never individually removed,
     //! only dropped wholesale by cleanup(), so ids stay stable for the
     //! manager's lifetime and no free-list or generation counter is needed.

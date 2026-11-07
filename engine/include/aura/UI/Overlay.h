@@ -65,6 +65,22 @@ struct OverlayTransition
     f32 exitTimeoutSeconds = 5.0f;
 };
 
+/// How an overlay takes input and is dismissed.
+enum class OverlayFlags : u8
+{
+    None = 0,
+    /// Swallows input to everything underneath, including other overlays below it. A dialog wants this; a tooltip
+    /// must not have it.
+    Modal = 1u << 0u,
+    /// Light dismissal: an overlay that cannot be dismissed by the two things everyone tries is a trap.
+    DismissOnOutsideClick = 1u << 1u,
+    DismissOnEscape = 1u << 2u,
+    /// Focus moves into the overlay when it opens.
+    TakeFocus = 1u << 3u,
+    Default = (1u << 1u) | (1u << 2u) | (1u << 3u), //!< DismissOnOutsideClick, DismissOnEscape and TakeFocus.
+};
+INK_ENUM_FLAGS(OverlayFlags) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 /// How one overlay is placed and dismissed.
 struct OverlayDesc
 {
@@ -81,18 +97,9 @@ struct OverlayDesc
     /// describing it.
     f32 cursorClearance = 14.0f;
 
-    /// Swallows input to everything underneath, including other overlays below
-    /// it. A dialog wants this; a tooltip must not have it.
-    bool modal = false;
-
-    /// @{
-    /// Light dismissal. Both default on, because an overlay that cannot be
-    /// dismissed by the two things everyone tries is a trap.
-    bool dismissOnOutsideClick = true;
-    bool dismissOnEscape = true;
-    bool takeFocus = true;
+    /// A dialog is `OverlayFlags::Default | OverlayFlags::Modal`.
+    OverlayFlags flags = OverlayFlags::Default;
     Widget *owner = nullptr;
-    /// @}
 
     /// This overlay's own; a hook left unset falls back to OverlayLayer::setDefaultTransition().
     OverlayTransition transition{};
@@ -227,16 +234,23 @@ class OverlayLayer final : public Widget
     void onChildRemoved(usize index) override;
 
   private:
+    //! Ordered: everything from Exiting on is closing.
+    enum class Stage : u8
+    {
+        Fresh,   //!< Not laid out yet, so never seen.
+        Shown,   //!< Laid out at least once, which is when its enter hook runs and it can be seen.
+        Exiting, //!< Closing, and still drawn until its exit transition calls done.
+        Closed,  //!< Inert, waiting for collectClosed() to destroy it.
+    };
+
     struct Entry
     {
         Id id = kNone;
         OverlayDesc desc{};
-        bool closing = false;
+        Stage stage = Stage::Fresh;
         WidgetRef owner;
         WidgetRef restoreFocus;
         bool focusPending = true;
-        bool placed = false;     //! Laid out at least once, which is when its enter hook runs and it can be seen.
-        bool exiting = false;    //! Closing, and still drawn until its exit transition calls done.
         f32 exitDeadline = 0.0f; //! UIRoot::time() at which an exit that has not called done is cut short.
     };
 

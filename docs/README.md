@@ -15,9 +15,9 @@ straight to whatever you need — each chapter links to the ones it builds on.
 4. **[Camera](04-camera.md)** — perspective and orthographic projections,
    target mode vs. free-look mode.
 5. **[Meshes, Materials & Textures](05-meshes-materials-textures.md)** —
-   loading OBJ files and images, built-in primitives, `ResourceManager`
-   caching, the `Material` model, handles.
-6. **[Lighting](06-lighting.md)** — the single-directional-light model and
+   loading OBJ files and images, built-in primitives, the `Material` model,
+   handles.
+6. **[Lighting](06-lighting.md)** — PBR from one list of directional, point, spot and ambient lights,
    the ambient/intensity knobs.
 7. **[2D Rendering & Text](07-2d-rendering-and-text.md)** — batches, lines
    and shapes, `TextOverlay`, how the glyph atlas stays cheap.
@@ -42,6 +42,14 @@ straight to whatever you need — each chapter links to the ones it builds on.
     measure/arrange layout with flex and grid, shaped text with carets and
     wrapping, signals and properties, animation, accessibility, and how it
     stays one draw call. Builds on chapter 7's batches.
+15. **[Advanced Rendering](15-advanced-rendering.md)** — render targets,
+    glTF models with skinned animation, instancing and culling, compute and
+    indirect draws, background asset loading, shader hot reload.
+16. **[Your Own Shaders](16-custom-pipelines.md)** — `createPipeline()` and
+    `drawPipeline()`: what a shader reads, one GLSL source for both GPU
+    backends, depth-map render targets.
+17. **[Shadows and Post-Processing](17-shadows-and-post-processing.md)** — not
+    in the engine; what to build them from, and where to read how.
 
 See also the [top-level README](../README.md) for the repository layout and
 CMake option reference, and `apps/Sandbox/main.cpp` / `apps/OrgLogo/main.cpp` /

@@ -8,52 +8,82 @@
  * RuntimeDescriptorArray, matching the features VkDeviceManager enables.
  */
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_GOOGLE_include_directive : require
 
 layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in vec4 fragColor;
 layout(location = 2) in vec3 fragNormal;
 layout(location = 3) in vec3 fragPos;
 layout(location = 4) flat in uint fragTextureIndex;
+layout(location = 5) flat in vec3 fragCameraPos;
+layout(location = 6) flat in uint fragMaterialIndex;
 
 layout(location = 0) out vec4 outColor;
 
 /*
  * Bindless texture table: one combined-image-sampler binding covering every
- * texture the renderer has created, indexed per-draw by fragTextureIndex
- * instead of rebinding a descriptor per texture.
- *
- * Declared unsized (runtimeDescriptorArray) on purpose: the real slot count
- * is whatever VkDeviceManager::maxBindlessTextures() resolved against the
- * device's update-after-bind limits, which differs per GPU and cannot be
- * baked into the SPIR-V this engine ships prebuilt. A hardcoded size here
- * would fail to create the layout on any device whose limits are lower.
- *
- * No nonuniformEXT: fragTextureIndex comes from a push constant, so it is
- * constant across the whole draw call (dynamically uniform), which is
- * exactly the case the spec permits indexing without
- * shaderSampledImageArrayNonUniformIndexing. A future per-fragment material
- * lookup (deferred shading, GPU-driven batching) would need both that
- * feature and a nonuniformEXT() around the index.
+ * texture the renderer has created, indexed per draw. Unsized because its real
+ * length is the device's update-after-bind limit, resolved at runtime. Every
+ * index here comes from a push constant or the material table at a push-constant
+ * index, so it is dynamically uniform and needs no nonuniformEXT.
  */
 layout(set = 1, binding = 0) uniform sampler2D textureSamplers[];
 
-// Mirrors aura3d::gfx::LightUBO (std140).
-layout(set = 2, binding = 0) uniform LightBlock {
-    vec3  direction;
-    float intensity;
-    vec4  color;
-    float ambient;
-} light;
+struct GpuLight {
+    vec4 positionRange;
+    vec4 colorIntensity;
+    vec4 directionCosOuter;
+    vec4 params; // x cos(inner), y the LightType
+};
+
+// Mirrors aura3d::gfx::LightingUBO (std140).
+layout(set = 2, binding = 0) uniform LightingBlock {
+    uint  count;
+    uint  pad0;
+    uint  pad1;
+    uint  pad2;
+    GpuLight lights[8];
+} lighting;
+
+// Mirrors aura3d::gfx::MaterialUniforms; entry 0 is the default material.
+struct Material {
+    vec4 tint;
+    vec3 emissive;
+    float roughness;
+    float metallic;
+    uint maps;
+    uint normalMap;
+    uint metallicRoughnessMap;
+    uint emissiveMap;
+};
+layout(std430, set = 2, binding = 1) readonly buffer MaterialTable {
+    Material materials[];
+};
+
+#include "pbr.glsl"
 
 void main()
 {
-    // direction is the way the light travels, so the vector towards it is negated.
-    vec3 toLight = normalize(-light.direction);
-    vec3 norm = normalize(fragNormal);
+    const Material material = materials[fragMaterialIndex];
+    vec4 albedo = texture(textureSamplers[fragTextureIndex], fragTexCoord) * fragColor * material.tint;
 
-    float diffuse = max(dot(norm, toLight), 0.0) * light.intensity;
-    float lighting = light.ambient + diffuse;
+    vec3 normal = normalize(fragNormal);
+    if ((material.maps & kNormalMap) != 0u)
+        normal = perturbNormal(normal, fragPos, fragTexCoord,
+                               texture(textureSamplers[material.normalMap], fragTexCoord).rgb);
+    float roughness = material.roughness;
+    float metallic = material.metallic;
+    if ((material.maps & kMetallicRoughnessMap) != 0u)
+    {
+        const vec4 mr = texture(textureSamplers[material.metallicRoughnessMap], fragTexCoord);
+        roughness *= mr.g;
+        metallic *= mr.b;
+    }
+    vec3 emissive = material.emissive;
+    if ((material.maps & kEmissiveMap) != 0u)
+        emissive *= texture(textureSamplers[material.emissiveMap], fragTexCoord).rgb;
 
-    vec4 texColor = texture(textureSamplers[fragTextureIndex], fragTexCoord);
-    outColor = texColor * fragColor * vec4(light.color.rgb * lighting, 1.0);
+    Surface surface = Surface(albedo.rgb, normal, normalize(fragCameraPos - fragPos), fragPos, roughness, metallic);
+    vec3 colour = shadeLights(surface) + emissive;
+    outColor = vec4(colour, albedo.a);
 }

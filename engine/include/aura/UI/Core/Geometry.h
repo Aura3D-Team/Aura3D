@@ -9,6 +9,8 @@
 #include <glm/glm.hpp>
 #include <ink/ink_base.hpp>
 
+#include "aura/Core/AuraMath.h"
+
 /**
  * @file Geometry.h
  * @brief The value types every other AuraUI header speaks in.
@@ -205,11 +207,6 @@ struct Corners
 
     [[nodiscard]] constexpr bool operator==(const Corners &) const noexcept = default;
 };
-
-[[nodiscard]] constexpr f32 lerp(f32 a, f32 b, f32 t) noexcept
-{
-    return a + (b - a) * t;
-}
 
 [[nodiscard]] inline glm::vec4 withAlpha(glm::vec4 color, f32 alpha) noexcept
 {

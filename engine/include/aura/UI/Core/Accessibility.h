@@ -48,6 +48,23 @@ enum class Role : u8
     Separator,
 };
 
+/// A widget's states as a screen reader sees them. Checked, Selected, Expanded and ReadOnly mean something only
+/// for the roles that have the state.
+enum class AccessibilityState : u16
+{
+    None = 0,
+    Enabled = 1u << 0u,
+    Focusable = 1u << 1u,
+    Focused = 1u << 2u,
+    /// Everything outside this node is out of reach while it is open: a modal dialog. A bridge hides the rest.
+    Modal = 1u << 3u,
+    Checked = 1u << 4u,
+    Selected = 1u << 5u,
+    Expanded = 1u << 6u,
+    ReadOnly = 1u << 7u,
+};
+INK_ENUM_FLAGS(AccessibilityState) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 /// Everything one widget exposes. Filled by Widget::accessibility().
 struct AccessibilityInfo
 {
@@ -60,25 +77,21 @@ struct AccessibilityInfo
     /// Longer explanation, read after @c name -- a tooltip's content, usually.
     std::string description;
 
-    bool enabled = true;
-    bool focusable = false;
-    bool focused = false;
-
-    /// Everything outside this node is out of reach while it is open: a modal dialog. A bridge hides the rest.
-    bool modal = false;
-
-    /// @{
-    /// Meaningful for the roles that have the state; ignored otherwise.
-    bool checked = false;
-    bool selected = false;
-    bool expanded = false;
-    bool readOnly = false;
-    /// @}
+    AccessibilityState state = AccessibilityState::Enabled;
 
     /// Slider and ProgressBar.
     f32 value = 0.0f;
     f32 minValue = 0.0f;
     f32 maxValue = 0.0f;
+
+    [[nodiscard]] constexpr bool has(AccessibilityState flag) const noexcept
+    {
+        return INK_FLAG_CHECK(state, flag);
+    }
+    constexpr void set(AccessibilityState flag, bool on) noexcept
+    {
+        state = on ? state | flag : state & ~flag;
+    }
 };
 
 /// One widget's info plus where it is, as a tree. What UIRoot hands a bridge

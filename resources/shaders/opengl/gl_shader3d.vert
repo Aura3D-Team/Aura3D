@@ -9,6 +9,7 @@ out vec2 fragTexCoord;
 out vec4 fragColor;
 out vec3 fragNormal;
 out vec3 fragPos;
+flat out vec3 fragCameraPos;
 
 // Per frame; the per-draw model and its normal matrix are plain uniforms, as on Vulkan and Metal.
 layout(std140) uniform Camera {
@@ -28,4 +29,6 @@ void main()
     fragColor = inColor;
     fragNormal = uNormal * inNormal;
     fragPos = worldPos.xyz;
+    // The view matrix is rigid, so its inverse rotation undoes the translation.
+    fragCameraPos = -transpose(mat3(camera.view)) * camera.view[3].xyz;
 }

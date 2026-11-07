@@ -209,8 +209,7 @@ menu.addSubmenu("Export", [&](Menu& sub) { sub.addItem("PNG"); });
 | `anchor` | Surface-space rectangle to position against |
 | `placement` | `Below` · `Above` · `Right` · `Left` · `Over` · `Cursor` · `Center` |
 | `offset` | Nudge applied after placement |
-| `modal` | Swallows input to everything underneath |
-| `dismissOnOutsideClick` / `dismissOnEscape` | Light dismissal; both on by default |
+| `flags` | `OverlayFlags`: `Modal` swallows input to everything underneath; `DismissOnOutsideClick` and `DismissOnEscape` are light dismissal; `TakeFocus` moves focus in. `OverlayFlags::Default` is the last three, so a dialog is `Default \| Modal` |
 | `transition` | `enter` (after its first placement, before it is first drawn) and `exit` hooks for this overlay; unset ones fall back to `OverlayLayer::setDefaultTransition()` |
 | `onClosed` | Runs once it is gone, so an opener can forget its id |
 
@@ -570,7 +569,7 @@ bounds, nesting — with purely visual nodes folded out. An AT-SPI or UI
 Automation bridge consumes it, and so does a test.
 
 Open overlays follow the content, back to front, so a menu or a drop-down list is read where it sits. A modal one
-is `Role::Window` with `info.modal` set, which is the bridge's cue to hide the rest. An overlay that is closing, even
+is `Role::Window` with `info.has(AccessibilityState::Modal)`, which is the bridge's cue to hide the rest. An overlay that is closing, even
 while its exit still draws, is not in the tree; neither is a tooltip, whose text is the owner's `description`.
 
 ## DPI

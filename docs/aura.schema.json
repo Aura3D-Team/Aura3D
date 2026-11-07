@@ -248,6 +248,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "shader_hot_reload": {
+          "description": "While run() drives the loop, rebuild the built-in 3D shaders when a file under paths.shaders changes (the build restages them).",
+          "type": "boolean"
+        },
         "vulkan": {
           "additionalProperties": false,
           "properties": {
@@ -286,6 +290,11 @@
               "maximum": 1000000,
               "minimum": 0,
               "type": "integer"
+            },
+            "pipeline_cache": {
+              "default": "./cache/vulkan-pipelines.bin",
+              "description": "File compiled pipelines are kept in between runs; a cache from another GPU or driver is ignored. Empty keeps them in memory only.",
+              "type": "string"
             },
             "transform_slots": {
               "default": 1024,

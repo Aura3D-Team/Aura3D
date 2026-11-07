@@ -78,6 +78,19 @@ struct UIViewDesc
     std::string windowTitle;
 };
 
+enum class UIViewFlags : u8
+{
+    None = 0,
+    Drawn = 1u << 0u, //!< Clear until the first draw(), so the first frame is never skipped.
+    PointerKnown = 1u << 1u,
+    //! A finger is down: touch drives the pointer instead of the mouse, whose
+    //! position on a touch device is stale or invented.
+    TouchActive = 1u << 2u,
+    WindowFocused = 1u << 3u,
+    FrameHitTest = 1u << 4u,
+};
+INK_ENUM_FLAGS(UIViewFlags) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 /**
  * @class UIView
  * @brief A widget tree, drawn through an @ref IRenderer and fed from wma.
@@ -217,8 +230,6 @@ class UIView
     /// the move callback (a camera, usually).
     void _syncPointer();
 
-    //! False until the first draw(), so the first frame is never skipped.
-    bool _drawn = false;
     IRenderer *_renderer = nullptr;
 
     //! Declared before _root and _backend, both of which hold a reference to
@@ -237,18 +248,13 @@ class UIView
     f32 _contentScale = 1.0f;
 
     glm::vec2 _pointer{0.0f};
-    bool _pointerKnown = false;
 
-    //! Set while a finger is down: touch drives the pointer instead of the
-    //! mouse, whose position on a touch device is stale or invented.
-    bool _touchActive = false;
     wma::TouchFingerId _finger = 0;
-    bool _windowFocused = true;
     ViewScaling _scaling;
     f32 _zoom = 1.0f;
     f32 _bottomInset = 0.0f;
     wma::SystemCursor _cursor = wma::SystemCursor::Default; //! What the window shows now; set only when it changes.
-    bool _frameHitTest = false;
+    UIViewFlags _flags = UIViewFlags::WindowFocused;
     //! windowDecoration() runs on every pointer move as the hit test, so the cast
     //! is redone only when the root's decoration changes.
     mutable IWindowDecoration *_decoration = nullptr;

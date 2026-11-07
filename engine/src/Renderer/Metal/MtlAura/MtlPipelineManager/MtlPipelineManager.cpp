@@ -19,7 +19,8 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
         throw AuraException("MtlPipelineManager: device is null");
 
     const NS::SharedPtr<MTL::Function> vertexFunction = library.newFunction(options.vertexFunction);
-    const NS::SharedPtr<MTL::Function> fragmentFunction = library.newFunction(options.fragmentFunction);
+    const NS::SharedPtr<MTL::Function> fragmentFunction =
+        (options.fragmentLibrary ? *options.fragmentLibrary : library).newFunction(options.fragmentFunction);
 
     NS::SharedPtr<MTL::RenderPipelineDescriptor> descriptor = adopt(MTL::RenderPipelineDescriptor::alloc()->init());
 
@@ -27,6 +28,8 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
     descriptor->setLabel(label.get());
     descriptor->setVertexFunction(vertexFunction.get());
     descriptor->setFragmentFunction(fragmentFunction.get());
+    if (options.vertexDescriptor)
+        descriptor->setVertexDescriptor(options.vertexDescriptor);
 
     /*
      * Attachment formats, not an attachment set: this is the entire coupling
@@ -34,10 +37,10 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
      * MtlDrawableManager's render pass exactly or newRenderPipelineState fails.
      */
     MTL::RenderPipelineColorAttachmentDescriptor *colorAttachment = descriptor->colorAttachments()->object(0);
-    colorAttachment->setPixelFormat(kColorFormat);
-    descriptor->setDepthAttachmentPixelFormat(kDepthFormat);
+    colorAttachment->setPixelFormat(options.colorFormat);
+    descriptor->setDepthAttachmentPixelFormat(options.depthFormat);
 
-    if (options.alphaBlend)
+    if (INK_FLAG_CHECK(options.state, PipelineState::AlphaBlend))
     {
         //! Straight (non-premultiplied) alpha, matching the Vulkan and OpenGL
         //! overlay paths: src*srcAlpha + dst*(1-srcAlpha).
@@ -60,7 +63,7 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
     }
 
     /*
-     * The depth-stencil state. A depthTest-off pipeline still gets one (compare
+     * The depth-stencil state. A pipeline without DepthTest still gets one (compare
      * Always, no writes) rather than none -- see getDepthStencilState()'s comment
      * for why leaving the encoder's previous state in place is not an option.
      */
@@ -72,8 +75,10 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
      * depth range is [0,1] like Vulkan's, not [-1,1] like OpenGL's. That is the
      * whole reason MetalRenderer asks Camera for ClipSpace::Vulkan.
      */
-    depthDescriptor->setDepthCompareFunction(options.depthTest ? options.depthCompare : MTL::CompareFunctionAlways);
-    depthDescriptor->setDepthWriteEnabled(options.depthTest && options.depthWrite);
+    depthDescriptor->setDepthCompareFunction(
+        INK_FLAG_CHECK(options.state, PipelineState::DepthTest) ? options.depthCompare : MTL::CompareFunctionAlways);
+    depthDescriptor->setDepthWriteEnabled(
+        INK_FLAG_CHECK(options.state, PipelineState::DepthTest | PipelineState::DepthWrite));
 
     _depthStencilState = adopt(device->newDepthStencilState(depthDescriptor.get()));
     if (!_depthStencilState)
@@ -82,12 +87,12 @@ MtlPipelineManager::MtlPipelineManager(MTL::Device *device, const MtlShaderLibra
                             std::string(options.label) + "'");
     }
 
-    _cullMode = options.cullBackFaces ? MTL::CullModeBack : MTL::CullModeNone;
+    _cullMode = INK_FLAG_CHECK(options.state, PipelineState::CullBackFaces) ? MTL::CullModeBack : MTL::CullModeNone;
 
     INK_TRACE << "Metal pipeline '" << options.label << "' compiled"
-              << " | depth: " << (options.depthTest ? "on" : "off")
-              << " | blend: " << (options.alphaBlend ? "on" : "off")
-              << " | cull: " << (options.cullBackFaces ? "back" : "none");
+              << " | depth: " << (INK_FLAG_CHECK(options.state, PipelineState::DepthTest) ? "on" : "off")
+              << " | blend: " << (INK_FLAG_CHECK(options.state, PipelineState::AlphaBlend) ? "on" : "off")
+              << " | cull: " << (INK_FLAG_CHECK(options.state, PipelineState::CullBackFaces) ? "back" : "none");
 }
 
 MtlPipelineManager::~MtlPipelineManager()
@@ -111,7 +116,7 @@ void MtlPipelineManager::bind(MTL::RenderCommandEncoder *encoder) const noexcept
      * (see VkGraphicsPipelineManager's frontFace comment, which reaches the same
      * setting from the opposite direction: Vulkan's clip space is Y-down, and the
      * negative-height viewport it renders with introduces exactly one flip too).
-     * Hence CounterClockwise here, and hence a cullBackFaces pipeline culling the
+     * Hence CounterClockwise here, and hence a CullBackFaces pipeline culling the
      * same triangles on both backends.
      */
     encoder->setFrontFacingWinding(MTL::WindingCounterClockwise);

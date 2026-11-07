@@ -46,6 +46,7 @@ struct ResolvedDraw
     u32 indexCount = 0;
     //! Slot in the bindless texture table; see VulkanRenderer::textureArrayIndexOf().
     u32 textureIndex = 0;
+    u32 materialIndex = 0; //! Entry in the material table; 0 is the default material.
     VkIndexType indexType = VK_INDEX_TYPE_UINT32;
 };
 

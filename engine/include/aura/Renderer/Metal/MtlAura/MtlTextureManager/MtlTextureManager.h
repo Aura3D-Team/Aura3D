@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <cstddef>
+#include <span>
 #include <vector>
 
 #include "aura/Renderer/Metal/MtlAura/MtlAuraCore.h"
 #include "aura/Renderer/RenderHandles.h"
+#include "aura/Renderer/Texture.h"
 
 namespace aura3d
 {
@@ -52,6 +55,10 @@ class MtlTextureManager
      */
     [[nodiscard]] TextureHandle createFromPixels(const u8 *rgbaPixels, u32 width, u32 height);
 
+    /// @p desc's format and sampler; a mip chain is generated on @p queue, which this waits for.
+    [[nodiscard]] TextureHandle createTexture(const TextureDesc &desc, std::span<const std::byte> pixels,
+                                              MTL::CommandQueue *queue);
+
     /**
      * @brief Allocates an RGBA8 texture whose contents are meant to change,
      *        initialised to transparent black.
@@ -94,18 +101,14 @@ class MtlTextureManager
      */
     [[nodiscard]] MTL::Texture *resolve(TextureHandle handle) const noexcept;
 
-    /**
-     * @brief The sampler every texture is read through.
-     *
-     * One shared sampler rather than one per texture: nothing in the engine
-     * varies filtering or addressing per material, so a second sampler would
-     * differ from this one in no respect. Linear/linear with clamp-to-edge
-     * addressing, matching what the GLSL backends configure.
-     */
-    [[nodiscard]] MTL::SamplerState *getSampler() const noexcept
-    {
-        return _sampler.get();
-    }
+    /// A render target's colour: private storage, sampled through the shared clamped sampler.
+    //! A valid @p replace gets the new texture in its slot, keeping its handle.
+    [[nodiscard]] TextureHandle createAttachment(u32 width, u32 height, TextureFormat format,
+                                                 TextureHandle replace = {});
+
+    /// The sampler @p handle is read through: its own when createTexture() made it, else the shared
+    /// linear, clamp-to-edge one.
+    [[nodiscard]] MTL::SamplerState *samplerFor(TextureHandle handle) const noexcept;
 
     //! Releases every texture (the sampler outlives them). Every handle issued
     //! before this becomes stale.
@@ -132,6 +135,8 @@ class MtlTextureManager
 
     //! Handle N lives at index N - 1; see MtlVertexBufferManager::_buffers.
     std::vector<NS::SharedPtr<MTL::Texture>> _textures;
+    //! Parallel to _textures; empty where the texture uses the shared _sampler.
+    std::vector<NS::SharedPtr<MTL::SamplerState>> _samplers;
 };
 
 } // namespace mtl
