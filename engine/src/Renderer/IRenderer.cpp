@@ -77,8 +77,14 @@ wma::IWindowManager *IRenderer::getWindowManager()
 
 bool IRenderer::consumeResize() noexcept
 {
-    wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
-    return flags && std::exchange(flags->resized, false);
+    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
+    return flags && _resizeWatch.consume(*flags);
+}
+
+bool IRenderer::resizePending() const noexcept
+{
+    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
+    return flags && _resizeWatch.pending(*flags);
 }
 
 void IRenderer::drawBatch(const gfx::Canvas &canvas, TextureHandle texture, gfx::BatchSpace space)

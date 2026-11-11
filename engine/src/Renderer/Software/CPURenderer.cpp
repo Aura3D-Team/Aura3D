@@ -368,8 +368,7 @@ void CPURenderer::beginFrame()
 
 bool CPURenderer::needsFrame() const noexcept
 {
-    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
-    return _presentDropped || (flags && flags->resized);
+    return _presentDropped || resizePending();
 }
 
 void CPURenderer::beginRenderPass()

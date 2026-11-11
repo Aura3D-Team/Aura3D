@@ -632,6 +632,9 @@ class IRenderer
      *
      * @p onFrame is where beginRenderPass()/draw calls/endRenderPass()
      * belong -- beginFrame()/endFrame() are this function's job, not yours.
+     * The renderer applies a resize in beginFrame(); to react to one yourself,
+     * keep a wma::ResizeWatch and consume() getWindowManager()->getWindowFlags()
+     * in @p onFrame.
      * @param[in] onFrame Called once per frame, between beginFrame() and endFrame().
      */
     void run(move_only_function<void()> onFrame);
@@ -710,8 +713,11 @@ class IRenderer
     }
 
   protected:
-    //! Clears the window's resized flag; true when it was set.
+    //! True once for each burst of window resizes since the last call. The renderer's own view: the app and
+    //! the UI keep theirs (wma::ResizeWatch), so taking a resize here hides it from neither.
     [[nodiscard]] bool consumeResize() noexcept;
+    //! A resize consumeResize() has yet to take.
+    [[nodiscard]] bool resizePending() const noexcept;
 
     //! A GPU backend's recording state: no frame, a frame, or a render pass inside it.
     enum class FrameState : u8
@@ -795,6 +801,7 @@ class IRenderer
     gfx::TransformUBO _currentTransform{};
 
   private:
+    wma::ResizeWatch _resizeWatch;
     //! Sizes of the coverage textures the base class emulates as RGBA, for backends with no native ones.
     std::unordered_map<TextureHandle, glm::uvec2> _coverageFallbacks;
 };

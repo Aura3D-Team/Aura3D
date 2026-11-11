@@ -24,6 +24,7 @@ set(AURA_TEST_SUITES
     test_culling
     test_debug_mode_report
     test_font_atlas
+    test_frame_contract
     test_golden
     test_gltf
     test_image_loader

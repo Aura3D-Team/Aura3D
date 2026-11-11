@@ -866,9 +866,8 @@ void VulkanRenderer::beginFrame()
         }
     }
 
-    if (windowFlags->resized)
+    if (consumeResize() || _vkSwapChainManager->outOfDate())
     {
-        windowFlags->resized = false;
         _targetStale = true;
 
         //! Size events repeat without the size changing (a system bar appearing, a focus change), and a rebuild
@@ -1116,11 +1115,11 @@ void VulkanRenderer::endFrame()
     //! A rotation can raise its size event before the surface has the new size; the swapchain was then built to the
     //! old one, and Android reports that only as the suboptimal result a rotated phone gives permanently.
     if (_vkSwapChainManager->takeUnverified() && !swapchainMatchesSurface())
-        _windowManagerApi->getWindowFlags()->resized = true;
+        _vkSwapChainManager->markOutOfDate();
 
     AURA_FRAME_END();
 
-    //! A present that fails raises resized or surfaceLost, which needsFrame() reports.
+    //! A present that fails leaves the swapchain out of date or the surface lost, which needsFrame() reports.
     _targetStale = false;
     _frameState = FrameState::Idle;
     advanceFrame();
@@ -1128,8 +1127,9 @@ void VulkanRenderer::endFrame()
 
 bool VulkanRenderer::needsFrame() const noexcept
 {
-    const wma::WindowFlags *flags = _windowManagerApi->getWindowFlags();
-    return _targetStale || (flags && (flags->resized || flags->surfaceLost));
+    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
+    return _targetStale || resizePending() || (_vkSwapChainManager && _vkSwapChainManager->outOfDate()) ||
+           (flags && flags->surfaceLost);
 }
 
 void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)

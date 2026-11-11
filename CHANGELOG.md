@@ -2,6 +2,14 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [Unreleased]
+
+Needs libwma 0.11.0.
+
+### Fixed
+
+- An app could not see a window resize: the renderer cleared libwma's `resized` flag in `beginFrame()`, before the `run()` callback. libwma 0.11.0 counts resizes instead, and each reader keeps its own `wma::ResizeWatch`; the renderer's no longer hides a resize from the app or the UI (#41).
+
 ## [0.10.0]
 
 ### Added

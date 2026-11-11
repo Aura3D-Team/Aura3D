@@ -108,7 +108,7 @@ class MetalRenderer : public IRenderer
     //! else here loses a presented frame.
     [[nodiscard]] bool needsFrame() const noexcept override
     {
-        return _windowManagerApi && _windowManagerApi->getWindowFlags()->resized;
+        return resizePending();
     }
     void beginRenderPass() override;
     void beginRenderPass(RenderTargetHandle target) override;

@@ -151,6 +151,22 @@ r->run([&]() {
   callback and everything it captures by reference must stay alive after
   `run()` returns, on that platform).
 
+The renderer applies a window resize in `beginFrame()`, before your callback.
+To react to one yourself (a relayout, a new projection), keep a
+`wma::ResizeWatch`: it reports each resize once, whoever else has seen it.
+
+```cpp
+wma::ResizeWatch resizes;
+r->run([&]() {
+    if (resizes.consume(*r->getWindowManager()->getWindowFlags()))
+    {
+        const glm::vec2 size{r->renderTargetSize()};
+        camera.setPerspective({.fovDeg = 60.0f, .aspect = size.x / size.y, .nearZ = 0.1f, .farZ = 100.0f});
+    }
+    // ...
+});
+```
+
 Install input actions, including any Escape shortcut, through the window
 manager. `run()` does not install a quit key. Its callback is invoked even
 when a frame could not be acquired, so retain pending redraw work until
