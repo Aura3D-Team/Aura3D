@@ -5,7 +5,8 @@
 // in docs/14-auraui-toolkit.md.
 //
 // Everything here is built once, before the loop. There is no per-frame UI
-// code at all: `ui.render()` is the whole frame.
+// code at all: run() updates the tree every iteration and draws it only when
+// something changed, so an idle gallery costs no CPU.
 
 #include <array>
 #include <cstdio>
@@ -695,10 +696,10 @@ try
     renderer->run(
         [renderer, window, &ui]
         {
-            const f32 deltaSeconds = static_cast<f32>(window->getWindowFlags()->deltaTime) / 1000.0f;
-
-            renderer->beginRenderPass();
-            ui.render(deltaSeconds);
+            ui.update(static_cast<f32>(window->getWindowFlags()->deltaTime) / 1000.0f);
+            if (!ui.needsDraw() || !renderer->beginRenderPass())
+                return;
+            ui.draw();
             renderer->endRenderPass();
         });
 

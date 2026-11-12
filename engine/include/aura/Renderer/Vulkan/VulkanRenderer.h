@@ -73,21 +73,12 @@ class VulkanRenderer : public IRenderer
     void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                      const u8 *coverage) override;
 
-    void beginFrame() override;
-    [[nodiscard]] bool frameBegun() const noexcept override
-    {
-        return _frameState != FrameState::Idle;
-    }
-    [[nodiscard]] bool needsFrame() const noexcept override;
-    void beginRenderPass() override;
-    void beginRenderPass(RenderTargetHandle target) override;
     void endRenderPass() override;
     RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc) override;
     bool resizeRenderTarget(RenderTargetHandle target, u32 width, u32 height) override;
     [[nodiscard]] glm::uvec2 targetSize(RenderTargetHandle target) const override;
     [[nodiscard]] TextureHandle renderTargetTexture(RenderTargetHandle target) const override;
     bool readPixels(RenderTargetHandle target, std::span<u8> rgba) override;
-    void endFrame() override;
 
     void setTransform(const gfx::TransformUBO &ubo) override;
     void setLights(std::span<const gfx::Light> lights) override;
@@ -148,6 +139,10 @@ class VulkanRenderer : public IRenderer
 #endif
 
   protected:
+    bool acquireFrame() override;
+    bool presentFrame() override;
+    void openRenderPass() override;
+    void openRenderPass(RenderTargetHandle target) override;
     void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
 
   private:
@@ -287,9 +282,6 @@ class VulkanRenderer : public IRenderer
     u32 _imagesCount = 0;
     bool _isInitialized = false;
     FrameState _frameState = FrameState::Idle;
-    //! The swapchain holds no presented frame: nothing yet, or it was rebuilt
-    //! since. Cleared by the next present.
-    bool _targetStale = true;
     bool _pipelineReady = false;
 
     VulkanMemoryManager::Config _vmaConfig{};

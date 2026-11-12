@@ -138,16 +138,18 @@ class CaptureRenderer final : public IRenderer
     std::unordered_map<TextureHandle, Texture> textures;
 
     // Everything below is inert: the UI never calls it.
-    void beginFrame() override
+    bool acquireFrame() override
     {
+        return true;
     }
-    void beginRenderPass() override
+    bool presentFrame() override
+    {
+        return true;
+    }
+    void openRenderPass() override
     {
     }
     void endRenderPass() override
-    {
-    }
-    void endFrame() override
     {
     }
     void setTransform(const gfx::TransformUBO &) override

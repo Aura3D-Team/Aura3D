@@ -366,13 +366,15 @@ void OpenGLRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32
     _textureMgr->updateRegion(handle, x, y, width, height, rgbaPixels);
 }
 
-void OpenGLRenderer::beginFrame()
+bool OpenGLRenderer::acquireFrame()
 {
     if (consumeResize())
         handleWindowChanges();
+    //! cleanup() drops the managers while the window can outlive them.
+    return _uniformMgr != nullptr;
 }
 
-void OpenGLRenderer::beginRenderPass()
+void OpenGLRenderer::openRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
@@ -409,10 +411,10 @@ void OpenGLRenderer::openPass()
     _uniformMgr->updateLight(lighting());
 }
 
-void OpenGLRenderer::beginRenderPass(RenderTargetHandle target)
+void OpenGLRenderer::openRenderPass(RenderTargetHandle target)
 {
     if (!isValidHandle(target))
-        return beginRenderPass();
+        return openRenderPass();
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
     if (!_uniformMgr || target.value() > _renderTargets.size())
         return;
@@ -603,16 +605,15 @@ void OpenGLRenderer::endRenderPass()
 #endif
 }
 
-void OpenGLRenderer::endFrame()
+bool OpenGLRenderer::presentFrame()
 {
     /*
      * Present is where a vsynced GL frame spends its wall time, so the pipeline's
      * backpressure lands on this one scope. WaitFence/Acquire/Submit stay at zero:
-     * GL has no counterpart to any of them. Inside run() the window manager's loop
-     * swaps right after this returns; a second swap here would show each frame
-     * twice and halve a vsynced rate.
+     * GL has no counterpart to any of them. This is the only swap: the window
+     * manager's loop does not present, so run() and a loop of your own present alike.
      */
-    if (_windowManagerApi && !_running)
+    if (_windowManagerApi)
     {
         AURA_FRAME_SCOPE(FramePhase::Present);
         _windowManagerApi->swapBuffers();
@@ -623,6 +624,8 @@ void OpenGLRenderer::endFrame()
     //! manager has already gone (a cleanup() mid-loop) rather than stalling the
     //! sample stream on a backend that is shutting down.
     AURA_FRAME_END();
+    //! A swap reports no failure, so the frame counts as shown.
+    return true;
 }
 
 #ifdef AURA_PROFILE_FRAME

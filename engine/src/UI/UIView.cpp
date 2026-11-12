@@ -385,12 +385,16 @@ void UIView::draw()
 void UIView::update(f32 deltaSeconds)
 {
     _syncSurface();
+    bool minimized = false;
     if (_window)
     {
         wma::WindowFlags &flags = *_window->getWindowFlags();
         if (std::exchange(flags.textInputDismissed, false) && _root.capturesTextInput())
             _root.clearFocus();
-        const bool focused = flags.focused;
+        //! A minimized window keeps neither pointer nor keyboard, whether or not the platform says it lost focus:
+        //! a caption button pressed to minimize must not come back hovered.
+        minimized = flags.minimized;
+        const bool focused = flags.focused && !minimized;
         if (INK_FLAG_CHECK(_flags, UIViewFlags::WindowFocused) && !focused)
         {
             _root.cancelInput();
@@ -398,7 +402,10 @@ void UIView::update(f32 deltaSeconds)
         }
         focused ? INK_FLAG_SET(_flags, UIViewFlags::WindowFocused) : INK_FLAG_CLEAR(_flags, UIViewFlags::WindowFocused);
     }
-    _syncPointer();
+    //! Nothing is under the pointer of a minimized window, wherever the listener last saw it. Restored, the
+    //! position is synced again, since cancelInput() forgot it.
+    if (!minimized)
+        _syncPointer();
 
     if (_mouse && !INK_FLAG_CHECK(_flags, UIViewFlags::TouchActive))
     {

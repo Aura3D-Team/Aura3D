@@ -186,24 +186,30 @@ class RecordingRenderer final : public IRenderer
     bool indicesInRange = true;
     bool failTextures = false;
 
-    /// Set to act as a backend whose swapchain was rebuilt under a clean tree.
-    bool frameLost = false;
-    [[nodiscard]] bool needsFrame() const noexcept override
+    /// Acts as a backend whose swapchain was rebuilt under a clean tree.
+    void loseFrame() noexcept
     {
-        return frameLost;
+        invalidateTarget();
+    }
+    /// Acts as a frame reaching the screen. This renderer has no window, so beginFrame() never begins one.
+    void showFrame() noexcept
+    {
+        markPresented();
     }
 
     // Everything below is inert: the UI never calls it.
-    void beginFrame() override
+    bool acquireFrame() override
     {
+        return true;
     }
-    void beginRenderPass() override
+    bool presentFrame() override
+    {
+        return true;
+    }
+    void openRenderPass() override
     {
     }
     void endRenderPass() override
-    {
-    }
-    void endFrame() override
     {
     }
     void setTransform(const gfx::TransformUBO &ubo) override
@@ -773,14 +779,17 @@ void testLostFrameIsRedrawnWhileIdle()
     AURA_CHECK(view.needsDraw(), "a view draws its first frame");
     view.draw();
     view.update(0.0f);
+    AURA_CHECK(view.needsDraw(), "and draws again until a frame reaches the screen");
+    renderer.showFrame();
+    view.update(0.0f);
     AURA_CHECK(!view.needsDraw(), "an idle view skips its frame");
 
-    renderer.frameLost = true;
+    renderer.loseFrame();
     view.update(0.0f);
     AURA_CHECK(view.needsDraw(), "a frame the renderer lost is drawn again under a clean tree");
     view.draw();
 
-    renderer.frameLost = false;
+    renderer.showFrame();
     view.update(0.0f);
     AURA_CHECK(!view.needsDraw(), "and the view idles once the frame reaches the screen");
 }
@@ -917,6 +926,26 @@ void testContentScaleMultipliesTheBackingRatio()
     window.touch.down(1, 120.0, 60.0);
     window.touch.up(1, 120.0, 60.0);
     AURA_CHECK(ui.clicks == 1, "and input follows it");
+}
+
+void testMinimizeDropsAStaleHover()
+{
+    aura3d::test::FakeWindow window;
+    ScaledView ui(window);
+    window.mouse.move(50.0, 25.0);
+    ui.view->update(0.0f);
+    AURA_CHECK(ui.button->isHovered(), "minimize: the button under the pointer is hovered");
+
+    //! The platform may never say the pointer left: the window just went away under it.
+    window.flags.minimized = true;
+    ui.view->update(0.0f);
+    AURA_CHECK(!ui.button->isHovered() && ui.view->needsDraw(),
+               "minimize: a minimized window drops the hover, and the change is drawn");
+
+    window.flags.minimized = false;
+    window.mouse.move(150.0, 25.0);
+    ui.view->update(0.0f);
+    AURA_CHECK(!ui.button->isHovered(), "minimize: restored, hover follows the pointer again");
 }
 
 void testContentScaleIsClamped()
@@ -1321,6 +1350,7 @@ int main()
     testBottomInsetLeavesTheConfiguredShare();
     testContentScaleSizesTheTreeAndMapsInput();
     testContentScaleMultipliesTheBackingRatio();
+    testMinimizeDropsAStaleHover();
     testContentScaleIsClamped();
     testInvalidationTriggersRepaint();
     testScrolledContentIsClipped();

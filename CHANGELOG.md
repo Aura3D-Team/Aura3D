@@ -2,6 +2,32 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [Unreleased]
+
+Needs libwma 0.11.0.
+
+### Added
+
+- `run()` can skip a frame. Its frame begins at the first `beginRenderPass()` (or `updateMesh()`, `updateBuffer()`, `dispatch()`) of an iteration and is presented after the callback returns, so a callback that opens no pass begins and presents nothing: the window keeps its last frame on every backend, and the loop sleeps in `waitEvents()` (at most 100 ms) instead of spinning. Idle CPU stays under 0.1% on Vulkan, OpenGL and software. Before, returning early from the callback made Vulkan present a cleared window (#42).
+- `beginRenderPass()` returns whether there is a frame to draw into (`frameBegun()`).
+
+- `test_frame_conformance` runs one scripted window scenario on every backend built in: first frame, idle frames, an expose, a resize, minimize and restore, and a move. After each step it reads the window's own pixels back through Xlib. Each GPU backend must match the software backend, and every backend must show the scene; idle and minimized steps must draw nothing. It needs a disposable X server (`AURA_TEST_DISPLAY`), and CI's Linux Debug job gives it Xvfb, where Mesa runs OpenGL and Vulkan (#46).
+
+### Changed
+
+- `IRenderer::needsFrame()` is no longer virtual: one state in `IRenderer`, the same on every backend. It holds before the first present, from a resize until a frame at the new size presents, and after a rebuilt swapchain, a lost surface or a failed present. Before, OpenGL never needed a frame, and the software and Metal backends stopped needing one as soon as `beginFrame()` applied a resize, before it was drawn (#43). A backend reports presents through `markPresented()` and `invalidateTarget()`.
+- `IRenderer::frameBegun()` means the same on every backend: true from a `beginFrame()` that acquired a target until the `endFrame()` that presents it. It is false outside a frame, for a minimized window, for a window with no surface, and when the backend could not acquire a target. The software and OpenGL backends used to report every frame as begun, even while minimized (#44).
+- `beginFrame()`, `endFrame()` and `beginRenderPass()` are no longer virtual. They check what every backend shares (window, minimized, surface) and keep `frameBegun()` and `needsFrame()`. A backend implements `acquireFrame()`, `presentFrame()` and `openRenderPass()` instead; the first two return whether they succeeded. A frame that did not begin presents nothing. `beginFrame()` returns whether the frame began, like `beginRenderPass()`.
+- `endFrame()` presents on every backend, including the OpenGL and software ones, which used to leave the final swap to the window manager's loop. libwma 0.11.0's `process()` no longer swaps, so a loop of your own that calls `endFrame()` must not call `swapBuffers()` as well.
+
+- docs/03 describes the run loop, what `frameBegun()` and `needsFrame()` mean, and an idle-aware loop of your own. docs/14 replaces its hand-rolled idle UI loop with `run()`, and AuraUIDemo uses it too, idling at no measurable CPU (#47).
+
+### Fixed
+
+- Vulkan: a lost surface whose window was not ready yet was marked handled and never rebuilt; `surfaceLost` now stays set until the rebuild succeeds.
+- The window decoration, and the rest of the window, went blank while the app idled: nothing redrew after the platform dropped the window's pixels (a restore from minimized, or uncovering an X11 window without a compositor). The renderer now watches libwma's expose count, so `needsFrame()` holds until a frame redraws the window. A minimized window also drops the UI's hover and press, so a caption button pressed to minimize does not come back highlighted. Every decoration state change (hover, press, focus loss, maximize, restore, resize, title, resizability) is covered by a repaint test (#45).
+- An app could not see a window resize: the renderer cleared libwma's `resized` flag in `beginFrame()`, before the `run()` callback. libwma 0.11.0 counts resizes instead, and each reader keeps its own `wma::ResizeWatch`; the renderer's no longer hides a resize from the app or the UI (#41).
+
 ## [0.10.0]
 
 ### Added

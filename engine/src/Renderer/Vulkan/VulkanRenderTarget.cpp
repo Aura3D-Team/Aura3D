@@ -289,10 +289,10 @@ TextureHandle VulkanRenderer::renderTargetTexture(RenderTargetHandle target) con
                                                                             : TextureHandle{};
 }
 
-void VulkanRenderer::beginRenderPass(RenderTargetHandle target)
+void VulkanRenderer::openRenderPass(RenderTargetHandle target)
 {
     if (!isValidHandle(target))
-        return beginRenderPass();
+        return openRenderPass();
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
     if (_frameState == FrameState::Idle || target.value() > _renderTargets.size())

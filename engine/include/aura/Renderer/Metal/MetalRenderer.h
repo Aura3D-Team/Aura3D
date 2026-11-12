@@ -99,26 +99,12 @@ class MetalRenderer : public IRenderer
     void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                      const u8 *coverage) override;
 
-    void beginFrame() override;
-    [[nodiscard]] bool frameBegun() const noexcept override
-    {
-        return _frameState != FrameState::Idle;
-    }
-    //! A resize is applied, and drawn, inside the next beginFrame(); nothing
-    //! else here loses a presented frame.
-    [[nodiscard]] bool needsFrame() const noexcept override
-    {
-        return _windowManagerApi && _windowManagerApi->getWindowFlags()->resized;
-    }
-    void beginRenderPass() override;
-    void beginRenderPass(RenderTargetHandle target) override;
     RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc) override;
     bool resizeRenderTarget(RenderTargetHandle target, u32 width, u32 height) override;
     [[nodiscard]] glm::uvec2 targetSize(RenderTargetHandle target) const override;
     [[nodiscard]] TextureHandle renderTargetTexture(RenderTargetHandle target) const override;
     bool readPixels(RenderTargetHandle target, std::span<u8> rgba) override;
     void endRenderPass() override;
-    void endFrame() override;
 
     /*
      * setLights() is deliberately not overridden. The base implementation records
@@ -156,6 +142,10 @@ class MetalRenderer : public IRenderer
     }
 
   protected:
+    bool acquireFrame() override;
+    bool presentFrame() override;
+    void openRenderPass() override;
+    void openRenderPass(RenderTargetHandle target) override;
     void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
 
   private:

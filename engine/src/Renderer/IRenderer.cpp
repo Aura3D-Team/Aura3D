@@ -77,8 +77,62 @@ wma::IWindowManager *IRenderer::getWindowManager()
 
 bool IRenderer::consumeResize() noexcept
 {
-    wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
-    return flags && std::exchange(flags->resized, false);
+    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
+    if (!flags || !_resizeWatch.consume(*flags))
+        return false;
+    invalidateTarget();
+    return true;
+}
+
+bool IRenderer::resizePending() const noexcept
+{
+    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
+    return flags && _resizeWatch.pending(*flags);
+}
+
+bool IRenderer::beginFrame()
+{
+    //! A frame left open by a caller that skipped endFrame() is abandoned, not presented twice.
+    _frameBegun = false;
+    wma::IWindowManager *window = _windowManagerApi.get();
+    const wma::WindowFlags *flags = window ? window->getWindowFlags() : nullptr;
+    //! The platform dropped what the window showed: only a frame that reaches the screen restores it.
+    if (flags && _exposeWatch.consume(*flags))
+        invalidateTarget();
+    //! Minimized: no backend has anything to draw into that the user could see, and an Android surface can be
+    //! torn down at any moment, so none is asked to acquire one.
+    if (flags && !flags->minimized && window->isSurfaceAvailable())
+        _frameBegun = acquireFrame();
+    if (!_frameBegun)
+        invalidateTarget();
+    return _frameBegun;
+}
+
+void IRenderer::ensureFrame()
+{
+    if (_lazyFrames && !_frameTried)
+    {
+        _frameTried = true;
+        beginFrame();
+    }
+}
+
+void IRenderer::endFrame()
+{
+    if (!std::exchange(_frameBegun, false))
+        return;
+    if (presentFrame())
+        markPresented();
+    else
+        invalidateTarget();
+}
+
+bool IRenderer::needsFrame() const noexcept
+{
+    //! A resize, an expose and a lost surface count before the backend has seen them: each waits for the next
+    //! beginFrame().
+    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
+    return !_targetValid || resizePending() || (flags && (_exposeWatch.pending(*flags) || flags->surfaceLost));
 }
 
 void IRenderer::drawBatch(const gfx::Canvas &canvas, TextureHandle texture, gfx::BatchSpace space)
@@ -116,26 +170,37 @@ glm::mat4 IRenderer::batchTransform(gfx::BatchSpace space) const
 
 void IRenderer::run(move_only_function<void()> onFrame)
 {
-    auto *windowMgr = getWindowManager();
+    wma::IWindowManager *windowMgr = getWindowManager();
     if (!windowMgr)
         return;
 
-    _running = true;
+    _lazyFrames = true;
     const AuraSettings *settings = AuraSettings::get();
     const std::filesystem::path shaders = settings->get(setting::pathShaders);
-    //! Shared because process() may copy its callable; only watched when asked to, so release builds never stat.
+    //! Only watched when asked to, so release builds never stat.
     auto watcher = settings->get(setting::rendererShaderHotReload) ? std::make_shared<FileWatcher>(shaders) : nullptr;
+    //! Shared because the window's loop may copy its callable.
     windowMgr->process(
-        [this, watcher, shaders, onFrame = std::make_shared<move_only_function<void()>>(std::move(onFrame))]()
+        [this, windowMgr, watcher, shaders, onFrame = std::make_shared<move_only_function<void()>>(std::move(onFrame))]
         {
             if (watcher && watcher->changed())
+            {
                 INK_INFO << "Shaders under " << shaders.string()
                          << (reloadShaders(shaders) ? " reloaded" : " changed; some failed to reload (see above)");
-            beginFrame();
+                //! The new shaders show on the next frame, even in a loop that is otherwise idle.
+                invalidateTarget();
+            }
+
+            _frameTried = false;
             (*onFrame)();
+            //! endFrame() presents a frame this iteration began. Without one nothing is presented: the window keeps
+            //! what it has, and there is nothing to wait on, so sleep until an event rather than spin.
+            const bool drew = _frameBegun;
             endFrame();
+            if (!drew)
+                windowMgr->waitEvents(100);
         });
-    _running = false;
+    _lazyFrames = false;
 }
 
 /*
@@ -254,12 +319,30 @@ TextureHandle IRenderer::renderTargetTexture(RenderTargetHandle) const
     return {};
 }
 
-void IRenderer::beginRenderPass(RenderTargetHandle target)
+void IRenderer::openRenderPass(RenderTargetHandle target)
 {
     if (isValidHandle(target))
         INK_ERROR << "beginRenderPass: this renderer has no offscreen targets";
     else
-        beginRenderPass();
+        openRenderPass();
+}
+
+bool IRenderer::beginRenderPass()
+{
+    ensureFrame();
+    //! Inside run() a frame that did not begin has nothing to draw into. A loop of your own, or an offscreen pass
+    //! outside any frame, is left to the backend.
+    if (!_lazyFrames || _frameBegun)
+        openRenderPass();
+    return _frameBegun;
+}
+
+bool IRenderer::beginRenderPass(RenderTargetHandle target)
+{
+    ensureFrame();
+    if (!_lazyFrames || _frameBegun)
+        openRenderPass(target);
+    return _frameBegun;
 }
 
 bool IRenderer::readPixels(RenderTargetHandle, std::span<u8>)
@@ -315,6 +398,7 @@ void IRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, 
 
 bool IRenderer::updateMesh(MeshHandle mesh, std::span<const gfx::Vertex3D> vertices)
 {
+    ensureFrame();
     MeshRecord *record = isValidHandle(mesh) && mesh.value() <= _meshes.size() ? &_meshes[mesh.value() - 1] : nullptr;
     if (!record || vertices.size() != record->vertexCount || !updateVertexBuffer(record->vertexBuffer, vertices))
         return false;

@@ -813,40 +813,18 @@ void VulkanRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u3
         _vkTextureManager->updateCoverageRegion(handle.value(), x, y, width, height, coverage);
 }
 
-void VulkanRenderer::beginFrame()
+bool VulkanRenderer::acquireFrame()
 {
+    //! IRenderer::beginFrame() has already turned a minimized window away: vkAcquireNextImageKHR below waits with
+    //! no timeout, and must not race an Android surface being torn down in the background.
     _frameState = FrameState::Idle;
+    wma::WindowFlags *windowFlags = _windowManagerApi->getWindowFlags();
 
-    auto *windowFlags = _windowManagerApi->getWindowFlags();
-    if (!windowFlags)
-        return;
-
-    // While backgrounded (Android onPause/minimize), the ANativeWindow can be
-    // torn down at any moment. Skip Vulkan entirely rather than racing
-    // acquire/present against a surface mid-teardown: vkAcquireNextImageKHR is
-    // called with an unbounded timeout below, and blocking in it here would
-    // stall this thread for as long as Android keeps the app backgrounded --
-    // which is also the thread nativePause() on the UI thread is waiting on,
-    // turning a normal minimize into an ANR-driven kill.
-    if (windowFlags->minimized)
-    {
-        return;
-    }
-
+    //! Cleared only once the surface is rebuilt: a window that is not ready yet is retried next frame.
     if (windowFlags->surfaceLost)
     {
-        windowFlags->surfaceLost = false;
-        _targetStale = true;
-
-        if (!_windowManagerApi->isSurfaceAvailable())
-        {
-            return;
-        }
-
         if (!_windowManagerApi->waitUntilWindowReady())
-        {
-            return;
-        }
+            return false;
 
         try
         {
@@ -861,16 +839,13 @@ void VulkanRenderer::beginFrame()
             // the same surfaceLost path next frame instead of letting this
             // escape the render loop and abort the process.
             INK_ERROR << "recreateSurfaceAndSwapchain failed, will retry: " << e.what();
-            windowFlags->surfaceLost = true;
-            return;
+            return false;
         }
+        windowFlags->surfaceLost = false;
     }
 
-    if (windowFlags->resized)
+    if (consumeResize() || _vkSwapChainManager->outOfDate())
     {
-        windowFlags->resized = false;
-        _targetStale = true;
-
         //! Size events repeat without the size changing (a system bar appearing, a focus change), and a rebuild
         //! is a blank stretch the user sees; only an out-of-date swapchain or a different extent earns one.
         if (_vkSwapChainManager->outOfDate() || !swapchainMatchesSurface())
@@ -891,14 +866,14 @@ void VulkanRenderer::beginFrame()
                 // the render loop and abort the process.
                 INK_ERROR << "handleWindowChanges failed, forcing surface recreation: " << e.what();
                 windowFlags->surfaceLost = true;
-                return;
+                return false;
             }
         }
     }
 
     if (!_pipelineReady)
     {
-        return;
+        return false;
     }
 
     {
@@ -931,10 +906,9 @@ void VulkanRenderer::beginFrame()
             _vkRenderSyncManager->getImageAvailableSemaphores()[_currentFrame], windowFlags);
     }
 
+    //! Out of date or surface lost: whatever this frame would have drawn never reaches the screen.
     if (imageIndex >= _imagesCount)
-    {
-        return;
-    }
+        return false;
 
     _currentImageIndex = imageIndex;
     _frameState = FrameState::Recording;
@@ -981,9 +955,10 @@ void VulkanRenderer::beginFrame()
     _batchRetiredBuffers[_currentFrame].clear();
     resetComputePool();
     resetCustomPool();
+    return true;
 }
 
-void VulkanRenderer::beginRenderPass()
+void VulkanRenderer::openRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
@@ -1068,17 +1043,15 @@ void VulkanRenderer::endRenderPass()
     _chunkCmds.clear();
 }
 
-void VulkanRenderer::endFrame()
+bool VulkanRenderer::presentFrame()
 {
-    if (_frameState == FrameState::Idle)
-        return;
     //! The acquired image reaches PRESENT_SRC only through the window's pass: a frame that drew
     //! offscreen alone still runs it, cleared and empty.
     if (_frameState == FrameState::InPass)
         endRenderPass();
     if (!_windowPassRecorded && _pipelineReady)
     {
-        beginRenderPass();
+        openRenderPass();
         endRenderPass();
     }
 
@@ -1116,20 +1089,14 @@ void VulkanRenderer::endFrame()
     //! A rotation can raise its size event before the surface has the new size; the swapchain was then built to the
     //! old one, and Android reports that only as the suboptimal result a rotated phone gives permanently.
     if (_vkSwapChainManager->takeUnverified() && !swapchainMatchesSurface())
-        _windowManagerApi->getWindowFlags()->resized = true;
+        _vkSwapChainManager->markOutOfDate();
 
     AURA_FRAME_END();
 
-    //! A present that fails raises resized or surfaceLost, which needsFrame() reports.
-    _targetStale = false;
     _frameState = FrameState::Idle;
     advanceFrame();
-}
-
-bool VulkanRenderer::needsFrame() const noexcept
-{
-    const wma::WindowFlags *flags = _windowManagerApi->getWindowFlags();
-    return _targetStale || (flags && (flags->resized || flags->surfaceLost));
+    //! A present that fails leaves the swapchain out of date or the surface lost.
+    return !_vkSwapChainManager->outOfDate() && !_windowManagerApi->getWindowFlags()->surfaceLost;
 }
 
 void VulkanRenderer::setTransform(const gfx::TransformUBO &ubo)

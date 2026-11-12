@@ -73,6 +73,7 @@ BufferHandle VulkanRenderer::createBuffer(usize bytes, std::span<const std::byte
 
 bool VulkanRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<const std::byte> bytes)
 {
+    ensureFrame();
     const ComputeBuffer *buffer = computeBufferOf(handle);
     if (!buffer || offset > buffer->size || bytes.size() > buffer->size - offset || _frameState == FrameState::InPass)
         return false;
@@ -173,6 +174,7 @@ ComputeHandle VulkanRenderer::createCompute(const ComputeDesc &desc)
 void VulkanRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle> buffers, glm::uvec3 groups,
                               std::span<const std::byte> constants)
 {
+    ensureFrame();
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
     //! On the frame's primary buffer, so no pass may be open.
     if (_frameState != FrameState::Recording || !_pipelineReady || !isValidHandle(handle) ||

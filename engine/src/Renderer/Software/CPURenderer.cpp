@@ -359,20 +359,15 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 wi
     }
 }
 
-void CPURenderer::beginFrame()
+bool CPURenderer::acquireFrame()
 {
     //! Every window backend reallocates its surface on resize; the planes follow here, before the frame records.
     if (consumeResize())
         handleWindowChanges();
+    return _frameBufferManager != nullptr;
 }
 
-bool CPURenderer::needsFrame() const noexcept
-{
-    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
-    return _presentDropped || (flags && flags->resized);
-}
-
-void CPURenderer::beginRenderPass()
+void CPURenderer::openRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
@@ -382,10 +377,10 @@ void CPURenderer::beginRenderPass()
         _activeFrame->clear(_clearColorU32);
 }
 
-void CPURenderer::beginRenderPass(RenderTargetHandle target)
+void CPURenderer::openRenderPass(RenderTargetHandle target)
 {
     if (!isValidHandle(target))
-        return beginRenderPass();
+        return openRenderPass();
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
     if (target.value() > _renderTargets.size())
         return;
@@ -607,17 +602,21 @@ void CPURenderer::endRenderPass()
     _passTarget = 0;
 }
 
-void CPURenderer::endFrame()
+bool CPURenderer::presentFrame()
 {
+    bool presented = false;
     {
         AURA_FRAME_SCOPE(FramePhase::Present);
-
-        if (_frameBufferManager)
-            _presentDropped = !_frameBufferManager->renderFramebuffer();
+        //! False when there was no surface to copy into: that frame never reached the screen.
+        presented = _frameBufferManager && _frameBufferManager->renderFramebuffer();
+        //! On a vsynced window this is what holds the loop to the display, so it is part of the present.
+        if (presented && _windowManagerApi)
+            _windowManagerApi->swapBuffers();
     }
 
     //! Braced above so the present scope has closed before the frame does.
     AURA_FRAME_END();
+    return presented;
 }
 
 void CPURenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)

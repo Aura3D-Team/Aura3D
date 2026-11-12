@@ -36,17 +36,12 @@ class CPURenderer : public IRenderer
     void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                      const u8 *coverage) override;
 
-    void beginFrame() override;
-    [[nodiscard]] bool needsFrame() const noexcept override;
-    void beginRenderPass() override;
-    void beginRenderPass(RenderTargetHandle target) override;
     void endRenderPass() override;
     RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc) override;
     bool resizeRenderTarget(RenderTargetHandle target, u32 width, u32 height) override;
     [[nodiscard]] glm::uvec2 targetSize(RenderTargetHandle target) const override;
     [[nodiscard]] TextureHandle renderTargetTexture(RenderTargetHandle target) const override;
     bool readPixels(RenderTargetHandle target, std::span<u8> rgba) override;
-    void endFrame() override;
 
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
@@ -77,6 +72,10 @@ class CPURenderer : public IRenderer
     }
 
   protected:
+    bool acquireFrame() override;
+    bool presentFrame() override;
+    void openRenderPass() override;
+    void openRenderPass(RenderTargetHandle target) override;
     void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
 
   private:
@@ -126,8 +125,6 @@ class CPURenderer : public IRenderer
     std::vector<CachedVertex> _transformed;
     /// Incremented per drawIndexed(); a wrap resets every stamp first.
     u64 _drawStamp = 0;
-    /// The last endFrame() found no framebuffer to present into.
-    bool _presentDropped = false;
 };
 
 } // namespace cpu

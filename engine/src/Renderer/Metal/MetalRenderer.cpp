@@ -292,10 +292,10 @@ TextureHandle MetalRenderer::renderTargetTexture(RenderTargetHandle target) cons
                                                                             : TextureHandle{};
 }
 
-void MetalRenderer::beginRenderPass(RenderTargetHandle target)
+void MetalRenderer::openRenderPass(RenderTargetHandle target)
 {
     if (!isValidHandle(target))
-        return beginRenderPass();
+        return openRenderPass();
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
     if (_frameState != FrameState::Recording || target.value() > _renderTargets.size())
         return;
@@ -576,20 +576,16 @@ void MetalRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 
     (void)_textureManager->updateRegion(handle, x, y, width, height, rgbaPixels);
 }
 
-void MetalRenderer::beginFrame()
+bool MetalRenderer::acquireFrame()
 {
     if (!_isInitialized)
-        return;
+        return false;
 
     _frameState = FrameState::Idle;
 
+    //! IRenderer::beginFrame() has already turned away a window with no surface (an iOS app in the background).
     if (consumeResize())
         handleWindowChanges();
-
-    //! Nothing to draw into while the platform has no surface attached (an
-    //! iOS app in the background). Cheap enough to poll every frame.
-    if (!_windowManagerApi->isSurfaceAvailable())
-        return;
 
     /*
      * Take a frame slot before touching anything per-frame: this is what bounds
@@ -621,7 +617,7 @@ void MetalRenderer::beginFrame()
             //! the frame is skipped and the slot handed straight back.
             _framePool.reset();
             _frameSlots->release();
-            return;
+            return false;
         }
     }
 
@@ -632,13 +628,14 @@ void MetalRenderer::beginFrame()
         _drawableManager->release();
         _framePool.reset();
         _frameSlots->release();
-        return;
+        return false;
     }
 
     _frameState = FrameState::Recording;
+    return true;
 }
 
-void MetalRenderer::beginRenderPass()
+void MetalRenderer::openRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
@@ -707,16 +704,10 @@ GpuTimingStats MetalRenderer::gpuTiming() const noexcept
 }
 #endif
 
-void MetalRenderer::endFrame()
+bool MetalRenderer::presentFrame()
 {
-    //! Before any scope opens, matching beginFrame()/beginRenderPass()'s own
-    //! early return on the same flag: a frame that never began records no
-    //! samples for any phase, rather than a Present entry with nothing behind
-    //! it. AURA_FRAME_END() below is reached only past this point, so a
-    //! skipped frame closes nothing and biases no average.
-    if (_frameState == FrameState::Idle)
-        return;
-
+    //! Only for a frame acquireFrame() began, so a skipped frame records no
+    //! samples for any phase and biases no average.
     //! Tolerate a caller that never closed its pass: an encoder still open when
     //! the command buffer is committed is a hard Metal error, not a warning.
     //! endRenderPass() opens its own EndPass scope, so this is not double-timed
@@ -787,6 +778,8 @@ void MetalRenderer::endFrame()
     //! Outside the Present scope so it is closed and counted before the frame
     //! is.
     AURA_FRAME_END();
+    //! Metal reports a failed present only to the completion handler, long after; the drawable is queued.
+    return true;
 }
 
 MTL::Texture *MetalRenderer::resolveSampledTexture(TextureHandle handle)
@@ -935,6 +928,7 @@ MTL::Buffer *MetalRenderer::bufferOf(BufferHandle handle) const noexcept
 
 bool MetalRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<const std::byte> bytes)
 {
+    ensureFrame();
     MTL::Buffer *buffer = bufferOf(handle);
     if (!buffer || offset > buffer->length() || bytes.size() > buffer->length() - offset ||
         _frameState == FrameState::InPass)
@@ -998,6 +992,7 @@ ComputeHandle MetalRenderer::createCompute(const ComputeDesc &desc)
 void MetalRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle> buffers, glm::uvec3 groups,
                              std::span<const std::byte> constants)
 {
+    ensureFrame();
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
     //! An encoder of its own, so no render pass may be open.
     if (_frameState != FrameState::Recording || !isValidHandle(handle) || handle.value() > _kernels.size())

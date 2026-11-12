@@ -191,17 +191,14 @@ u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::Window
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
+        // A stale swapchain never repairs itself, and no window event need
+        // come with this result: beginFrame() rebuilds on outOfDate() alone,
+        // or every later frame would be skipped (black screen, no recovery).
         _outOfDate = true;
-        // A stale swapchain never repairs itself: nothing else observes
-        // VK_ERROR_OUT_OF_DATE_KHR here, so unless a real
-        // SDL_EVENT_WINDOW_RESIZED happens to fire too, this would otherwise
-        // skip every frame forever (black screen, no recovery) instead of
-        // driving the resized rebuild path in beginFrame().
-        windowFlags->resized = true;
         return imageIndex;
     }
 
-    if (result == VK_SUBOPTIMAL_KHR || windowFlags->resized)
+    if (result == VK_SUBOPTIMAL_KHR)
     {
         // VK_SUBOPTIMAL_KHR is advisory, not an error imageIndex is still
         // valid and the frame still renders fine. On this app's landscape-
@@ -240,15 +237,17 @@ void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore *rend
     if (result == VK_ERROR_SURFACE_LOST_KHR)
         windowFlags->surfaceLost = true;
     else if (result == VK_ERROR_OUT_OF_DATE_KHR)
-    {
         _outOfDate = true;
-        windowFlags->resized = true;
-    }
 }
 
 bool VkSwapChainManager::outOfDate() const noexcept
 {
     return _outOfDate;
+}
+
+void VkSwapChainManager::markOutOfDate() noexcept
+{
+    _outOfDate = true;
 }
 
 bool VkSwapChainManager::takeUnverified() noexcept

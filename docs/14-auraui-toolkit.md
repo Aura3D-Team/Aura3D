@@ -32,28 +32,25 @@ renderer->run([&] {
 `render()` is the whole frame. Nothing above is re-run: the tree persists, and
 only what changed is re-measured, re-recorded and re-submitted.
 
-A loop that would rather not present an unchanged frame at all splits it:
+A window that is mostly idle should not redraw an unchanged frame. `run()`
+begins a frame only when the callback opens a render pass, so split the frame
+the same way `render()` does:
 
 ```cpp
-ui.update(deltaSeconds);          // input, focus, animation -- always
-bool drew = false;
-if (ui.needsDraw()) {             // the tree changed, or the renderer lost its frame
-    renderer->beginFrame();
-    if (renderer->frameBegun()) { // false while the swapchain is rebuilt
-        renderer->beginRenderPass();
-        ui.draw();
-        renderer->endRenderPass();
-        drew = true;
-    }
-    renderer->endFrame();
-}
-if (!drew)
-    renderer->getWindowManager()->waitEvents(16);
+renderer->run([&] {
+    ui.update(deltaSeconds);                  // input, focus, animation -- every iteration
+    if (!ui.needsDraw() || !renderer->beginRenderPass())
+        return;                               // nothing new, or nothing to draw into
+    ui.draw();
+    renderer->endRenderPass();
+});
 ```
 
-A pass that draws nothing has nothing to block on, so it waits for events. Keep
-the timeout finite: a frame that could not begin is retried only when the wait
-returns.
+`needsDraw()` includes `IRenderer::needsFrame()`, so a resize, an expose or a
+rebuilt swapchain redraws an unchanged tree, and the window decoration stays
+drawn. An iteration that draws nothing presents nothing, and the loop sleeps
+until an event arrives, so an idle UI costs no CPU. For a loop of your own, see
+[Engine & Renderer](03-engine-and-renderer.md#a-loop-of-your-own).
 
 ## Building a tree
 

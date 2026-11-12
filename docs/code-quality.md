@@ -35,6 +35,10 @@ build directories are excluded. No repository-wide reformat is required.
 The container jobs build pinned Ink 0.6.0 sources for their target ABI with
 [setup-ink](../.github/actions/setup-ink/action.yml); the image's older Ink is
 insufficient. Put the action's installation prefix first in `CMAKE_PREFIX_PATH`.
+[setup-wma](../.github/actions/setup-wma/action.yml) then builds libwma at the
+workflow's `WMA_REF` into the same prefix; the jobs that build libwma from source
+check out that commit too. Bump `WMA_REF` whenever `cmake/Dependencies.cmake`
+asks for a newer wma.
 
 The [format configuration](../.clang-format) uses the requested LLVM/Allman style,
 four-space indentation and 120 columns. The [lint configuration](../.clang-tidy)

@@ -134,32 +134,107 @@ make stale handles safe after a renderer switch.
 
 ```cpp
 r->run([&]() {
-    // Update application state here, including frames without a render target.
-    if (!r->frameBegun())
+    // Update application state here, every iteration.
+    if (!r->beginRenderPass())   // false: nothing to draw into (minimized, no surface)
         return;
-    r->beginRenderPass();
     // ...
     r->endRenderPass();
 });
 ```
 
-`IRenderer::run()`:
-- hands your callback to `wma::IWindowManager::process()`, which wraps it as
-  `beginFrame(); yourCallback(); endFrame();` every frame;
-- on desktop this blocks until the window closes; on WASM it registers the
-  browser's `requestAnimationFrame` loop and returns immediately (your
-  callback and everything it captures by reference must stay alive after
-  `run()` returns, on that platform).
+`IRenderer::run()` polls window events and calls your callback once per
+iteration. On desktop it blocks until the window closes. On WASM it registers
+the browser's `requestAnimationFrame` loop and returns immediately, so the
+callback and everything it captures by reference must stay alive after
+`run()` returns on that platform.
+
+**The frame begins at the first `beginRenderPass()`** of an iteration, and
+`run()` presents it after the callback returns. You do not call
+`beginFrame()`/`endFrame()`. `beginRenderPass()` returns whether there is a
+frame to draw into: it is false for a minimized window or one with no surface
+(an Android or iOS app in the background), and the draws would go nowhere.
+
+So drawing is your callback's choice:
+
+- A game that animates opens a pass every iteration.
+- A tool, editor or UI shell opens one only when something changed. An
+  iteration that opens none begins and presents nothing: the window keeps its
+  last frame on every backend, and the loop sleeps in `waitEvents()` until an
+  event arrives (at most 100 ms), so an idle window costs under 0.1% CPU.
+
+```cpp
+r->run([&]() {
+    ui.update(deltaSeconds);                          // every iteration
+    if (!ui.needsDraw() || !r->beginRenderPass())     // changed, or the renderer needs a frame
+        return;
+    ui.draw();
+    r->endRenderPass();
+});
+```
+
+On a GPU backend a frame starts cleared, so a callback that begins a frame
+must draw all of it. Draw when `needsFrame()` holds as well as when your own
+state changed, or a window that was resized or exposed keeps a stale picture.
+
+### Frame state
+
+- `frameBegun()` is true from the `beginFrame()` that acquired a target
+  (inside `run()`, the first `beginRenderPass()`) until the `endFrame()` that
+  presents it. It is false outside a frame, and for a frame that could not
+  begin: the window is minimized, it has no surface, or the backend could not
+  acquire a target.
+- `needsFrame()` is true while the window does not show the last frame
+  presented: before the first present, after a resize until a frame at the
+  new size presents, after an expose (restored from minimized, or uncovered
+  without a compositor), and after a rebuilt swapchain, a lost surface or a
+  failed present. Anything that draws only on change must draw while it
+  holds.
+
+Both mean the same on every backend.
+
+### Resizes
+
+The renderer applies a window resize when the frame begins.
+To react to one yourself (a relayout, a new projection), keep a
+`wma::ResizeWatch`: it reports each resize once, whoever else has seen it.
+
+```cpp
+wma::ResizeWatch resizes;
+r->run([&]() {
+    if (resizes.consume(*r->getWindowManager()->getWindowFlags()))
+    {
+        const glm::vec2 size{r->renderTargetSize()};
+        camera.setPerspective({.fovDeg = 60.0f, .aspect = size.x / size.y, .nearZ = 0.1f, .farZ = 100.0f});
+    }
+    // ...
+});
+```
 
 Install input actions, including any Escape shortcut, through the window
-manager. `run()` does not install a quit key. Its callback is invoked even
-when a frame could not be acquired, so retain pending redraw work until
-`frameBegun()` is true.
+manager. `run()` does not install a quit key.
 
-You call `beginFrame()`/`endFrame()` yourself only in a custom window loop.
-`beginRenderPass()`/`endRenderPass()` remain application calls around the
-frame's drawing. A loop that draws only on change must also draw while
-`needsFrame()` is true, for resize and presentation recovery.
+### A loop of your own
+
+Call `beginFrame()`/`endFrame()` yourself only when you drive the window
+instead of `run()`. `beginRenderPass()`/`endRenderPass()` are always yours.
+`endFrame()` presents, so you never call `swapBuffers()`. An idle-aware loop
+does what `run()` does:
+
+```cpp
+wma::IWindowManager &window = *r->getWindowManager();
+window.process([&] {
+    const bool changed = updateScene();
+    if (!(changed || r->needsFrame()) || !r->beginFrame())
+    {
+        window.waitEvents(100); // nothing to draw, or nothing to draw into: the window keeps its last frame
+        return;
+    }
+    r->beginRenderPass();
+    drawScene();
+    r->endRenderPass();
+    r->endFrame();              // presents
+});
+```
 
 ## Backend resolution & fallback
 

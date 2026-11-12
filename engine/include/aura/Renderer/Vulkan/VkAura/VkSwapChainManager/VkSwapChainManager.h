@@ -121,8 +121,10 @@ class VkSwapChainManager
 
     u32 acquireNextImage(VkSemaphore imageSemaphore, wma::WindowFlags *windowFlags);
 
-    /// Acquire or present said the swapchain no longer fits its surface, whatever the window's size events say.
+    /// The swapchain no longer fits its surface, whatever the window's size events say: acquire or present said
+    /// so, or markOutOfDate() did. Rebuilding the swapchain clears it.
     [[nodiscard]] bool outOfDate() const noexcept;
+    void markOutOfDate() noexcept;
 
     /// True once per swapchain, after its first present: the moment to check the surface did not move on meanwhile.
     [[nodiscard]] bool takeUnverified() noexcept;

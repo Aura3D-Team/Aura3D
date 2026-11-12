@@ -45,16 +45,12 @@ class OpenGLRenderer : public IRenderer
     void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                      const u8 *coverage) override;
 
-    void beginFrame() override;
-    void beginRenderPass() override;
-    void beginRenderPass(RenderTargetHandle target) override;
     void endRenderPass() override;
     RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc) override;
     bool resizeRenderTarget(RenderTargetHandle target, u32 width, u32 height) override;
     [[nodiscard]] glm::uvec2 targetSize(RenderTargetHandle target) const override;
     [[nodiscard]] TextureHandle renderTargetTexture(RenderTargetHandle target) const override;
     bool readPixels(RenderTargetHandle target, std::span<u8> rgba) override;
-    void endFrame() override;
 
     void setTransform(const gfx::TransformUBO &ubo) override;
     void setLights(std::span<const gfx::Light> lights) override;
@@ -93,6 +89,10 @@ class OpenGLRenderer : public IRenderer
     }
 
   protected:
+    bool acquireFrame() override;
+    bool presentFrame() override;
+    void openRenderPass() override;
+    void openRenderPass(RenderTargetHandle target) override;
     void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
 
   private:
