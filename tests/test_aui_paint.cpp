@@ -53,8 +53,10 @@ class RecordingRenderer final : public IRenderer
         TextureHandle texture;
     };
 
+    //! The renderer's own window, for the frame path only: getWindowManager() stays null unless a test sets `window`.
     RecordingRenderer() : IRenderer(wma::WindowDetails{})
     {
+        _windowManagerApi = std::make_unique<test::FakeWindow>();
     }
 
     using IRenderer::drawBatch;
@@ -186,29 +188,20 @@ class RecordingRenderer final : public IRenderer
     bool indicesInRange = true;
     bool failTextures = false;
 
-    /// Acts as a backend whose swapchain was rebuilt under a clean tree.
-    void loseFrame() noexcept
+    /// A frame that began but did not reach the screen: a backend whose present failed or whose swapchain was rebuilt.
+    void loseFrame()
     {
-        invalidateTarget();
+        _presents = false;
+        runFrame();
+        _presents = true;
     }
-    /// Acts as a frame reaching the screen. This renderer has no window, so beginFrame() never begins one.
-    void showFrame() noexcept
+    /// A frame that reached the screen, through the real beginFrame()/endFrame() path.
+    void showFrame()
     {
-        markPresented();
+        runFrame();
     }
 
     // Everything below is inert: the UI never calls it.
-    bool acquireFrame() override
-    {
-        return true;
-    }
-    bool presentFrame() override
-    {
-        return true;
-    }
-    void openRenderPass() override
-    {
-    }
     void endRenderPass() override
     {
     }
@@ -276,13 +269,29 @@ class RecordingRenderer final : public IRenderer
     {
         return backend;
     }
-    void createWindow(const char *, const wma::WindowBackend &) override
-    {
-    }
 
     RendererChoice backend = RendererChoice::SOFTWARE;
 
   private:
+    void runFrame()
+    {
+        AURA_CHECK(beginFrame(), "the fake window can show a frame");
+        endFrame();
+    }
+
+    FrameReach _acquireFrame() override
+    {
+        return FrameReach::WindowReady;
+    }
+    bool _presentFrame() override
+    {
+        return _presents;
+    }
+    void _openRenderPass() override
+    {
+    }
+
+    bool _presents = true;
     TextureHandle _next{0};
 };
 

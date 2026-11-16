@@ -10,6 +10,10 @@ defaults:
   run:
     shell: bash
 
+env:
+  # The libwma commit every job builds against. Bump it whenever cmake/Dependencies.cmake asks for a newer wma.
+  WMA_REF: 18ddb83a9c092dc4587ad25c4ad66e180228605e # 0.11.0
+
 jobs:
   linux-debug-build:
     name: Linux Debug
@@ -47,6 +51,12 @@ jobs:
         id: ink
         uses: ./.github/actions/setup-ink
 
+      - name: Build required wma
+        uses: ./.github/actions/setup-wma
+        with:
+          prefix: ${{ steps.ink.outputs.prefix }}
+          ref: ${{ env.WMA_REF }}
+
       - name: Configure
         # Mirrors CMakePresets.json's "linux-debug" preset rather than using
         # it directly, since that preset's CMAKE_PREFIX_PATH is wired through
@@ -74,7 +84,11 @@ jobs:
         run: python3 ci/check-cpp.py lint --base "$BASE_SHA" --build build/linux/debug
 
       - name: Run tests
-        run: ctest --test-dir build/linux/debug --output-on-failure
+        # test_frame_conformance reads real windows back through Xlib; Xvfb gives it a disposable server, where
+        # Mesa runs OpenGL and Vulkan.
+        run: >
+          xvfb-run -a -s "-screen 0 1280x1024x24"
+          sh -c 'AURA_TEST_DISPLAY="$DISPLAY" ctest --test-dir build/linux/debug --output-on-failure'
 
   linux-release-build:
     name: Linux Release
@@ -94,6 +108,12 @@ jobs:
       - name: Build required Ink
         id: ink
         uses: ./.github/actions/setup-ink
+
+      - name: Build required wma
+        uses: ./.github/actions/setup-wma
+        with:
+          prefix: ${{ steps.ink.outputs.prefix }}
+          ref: ${{ env.WMA_REF }}
 
       - name: Configure
         # See linux-debug-build's Configure step for why this mirrors the
@@ -135,7 +155,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Arthu-RL/libwma
-          ref: main
+          ref: ${{ env.WMA_REF }}
           path: libwma
 
       - name: Set up Buildx
@@ -210,6 +230,12 @@ jobs:
       - name: Build required Ink
         id: ink
         uses: ./.github/actions/setup-ink
+
+      - name: Build required wma
+        uses: ./.github/actions/setup-wma
+        with:
+          prefix: ${{ steps.ink.outputs.prefix }}
+          ref: ${{ env.WMA_REF }}
 
       - name: Configure
         # AURA_ENABLE_DEBUG_MODE implies AURA_PROFILE_FRAME (see the root
@@ -329,6 +355,13 @@ jobs:
         with:
           platform: wasm
 
+      - name: Build required wma
+        uses: ./.github/actions/setup-wma
+        with:
+          prefix: ${{ steps.ink.outputs.prefix }}
+          ref: ${{ env.WMA_REF }}
+          platform: wasm
+
       - name: Configure
         # nlohmann_json is only installed under the native /usr/local prefix
         # in this image, not /usr/local/wasm -- but it's header-only, so the
@@ -367,6 +400,13 @@ jobs:
         id: ink
         uses: ./.github/actions/setup-ink
         with:
+          platform: android
+
+      - name: Build required wma
+        uses: ./.github/actions/setup-wma
+        with:
+          prefix: ${{ steps.ink.outputs.prefix }}
+          ref: ${{ env.WMA_REF }}
           platform: android
 
       - name: Configure
@@ -424,7 +464,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Arthu-RL/libwma
-          ref: main
+          ref: ${{ env.WMA_REF }}
           path: wma
 
       - name: Install dependencies (Homebrew)
@@ -528,7 +568,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Arthu-RL/libwma
-          ref: main
+          ref: ${{ env.WMA_REF }}
           path: wma
 
       - name: Checkout SDL3
@@ -636,7 +676,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Arthu-RL/libwma
-          ref: main
+          ref: ${{ env.WMA_REF }}
           path: wma
 
       - name: Setup MSVC environment

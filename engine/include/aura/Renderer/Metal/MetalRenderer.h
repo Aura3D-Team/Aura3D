@@ -88,7 +88,6 @@ class MetalRenderer : public IRenderer
     void cleanup() override;
 
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices) override;
-    bool updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u16> &&indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32> &&indices) override;
     TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
@@ -108,7 +107,7 @@ class MetalRenderer : public IRenderer
 
     /*
      * setLights() is deliberately not overridden. The base implementation records
-     * the lights in IRenderer::_lights, and that is already where bindDrawState()
+     * the lights in IRenderer::_lights, and that is already where _bindDrawState()
      * reads it from to push the bytes at each draw -- there is no GPU-side buffer
      * to keep in step, so an override would have nothing to add.
      */
@@ -141,25 +140,26 @@ class MetalRenderer : public IRenderer
         return RendererChoice::METAL;
     }
 
-  protected:
-    bool acquireFrame() override;
-    bool presentFrame() override;
-    void openRenderPass() override;
-    void openRenderPass(RenderTargetHandle target) override;
-    void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
-
   private:
+    FrameReach _acquireFrame() override;
+    bool _acquireWindowTarget() override;
+    bool _presentFrame() override;
+    void _openRenderPass() override;
+    bool _openRenderPass(RenderTargetHandle target) override;
+    bool _updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices) override;
+
+    void _createWindow(const char *title, const wma::WindowBackend &wBackend);
     //! Builds the scene and batch pipelines against the layer's formats.
-    void createPipelines();
+    void _createPipelines();
 
     /**
      * @brief Applies the per-draw state both drawIndexed() and draw() need:
      *        transform bytes, light bytes and the bound texture.
      *
      * The single place that state is written, so the two draw entry points
-     * cannot drift apart -- the role VulkanRenderer::bindDrawState() plays there.
+     * cannot drift apart -- the role VulkanRenderer::_bindDrawState() plays there.
      */
-    void bindDrawState();
+    void _bindDrawState();
 
     /**
      * @brief Grows this frame's batch vertex/index buffers to fit a batch.
@@ -167,12 +167,12 @@ class MetalRenderer : public IRenderer
      * There is one pair per frame in flight so that writing this frame's geometry
      * cannot scribble over a batch the GPU is still reading. They only ever grow,
      * so steady-state batches stop allocating after the first few frames -- the
-     * same arrangement as VulkanRenderer::uploadBatch().
+     * same arrangement as VulkanRenderer::_uploadBatch().
      *
      * @return false when either allocation failed, in which case the batch is
      *         skipped rather than drawn from a buffer that is too small.
      */
-    [[nodiscard]] bool ensureBatchCapacity(size_t vertexBytes, size_t indexBytes);
+    [[nodiscard]] bool _ensureBatchCapacity(size_t vertexBytes, size_t indexBytes);
 
     /**
      * @brief The texture a draw should sample, substituting the fallback when
@@ -183,7 +183,7 @@ class MetalRenderer : public IRenderer
      * texel is substituted in those cases, so vertex colour comes through
      * unchanged -- the same fallback the OpenGL and Vulkan paths use.
      */
-    [[nodiscard]] MTL::Texture *resolveSampledTexture(TextureHandle handle);
+    [[nodiscard]] MTL::Texture *_resolveSampledTexture(TextureHandle handle);
 
     std::unique_ptr<MtlDeviceManager> _deviceManager;
     std::unique_ptr<MtlLayerManager> _layerManager;
@@ -223,20 +223,20 @@ class MetalRenderer : public IRenderer
     };
     std::vector<RenderTarget> _renderTargets; //! handle - 1 == index
     u32 _passTarget = 0;
-    [[nodiscard]] TargetPipelines &pipelinesFor(MTL::PixelFormat colour, bool depth);
+    [[nodiscard]] TargetPipelines &_pipelinesFor(MTL::PixelFormat colour, bool depth);
     //! The scene and batch options every pass's pipelines share, for @p colour and @p depth.
-    void buildPipelines(MTL::PixelFormat colour, MTL::PixelFormat depth, std::unique_ptr<MtlPipelineManager> &scene,
-                        std::unique_ptr<MtlPipelineManager> &batch,
-                        std::unique_ptr<MtlPipelineManager> &instanced) const;
+    void _buildPipelines(MTL::PixelFormat colour, MTL::PixelFormat depth, std::unique_ptr<MtlPipelineManager> &scene,
+                         std::unique_ptr<MtlPipelineManager> &batch,
+                         std::unique_ptr<MtlPipelineManager> &instanced) const;
     //! What the encoder has bound, so a run of draws of one kind binds once.
     const MtlPipelineManager *_boundPipeline = nullptr;
-    void usePipeline(MtlPipelineManager *pipeline);
+    void _usePipeline(MtlPipelineManager *pipeline);
     //! The lighting block, the bound material's uniforms and its maps, for a scene draw.
-    void bindSceneMaterial();
+    void _bindSceneMaterial();
     std::vector<InstanceUniforms> _instanceScratch;
     //! createBuffer()'s shared-storage buffers and createCompute()'s pipelines; handle - 1 == index.
     std::vector<NS::SharedPtr<MTL::Buffer>> _buffers;
-    [[nodiscard]] MTL::Buffer *bufferOf(BufferHandle handle) const noexcept;
+    [[nodiscard]] MTL::Buffer *_bufferOf(BufferHandle handle) const noexcept;
     struct Kernel
     {
         NS::SharedPtr<MTL::ComputePipelineState> pipeline;
@@ -269,11 +269,11 @@ class MetalRenderer : public IRenderer
     MTL::PixelFormat _passColour = kColorFormat;
     bool _passDepth = true;
     //! Builds the variant for a pass of this format if it is new; throws AuraException as MtlPipelineManager does.
-    MtlPipelineManager &customVariant(CustomPipeline &pipeline, MTL::PixelFormat colour, bool depth) const;
+    MtlPipelineManager &_customVariant(CustomPipeline &pipeline, MTL::PixelFormat colour, bool depth) const;
     //! Blocks until every committed frame has completed: Metal's vkDeviceWaitIdle.
-    void waitForFrames();
+    void _waitForFrames();
     //! Private Depth32Float, for a target's depth.
-    [[nodiscard]] NS::SharedPtr<MTL::Texture> newDepthTexture(u32 width, u32 height, MTL::TextureUsage usage) const;
+    [[nodiscard]] NS::SharedPtr<MTL::Texture> _newDepthTexture(u32 width, u32 height, MTL::TextureUsage usage) const;
 
     /*
      * This frame's command buffer and encoder. Both are autoreleased by Metal
@@ -334,13 +334,13 @@ class MetalRenderer : public IRenderer
     MtlFixedArray<size_t> _batchVertexUsed{};
     MtlFixedArray<size_t> _batchIndexUsed{};
 
-    //! 1x1 opaque white, created on first use; see resolveSampledTexture().
+    //! 1x1 opaque white, created on first use; see _resolveSampledTexture().
     TextureHandle _fallbackTexture;
 
     u32 _currentFrame = 0;
     bool _isInitialized = false;
     //! Recording or InPass: this frame has a drawable and a command buffer to encode into.
-    FrameState _frameState = FrameState::Idle;
+    RecordState _recordState = RecordState::Idle;
 };
 
 } // namespace mtl

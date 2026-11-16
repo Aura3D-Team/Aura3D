@@ -32,7 +32,6 @@ class OpenGLRenderer : public IRenderer
     void cleanup() override;
 
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices) override;
-    bool updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u16> &&indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32> &&indices) override;
     TextureHandle createSolidColorTexture(u8 r, u8 g, u8 b, u8 a = 255) override;
@@ -88,29 +87,29 @@ class OpenGLRenderer : public IRenderer
         return RendererChoice::OPENGL;
     }
 
-  protected:
-    bool acquireFrame() override;
-    bool presentFrame() override;
-    void openRenderPass() override;
-    void openRenderPass(RenderTargetHandle target) override;
-    void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
-
   private:
-    void loadOpenGLEntryPoints();
-    void createSceneProgram();
+    FrameReach _acquireFrame() override;
+    bool _presentFrame() override;
+    void _openRenderPass() override;
+    bool _openRenderPass(RenderTargetHandle target) override;
+    bool _updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices) override;
+
+    void _createWindow(const char *title, const wma::WindowBackend &wBackend);
+    void _loadOpenGLEntryPoints();
+    void _createSceneProgram();
     //! The lit and instanced programs from these sources, replacing the current ones only if both link.
-    void buildScenePrograms(const char *vert, const char *instancedVert, const char *frag);
+    void _buildScenePrograms(const char *vert, const char *instancedVert, const char *frag);
 
     //! Scene state is the scene program, depth test and writes, no blending, and the scene's
     //! VAO and texture. Batches and the resolve replace it; the next scene draw restores it.
-    void useSceneState();
-    void leaveSceneState();
+    void _useSceneState();
+    void _leaveSceneState();
     //! Draws the staged batches; call before anything that must see them.
-    void flushBatches();
+    void _flushBatches();
     //! Binds _currentTexture, white for an invalid handle, and the scene's coverage flag.
-    void bindSceneTexture();
+    void _bindSceneTexture();
     //! Gives the scene program the current model and its normal matrix, if they changed.
-    void uploadModel();
+    void _uploadModel();
 
     std::unique_ptr<GlVertexBufferManager> _vertexMgr;
     std::unique_ptr<GlIndexBufferManager> _indexMgr;
@@ -130,18 +129,18 @@ class OpenGLRenderer : public IRenderer
     std::vector<RenderTarget> _renderTargets; //! handle - 1 == index
     //! The target the open pass draws into, or 0 for the window.
     u32 _passTarget = 0;
-    static void setSamplerUnits(GLuint program);
+    static void _setSamplerUnits(GLuint program);
     //! The bound material's block and maps, when the material changed since the last draw.
-    void uploadMaterial();
+    void _uploadMaterial();
     MaterialHandle _uploadedMaterial;
     bool _materialUploaded = false;
     //! Clears and readies whichever framebuffer is bound for drawing.
-    void openPass();
+    void _openPass();
     //! A target pass flips Y: GL stores a framebuffer's bottom row first, every uploaded texture its top
     //! row, and a target is sampled like one of those.
-    [[nodiscard]] glm::mat4 passFlip() const noexcept;
-    [[nodiscard]] gfx::TransformUBO passTransform() const noexcept;
-    void destroyRenderTargets() noexcept;
+    [[nodiscard]] glm::mat4 _passFlip() const noexcept;
+    [[nodiscard]] gfx::TransformUBO _passTransform() const noexcept;
+    void _destroyRenderTargets() noexcept;
     //! drawMeshInstanced(): gl_shader3d with per-instance matrices, and the buffer they stream through.
     GLuint _instancedProgram = 0;
     GLint _instancedCoverageLoc = -1;
@@ -156,9 +155,9 @@ class OpenGLRenderer : public IRenderer
     //! Instance attributes 4-10 (model, then three normal-matrix columns) from @p buffer, on the bound VAO.
     static constexpr GLuint kFirstInstanceAttribute = 4;
     static constexpr GLuint kInstanceColumns = 7;
-    void attachInstances(GLuint buffer);
-    //! Undoes attachInstances() and returns to the scene program.
-    void detachInstances();
+    void _attachInstances(GLuint buffer);
+    //! Undoes _attachInstances() and returns to the scene program.
+    void _detachInstances();
 #ifndef AURA_GLES
     //! createBuffer()'s buffers (uniform blocks from GL 3.1) and createCompute()'s programs (GL 4.3); neither is on
     //! GLES or WebGL.
@@ -168,10 +167,10 @@ class OpenGLRenderer : public IRenderer
         usize size = 0;
     };
     std::vector<GlBuffer> _buffers; //! handle - 1 == index
-    [[nodiscard]] const GlBuffer *bufferOf(BufferHandle handle) const noexcept;
+    [[nodiscard]] const GlBuffer *_bufferOf(BufferHandle handle) const noexcept;
     std::vector<GLuint> _computePrograms; //! handle - 1 == index
     GLuint _computeConstants = 0;         //! The constants' std140 block, at uniform binding 3.
-    [[nodiscard]] bool hasCompute() const noexcept;
+    [[nodiscard]] bool _hasCompute() const noexcept;
 #endif
     //! createPipeline()'s programs. Constants share one block at kPipelineConstantsBinding; BufferN follows it.
     struct CustomPipeline
@@ -189,9 +188,9 @@ class OpenGLRenderer : public IRenderer
     u32 _pipelineConstantsSize = 0;               //! Its size: the largest constantBytes of any pipeline.
     std::vector<std::byte> _pipelineScratch;      //! drawPipeline()'s constants, padded to the pipeline's size.
     GLuint _emptyVao = 0;                         //! Bound for a VertexInput::None draw: core profiles need one.
-    void destroyCustomPipelines() noexcept;
+    void _destroyCustomPipelines() noexcept;
     //! A TextureFormat::Depth target: its depth texture is RenderTarget::colour, and the framebuffer has no colour.
-    RenderTargetHandle createDepthTarget(const RenderTargetDesc &desc);
+    RenderTargetHandle _createDepthTarget(const RenderTargetDesc &desc);
     std::unique_ptr<GlBatchManager> _batchMgr;
 #ifdef AURA_PROFILE_FRAME
     //! Created by the first pass that runs with GPU timing on.

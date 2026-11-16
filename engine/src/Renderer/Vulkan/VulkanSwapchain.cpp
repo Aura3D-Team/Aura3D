@@ -12,7 +12,7 @@ namespace aura3d
 namespace vk
 {
 
-wma::WindowDetails VulkanRenderer::drawableDetails() const
+wma::WindowDetails VulkanRenderer::_drawableDetails() const
 {
     const auto framebuffer = _windowManagerApi->getFramebufferSize();
     auto details = *_windowManagerApi->getWindowDetails();
@@ -21,23 +21,23 @@ wma::WindowDetails VulkanRenderer::drawableDetails() const
     return details;
 }
 
-bool VulkanRenderer::swapchainMatchesSurface()
+bool VulkanRenderer::_swapchainMatchesSurface()
 {
-    auto details = drawableDetails();
+    auto details = _drawableDetails();
     return _vkSwapChainManager->matchesSurface(*_vkDeviceManager->getPhysicalDevice(), *_vkSurfaceManager->getSurface(),
                                                &details);
 }
 
-void VulkanRenderer::buildSwapchainResources()
+void VulkanRenderer::_buildSwapchainResources()
 {
-    auto details = drawableDetails();
+    auto details = _drawableDetails();
     _vkSwapChainManager->createSwapChain(&details, *_vkSurfaceManager->getSurface(), _vkDeviceManager.get(), 2,
                                          _windowManagerApi->transparentFramebuffer());
     _vkImageViewsManager->createImageViews(_vkSwapChainManager->getSwapChainImages(),
                                            _vkSwapChainManager->getChoosedSurfaceFormat()->format, _vkImageViewData);
 
-    createDepthResources();
-    createMsaaColorResources();
+    _createDepthResources();
+    _createMsaaColorResources();
 
     _vkRenderPassManager->createRenderPass(_vkSwapChainManager->getChoosedSurfaceFormat()->format, true, _depth.format,
                                            _msaaSamples);
@@ -50,7 +50,7 @@ void VulkanRenderer::buildSwapchainResources()
     _imagesCount = static_cast<u32>(_vkSwapChainManager->getSwapChainImages().size());
 }
 
-void VulkanRenderer::destroySwapchainResources()
+void VulkanRenderer::_destroySwapchainResources()
 {
     _pipelineReady = false;
 
@@ -62,7 +62,7 @@ void VulkanRenderer::destroySwapchainResources()
      * bindless texture table (_bindlessTextureSet) -- and every
      * texture already written into them -- survive a resize untouched. No
      * per-texture descriptor work is needed here at all anymore; compare the
-     * old handleWindowChanges()/recreateSurfaceAndSwapchain(), which used to
+     * old handleWindowChanges()/_recreateSurfaceAndSwapchain(), which used to
      * redo it for every live texture.
      */
     _vkDescriptorManager->freeDescriptorSets(_descSets);
@@ -73,11 +73,11 @@ void VulkanRenderer::destroySwapchainResources()
     _vkSwapChainManager->cleanup();
     _vkRenderPassManager->cleanup();
     _vkRenderSyncManager->cleanup();
-    destroyDepthResources();
-    destroyMsaaColorResources();
+    _destroyDepthResources();
+    _destroyMsaaColorResources();
 }
 
-void VulkanRenderer::createDepthResources()
+void VulkanRenderer::_createDepthResources()
 {
     VkExtent2D extent = *_vkSwapChainManager->getExtent2D();
 
@@ -91,7 +91,7 @@ void VulkanRenderer::createDepthResources()
     _vkImageViewsManager->createDepthImageView(_depth.image, _depth.format);
 }
 
-void VulkanRenderer::destroyDepthResources()
+void VulkanRenderer::_destroyDepthResources()
 {
     if (!_depth.isValid())
         return;
@@ -103,7 +103,7 @@ void VulkanRenderer::destroyDepthResources()
     _depth.reset();
 }
 
-void VulkanRenderer::createMsaaColorResources()
+void VulkanRenderer::_createMsaaColorResources()
 {
     if (_msaaSamples == VK_SAMPLE_COUNT_1_BIT)
         return;
@@ -123,7 +123,7 @@ void VulkanRenderer::createMsaaColorResources()
     _vkImageViewsManager->createColorMsaaImageView(_msaaColor.image, colorFormat);
 }
 
-void VulkanRenderer::destroyMsaaColorResources()
+void VulkanRenderer::_destroyMsaaColorResources()
 {
     if (!_msaaColor.isValid())
         return;
@@ -138,24 +138,24 @@ void VulkanRenderer::destroyMsaaColorResources()
 void VulkanRenderer::handleWindowChanges()
 {
     vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
-    destroySwapchainResources();
+    _destroySwapchainResources();
     _vkSwapChainManager->initSwapChainSupportDetails(*_vkDeviceManager->getPhysicalDevice(),
                                                      *_vkSurfaceManager->getSurface());
-    buildSwapchainResources();
-    createUniformBuffers();
+    _buildSwapchainResources();
+    _createUniformBuffers();
     //! No per-texture descriptor work needed here: the bindless texture-array
-    //! sets are untouched by destroySwapchainResources() (see its comment),
+    //! sets are untouched by _destroySwapchainResources() (see its comment),
     //! so every texture created before this resize is still correctly bound.
-    createDescriptorSets();
+    _createDescriptorSets();
 
     _vkRenderSyncManager->create(_imagesCount);
 }
 
-void VulkanRenderer::recreateSurfaceAndSwapchain()
+void VulkanRenderer::_recreateSurfaceAndSwapchain()
 {
     vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
 
-    destroySwapchainResources();
+    _destroySwapchainResources();
 
     _vkSurfaceManager.reset();
     _vkSurfaceManager = std::make_unique<VkSurfaceManager>(
@@ -164,17 +164,17 @@ void VulkanRenderer::recreateSurfaceAndSwapchain()
 
     _vkSwapChainManager->initSwapChainSupportDetails(*_vkDeviceManager->getPhysicalDevice(),
                                                      *_vkSurfaceManager->getSurface());
-    buildSwapchainResources();
-    createUniformBuffers();
+    _buildSwapchainResources();
+    _createUniformBuffers();
     //! No per-texture descriptor work needed here either -- see handleWindowChanges().
-    createDescriptorSets();
+    _createDescriptorSets();
 
     _vkRenderSyncManager->create(_imagesCount);
 }
 
 glm::uvec2 VulkanRenderer::renderTargetSize() const noexcept
 {
-    if (_frameState == FrameState::InPass)
+    if (_recordState == RecordState::InPass)
         return {_passExtent.width, _passExtent.height};
     if (!_vkSwapChainManager || !_vkSwapChainManager->getExtent2D())
         return glm::uvec2{0};

@@ -135,7 +135,7 @@ make stale handles safe after a renderer switch.
 ```cpp
 r->run([&]() {
     // Update application state here, every iteration.
-    if (!r->beginRenderPass())   // false: nothing to draw into (minimized, no surface)
+    if (!r->beginRenderPass())   // false: nothing to draw into (minimized, occluded, no surface)
         return;
     // ...
     r->endRenderPass();
@@ -148,19 +148,32 @@ the browser's `requestAnimationFrame` loop and returns immediately, so the
 callback and everything it captures by reference must stay alive after
 `run()` returns on that platform.
 
-**The frame begins at the first `beginRenderPass()`** of an iteration, and
-`run()` presents it after the callback returns. You do not call
-`beginFrame()`/`endFrame()`. `beginRenderPass()` returns whether there is a
-frame to draw into: it is false for a minimized window or one with no surface
-(an Android or iOS app in the background), and the draws would go nowhere.
+**The window's pass is what presents.** The frame begins at the first call that
+records (a render pass, `updateMesh()`, `updateBuffer()`,
+`dispatch()`), the window's target is acquired at the window's
+`beginRenderPass()`, and `run()` submits the frame after the callback returns.
+You do not call `beginFrame()`/`endFrame()`.
+
+| Iteration | Result |
+|---|---|
+| opens the window's pass | presented |
+| only offscreen passes, uploads, compute | submitted, not presented: the window keeps its picture |
+| records nothing | nothing; the loop sleeps |
+
+`beginRenderPass()` returns whether there is a frame to draw into: false for a
+minimized or occluded window, or one with no surface (an Android or iOS app in the
+background). `beginRenderPass(target)` returns whether the offscreen pass
+opened; it needs no window, so it works while minimized, but not without a
+surface.
 
 So drawing is your callback's choice:
 
 - A game that animates opens a pass every iteration.
 - A tool, editor or UI shell opens one only when something changed. An
-  iteration that opens none begins and presents nothing: the window keeps its
-  last frame on every backend, and the loop sleeps in `waitEvents()` until an
-  event arrives (at most 100 ms), so an idle window costs under 0.1% CPU.
+  iteration that opens none presents nothing: the window keeps its last frame
+  on every backend, and the loop sleeps in `waitEvents()` until an event
+  arrives (at most 100 ms), so an idle window costs under 0.1% CPU. That
+  sleep applies to offscreen-only iterations too.
 
 ```cpp
 r->run([&]() {
@@ -178,10 +191,10 @@ state changed, or a window that was resized or exposed keeps a stale picture.
 
 ### Frame state
 
-- `frameBegun()` is true from the `beginFrame()` that acquired a target
-  (inside `run()`, the first `beginRenderPass()`) until the `endFrame()` that
-  presents it. It is false outside a frame, and for a frame that could not
-  begin: the window is minimized, it has no surface, or the backend could not
+- `frameBegun()` is true from the `beginFrame()` that acquired the window's
+  target (inside `run()`, the window's `beginRenderPass()`) until the
+  `endFrame()` that presents it. It is false outside a frame, and for a frame that could not
+  begin: the window is minimized or occluded, it has no surface, or the backend could not
   acquire a target.
 - `needsFrame()` is true while the window does not show the last frame
   presented: before the first present, after a resize until a frame at the
@@ -201,12 +214,17 @@ To react to one yourself (a relayout, a new projection), keep a
 ```cpp
 wma::ResizeWatch resizes;
 r->run([&]() {
+    if (!r->beginRenderPass())
+        return;
+    // After beginRenderPass(): renderTargetSize() is the new size only once the frame has begun.
     if (resizes.consume(*r->getWindowManager()->getWindowFlags()))
     {
         const glm::vec2 size{r->renderTargetSize()};
         camera.setPerspective({.fovDeg = 60.0f, .aspect = size.x / size.y, .nearZ = 0.1f, .farZ = 100.0f});
     }
+    r->setTransform(camera.buildUBO());
     // ...
+    r->endRenderPass();
 });
 ```
 

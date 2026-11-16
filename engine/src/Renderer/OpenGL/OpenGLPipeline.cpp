@@ -99,7 +99,7 @@ PipelineHandle OpenGLRenderer::createPipeline(const PipelineDesc &desc)
     if (!_emptyVao)
         glGenVertexArrays(1, &_emptyVao);
     //! The program in use changed: the scene's comes back with its next draw.
-    leaveSceneState();
+    _leaveSceneState();
     _customPipelines.push_back(pipeline);
     return PipelineHandle{static_cast<u32>(_customPipelines.size())};
 }
@@ -130,7 +130,7 @@ void OpenGLRenderer::drawPipeline(const PipelineDraw &draw)
     std::vector<const GlBuffer *> buffers(pipeline.buffers);
     for (u32 i = 0; i < pipeline.buffers; ++i)
     {
-        buffers[i] = i < draw.buffers.size() ? bufferOf(draw.buffers[i]) : nullptr;
+        buffers[i] = i < draw.buffers.size() ? _bufferOf(draw.buffers[i]) : nullptr;
         if (!buffers[i])
         {
             INK_ERROR << "OpenGLRenderer: drawPipeline needs buffer " << i << " (createBuffer)";
@@ -140,7 +140,7 @@ void OpenGLRenderer::drawPipeline(const PipelineDraw &draw)
 #endif
 
     //! What earlier batches staged draws first.
-    flushBatches();
+    _flushBatches();
     glUseProgram(pipeline.program);
 
     const PipelineState state = pipeline.state;
@@ -206,11 +206,11 @@ void OpenGLRenderer::drawPipeline(const PipelineDraw &draw)
         glDisable(GL_BLEND);
     //! The scene's program, VAO, depth state and bindings come back with its next draw, and the textures this one
     //! put on units 1 to 3 were its material's maps.
-    leaveSceneState();
+    _leaveSceneState();
     _materialUploaded = false;
 }
 
-void OpenGLRenderer::destroyCustomPipelines() noexcept
+void OpenGLRenderer::_destroyCustomPipelines() noexcept
 {
     for (const CustomPipeline &pipeline : _customPipelines)
         glDeleteProgram(pipeline.program);

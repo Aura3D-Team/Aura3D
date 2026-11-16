@@ -25,13 +25,13 @@ constexpr GLuint kComputeConstantsBinding = 3;
 constexpr usize kComputeConstantsBytes = 128;
 } // namespace
 
-bool OpenGLRenderer::hasCompute() const noexcept
+bool OpenGLRenderer::_hasCompute() const noexcept
 {
     //! A 3.3 core request is usually answered with the newest core version, so this is a runtime question.
     return GLVersion.major > 4 || (GLVersion.major == 4 && GLVersion.minor >= 3);
 }
 
-const OpenGLRenderer::GlBuffer *OpenGLRenderer::bufferOf(BufferHandle handle) const noexcept
+const OpenGLRenderer::GlBuffer *OpenGLRenderer::_bufferOf(BufferHandle handle) const noexcept
 {
     return isValidHandle(handle) && handle.value() <= _buffers.size() ? &_buffers[handle.value() - 1] : nullptr;
 }
@@ -53,7 +53,7 @@ BufferHandle OpenGLRenderer::createBuffer(usize bytes, std::span<const std::byte
 
 bool OpenGLRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<const std::byte> bytes)
 {
-    const GlBuffer *buffer = bufferOf(handle);
+    const GlBuffer *buffer = _bufferOf(handle);
     if (!buffer || offset > buffer->size || bytes.size() > buffer->size - offset)
         return false;
     //! GL orders the write after every earlier use of the buffer.
@@ -65,7 +65,7 @@ bool OpenGLRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<c
 
 bool OpenGLRenderer::readBuffer(BufferHandle handle, usize offset, std::span<std::byte> out)
 {
-    const GlBuffer *buffer = bufferOf(handle);
+    const GlBuffer *buffer = _bufferOf(handle);
     if (!buffer || offset > buffer->size || out.size() > buffer->size - offset)
         return false;
     glBindBuffer(GL_COPY_READ_BUFFER, buffer->id);
@@ -76,7 +76,7 @@ bool OpenGLRenderer::readBuffer(BufferHandle handle, usize offset, std::span<std
 
 ComputeHandle OpenGLRenderer::createCompute(const ComputeDesc &desc)
 {
-    if (!hasCompute() || desc.glsl.empty())
+    if (!_hasCompute() || desc.glsl.empty())
     {
         INK_ERROR << "OpenGLRenderer: compute needs GL 4.3 and ComputeDesc::glsl";
         return {};
@@ -112,13 +112,13 @@ void OpenGLRenderer::dispatch(ComputeHandle kernel, std::span<const BufferHandle
     if (!std::ranges::all_of(buffers,
                              [this](BufferHandle handle)
                              {
-                                 return bufferOf(handle) != nullptr;
+                                 return _bufferOf(handle) != nullptr;
                              }))
         return;
-    flushBatches();
+    _flushBatches();
     glUseProgram(_computePrograms[kernel.value() - 1]);
     for (GLuint i = 0; i < buffers.size(); ++i)
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, bufferOf(buffers[i])->id);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, _bufferOf(buffers[i])->id);
     //! The whole block, so what this dispatch did not give reads as zero, as on Vulkan.
     std::array<std::byte, kComputeConstantsBytes> block{};
     std::ranges::copy(constants, block.begin());
@@ -131,15 +131,15 @@ void OpenGLRenderer::dispatch(ComputeHandle kernel, std::span<const BufferHandle
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT |
                     GL_BUFFER_UPDATE_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT);
     //! The scene's program and bindings come back with its next draw.
-    leaveSceneState();
+    _leaveSceneState();
 }
 
 void OpenGLRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle material, BufferHandle instances,
                                                BufferHandle arguments, usize argumentOffset)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
-    const GlBuffer *instanceBuffer = bufferOf(instances);
-    const GlBuffer *argumentBuffer = bufferOf(arguments);
+    const GlBuffer *instanceBuffer = _bufferOf(instances);
+    const GlBuffer *argumentBuffer = _bufferOf(arguments);
     const MeshRecord *record = getMesh(mesh);
     if (!_vertexMgr || !instanceBuffer || !argumentBuffer || !record ||
         argumentOffset + sizeof(DrawIndexedIndirect) > argumentBuffer->size || argumentOffset % 4 != 0)
@@ -151,16 +151,16 @@ void OpenGLRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle m
     const auto *indices = _indexMgr->get(record->indexBuffer);
     if (!indices)
         return;
-    useSceneState();
-    uploadMaterial();
+    _useSceneState();
+    _uploadMaterial();
     glUseProgram(_instancedProgram);
     glUniform1i(_instancedCoverageLoc, _coverage);
-    attachInstances(instanceBuffer->id);
+    _attachInstances(instanceBuffer->id);
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, argumentBuffer->id);
     // NOLINTBEGIN(performance-no-int-to-ptr): GL takes buffer offsets as pointers.
     glDrawElementsIndirect(GL_TRIANGLES, indices->type, reinterpret_cast<const void *>(argumentOffset));
     // NOLINTEND(performance-no-int-to-ptr)
-    detachInstances();
+    _detachInstances();
 }
 
 } // namespace gl

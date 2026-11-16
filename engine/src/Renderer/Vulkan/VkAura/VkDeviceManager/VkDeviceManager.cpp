@@ -46,7 +46,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 
     INK_VERBOSE << "Found " << _physicaldeviceCount << " Vulkan physical device(s).";
 
-    u32 bestScore = 0;
+    u64 bestScore = 0;
     const std::string gpuPreference = aura3d::AuraSettings::get()->get(aura3d::setting::vulkanGpu);
 
     for (const VkPhysicalDevice &device : devices)
@@ -68,25 +68,22 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
         INK_VERBOSE << "Device Type: " << deviceProperties.deviceType;
 
         // Scoring the device
-        u32 score = 0;
+        u64 score = 0;
 
-        // graphics.gpu_preference steers which device type wins the +1000 type
-        // bonus; "any" drops the type bonus entirely and lets capability alone
-        // (API version, image limits, geometry shader) decide.
+        constexpr u64 kPreferred = u64{1} << 40u;
+        constexpr u64 kHardware = u64{1} << 36u;
+        if (deviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU)
+            score += kHardware;
         if (gpuPreference == "integrated")
         {
             if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
-            {
-                score += 1000;
-            }
+                score += kPreferred;
         }
         else if (gpuPreference != "any")
         {
             // Default: prefer discrete GPUs (dedicated graphics cards).
             if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
-            {
-                score += 1000;
-            }
+                score += kPreferred;
         }
 
         if (deviceFeatures.geometryShader)
@@ -118,6 +115,7 @@ void VkDeviceManager::_setBestDevice(VkInstance vkInstance)
 
     INK_VERBOSE << "-------------------------------------------------------------------------------";
     INK_VERBOSE << "Choosed device score: " << bestScore;
+    INK_INFO << "GPU: " << _deviceProperties.deviceName;
     INK_VERBOSE << "-------------------------------------------------------------------------------";
 
     result = _checkDeviceExtensionSupport(_vkDeviceCreationData.vkDeviceExtensions);

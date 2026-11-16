@@ -50,7 +50,7 @@ VkDescriptorManager::VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTexture
     _poolCreateInfo.maxSets = static_cast<u32>(_pool_size) * 2u + 4u;
     //! FREE_DESCRIPTOR_SET: the per-image transform/light sets are freed and
     //! reallocated on every swapchain resize (see
-    //! VulkanRenderer::destroySwapchainResources / freeDescriptorSets()).
+    //! VulkanRenderer::_destroySwapchainResources / freeDescriptorSets()).
     //! UPDATE_AFTER_BIND: the bindless texture-array sets are written to
     //! (new textures bound into array elements) even while a previously
     //! recorded, not-yet-executed command buffer still references them.

@@ -40,7 +40,7 @@ void barrier(VkCommandBuffer cmd, VkPipelineStageFlags from, VkAccessFlags writt
 
 } // namespace
 
-const VulkanRenderer::ComputeBuffer *VulkanRenderer::computeBufferOf(BufferHandle handle) const noexcept
+const VulkanRenderer::ComputeBuffer *VulkanRenderer::_computeBufferOf(BufferHandle handle) const noexcept
 {
     return isValidHandle(handle) && handle.value() <= _computeBuffers.size() ? &_computeBuffers[handle.value() - 1]
                                                                              : nullptr;
@@ -74,10 +74,10 @@ BufferHandle VulkanRenderer::createBuffer(usize bytes, std::span<const std::byte
 bool VulkanRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<const std::byte> bytes)
 {
     ensureFrame();
-    const ComputeBuffer *buffer = computeBufferOf(handle);
-    if (!buffer || offset > buffer->size || bytes.size() > buffer->size - offset || _frameState == FrameState::InPass)
+    const ComputeBuffer *buffer = _computeBufferOf(handle);
+    if (!buffer || offset > buffer->size || bytes.size() > buffer->size - offset || _recordState == RecordState::InPass)
         return false;
-    if (_frameState == FrameState::Idle)
+    if (_recordState == RecordState::Idle)
     {
         //! Outside a frame: earlier frames may still read it, so they finish first.
         vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
@@ -88,7 +88,7 @@ bool VulkanRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<c
     }
     if (!_pipelineReady)
         return false;
-    const std::optional<VkDeviceSize> staged = uploadTransient(bytes);
+    const std::optional<VkDeviceSize> staged = _uploadTransient(bytes);
     if (!staged)
         return false;
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
@@ -103,7 +103,7 @@ bool VulkanRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<c
 
 bool VulkanRenderer::readBuffer(BufferHandle handle, usize offset, std::span<std::byte> out)
 {
-    const ComputeBuffer *buffer = computeBufferOf(handle);
+    const ComputeBuffer *buffer = _computeBufferOf(handle);
     if (!buffer || offset > buffer->size || out.size() > buffer->size - offset)
         return false;
     vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
@@ -161,7 +161,7 @@ ComputeHandle VulkanRenderer::createCompute(const ComputeDesc &desc)
     catch (const std::exception &error)
     {
         INK_ERROR << "VulkanRenderer: compute kernel rejected: " << error.what();
-        destroyKernel(kernel);
+        _destroyKernel(kernel);
         if (module != VK_NULL_HANDLE)
             vkDestroyShaderModule(device, module, nullptr);
         return {};
@@ -177,7 +177,7 @@ void VulkanRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle
     ensureFrame();
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
     //! On the frame's primary buffer, so no pass may be open.
-    if (_frameState != FrameState::Recording || !_pipelineReady || !isValidHandle(handle) ||
+    if (_recordState != RecordState::Recording || !_pipelineReady || !isValidHandle(handle) ||
         handle.value() > _computeKernels.size() || constants.size() > kComputeConstantsBytes)
         return;
     const ComputeKernel &kernel = _computeKernels[handle.value() - 1];
@@ -196,7 +196,7 @@ void VulkanRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle
             VK_RESULT_CHECK(vkCreateDescriptorPool(device, &poolInfo, nullptr, &pool));
     }
     for (u32 i = 0; i < kernel.buffers; ++i)
-        if (!computeBufferOf(buffers[i]))
+        if (!_computeBufferOf(buffers[i]))
             return;
     VkDescriptorSet set = VK_NULL_HANDLE;
     const VkDescriptorSetAllocateInfo allocation{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -212,7 +212,7 @@ void VulkanRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle
     std::vector<VkWriteDescriptorSet> writes(kernel.buffers);
     for (u32 i = 0; i < kernel.buffers; ++i)
     {
-        const ComputeBuffer *buffer = computeBufferOf(buffers[i]);
+        const ComputeBuffer *buffer = _computeBufferOf(buffers[i]);
         infos[i] = {buffer->buffer.buffer, 0, VK_WHOLE_SIZE};
         writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                      .dstSet = set,
@@ -242,13 +242,13 @@ void VulkanRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle m
                                                BufferHandle arguments, usize argumentOffset)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
-    if (_frameState != FrameState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
+    if (_recordState != RecordState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
         return;
-    const ComputeBuffer *instanceBuffer = computeBufferOf(instances);
-    const ComputeBuffer *argumentBuffer = computeBufferOf(arguments);
+    const ComputeBuffer *instanceBuffer = _computeBufferOf(instances);
+    const ComputeBuffer *argumentBuffer = _computeBufferOf(arguments);
     const MeshRecord *record = getMesh(mesh);
-    const VertexBufferInfo *vb = record ? vertexBufferOf(record->vertexBuffer) : nullptr;
-    const IndexBufferInfo *ib = record ? indexBufferOf(record->indexBuffer) : nullptr;
+    const VertexBufferInfo *vb = record ? _vertexBufferOf(record->vertexBuffer) : nullptr;
+    const IndexBufferInfo *ib = record ? _indexBufferOf(record->indexBuffer) : nullptr;
     if (!instanceBuffer || !argumentBuffer || !vb || !ib || argumentOffset % 4 != 0 ||
         argumentOffset + sizeof(DrawIndexedIndirect) > argumentBuffer->size)
         return;
@@ -260,9 +260,9 @@ void VulkanRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle m
     draw.indexBuffer = ib->buffer;
     draw.indexType = ib->indexType;
     draw.indexCount = record->indexCount;
-    draw.textureIndex = textureArrayIndexOf(_currentTexture);
-    draw.materialIndex = materialIndexOf(_currentMaterialHandle);
-    SceneBindings bindings = sceneBindings();
+    draw.textureIndex = _textureArrayIndexOf(_currentTexture);
+    draw.materialIndex = _materialIndexOf(_currentMaterialHandle);
+    SceneBindings bindings = _sceneBindings();
     bindings.pipeline = _vkInstancedPipelineManager.get();
     aura3d::vk::bindDrawState(_sceneCmd, _recorded, bindings, draw);
     constexpr VkDeviceSize kOrigin = 0;
@@ -270,13 +270,13 @@ void VulkanRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle m
     vkCmdDrawIndexedIndirect(_sceneCmd, argumentBuffer->buffer.buffer, argumentOffset, 1, sizeof(DrawIndexedIndirect));
 }
 
-void VulkanRenderer::resetComputePool()
+void VulkanRenderer::_resetComputePool()
 {
     if (_currentFrame < _computePools.size() && _computePools[_currentFrame] != VK_NULL_HANDLE)
         VK_RESULT_CHECK(vkResetDescriptorPool(*_vkDeviceManager->getDevice(), _computePools[_currentFrame], 0));
 }
 
-void VulkanRenderer::destroyKernel(ComputeKernel &kernel) noexcept
+void VulkanRenderer::_destroyKernel(ComputeKernel &kernel) noexcept
 {
     VkDevice device = *_vkDeviceManager->getDevice();
     if (kernel.pipeline != VK_NULL_HANDLE)
@@ -288,7 +288,7 @@ void VulkanRenderer::destroyKernel(ComputeKernel &kernel) noexcept
     kernel = {};
 }
 
-void VulkanRenderer::destroyCompute() noexcept
+void VulkanRenderer::_destroyCompute() noexcept
 {
     if (!_vkDeviceManager || !_vkDeviceManager->getDevice())
         return;
@@ -296,7 +296,7 @@ void VulkanRenderer::destroyCompute() noexcept
         _memoryManager->destroyBuffer(buffer.buffer);
     _computeBuffers.clear();
     for (ComputeKernel &kernel : _computeKernels)
-        destroyKernel(kernel);
+        _destroyKernel(kernel);
     _computeKernels.clear();
     for (const VkDescriptorPool pool : _computePools)
         if (pool != VK_NULL_HANDLE)

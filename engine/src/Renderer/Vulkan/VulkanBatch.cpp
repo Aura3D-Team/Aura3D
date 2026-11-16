@@ -12,8 +12,8 @@ namespace aura3d
 namespace vk
 {
 
-std::optional<std::pair<u32, u32>> VulkanRenderer::uploadBatch(std::span<const gfx::BatchVertex> vertices,
-                                                               std::span<const u32> indices)
+std::optional<std::pair<u32, u32>> VulkanRenderer::_uploadBatch(std::span<const gfx::BatchVertex> vertices,
+                                                                std::span<const u32> indices)
 {
     const u32 frame = _currentFrame;
     // Every recorded batch keeps its own slice until the frame fence completes.
@@ -22,9 +22,9 @@ std::optional<std::pair<u32, u32>> VulkanRenderer::uploadBatch(std::span<const g
     const VkDeviceSize vertexEnd = vertexOffset + vertices.size_bytes();
     const VkDeviceSize indexEnd = indexOffset + indices.size_bytes();
 
-    growBatchBuffer(_batchVertexBuffers[frame], _batchVertexCapacity[frame], vertexEnd, 65536, kVertexRingUsage);
-    growBatchBuffer(_batchIndexBuffers[frame], _batchIndexCapacity[frame], indexEnd, 16384,
-                    VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    _growBatchBuffer(_batchVertexBuffers[frame], _batchVertexCapacity[frame], vertexEnd, 65536, kVertexRingUsage);
+    _growBatchBuffer(_batchIndexBuffers[frame], _batchIndexCapacity[frame], indexEnd, 16384,
+                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
     AllocatedBuffer &vertexBuffer = _batchVertexBuffers[frame];
     AllocatedBuffer &indexBuffer = _batchIndexBuffers[frame];
@@ -46,8 +46,8 @@ std::optional<std::pair<u32, u32>> VulkanRenderer::uploadBatch(std::span<const g
                      static_cast<u32>(indexOffset / sizeof(u32))};
 }
 
-void VulkanRenderer::growBatchBuffer(AllocatedBuffer &buffer, VkDeviceSize &capacity, VkDeviceSize needed,
-                                     VkDeviceSize minimum, VkBufferUsageFlags usage)
+void VulkanRenderer::_growBatchBuffer(AllocatedBuffer &buffer, VkDeviceSize &capacity, VkDeviceSize needed,
+                                      VkDeviceSize minimum, VkBufferUsageFlags usage)
 {
     if (needed <= capacity)
         return;
@@ -68,14 +68,14 @@ void VulkanRenderer::growBatchBuffer(AllocatedBuffer &buffer, VkDeviceSize &capa
     capacity = newCapacity;
 }
 
-std::optional<VkDeviceSize> VulkanRenderer::uploadTransient(std::span<const std::byte> instances)
+std::optional<VkDeviceSize> VulkanRenderer::_uploadTransient(std::span<const std::byte> instances)
 {
     const u32 frame = _currentFrame;
     //! Instances share the batch vertex ring. Batch draws address it in whole BatchVertex units, so the
     //! ring's end is left on such a boundary again after the instances.
     const VkDeviceSize offset = (_batchVertexUsed[frame] + 15) / 16 * 16;
     const VkDeviceSize end = offset + instances.size_bytes();
-    growBatchBuffer(_batchVertexBuffers[frame], _batchVertexCapacity[frame], end, 65536, kVertexRingUsage);
+    _growBatchBuffer(_batchVertexBuffers[frame], _batchVertexCapacity[frame], end, 65536, kVertexRingUsage);
     AllocatedBuffer &buffer = _batchVertexBuffers[frame];
     if (!buffer.mappedData)
         return std::nullopt;
@@ -87,13 +87,13 @@ std::optional<VkDeviceSize> VulkanRenderer::uploadTransient(std::span<const std:
     return offset;
 }
 
-bool VulkanRenderer::updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
+bool VulkanRenderer::_updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
 {
     //! A transfer on the frame's primary buffer, so no pass may be open.
-    const VertexBufferInfo *target = vertexBufferOf(handle);
-    if (!target || _frameState != FrameState::Recording || !_pipelineReady || vertices.size() > target->vertexCount)
+    const VertexBufferInfo *target = _vertexBufferOf(handle);
+    if (!target || _recordState != RecordState::Recording || !_pipelineReady || vertices.size() > target->vertexCount)
         return false;
-    const std::optional<VkDeviceSize> offset = uploadTransient(std::as_bytes(vertices));
+    const std::optional<VkDeviceSize> offset = _uploadTransient(std::as_bytes(vertices));
     if (!offset)
         return false;
     VkCommandBuffer cmd = _cmdBuffers[_currentFrame];
@@ -120,13 +120,13 @@ bool VulkanRenderer::updateVertexBuffer(VertexBufferHandle handle, std::span<con
     return true;
 }
 
-void VulkanRenderer::destroyBatchBuffers()
+void VulkanRenderer::_destroyBatchBuffers()
 {
     if (!_memoryManager || !_memoryManager->isInitialized())
         return;
 
     //! Bounded by the vector's own size rather than GetMaxFramesInFlight():
-    //! this can run before createDescriptorSets() ever has (a teardown after
+    //! this can run before _createDescriptorSets() ever has (a teardown after
     //! a failed partial init), when these are still empty, and .size() is
     //! then correctly 0 rather than indexing off the end.
     for (u32 frame = 0; frame < _batchVertexBuffers.size(); ++frame)
@@ -157,11 +157,11 @@ void VulkanRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::
 {
     AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
 
-    if (_frameState != FrameState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE ||
+    if (_recordState != RecordState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE ||
         _bindlessTextureSet == VK_NULL_HANDLE || vertices.empty() || indices.empty())
         return;
 
-    const auto first = uploadBatch(vertices, indices);
+    const auto first = _uploadBatch(vertices, indices);
     if (!first)
         return;
 
@@ -181,7 +181,7 @@ void VulkanRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::
         _recorded.viewportSet = true;
     }
 
-    const BatchPushConstants pushConstants{batchTransform(space), textureArrayIndexOf(texture)};
+    const BatchPushConstants pushConstants{batchTransform(space), _textureArrayIndexOf(texture)};
     _vkBatchPipelineManager->cmdPushConstants(cmd, &pushConstants);
 
     //! Bound once per run of batches: each draw addresses its own slice by offset.

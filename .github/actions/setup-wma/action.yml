@@ -1,0 +1,53 @@
+name: Build required wma
+description: Install libwma at the workflow's WMA_REF for the container job's target ABI, next to setup-ink's Ink.
+inputs:
+  platform:
+    description: Target platform (linux, android, or wasm).
+    default: linux
+  prefix:
+    description: setup-ink's installation prefix; wma installs there and finds Ink there.
+    required: true
+  ref:
+    description: libwma commit to build. Bump it with cmake/Dependencies.cmake's wma version.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: Arthu-RL/libwma
+        ref: ${{ inputs.ref }}
+        path: .ci/wma
+        persist-credentials: false
+
+    - shell: bash
+      env:
+        WMA_PLATFORM: ${{ inputs.platform }}
+        WMA_PREFIX: ${{ inputs.prefix }}
+      run: |
+        set -eo pipefail
+        build="$RUNNER_TEMP/wma-$WMA_PLATFORM"
+        args=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+              -DWMA_BUILD_TESTS=OFF -DWMA_BUILD_EXAMPLES=OFF -DWMA_NATIVE_OPTIMIZE=OFF -DWMA_ENABLE_LTO=OFF)
+        case "$WMA_PLATFORM" in
+          linux)
+            args+=("-DCMAKE_PREFIX_PATH=$WMA_PREFIX;/usr/local")
+            ;;
+          android)
+            args+=(-DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+                   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared
+                   "-DCMAKE_PREFIX_PATH=$WMA_PREFIX;/usr/local/android;/usr/local"
+                   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH)
+            ;;
+          wasm)
+            # setup-ink already exported a writable EM_CACHE for this job.
+            source /opt/emsdk/emsdk_env.sh
+            args+=(-DCMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+                   "-DCMAKE_PREFIX_PATH=$WMA_PREFIX;/usr/local/wasm;/usr/local"
+                   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH)
+            ;;
+          *) echo "Unsupported wma platform: $WMA_PLATFORM" >&2; exit 1 ;;
+        esac
+        cmake -S "$GITHUB_WORKSPACE/.ci/wma" -B "$build" -G Ninja "${args[@]}"
+        cmake --build "$build" --parallel
+        cmake --install "$build" --prefix "$WMA_PREFIX"

@@ -102,7 +102,7 @@ PipelineHandle VulkanRenderer::createPipeline(const PipelineDesc &desc)
         }
         if (desc.constantBytes > 0)
             manager.setPushConstantRange(kStages, 0, desc.constantBytes);
-        buildCustomPipeline(pipeline);
+        _buildCustomPipeline(pipeline);
     }
     catch (const std::exception &error)
     {
@@ -113,7 +113,7 @@ PipelineHandle VulkanRenderer::createPipeline(const PipelineDesc &desc)
     return PipelineHandle{static_cast<u32>(_customPipelines.size())};
 }
 
-void VulkanRenderer::buildCustomPipeline(CustomPipeline &pipeline)
+void VulkanRenderer::_buildCustomPipeline(CustomPipeline &pipeline)
 {
     pipeline.manager->createPipeline(*_vkRenderPassManager->getRenderPass(), *_vkSwapChainManager->getExtent2D(),
                                      pipeline.bindings, pipeline.attributes, pipeline.attributeCount, pipeline.options);
@@ -135,7 +135,7 @@ PipelineLimits VulkanRenderer::pipelineLimits() const noexcept
             limits.maxPushConstantsSize & ~15u, limits.maxUniformBufferRange};
 }
 
-VkDescriptorSet VulkanRenderer::allocateCustomSet(VkDescriptorSetLayout layout, u32 descriptors)
+VkDescriptorSet VulkanRenderer::_allocateCustomSet(VkDescriptorSetLayout layout, u32 descriptors)
 {
     VkDevice device = *_vkDeviceManager->getDevice();
     if (_customPools.size() < _cmdBuffers.size())
@@ -171,7 +171,7 @@ VkDescriptorSet VulkanRenderer::allocateCustomSet(VkDescriptorSetLayout layout, 
     return set;
 }
 
-bool VulkanRenderer::customSetsFor(const CustomPipeline &pipeline, u32 index, const PipelineDraw &draw)
+bool VulkanRenderer::_customSetsFor(const CustomPipeline &pipeline, u32 index, const PipelineDraw &draw)
 {
     //! What the sets hold: one handle per texture, then one per buffer; a missing one is the invalid handle.
     CustomSet key;
@@ -193,7 +193,7 @@ bool VulkanRenderer::customSetsFor(const CustomPipeline &pipeline, u32 index, co
     writes.reserve(pipeline.textures + pipeline.buffers);
     if (pipeline.textures > 0)
     {
-        key.sets[0] = allocateCustomSet(pipeline.manager->getDescriptorSetLayout(0), pipeline.textures);
+        key.sets[0] = _allocateCustomSet(pipeline.manager->getDescriptorSetLayout(0), pipeline.textures);
         if (key.sets[0] == VK_NULL_HANDLE)
             return false;
         for (u32 i = 0; i < pipeline.textures; ++i)
@@ -215,13 +215,13 @@ bool VulkanRenderer::customSetsFor(const CustomPipeline &pipeline, u32 index, co
     }
     if (pipeline.buffers > 0)
     {
-        key.sets[1] = allocateCustomSet(pipeline.manager->getDescriptorSetLayout(1), pipeline.buffers);
+        key.sets[1] = _allocateCustomSet(pipeline.manager->getDescriptorSetLayout(1), pipeline.buffers);
         if (key.sets[1] == VK_NULL_HANDLE)
             return false;
         const VkDeviceSize range = pipelineLimits().bufferBytes;
         for (u32 i = 0; i < pipeline.buffers; ++i)
         {
-            const ComputeBuffer *buffer = computeBufferOf(draw.buffers[i]);
+            const ComputeBuffer *buffer = _computeBufferOf(draw.buffers[i]);
             buffers[i] = {buffer->buffer.buffer, 0, std::min(buffer->size, range)};
             writes.push_back({.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                               .dstSet = key.sets[1],
@@ -239,7 +239,7 @@ bool VulkanRenderer::customSetsFor(const CustomPipeline &pipeline, u32 index, co
 void VulkanRenderer::drawPipeline(const PipelineDraw &draw)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
-    if (_frameState != FrameState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE ||
+    if (_recordState != RecordState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE ||
         !isValidHandle(draw.pipeline) || draw.pipeline.value() > _customPipelines.size())
         return;
     const u32 index = draw.pipeline.value();
@@ -251,7 +251,7 @@ void VulkanRenderer::drawPipeline(const PipelineDraw &draw)
         return;
     }
     for (u32 i = 0; i < pipeline.buffers; ++i)
-        if (i >= draw.buffers.size() || !computeBufferOf(draw.buffers[i]))
+        if (i >= draw.buffers.size() || !_computeBufferOf(draw.buffers[i]))
         {
             INK_ERROR << "VulkanRenderer: drawPipeline needs buffer " << i << " (createBuffer)";
             return;
@@ -263,15 +263,15 @@ void VulkanRenderer::drawPipeline(const PipelineDraw &draw)
     if (pipeline.input == VertexInput::Mesh)
     {
         record = getMesh(draw.mesh);
-        vertices = record ? vertexBufferOf(record->vertexBuffer) : nullptr;
-        indices = record ? indexBufferOf(record->indexBuffer) : nullptr;
+        vertices = record ? _vertexBufferOf(record->vertexBuffer) : nullptr;
+        indices = record ? _indexBufferOf(record->indexBuffer) : nullptr;
         if (!vertices || !indices)
             return;
     }
     const VkPipeline vkPipeline = pipeline.manager->getPipeline();
     if (vkPipeline == VK_NULL_HANDLE)
         return;
-    if (pipeline.textures + pipeline.buffers > 0 && !customSetsFor(pipeline, index, draw))
+    if (pipeline.textures + pipeline.buffers > 0 && !_customSetsFor(pipeline, index, draw))
         return;
 
     VkCommandBuffer cmd = _sceneCmd;
@@ -321,7 +321,7 @@ void VulkanRenderer::drawPipeline(const PipelineDraw &draw)
     vkCmdDrawIndexed(cmd, record->indexCount, draw.instanceCount, 0, 0, 0);
 }
 
-void VulkanRenderer::resetCustomPool()
+void VulkanRenderer::_resetCustomPool()
 {
     _lastCustomSet = {};
     if (_currentFrame < _customPools.size())
@@ -329,7 +329,7 @@ void VulkanRenderer::resetCustomPool()
             VK_RESULT_CHECK(vkResetDescriptorPool(*_vkDeviceManager->getDevice(), pool, 0));
 }
 
-void VulkanRenderer::destroyCustomPipelines() noexcept
+void VulkanRenderer::_destroyCustomPipelines() noexcept
 {
     if (!_vkDeviceManager || !_vkDeviceManager->getDevice())
         return;

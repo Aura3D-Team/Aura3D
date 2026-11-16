@@ -91,6 +91,10 @@ class FakeWindow final : public wma::IWindowManager
     //! pollEvents() is where a script's events arrive.
     int waits = 0;
     int swaps = 0;
+    //! Off: the platform has not yet shown the last presented frame, as a vsynced Wayland window between two frames.
+    bool ready = true;
+    //! lockFramebuffer() calls: what a renderer asks of a window that is not ready.
+    int locks = 0;
 
     //! What a backend does when the platform resizes the window.
     void resize(i32 width, i32 height)
@@ -192,8 +196,13 @@ class FakeWindow final : public wma::IWindowManager
     {
         return surfaceAvailable;
     }
+    bool readyToPresent() const noexcept override
+    {
+        return ready;
+    }
     wma::SoftwareFramebuffer lockFramebuffer() override
     {
+        ++locks;
         if (!presentable)
             return {};
         const wma::FramebufferSize size = getFramebufferSize();

@@ -25,6 +25,11 @@ defaults:
 permissions:
   contents: write
 
+
+env:
+  # Same commit as ci.yml's WMA_REF; bump both with cmake/Dependencies.cmake's wma version.
+  WMA_REF: 18ddb83a9c092dc4587ad25c4ad66e180228605e # 0.11.0
+
 jobs:
   create-release:
     name: Create draft release
@@ -87,7 +92,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Arthu-RL/libwma
-          ref: main
+          ref: ${{ env.WMA_REF }}
           path: libwma
 
       - name: Set up Buildx
@@ -310,7 +315,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Arthu-RL/libwma
-          ref: main
+          ref: ${{ env.WMA_REF }}
           path: wma
 
       - name: Install dependencies (Homebrew)
@@ -435,7 +440,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Arthu-RL/libwma
-          ref: main
+          ref: ${{ env.WMA_REF }}
           path: wma
 
       - name: Setup MSVC environment

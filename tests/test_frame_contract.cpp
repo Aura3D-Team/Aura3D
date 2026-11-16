@@ -150,19 +150,29 @@ void checkFrameBegunSequence()
     {
         const char *state;
         bool minimized;
+        bool occluded;
+        bool ready;
         bool surfaceAvailable;
         bool begun;
     };
     constexpr std::array steps{
-        Step{"a normal frame", false, true, true},      Step{"a minimized window", true, true, false},
-        Step{"the restored window", false, true, true}, Step{"no surface", false, false, false},
-        Step{"the surface back", false, true, true},
+        Step{"a normal frame", false, false, true, true, true},
+        Step{"a minimized window", true, false, true, true, false},
+        Step{"the restored window", false, false, true, true, true},
+        Step{"an occluded window", false, true, true, true, false},
+        Step{"the window back on screen", false, false, true, true, true},
+        Step{"a frame still on its way to the screen", false, false, false, true, false},
+        Step{"that frame shown", false, false, true, true, true},
+        Step{"no surface", false, false, true, false, false},
+        Step{"the surface back", false, false, true, true, true},
     };
 
     AURA_CHECK(!renderer.frameBegun(), "frameBegun: false before any frame");
     for (const Step &step : steps)
     {
         window.flags.minimized = step.minimized;
+        window.flags.occluded = step.occluded;
+        window.ready = step.ready;
         window.surfaceAvailable = step.surfaceAvailable;
         const int presents = window.presents;
         renderer.beginFrame();
@@ -250,9 +260,92 @@ void checkRunSkipsIdleFrames()
     AURA_CHECK((drawnAt == std::vector<int>{1, 2, 3, 5, 8}),
                "on demand: frames are drawn for the first frame, an expose, a change, a resize and the restored "
                "window only");
-    AURA_CHECK(window.presents == 5 && window.swaps == 5, "on demand: only those frames present and swap");
+    AURA_CHECK(window.presents == 5, "on demand: only those frames present");
     AURA_CHECK(window.waits == 4, "on demand: every other iteration sleeps, minimized ones included");
     AURA_CHECK(!renderer.needsFrame(), "on demand: and the window ends up showing the last frame");
+}
+
+//! Offscreen work inside run() records without touching the window, minimized or not.
+void checkOffscreenOnlyPresentsNothing()
+{
+    ScriptedRenderer scripted;
+    test::FakeWindow &window = *scripted.window;
+    IRenderer &renderer = scripted.renderer;
+    const RenderTargetHandle target = renderer.createRenderTarget({.width = 16, .height = 16});
+
+    int polls = 0;
+    window.onPoll = [&](test::FakeWindow &w)
+    {
+        switch (++polls)
+        {
+        case 3:
+            w.flags.minimized = true;
+            break;
+        case 5:
+            w.close();
+            break;
+        default:
+            break;
+        }
+    };
+
+    std::vector<bool> opened;
+    bool keptFrame = false;
+    renderer.run(
+        [&]
+        {
+            if (polls == 3) //! After the presented first iteration and an offscreen-only second.
+                keptFrame = !renderer.needsFrame();
+            if (polls == 1 && renderer.beginRenderPass())
+                renderer.endRenderPass();
+            opened.push_back(renderer.beginRenderPass(target));
+            renderer.endRenderPass();
+        });
+
+    AURA_CHECK((opened == std::vector<bool>{true, true, true, true, true}),
+               "offscreen: the pass opens every iteration, minimized ones included");
+    AURA_CHECK(window.presents == 1, "offscreen: only the iteration with a window pass presents");
+    AURA_CHECK(keptFrame, "offscreen: and the window keeps the frame it shows");
+    AURA_CHECK(window.waits == 4, "offscreen: an iteration that presents nothing still sleeps");
+}
+
+//! What a backend reports through the window that the frame contract depends on.
+void checkPresentSideEffects()
+{
+    ScriptedRenderer scripted;
+    test::FakeWindow &window = *scripted.window;
+    IRenderer &renderer = scripted.renderer;
+
+    window.flags.surfaceLost = true;
+    AURA_CHECK(renderer.beginFrame(), "surface: a frame begins on a window whose surface was replaced");
+    renderer.endFrame();
+    AURA_CHECK(!window.flags.surfaceLost && !renderer.needsFrame(),
+               "surface: the frame that began clears it, so the window can idle again");
+
+    //! Pacing is the window's readyToPresent(), not a wait inside the present: a window that is not ready is asked
+    //! for no framebuffer, and a present never blocks.
+    window.ready = false;
+    const int locks = window.locks;
+    AURA_CHECK(!renderer.beginFrame() && window.locks == locks, "pacing: a window that is not ready is not drawn into");
+    renderer.endFrame();
+    window.ready = true;
+    window.presentable = false;
+    renderer.beginFrame();
+    renderer.endFrame();
+    AURA_CHECK(window.swaps == 0, "pacing: a refused framebuffer waits for nothing");
+    window.presentable = true;
+
+    window.flags.minimized = true;
+    AURA_CHECK(!renderer.beginFrame(), "explicit: a minimized window begins no frame");
+    const int presents = window.presents;
+    renderer.endFrame();
+    AURA_CHECK(window.presents == presents, "explicit: and endFrame() after it presents nothing");
+    window.flags.minimized = false;
+
+    renderer.beginFrame();
+    AURA_CHECK(renderer.beginFrame() && window.presents == presents + 1,
+               "explicit: a frame left open is presented by the next beginFrame()");
+    renderer.endFrame();
 }
 #endif
 
@@ -265,6 +358,8 @@ int main()
     checkNeedsFrameUntilPresented();
     checkFrameBegunSequence();
     checkRunSkipsIdleFrames();
+    checkOffscreenOnlyPresentsNothing();
+    checkPresentSideEffects();
 #else
     std::puts("[SKIP] frame contract: built without the software backend");
 #endif

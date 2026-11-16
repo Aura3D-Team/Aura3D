@@ -138,17 +138,6 @@ class CaptureRenderer final : public IRenderer
     std::unordered_map<TextureHandle, Texture> textures;
 
     // Everything below is inert: the UI never calls it.
-    bool acquireFrame() override
-    {
-        return true;
-    }
-    bool presentFrame() override
-    {
-        return true;
-    }
-    void openRenderPass() override
-    {
-    }
     void endRenderPass() override
     {
     }
@@ -210,11 +199,20 @@ class CaptureRenderer final : public IRenderer
     {
         return RendererChoice::SOFTWARE;
     }
-    void createWindow(const char *, const wma::WindowBackend &) override
+
+  private:
+    FrameReach _acquireFrame() override
+    {
+        return FrameReach::WindowReady;
+    }
+    bool _presentFrame() override
+    {
+        return true;
+    }
+    void _openRenderPass() override
     {
     }
 
-  private:
     TextureHandle _next{0};
 };
 

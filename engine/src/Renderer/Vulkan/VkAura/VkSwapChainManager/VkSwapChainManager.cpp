@@ -79,14 +79,18 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
     /*
      * minImageCount + 1: one image being presented, one to render into.
      *
-     * Deliberately not more. Extra images were measured against this on the
-     * non-vsync path, where vkAcquireNextImageKHR blocking is the frame's
-     * single largest cost and more buffers looked like the obvious fix.
-     * The wait is the GPU and the compositor doing real per-frame work, not a shortage of
-     * slots to queue into, so additional images would only add memory and
-     * latency for no throughput.
+     * Deliberately not more where the present waits for the display (Fifo: every further image is a frame of
+     * latency) or returns at once (Immediate: vkAcquireNextImageKHR measured 0.25 us on X11, so there is no wait
+     * to remove).
+     *
+     * Mailbox takes two more. There the compositor hands an image back only once it has taken a newer one, and
+     * vkAcquireNextImageKHR waits for that round trip: 160 us of a 1080 us frame on Wayland (RTX 4060, 1080p),
+     * against 60 us with two more and 1 us with four. Two is where the frame rate stops following (+7.6%, then
+     * +9.2%). The compositor always shows the newest image, so these add no latency, only their memory.
      */
     u32 imageCount = _swapChainSupportDetails.capabilities.minImageCount + 1;
+    if (_choosedPresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+        imageCount += 2;
 
     if (_swapChainSupportDetails.capabilities.maxImageCount > 0 &&
         imageCount > _swapChainSupportDetails.capabilities.maxImageCount)
@@ -215,7 +219,7 @@ u32 VkSwapChainManager::acquireNextImage(VkSemaphore imageSemaphore, wma::Window
     return imageIndex;
 }
 
-void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore *renderFinishedSemaphore,
+bool VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore *renderFinishedSemaphore,
                                                 const u32 &imageIndex, wma::WindowFlags *windowFlags)
 {
     VkPresentInfoKHR presentInfo = {};
@@ -238,11 +242,17 @@ void VkSwapChainManager::presentBackToSwapChain(VkQueue queue, VkSemaphore *rend
         windowFlags->surfaceLost = true;
     else if (result == VK_ERROR_OUT_OF_DATE_KHR)
         _outOfDate = true;
+    return result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR;
 }
 
 bool VkSwapChainManager::outOfDate() const noexcept
 {
     return _outOfDate;
+}
+
+bool VkSwapChainManager::presentWaitsForDisplay() const noexcept
+{
+    return _choosedPresentMode != VK_PRESENT_MODE_MAILBOX_KHR && _choosedPresentMode != VK_PRESENT_MODE_IMMEDIATE_KHR;
 }
 
 void VkSwapChainManager::markOutOfDate() noexcept
@@ -324,7 +334,7 @@ void VkSwapChainManager::cleanup()
     {
         vkDestroySwapchainKHR(*_device, _swapChain, nullptr);
         // Without this, a second cleanup() call before a successful
-        // createSwapChain() rebuild (e.g. recreateSurfaceAndSwapchain()'s
+        // createSwapChain() rebuild (e.g. VulkanRenderer::_recreateSurfaceAndSwapchain()'s
         // retry loop, when initSwapChainSupportDetails() keeps throwing and
         // never gets far enough to recreate the swapchain) destroys the same
         // already-freed handle again a double-free the Scudo allocator
@@ -448,7 +458,13 @@ VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<Vk
 
     case VSyncMode::Immediate:
         if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
-            return VK_PRESENT_MODE_IMMEDIATE_KHR;
+
+            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+            {
+                INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_MAILBOX_KHR";
+                return VK_PRESENT_MODE_MAILBOX_KHR;
+            }
+
         INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
         return VK_PRESENT_MODE_FIFO_KHR;
 
