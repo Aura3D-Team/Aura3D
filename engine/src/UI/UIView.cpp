@@ -393,8 +393,8 @@ void UIView::update(f32 deltaSeconds)
             _root.clearFocus();
         //! A minimized window keeps neither pointer nor keyboard, whether or not the platform says it lost focus:
         //! a caption button pressed to minimize must not come back hovered.
-        minimized = flags.minimized;
-        const bool focused = flags.focused && !minimized;
+        minimized = flags.isMinimized();
+        const bool focused = flags.isFocused() && !minimized;
         if (INK_FLAG_CHECK(_flags, UIViewFlags::WindowFocused) && !focused)
         {
             _root.cancelInput();

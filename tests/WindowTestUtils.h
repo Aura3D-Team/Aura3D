@@ -104,6 +104,15 @@ class FakeWindow final : public wma::IWindowManager
         flags.markResized();
     }
 
+    //! What the platform reports of the window's visibility; it stays focused. Set whole, as a backend's event
+    //! thread would, rather than bit by bit.
+    void setVisibility(bool minimized, bool occluded = false)
+    {
+        flags.state = wma::WindowState::Focused |
+                      (minimized ? wma::WindowState::Minimized : wma::WindowState::Nothing) |
+                      (occluded ? wma::WindowState::Occluded : wma::WindowState::Nothing);
+    }
+
     //! The clipboard this window offers. Off, it is a backend that has none.
     bool clipboardSupported = true;
     //! False: a platform that declines the text, as a Wayland window does before its first key press.

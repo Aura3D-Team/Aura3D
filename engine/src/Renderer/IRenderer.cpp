@@ -94,7 +94,8 @@ bool IRenderer::windowShowable() const
     wma::IWindowManager *window = _windowManagerApi.get();
     const wma::WindowFlags *flags = window ? window->getWindowFlags() : nullptr;
     //! Occluded as well as minimized, and not while a presented frame is still on its way to the screen:
-    return flags && !flags->minimized && !flags->occluded && window->isSurfaceAvailable() && window->readyToPresent();
+    return flags && !flags->isMinimized() && !flags->isOccluded() && window->isSurfaceAvailable() &&
+           window->readyToPresent();
 }
 
 bool IRenderer::_acquireWindowTarget()

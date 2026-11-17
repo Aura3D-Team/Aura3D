@@ -946,12 +946,12 @@ void testMinimizeDropsAStaleHover()
     AURA_CHECK(ui.button->isHovered(), "minimize: the button under the pointer is hovered");
 
     //! The platform may never say the pointer left: the window just went away under it.
-    window.flags.minimized = true;
+    window.setVisibility(true);
     ui.view->update(0.0f);
     AURA_CHECK(!ui.button->isHovered() && ui.view->needsDraw(),
                "minimize: a minimized window drops the hover, and the change is drawn");
 
-    window.flags.minimized = false;
+    window.setVisibility(false);
     window.mouse.move(150.0, 25.0);
     ui.view->update(0.0f);
     AURA_CHECK(!ui.button->isHovered(), "minimize: restored, hover follows the pointer again");

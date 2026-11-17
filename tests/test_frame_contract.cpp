@@ -170,8 +170,7 @@ void checkFrameBegunSequence()
     AURA_CHECK(!renderer.frameBegun(), "frameBegun: false before any frame");
     for (const Step &step : steps)
     {
-        window.flags.minimized = step.minimized;
-        window.flags.occluded = step.occluded;
+        window.setVisibility(step.minimized, step.occluded);
         window.ready = step.ready;
         window.surfaceAvailable = step.surfaceAvailable;
         const int presents = window.presents;
@@ -190,12 +189,12 @@ void checkFrameBegunSequence()
     }
 
     window.resize(40, 30);
-    window.flags.minimized = true;
+    window.setVisibility(true);
     renderer.beginFrame();
     renderer.endFrame();
     AURA_CHECK(renderer.renderTargetSize() == glm::uvec2(64, 48),
                "frameBegun: a resize while minimized is not applied by a frame that did not begin");
-    window.flags.minimized = false;
+    window.setVisibility(false);
     renderer.beginFrame();
     AURA_CHECK(renderer.frameBegun() && renderer.renderTargetSize() == glm::uvec2(40, 30),
                "frameBegun: the restored frame applies it");
@@ -225,11 +224,11 @@ void checkRunSkipsIdleFrames()
             w.resize(80, 60);
             break;
         case 6:
-            w.flags.minimized = true;
+            w.setVisibility(true);
             dirty = true;
             break;
         case 8:
-            w.flags.minimized = false;
+            w.setVisibility(false);
             break;
         case 9:
             w.close();
@@ -279,7 +278,7 @@ void checkOffscreenOnlyPresentsNothing()
         switch (++polls)
         {
         case 3:
-            w.flags.minimized = true;
+            w.setVisibility(true);
             break;
         case 5:
             w.close();
@@ -335,12 +334,12 @@ void checkPresentSideEffects()
     AURA_CHECK(window.swaps == 0, "pacing: a refused framebuffer waits for nothing");
     window.presentable = true;
 
-    window.flags.minimized = true;
+    window.setVisibility(true);
     AURA_CHECK(!renderer.beginFrame(), "explicit: a minimized window begins no frame");
     const int presents = window.presents;
     renderer.endFrame();
     AURA_CHECK(window.presents == presents, "explicit: and endFrame() after it presents nothing");
-    window.flags.minimized = false;
+    window.setVisibility(false);
 
     renderer.beginFrame();
     AURA_CHECK(renderer.beginFrame() && window.presents == presents + 1,
