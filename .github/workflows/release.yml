@@ -28,7 +28,7 @@ permissions:
 
 env:
   # Same commit as ci.yml's WMA_REF; bump both with cmake/Dependencies.cmake's wma version.
-  WMA_REF: 18ddb83a9c092dc4587ad25c4ad66e180228605e # 0.11.0
+  WMA_REF: b981284057577242c24e12ca8e83db0b4b3ef326 # 0.11.0
 
 jobs:
   create-release:
