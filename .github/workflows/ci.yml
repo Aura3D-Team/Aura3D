@@ -410,12 +410,6 @@ jobs:
           platform: android
 
       - name: Configure
-        # Mirrors CMakePresets.json's "android" preset (ABI, platform level,
-        # STL) rather than using it directly, since that preset's
-        # CMAKE_PREFIX_PATH is wired through $env{LOCAL_PREFIX}, which isn't
-        # set to anything useful for cross-compiled deps here.
-        # CMAKE_PREFIX_PATH/CMAKE_FIND_ROOT_PATH_MODE_PACKAGE: same
-        # nlohmann_json fix as wasm-build's Configure step -- see its comment.
         run: >
           cmake -S . -B build-android
           -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake
@@ -425,6 +419,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DAURA_BUILD_TESTS=OFF
           -DCMAKE_PREFIX_PATH="${{ steps.ink.outputs.prefix }};/usr/local/android;/usr/local"
+          -DCMAKE_CXX_FLAGS="-I${{ steps.ink.outputs.prefix }}/include"
           -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 
       - name: Build

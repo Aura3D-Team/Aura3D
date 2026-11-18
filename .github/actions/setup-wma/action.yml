@@ -31,7 +31,8 @@ runs:
               -DWMA_BUILD_TESTS=OFF -DWMA_BUILD_EXAMPLES=OFF -DWMA_NATIVE_OPTIMIZE=OFF -DWMA_ENABLE_LTO=OFF)
         case "$WMA_PLATFORM" in
           linux)
-            args+=("-DCMAKE_PREFIX_PATH=$WMA_PREFIX;/usr/local")
+            args+=(-DWMA_ENABLE_SDL=ON -DWMA_ENABLE_GLFW=ON -DWMA_ENABLE_X11=ON -DWMA_ENABLE_WAYLAND=ON
+                   -DWMA_ENABLE_ALSA=ON "-DCMAKE_PREFIX_PATH=$WMA_PREFIX;/usr/local")
             ;;
           android)
             args+=(-DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
