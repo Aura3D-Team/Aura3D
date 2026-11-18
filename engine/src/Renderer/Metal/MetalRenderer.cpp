@@ -13,7 +13,7 @@
 
 /*
  * This backend cannot work against a libwma without Metal support: no window
- * backend would honour wma::GraphicsAPI::Metal, so createWindow() would throw on
+ * backend would honour wma::GraphicsAPI::Metal, so _createWindow() would throw on
  * every platform. Caught at compile time rather than as a runtime
  * GraphicsException on someone's Mac.
  *
@@ -55,7 +55,7 @@ void MetalRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     if (!settings)
         throw AuraException("MetalRenderer: settings are null");
 
-    createWindow(settings->windowTitle().c_str(), settings->windowBackend());
+    _createWindow(settings->windowTitle().c_str(), settings->windowBackend());
 
     _frameSlots = std::make_shared<FrameSlots>(MTL_MAX_FRAMES_IN_FLIGHT);
 #ifdef AURA_PROFILE_FRAME
@@ -77,7 +77,7 @@ void MetalRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     _indexManager = std::make_unique<MtlIndexBufferManager>(_bufferManager.get());
     _textureManager = std::make_unique<MtlTextureManager>(_deviceManager->getDevice());
 
-    createPipelines();
+    _createPipelines();
 
     /*
      * Created up front rather than lazily on the first untextured draw: it is 4
@@ -93,7 +93,7 @@ void MetalRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
              << " px, " << MTL_MAX_FRAMES_IN_FLIGHT << " frames in flight)";
 }
 
-void MetalRenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)
+void MetalRenderer::_createWindow(const char *title, const wma::WindowBackend &wBackend)
 {
     /*
      * wma opens the window with a CAMetalLayer already hosted in the right kind
@@ -105,14 +105,14 @@ void MetalRenderer::createWindow(const char *title, const wma::WindowBackend &wB
     _windowManagerApi->createWindow(title);
 }
 
-void MetalRenderer::createPipelines()
+void MetalRenderer::_createPipelines()
 {
-    buildPipelines(kColorFormat, kDepthFormat, _scenePipeline, _batchPipeline, _instancedPipeline);
+    _buildPipelines(kColorFormat, kDepthFormat, _scenePipeline, _batchPipeline, _instancedPipeline);
 }
 
 bool MetalRenderer::reloadShaders(const std::filesystem::path &directory)
 {
-    if (!_isInitialized || _frameState != FrameState::Idle)
+    if (!_isInitialized || _recordState != RecordState::Idle)
         return false;
     //! Every .metal file in name order, one library, as cmake/EmbedShaderHeader.cmake builds it.
     std::vector<std::filesystem::path> files;
@@ -152,11 +152,11 @@ bool MetalRenderer::reloadShaders(const std::filesystem::path &directory)
     std::vector<std::array<std::unique_ptr<MtlPipelineManager>, 3>> targets(_targetPipelines.size());
     try
     {
-        buildPipelines(kColorFormat, kDepthFormat, scene, batch, instanced);
+        _buildPipelines(kColorFormat, kDepthFormat, scene, batch, instanced);
         for (usize i = 0; i < targets.size(); ++i)
         {
             const MTL::PixelFormat depth = _targetPipelines[i].depth ? kDepthFormat : MTL::PixelFormatInvalid;
-            buildPipelines(_targetPipelines[i].colour, depth, targets[i][0], targets[i][1], targets[i][2]);
+            _buildPipelines(_targetPipelines[i].colour, depth, targets[i][0], targets[i][1], targets[i][2]);
         }
     }
     catch (const std::exception &failure)
@@ -180,7 +180,7 @@ bool MetalRenderer::reloadShaders(const std::filesystem::path &directory)
     return true;
 }
 
-NS::SharedPtr<MTL::Texture> MetalRenderer::newDepthTexture(u32 width, u32 height, MTL::TextureUsage usage) const
+NS::SharedPtr<MTL::Texture> MetalRenderer::_newDepthTexture(u32 width, u32 height, MTL::TextureUsage usage) const
 {
     NS::SharedPtr<MTL::TextureDescriptor> descriptor = adopt(MTL::TextureDescriptor::alloc()->init());
     descriptor->setTextureType(MTL::TextureType2D);
@@ -192,10 +192,10 @@ NS::SharedPtr<MTL::Texture> MetalRenderer::newDepthTexture(u32 width, u32 height
     return adopt(_deviceManager->getDevice()->newTexture(descriptor.get()));
 }
 
-void MetalRenderer::buildPipelines(MTL::PixelFormat colour, MTL::PixelFormat depth,
-                                   std::unique_ptr<MtlPipelineManager> &scene,
-                                   std::unique_ptr<MtlPipelineManager> &batch,
-                                   std::unique_ptr<MtlPipelineManager> &instanced) const
+void MetalRenderer::_buildPipelines(MTL::PixelFormat colour, MTL::PixelFormat depth,
+                                    std::unique_ptr<MtlPipelineManager> &scene,
+                                    std::unique_ptr<MtlPipelineManager> &batch,
+                                    std::unique_ptr<MtlPipelineManager> &instanced) const
 {
     MtlPipelineManager::Options sceneOptions;
     sceneOptions.vertexFunction = kVertexFunction3D;
@@ -220,7 +220,7 @@ void MetalRenderer::buildPipelines(MTL::PixelFormat colour, MTL::PixelFormat dep
     batch = std::make_unique<MtlPipelineManager>(_deviceManager->getDevice(), *_shaderLibrary, batchOptions);
 }
 
-MetalRenderer::TargetPipelines &MetalRenderer::pipelinesFor(MTL::PixelFormat colour, bool depth)
+MetalRenderer::TargetPipelines &MetalRenderer::_pipelinesFor(MTL::PixelFormat colour, bool depth)
 {
     for (TargetPipelines &cached : _targetPipelines)
         if (cached.colour == colour && cached.depth == depth)
@@ -228,7 +228,7 @@ MetalRenderer::TargetPipelines &MetalRenderer::pipelinesFor(MTL::PixelFormat col
     TargetPipelines &built = _targetPipelines.emplace_back();
     built.colour = colour;
     built.depth = depth;
-    buildPipelines(colour, depth ? kDepthFormat : MTL::PixelFormatInvalid, built.scene, built.batch, built.instanced);
+    _buildPipelines(colour, depth ? kDepthFormat : MTL::PixelFormatInvalid, built.scene, built.batch, built.instanced);
     return built;
 }
 
@@ -249,11 +249,11 @@ RenderTargetHandle MetalRenderer::createRenderTarget(const RenderTargetDesc &des
     target.height = desc.height;
     if (desc.depth)
     {
-        target.depth = newDepthTexture(desc.width, desc.height, MTL::TextureUsageRenderTarget);
+        target.depth = _newDepthTexture(desc.width, desc.height, MTL::TextureUsageRenderTarget);
         if (!target.depth)
             return {};
     }
-    target.pipelines = &pipelinesFor(_textureManager->resolve(target.colour)->pixelFormat(), desc.depth);
+    target.pipelines = &_pipelinesFor(_textureManager->resolve(target.colour)->pixelFormat(), desc.depth);
     _renderTargets.push_back(std::move(target));
     return RenderTargetHandle{static_cast<u32>(_renderTargets.size())};
 }
@@ -268,7 +268,7 @@ glm::uvec2 MetalRenderer::targetSize(RenderTargetHandle target) const
 bool MetalRenderer::resizeRenderTarget(RenderTargetHandle handle, u32 width, u32 height)
 {
     if (!_textureManager || !isValidHandle(handle) || handle.value() > _renderTargets.size() || width == 0 ||
-        height == 0 || _frameState == FrameState::InPass)
+        height == 0 || _recordState == RecordState::InPass)
         return false;
     RenderTarget &target = _renderTargets[handle.value() - 1];
     MTL::Texture *current = _textureManager->resolve(target.colour);
@@ -280,7 +280,7 @@ bool MetalRenderer::resizeRenderTarget(RenderTargetHandle handle, u32 width, u32
     if (!isValidHandle(_textureManager->createAttachment(width, height, format, target.colour)))
         return false;
     if (target.depth)
-        target.depth = newDepthTexture(width, height, MTL::TextureUsageRenderTarget);
+        target.depth = _newDepthTexture(width, height, MTL::TextureUsageRenderTarget);
     target.width = width;
     target.height = height;
     return !target.depth || target.depth->width() == width;
@@ -292,13 +292,11 @@ TextureHandle MetalRenderer::renderTargetTexture(RenderTargetHandle target) cons
                                                                             : TextureHandle{};
 }
 
-void MetalRenderer::beginRenderPass(RenderTargetHandle target)
+bool MetalRenderer::_openRenderPass(RenderTargetHandle target)
 {
-    if (!isValidHandle(target))
-        return beginRenderPass();
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
-    if (_frameState != FrameState::Recording || target.value() > _renderTargets.size())
-        return;
+    if (_recordState != RecordState::Recording || !isValidHandle(target) || target.value() > _renderTargets.size())
+        return false;
     const RenderTarget &chosen = _renderTargets[target.value() - 1];
 
     NS::SharedPtr<MTL::RenderPassDescriptor> pass = adopt(MTL::RenderPassDescriptor::alloc()->init());
@@ -320,17 +318,18 @@ void MetalRenderer::beginRenderPass(RenderTargetHandle target)
     if (!_encoder)
     {
         INK_WARN << "MetalRenderer: failed to open a render target encoder";
-        return;
+        return false;
     }
     _activeScene = chosen.pipelines->scene.get();
     _activeBatch = chosen.pipelines->batch.get();
     _activeInstanced = chosen.pipelines->instanced.get();
     _boundPipeline = nullptr;
-    usePipeline(_activeScene);
+    _usePipeline(_activeScene);
     _passColour = chosen.pipelines->colour;
     _passDepth = chosen.pipelines->depth;
     _passTarget = target.value();
-    _frameState = FrameState::InPass;
+    _recordState = RecordState::InPass;
+    return true;
 }
 
 bool MetalRenderer::readPixels(RenderTargetHandle target, std::span<u8> rgba)
@@ -398,9 +397,9 @@ void MetalRenderer::cleanup()
      * without which the drain below would wait on a permit only this thread could
      * release.
      */
-    if (_frameState != FrameState::Idle)
+    if (_recordState != RecordState::Idle)
     {
-        if (_frameState == FrameState::InPass)
+        if (_recordState == RecordState::InPass)
         {
             _encoder->endEncoding();
             _encoder = nullptr;
@@ -415,7 +414,7 @@ void MetalRenderer::cleanup()
         if (_frameSlots)
             _frameSlots->release();
 
-        _frameState = FrameState::Idle;
+        _recordState = RecordState::Idle;
     }
 
     /*
@@ -496,12 +495,12 @@ VertexBufferHandle MetalRenderer::createVertexBuffer(std::vector<gfx::Vertex3D> 
     return _vertexManager->create(owned);
 }
 
-bool MetalRenderer::updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
+bool MetalRenderer::_updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
 {
     //! A blit in this frame's command buffer, so no render encoder may be open; Metal orders it against
     //! earlier frames' reads of the buffer and this frame's.
     MTL::Buffer *target = _vertexManager ? _vertexManager->resolve(handle) : nullptr;
-    if (!target || _frameState != FrameState::Recording || vertices.size_bytes() > target->length())
+    if (!target || _recordState != RecordState::Recording || vertices.size_bytes() > target->length())
         return false;
     NS::SharedPtr<MTL::Buffer> staging = adopt(
         _deviceManager->getDevice()->newBuffer(vertices.data(), vertices.size_bytes(), MTL::ResourceStorageModeShared));
@@ -576,20 +575,16 @@ void MetalRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 
     (void)_textureManager->updateRegion(handle, x, y, width, height, rgbaPixels);
 }
 
-void MetalRenderer::beginFrame()
+IRenderer::FrameReach MetalRenderer::_acquireFrame()
 {
     if (!_isInitialized)
-        return;
+        return FrameReach::None;
 
-    _frameState = FrameState::Idle;
+    _recordState = RecordState::Idle;
 
-    if (consumeResize())
+    //! IRenderer has already turned away a window with no surface (an iOS app in the background).
+    if (windowShowable() && consumeResize())
         handleWindowChanges();
-
-    //! Nothing to draw into while the platform has no surface attached (an
-    //! iOS app in the background). Cheap enough to poll every frame.
-    if (!_windowManagerApi->isSurfaceAvailable())
-        return;
 
     /*
      * Take a frame slot before touching anything per-frame: this is what bounds
@@ -612,39 +607,37 @@ void MetalRenderer::beginFrame()
 
     _framePool.emplace();
 
-    {
-        AURA_FRAME_SCOPE(FramePhase::Acquire);
-
-        if (!_drawableManager->acquire())
-        {
-            //! No drawable: an ordinary condition (occluded/minimised window), so
-            //! the frame is skipped and the slot handed straight back.
-            _framePool.reset();
-            _frameSlots->release();
-            return;
-        }
-    }
-
     _commandBuffer = _deviceManager->getCommandQueue()->commandBuffer();
     if (!_commandBuffer)
     {
         INK_WARN << "MetalRenderer: the command queue produced no command buffer; skipping frame";
-        _drawableManager->release();
         _framePool.reset();
         _frameSlots->release();
-        return;
+        return FrameReach::None;
     }
 
-    _frameState = FrameState::Recording;
+    _recordState = RecordState::Recording;
+    return windowShowable() ? FrameReach::WindowReady : FrameReach::Offscreen;
 }
 
-void MetalRenderer::beginRenderPass()
+bool MetalRenderer::_acquireWindowTarget()
+{
+    //! At the window's pass rather than in _acquireFrame(): a frame that records only offscreen work holds no
+    //! drawable, so it presents nothing and the window keeps what it shows.
+    if (_recordState != RecordState::Recording || !_drawableManager)
+        return false;
+    AURA_FRAME_SCOPE(FramePhase::Acquire);
+    //! No drawable is an ordinary condition (an occluded or minimised window): the frame keeps its offscreen work.
+    return _drawableManager->acquire();
+}
+
+void MetalRenderer::_openRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
     //! cleanup() can run mid-frame (the ESC key action calls it), which drops the
     //! managers while the application's frame callback is still executing.
-    if (_frameState != FrameState::Recording || !_drawableManager)
+    if (_recordState != RecordState::Recording || !_drawableManager)
         return;
 
     MTL::RenderPassDescriptor *pass = _drawableManager->buildRenderPass(_clearR, _clearG, _clearB, _clearA);
@@ -662,7 +655,7 @@ void MetalRenderer::beginRenderPass()
     /*
      * The scene pipeline is bound up front so an application that draws 3D
      * without an intervening batch needs no bind of its own. drawBatch() and
-     * bindDrawState() switch pipelines only when the draw kind changes, so a
+     * _bindDrawState() switch pipelines only when the draw kind changes, so a
      * run of batches binds once.
      *
      * No setViewport() call: Metal's default viewport is the whole attachment
@@ -673,23 +666,23 @@ void MetalRenderer::beginRenderPass()
     _activeBatch = _batchPipeline.get();
     _activeInstanced = _instancedPipeline.get();
     _boundPipeline = nullptr;
-    usePipeline(_activeScene);
+    _usePipeline(_activeScene);
     _passColour = kColorFormat;
     _passDepth = true;
     _passTarget = 0;
-    _frameState = FrameState::InPass;
+    _recordState = RecordState::InPass;
 }
 
 void MetalRenderer::endRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::EndPass);
 
-    if (_frameState != FrameState::InPass)
+    if (_recordState != RecordState::InPass)
         return;
 
     _encoder->endEncoding();
     _encoder = nullptr;
-    _frameState = FrameState::Recording;
+    _recordState = RecordState::Recording;
 }
 
 #ifdef AURA_PROFILE_FRAME
@@ -707,27 +700,24 @@ GpuTimingStats MetalRenderer::gpuTiming() const noexcept
 }
 #endif
 
-void MetalRenderer::endFrame()
+bool MetalRenderer::_presentFrame()
 {
-    //! Before any scope opens, matching beginFrame()/beginRenderPass()'s own
-    //! early return on the same flag: a frame that never began records no
-    //! samples for any phase, rather than a Present entry with nothing behind
-    //! it. AURA_FRAME_END() below is reached only past this point, so a
-    //! skipped frame closes nothing and biases no average.
-    if (_frameState == FrameState::Idle)
-        return;
-
+    //! Only for a frame _acquireFrame() began, so a skipped frame records no
+    //! samples for any phase and biases no average.
     //! Tolerate a caller that never closed its pass: an encoder still open when
     //! the command buffer is committed is a hard Metal error, not a warning.
     //! endRenderPass() opens its own EndPass scope, so this is not double-timed
     //! by wrapping it in one here too.
-    if (_frameState == FrameState::InPass)
+    if (_recordState == RecordState::InPass)
         endRenderPass();
 
+    //! frameBegun() exactly when the window's pass acquired one.
+    const bool presents = _drawableManager && _drawableManager->getDrawable();
     {
         AURA_FRAME_SCOPE(FramePhase::Present);
 
-        _commandBuffer->presentDrawable(_drawableManager->getDrawable());
+        if (presents)
+            _commandBuffer->presentDrawable(_drawableManager->getDrawable());
 
         /*
          * The completion handler captures the semaphore itself, by shared_ptr,
@@ -762,6 +752,10 @@ void MetalRenderer::endFrame()
 #endif
 
         _commandBuffer->commit();
+        //! WindowDetails::vsync comes from the same present mode the layer's displaySyncEnabled was set from.
+        if (presents && _windowManagerApi)
+            _windowManagerApi->framePresented(_windowDetails.vsync ? wma::PresentPacing::Display
+                                                                   : wma::PresentPacing::Free);
     }
 
 #ifdef AURA_PROFILE_FRAME
@@ -777,19 +771,22 @@ void MetalRenderer::endFrame()
      * command buffer touched, so releasing them here cannot pull anything out
      * from under the GPU.
      */
-    _drawableManager->release();
+    if (_drawableManager)
+        _drawableManager->release();
     _commandBuffer = nullptr;
     _framePool.reset();
 
     _currentFrame = (_currentFrame + 1) % MTL_MAX_FRAMES_IN_FLIGHT;
-    _frameState = FrameState::Idle;
+    _recordState = RecordState::Idle;
 
     //! Outside the Present scope so it is closed and counted before the frame
     //! is.
     AURA_FRAME_END();
+    //! Metal reports a failed present only to the completion handler, long after; the drawable is queued.
+    return presents;
 }
 
-MTL::Texture *MetalRenderer::resolveSampledTexture(TextureHandle handle)
+MTL::Texture *MetalRenderer::_resolveSampledTexture(TextureHandle handle)
 {
     if (MTL::Texture *texture = _textureManager->resolve(handle))
         return texture;
@@ -797,9 +794,9 @@ MTL::Texture *MetalRenderer::resolveSampledTexture(TextureHandle handle)
     return _textureManager->resolve(_fallbackTexture);
 }
 
-void MetalRenderer::bindDrawState()
+void MetalRenderer::_bindDrawState()
 {
-    usePipeline(_activeScene);
+    _usePipeline(_activeScene);
 
     TransformUniforms transform;
     transform.model = _currentTransform.model;
@@ -814,16 +811,16 @@ void MetalRenderer::bindDrawState()
      * side. 256 + 48 bytes is well inside the 4 KB the API allows.
      */
     _encoder->setVertexBytes(&transform, sizeof(transform), kVertexUniformSlot);
-    bindSceneMaterial();
+    _bindSceneMaterial();
 
-    _encoder->setFragmentTexture(resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
+    _encoder->setFragmentTexture(_resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
     _encoder->setFragmentSamplerState(_textureManager->samplerFor(_currentTexture), kFragmentAlbedoSlot);
 
     if (MTL::Buffer *vertexBuffer = _vertexManager->resolve(_currentVertexBuffer))
         _encoder->setVertexBuffer(vertexBuffer, 0, kVertexGeometrySlot);
 }
 
-void MetalRenderer::bindSceneMaterial()
+void MetalRenderer::_bindSceneMaterial()
 {
     const gfx::LightingUBO block = lighting();
     _encoder->setFragmentBytes(&block, sizeof(block), kFragmentLightSlot);
@@ -834,7 +831,7 @@ void MetalRenderer::bindSceneMaterial()
                                             _currentMaterial.emissiveMap};
     for (NS::UInteger i = 0; i < maps.size(); ++i)
     {
-        _encoder->setFragmentTexture(resolveSampledTexture(maps[i]), kFragmentFirstMapSlot + i);
+        _encoder->setFragmentTexture(_resolveSampledTexture(maps[i]), kFragmentFirstMapSlot + i);
         _encoder->setFragmentSamplerState(_textureManager->samplerFor(maps[i]), kFragmentFirstMapSlot + i);
     }
 }
@@ -845,7 +842,7 @@ RendererCaps MetalRenderer::caps() const noexcept
            RendererCaps::CustomPipelines;
 }
 
-void MetalRenderer::usePipeline(MtlPipelineManager *pipeline)
+void MetalRenderer::_usePipeline(MtlPipelineManager *pipeline)
 {
     if (_boundPipeline == pipeline)
         return;
@@ -856,7 +853,7 @@ void MetalRenderer::usePipeline(MtlPipelineManager *pipeline)
 void MetalRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material, std::span<const glm::mat4> models)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
-    if (_frameState != FrameState::InPass || !_activeInstanced)
+    if (_recordState != RecordState::InPass || !_activeInstanced)
         return;
     if (isValidHandle(material))
         bindMaterial(material);
@@ -874,13 +871,13 @@ void MetalRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material, 
     if (_instanceScratch.empty())
         return;
 
-    usePipeline(_activeInstanced);
+    _usePipeline(_activeInstanced);
     TransformUniforms transform;
     transform.view = _currentTransform.view;
     transform.proj = _currentTransform.proj;
     _encoder->setVertexBytes(&transform, sizeof(transform), kVertexUniformSlot);
-    bindSceneMaterial();
-    _encoder->setFragmentTexture(resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
+    _bindSceneMaterial();
+    _encoder->setFragmentTexture(_resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
     _encoder->setFragmentSamplerState(_textureManager->samplerFor(_currentTexture), kFragmentAlbedoSlot);
     _encoder->setVertexBuffer(vertices, 0, kVertexGeometrySlot);
 
@@ -902,12 +899,12 @@ void MetalRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material, 
                                     static_cast<NS::UInteger>(_instanceScratch.size()));
 }
 
-void MetalRenderer::waitForFrames()
+void MetalRenderer::_waitForFrames()
 {
     //! Every committed frame's completion handler hands its permit back; this frame, if open, holds one.
     if (!_frameSlots)
         return;
-    const u32 committed = MTL_MAX_FRAMES_IN_FLIGHT - (_frameState == FrameState::Idle ? 0u : 1u);
+    const u32 committed = MTL_MAX_FRAMES_IN_FLIGHT - (_recordState == RecordState::Idle ? 0u : 1u);
     for (u32 slot = 0; slot < committed; ++slot)
         _frameSlots->acquire();
     for (u32 slot = 0; slot < committed; ++slot)
@@ -928,20 +925,21 @@ BufferHandle MetalRenderer::createBuffer(usize bytes, std::span<const std::byte>
     return BufferHandle{static_cast<u32>(_buffers.size())};
 }
 
-MTL::Buffer *MetalRenderer::bufferOf(BufferHandle handle) const noexcept
+MTL::Buffer *MetalRenderer::_bufferOf(BufferHandle handle) const noexcept
 {
     return isValidHandle(handle) && handle.value() <= _buffers.size() ? _buffers[handle.value() - 1].get() : nullptr;
 }
 
 bool MetalRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<const std::byte> bytes)
 {
-    MTL::Buffer *buffer = bufferOf(handle);
+    ensureFrame();
+    MTL::Buffer *buffer = _bufferOf(handle);
     if (!buffer || offset > buffer->length() || bytes.size() > buffer->length() - offset ||
-        _frameState == FrameState::InPass)
+        _recordState == RecordState::InPass)
         return false;
-    if (_frameState == FrameState::Idle)
+    if (_recordState == RecordState::Idle)
     {
-        waitForFrames();
+        _waitForFrames();
         std::memcpy(static_cast<std::byte *>(buffer->contents()) + offset, bytes.data(), bytes.size());
         return true;
     }
@@ -958,10 +956,10 @@ bool MetalRenderer::updateBuffer(BufferHandle handle, usize offset, std::span<co
 
 bool MetalRenderer::readBuffer(BufferHandle handle, usize offset, std::span<std::byte> out)
 {
-    MTL::Buffer *buffer = bufferOf(handle);
+    MTL::Buffer *buffer = _bufferOf(handle);
     if (!buffer || offset > buffer->length() || out.size() > buffer->length() - offset)
         return false;
-    waitForFrames();
+    _waitForFrames();
     std::memcpy(out.data(), static_cast<const std::byte *>(buffer->contents()) + offset, out.size());
     return true;
 }
@@ -998,9 +996,10 @@ ComputeHandle MetalRenderer::createCompute(const ComputeDesc &desc)
 void MetalRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle> buffers, glm::uvec3 groups,
                              std::span<const std::byte> constants)
 {
+    ensureFrame();
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
     //! An encoder of its own, so no render pass may be open.
-    if (_frameState != FrameState::Recording || !isValidHandle(handle) || handle.value() > _kernels.size())
+    if (_recordState != RecordState::Recording || !isValidHandle(handle) || handle.value() > _kernels.size())
         return;
     const Kernel &kernel = _kernels[handle.value() - 1];
     if (buffers.size() < kernel.buffers)
@@ -1010,7 +1009,7 @@ void MetalRenderer::dispatch(ComputeHandle handle, std::span<const BufferHandle>
         return;
     encoder->setComputePipelineState(kernel.pipeline.get());
     for (NS::UInteger i = 0; i < kernel.buffers; ++i)
-        encoder->setBuffer(bufferOf(buffers[i]), 0, i);
+        encoder->setBuffer(_bufferOf(buffers[i]), 0, i);
     if (!constants.empty())
         encoder->setBytes(constants.data(), constants.size(), kernel.buffers);
     encoder->dispatchThreadgroups(MTL::Size(groups.x, groups.y, groups.z),
@@ -1022,10 +1021,10 @@ void MetalRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle ma
                                               BufferHandle arguments, usize argumentOffset)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
-    MTL::Buffer *instanceBuffer = bufferOf(instances);
-    MTL::Buffer *argumentBuffer = bufferOf(arguments);
+    MTL::Buffer *instanceBuffer = _bufferOf(instances);
+    MTL::Buffer *argumentBuffer = _bufferOf(arguments);
     const MeshRecord *record = getMesh(mesh);
-    if (_frameState != FrameState::InPass || !_activeInstanced || !instanceBuffer || !argumentBuffer || !record ||
+    if (_recordState != RecordState::InPass || !_activeInstanced || !instanceBuffer || !argumentBuffer || !record ||
         argumentOffset % 4 != 0 || argumentOffset + sizeof(DrawIndexedIndirect) > argumentBuffer->length())
         return;
     if (isValidHandle(material))
@@ -1034,13 +1033,13 @@ void MetalRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle ma
     const IndexBufferRecord *indices = _indexManager->resolve(record->indexBuffer);
     if (!vertices || !indices || !indices->buffer)
         return;
-    usePipeline(_activeInstanced);
+    _usePipeline(_activeInstanced);
     TransformUniforms transform;
     transform.view = _currentTransform.view;
     transform.proj = _currentTransform.proj;
     _encoder->setVertexBytes(&transform, sizeof(transform), kVertexUniformSlot);
-    bindSceneMaterial();
-    _encoder->setFragmentTexture(resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
+    _bindSceneMaterial();
+    _encoder->setFragmentTexture(_resolveSampledTexture(_currentTexture), kFragmentAlbedoSlot);
     _encoder->setFragmentSamplerState(_textureManager->samplerFor(_currentTexture), kFragmentAlbedoSlot);
     _encoder->setVertexBuffer(vertices, 0, kVertexGeometrySlot);
     static_assert(sizeof(InstanceUniforms) == sizeof(InstanceTransform));
@@ -1094,7 +1093,7 @@ PipelineLimits MetalRenderer::pipelineLimits() const noexcept
     return {kMaxSamplers, kMaxPipelineBuffers, kMaxPipelineConstantBytes, kPipelineBufferBytes};
 }
 
-MtlPipelineManager &MetalRenderer::customVariant(CustomPipeline &pipeline, MTL::PixelFormat colour, bool depth) const
+MtlPipelineManager &MetalRenderer::_customVariant(CustomPipeline &pipeline, MTL::PixelFormat colour, bool depth) const
 {
     for (const CustomPipeline::Variant &variant : pipeline.variants)
         if (variant.colour == colour && variant.depth == depth)
@@ -1145,9 +1144,9 @@ PipelineHandle MetalRenderer::createPipeline(const PipelineDesc &desc)
         if (desc.input == VertexInput::Mesh)
             pipeline.vertexDescriptor = meshVertexDescriptor();
         //! The window and every render target made so far; one made later gets its variant at its first draw.
-        customVariant(pipeline, kColorFormat, true);
+        _customVariant(pipeline, kColorFormat, true);
         for (const TargetPipelines &target : _targetPipelines)
-            customVariant(pipeline, target.colour, target.depth);
+            _customVariant(pipeline, target.colour, target.depth);
     }
     catch (const std::exception &error)
     {
@@ -1161,7 +1160,7 @@ PipelineHandle MetalRenderer::createPipeline(const PipelineDesc &desc)
 void MetalRenderer::drawPipeline(const PipelineDraw &draw)
 {
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
-    if (_frameState != FrameState::InPass || !isValidHandle(draw.pipeline) ||
+    if (_recordState != RecordState::InPass || !isValidHandle(draw.pipeline) ||
         draw.pipeline.value() > _customPipelines.size())
         return;
     CustomPipeline &pipeline = _customPipelines[draw.pipeline.value() - 1];
@@ -1172,7 +1171,7 @@ void MetalRenderer::drawPipeline(const PipelineDraw &draw)
         return;
     }
     for (u32 i = 0; i < pipeline.buffers; ++i)
-        if (i >= draw.buffers.size() || !bufferOf(draw.buffers[i]))
+        if (i >= draw.buffers.size() || !_bufferOf(draw.buffers[i]))
         {
             INK_ERROR << "MetalRenderer: drawPipeline needs buffer " << i << " (createBuffer)";
             return;
@@ -1192,7 +1191,7 @@ void MetalRenderer::drawPipeline(const PipelineDraw &draw)
     MtlPipelineManager *variant = nullptr;
     try
     {
-        variant = &customVariant(pipeline, _passColour, _passDepth);
+        variant = &_customVariant(pipeline, _passColour, _passDepth);
     }
     catch (const std::exception &error)
     {
@@ -1200,7 +1199,7 @@ void MetalRenderer::drawPipeline(const PipelineDraw &draw)
         return;
     }
 
-    usePipeline(variant);
+    _usePipeline(variant);
     for (u32 i = 0; i < pipeline.textures; ++i)
     {
         //! An unbound slot samples white, as an unbound texture does everywhere else.
@@ -1216,7 +1215,7 @@ void MetalRenderer::drawPipeline(const PipelineDraw &draw)
     }
     for (u32 i = 0; i < pipeline.buffers; ++i)
     {
-        MTL::Buffer *buffer = bufferOf(draw.buffers[i]);
+        MTL::Buffer *buffer = _bufferOf(draw.buffers[i]);
         _encoder->setVertexBuffer(buffer, 0, kCustomFirstBufferSlot + i);
         _encoder->setFragmentBuffer(buffer, 0, kCustomFirstBufferSlot + i);
     }
@@ -1243,7 +1242,7 @@ void MetalRenderer::drawPipeline(const PipelineDraw &draw)
 
 void MetalRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 {
-    if (_frameState != FrameState::InPass || instanceCount == 0)
+    if (_recordState != RecordState::InPass || instanceCount == 0)
         return;
 
     const IndexBufferRecord *record = _indexManager->resolve(_currentIndexBuffer);
@@ -1265,7 +1264,7 @@ void MetalRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     if (drawnIndices == 0)
         return;
 
-    bindDrawState();
+    _bindDrawState();
 
     _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(drawnIndices),
                                     record->indexType, record->buffer, 0, static_cast<NS::UInteger>(instanceCount));
@@ -1273,19 +1272,19 @@ void MetalRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 
 void MetalRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
-    if (_frameState != FrameState::InPass || vertexCount == 0 || instanceCount == 0)
+    if (_recordState != RecordState::InPass || vertexCount == 0 || instanceCount == 0)
         return;
 
     if (!_vertexManager->resolve(_currentVertexBuffer))
         return;
 
-    bindDrawState();
+    _bindDrawState();
 
     _encoder->drawPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(0),
                              static_cast<NS::UInteger>(vertexCount), static_cast<NS::UInteger>(instanceCount));
 }
 
-bool MetalRenderer::ensureBatchCapacity(size_t vertexBytes, size_t indexBytes)
+bool MetalRenderer::_ensureBatchCapacity(size_t vertexBytes, size_t indexBytes)
 {
     const u32 frame = _currentFrame;
 
@@ -1319,7 +1318,7 @@ glm::uvec2 MetalRenderer::renderTargetSize() const noexcept
      * batch has to cover (the same reason the Vulkan path uses its swapchain
      * extent).
      */
-    if (_frameState == FrameState::InPass && _passTarget != 0)
+    if (_recordState == RecordState::InPass && _passTarget != 0)
         return {_renderTargets[_passTarget - 1].width, _renderTargets[_passTarget - 1].height};
     return _layerManager ? glm::uvec2{_layerManager->getWidth(), _layerManager->getHeight()} : glm::uvec2{0};
 }
@@ -1329,13 +1328,13 @@ void MetalRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::s
 {
     AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
 
-    if (_frameState != FrameState::InPass || !_activeBatch || vertices.empty() || indices.empty())
+    if (_recordState != RecordState::InPass || !_activeBatch || vertices.empty() || indices.empty())
         return;
 
     // Every encoded draw retains its own slice until this frame slot completes.
     const size_t vertexOffset = _batchVertexUsed[_currentFrame];
     const size_t indexOffset = _batchIndexUsed[_currentFrame];
-    if (!ensureBatchCapacity(vertexOffset + vertices.size_bytes(), indexOffset + indices.size_bytes()))
+    if (!_ensureBatchCapacity(vertexOffset + vertices.size_bytes(), indexOffset + indices.size_bytes()))
         return;
 
     MTL::Buffer *vertexBuffer = _batchVertexBuffers[_currentFrame].get();
@@ -1346,10 +1345,10 @@ void MetalRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::s
     _batchIndexUsed[_currentFrame] = indexOffset + indices.size_bytes();
 
     const BatchUniforms batch{batchTransform(space)};
-    usePipeline(_activeBatch);
+    _usePipeline(_activeBatch);
     _encoder->setVertexBuffer(vertexBuffer, vertexOffset, kVertexGeometrySlot);
     _encoder->setVertexBytes(&batch, sizeof(batch), kVertexUniformSlot);
-    _encoder->setFragmentTexture(resolveSampledTexture(texture), kFragmentAlbedoSlot);
+    _encoder->setFragmentTexture(_resolveSampledTexture(texture), kFragmentAlbedoSlot);
     _encoder->setFragmentSamplerState(_textureManager->samplerFor(texture), kFragmentAlbedoSlot);
     _encoder->drawIndexedPrimitives(MTL::PrimitiveTypeTriangle, static_cast<NS::UInteger>(indices.size()),
                                     MTL::IndexTypeUInt32, indexBuffer, static_cast<NS::UInteger>(indexOffset));

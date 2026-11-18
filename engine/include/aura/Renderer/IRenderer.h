@@ -25,6 +25,7 @@
 #include "aura/Renderer/Material.h"
 #include "aura/Renderer/Pipeline.h"
 #include "aura/Renderer/RenderHandles.h"
+#include "aura/Renderer/RendererTypes.h"
 #include "aura/Renderer/Texture.h"
 
 //! Forward-declared, not included: only initialize()'s parameter type needs
@@ -42,81 +43,17 @@ namespace aura3d
 class IGpuDebugSource;
 }
 
-/**
- * @brief List of available graphics backend renderers.
- * Uses X-Macros for synchronized enum and string conversions.
- */
-#define RENDERER_LIST                                                                                                  \
-    X(SOFTWARE)                                                                                                        \
-    X(OPENGL)                                                                                                          \
-    X(VULKAN)                                                                                                          \
-    X(METAL)
-
 namespace aura3d
 {
 
-/**
- * @brief Strongly-typed enum representing the chosen graphics API backend.
- */
-enum class RendererChoice
+//! What run() has already tried in this iteration, so each is tried once whether or not it worked.
+enum class FrameTried : u8
 {
-#define X(name) name,
-    RENDERER_LIST
-#undef X
+    None = 0,
+    Frame = 1u << 0u,  //!< The frame was started (or refused).
+    Window = 1u << 1u, //!< The window's target was asked for (or the window was found unable to show it).
 };
-
-/**
- * @brief Converts a string representation to a RendererChoice enum.
- * * Case-insensitive. Also maps "CPU" to RendererChoice::SOFTWARE.
- * * @param[in] s The input string to parse.
- * @param[out] out The destination enum variable.
- * @return true If the string matches a known backend, false otherwise.
- */
-inline bool RendererChoiceFromString(const std::string &s, RendererChoice &out)
-{
-    std::string up;
-    up.reserve(s.size());
-    for (const char c : s)
-        up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-
-#define X(name)                                                                                                        \
-    if (up == #name)                                                                                                   \
-    {                                                                                                                  \
-        out = RendererChoice::name;                                                                                    \
-        return true;                                                                                                   \
-    }
-    RENDERER_LIST
-#undef X
-
-    if (up == "CPU")
-    {
-        out = RendererChoice::SOFTWARE;
-        return true;
-    }
-
-    return false;
-}
-
-/**
- * @brief Converts a RendererChoice enum value to its exact string representation.
- * * @param[in] c The renderer enum value.
- * @return const char* A static string literal matching the enum identifier, or "UNKNOWN".
- */
-inline const char *RendererChoiceToString(RendererChoice c)
-{
-    switch (c)
-    {
-    case RendererChoice::SOFTWARE:
-        return "SOFTWARE";
-    case RendererChoice::OPENGL:
-        return "OPENGL";
-    case RendererChoice::VULKAN:
-        return "VULKAN";
-    case RendererChoice::METAL:
-        return "METAL";
-    }
-    return "UNKNOWN";
-}
+INK_ENUM_FLAGS(FrameTried) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
 
 /**
  * @class IRenderer
@@ -124,18 +61,6 @@ inline const char *RendererChoiceToString(RendererChoice c)
  * * Serves as the abstraction layer for resource allocation, windowing setups,
  * pipeline bindings, and frame cycle management regardless of the targeted backend API.
  */
-/// What a backend supports beyond the API every backend has.
-enum class RendererCaps : u8
-{
-    None = 0,
-    Pbr = 1u << 0u,           //!< Material maps, metallic-roughness shading, point and spot lights.
-    Instancing = 1u << 1u,    //!< drawMeshInstanced() is one instanced draw rather than a loop.
-    RenderTargets = 1u << 2u, //!< createRenderTarget().
-    Compute = 1u << 3u,       //!< Buffers, dispatch() and drawMeshInstancedIndirect(); software runs ComputeDesc::cpu.
-    CustomPipelines = 1u << 4u, //!< createPipeline() and drawPipeline(): your own shaders.
-};
-INK_ENUM_FLAGS(RendererCaps) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
-
 class IRenderer
 {
   public:
@@ -180,8 +105,6 @@ class IRenderer
      * @return VertexBufferHandle Opaque pointer abstraction for pipeline binding.
      */
     virtual VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices) = 0;
-    //! Overwrites @p handle's vertices from the start; updateMesh() has checked the count fits.
-    virtual bool updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices);
 
     /**
      * @brief Allocates an indexed layout element buffer using 16-bit short tags.
@@ -499,53 +422,79 @@ class IRenderer
      * @brief Acquires the frame's render target (swapchain image / drawable)
      *        and readies the backend for a new frame.
      *
-     * run() already calls this once per iteration -- do not call it yourself
-     * if you are using run(), or the backend acquires two frames for one
-     * present/endFrame(). Call it directly only when you drive the loop
-     * yourself through getWindowManager() instead of run(), immediately
-     * before that frame's first beginRenderPass().
+     * Call it only when you drive the loop yourself through getWindowManager()
+     * instead of run(), immediately before that frame's first beginRenderPass().
+     * run() does not need it: there the frame begins by itself at the first
+     * beginRenderPass().
+     *
+     * The frame begins only when the window can show it; see frameBegun(). A
+     * frame still open from a beginFrame() without its endFrame() is presented
+     * first.
+     * @return frameBegun(): whether there is a frame to draw into and present.
+     *         When false no frame is open, so endFrame() may be skipped.
      */
-    virtual void beginFrame() = 0;
+    bool beginFrame();
 
     /**
-     * @brief Whether the last beginFrame() acquired a target to draw into.
+     * @brief Whether the current frame has a target that reaches the screen.
      *
-     * False when it could not: the swapchain was rebuilt for a resize, the
-     * window is minimized, the surface is gone. The frame's draws then go
-     * nowhere and endFrame() presents nothing. A loop that only draws on
-     * change has to ask, or a change drawn into a skipped frame stays off
-     * screen until the next one.
+     * True from the beginFrame() that acquired the window's target (inside
+     * run(), the first beginRenderPass() of the iteration) until the
+     * endFrame() that presents it. False outside a frame, and for a frame that
+     * could not begin: the window is minimized or occluded (wma::WindowFlags),
+     * still waiting for the last frame to be shown (wma::IWindowManager::readyToPresent()),
+     * its surface is not available (an Android or iOS app in the background),
+     * or the backend could not
+     * acquire a target (Vulkan: an out-of-date swapchain or a lost surface;
+     * Metal: no drawable). The same on every backend.
+     *
+     * In a frame that did not begin, draws go nowhere, endFrame() presents
+     * nothing and needsFrame() holds, so a loop that draws only on change
+     * draws again once the window can show it. beginRenderPass() returns it.
+     *
+     * Inside run() a frame can record without reaching the screen: offscreen
+     * passes, updateMesh(), updateBuffer() and dispatch() run in a frame whose
+     * window pass was never opened. That frame is submitted, not presented, and
+     * the window keeps its last picture.
      */
-    [[nodiscard]] virtual bool frameBegun() const noexcept
-    {
-        return true;
-    }
+    [[nodiscard]] bool frameBegun() const noexcept;
 
     /**
-     * @brief Whether the backend needs a frame even though nothing changed.
+     * @brief Whether the window needs a frame even though nothing drawn changed.
      *
-     * True while a swapchain rebuild is pending, and from a rebuild or a
-     * dropped present until the next frame reaches the screen. A loop that
-     * only draws on change must draw anyway while this holds: the rebuild
-     * runs inside beginFrame(), and the image it replaces is gone.
+     * True while what the window shows is not the last frame presented: before
+     * the first present, after a resize (from the event until a frame at the
+     * new size presents), after the platform dropped the window's pixels (an
+     * expose: restored from minimized, or uncovered without a compositor),
+     * after a rebuilt or out-of-date swapchain, a lost surface or a present
+     * that failed. False again once a frame reaches the
+     * screen. The same on every backend, so a loop that draws only on change
+     * must draw while this holds.
      */
-    [[nodiscard]] virtual bool needsFrame() const noexcept
-    {
-        return false;
-    }
+    [[nodiscard]] bool needsFrame() const noexcept;
 
     /**
      * @brief Opens a render pass: clears the target and readies it for draw
-     *        calls.
+     *        calls. Pair with endRenderPass() around every
+     *        draw()/drawIndexed()/drawBatch() call.
      *
-     * Unlike beginFrame()/endFrame(), always called by hand -- run() has no
-     * opinion on how many passes a frame has. Pair with endRenderPass()
-     * around every draw()/drawIndexed()/drawBatch() call, whether inside
-     * run()'s callback or a hand-rolled loop.
+     * Always called by hand: neither run() nor beginFrame() has an opinion on
+     * how many passes a frame has. Inside run(), the window's pass is what
+     * acquires the window's target, so an iteration that opens none presents
+     * nothing.
+     *
+     * @return Whether there is a frame to draw into, i.e. frameBegun(). False
+     *         for a minimized window or one with no surface; the pass is then
+     *         not opened, so skip the draws.
      */
-    virtual void beginRenderPass() = 0;
-    /// The same into @p target, from createRenderTarget(); an invalid handle is the window.
-    virtual void beginRenderPass(RenderTargetHandle target);
+    bool beginRenderPass();
+    /**
+     * @brief The same into @p target, from createRenderTarget(); an invalid handle is the window's pass.
+     *
+     * Needs no window: inside run() it also records while the window is minimized.
+     * @return Whether the pass opened.
+     */
+    bool beginRenderPass(RenderTargetHandle target);
 
     /**
      * @brief Closes the render pass opened by beginRenderPass(), submitting
@@ -556,11 +505,12 @@ class IRenderer
     /**
      * @brief Submits the frame and presents it to the window.
      *
-     * run() already calls this once per iteration, matching its own
-     * beginFrame() call -- see that comment. Call it directly only in a
-     * hand-rolled loop, after the frame's last endRenderPass().
+     * run() calls this itself, after your callback, for a frame it began. Call
+     * it directly only in a hand-rolled loop, after the frame's last
+     * endRenderPass(). Presents nothing for a frame that did not begin, and
+     * only submits one whose window pass was never opened.
      */
-    virtual void endFrame() = 0;
+    void endFrame();
 
     /**
      * @brief Submits projection matrix variables to Uniform Buffer Objects.
@@ -626,13 +576,39 @@ class IRenderer
     virtual void setClearColor(f32 r, f32 g, f32 b, f32 a = 1.0f);
 
     /**
-     * @brief Drives the render loop: polls window events, then wraps
-     *        @p onFrame in beginFrame()/endFrame() every iteration, blocking
-     *        until the window closes.
+     * @brief Drives the render loop: polls window events and calls @p onFrame
+     *        every iteration, blocking until the window closes.
      *
-     * @p onFrame is where beginRenderPass()/draw calls/endRenderPass()
-     * belong -- beginFrame()/endFrame() are this function's job, not yours.
-     * @param[in] onFrame Called once per frame, between beginFrame() and endFrame().
+     * @p onFrame advances state and draws: beginRenderPass()/draw
+     * calls/endRenderPass(). Its frame begins at the first call that records
+     * (a render pass, updateMesh(), updateBuffer(),
+     * dispatch()), the window's target is acquired at the window's pass, and
+     * run() submits the frame after the callback returns, presenting it only
+     * if the window's pass was opened. beginFrame()/endFrame() are not yours
+     * to call.
+     *
+     * An iteration that opens no window pass presents nothing: the window
+     * keeps its last frame, and the loop sleeps until the next event (at most
+     * 100 ms) rather than spin; offscreen work recorded in it still runs.
+     * That makes an idle window free. Draw while needsFrame() holds, as well
+     * as when your own state changed, or a window that was resized or exposed
+     * keeps a stale picture. Drawing is the callback's choice, not run()'s: an
+     * app that animates simply opens a pass every time.
+     *
+     * The renderer applies a resize when the frame begins; to react to one
+     * yourself, keep a wma::ResizeWatch and consume()
+     * getWindowManager()->getWindowFlags() in @p onFrame.
+     *
+     * @code
+     * renderer.run([&] {
+     *     ui.update(deltaSeconds);
+     *     if (!ui.needsDraw() || !renderer.beginRenderPass())
+     *         return;
+     *     ui.draw();
+     *     renderer.endRenderPass();
+     * });
+     * @endcode
+     * @param[in] onFrame Called once per iteration.
      */
     void run(move_only_function<void()> onFrame);
 
@@ -710,15 +686,38 @@ class IRenderer
     }
 
   protected:
-    //! Clears the window's resized flag; true when it was set.
+    //! The window can show a frame now: it has a surface, is neither minimized nor occluded, and is not still waiting
+    //! for the last frame to be shown (wma::IWindowManager::readyToPresent()). Asked of the window each time.
+    [[nodiscard]] bool windowShowable() const;
+
+    /**
+     * @brief Begins the frame a call is about to record into, inside run().
+     *
+     * A no-op outside run() (the caller begins it) and once the iteration's frame has been tried. The calls that
+     * record into a frame -- the render passes, updateMesh(), and a backend's updateBuffer() and dispatch() -- start
+     * with it. It acquires nothing from the window: the window's pass does that.
+     */
+    void ensureFrame();
+
+    //! True once for each burst of window resizes since the last call. The renderer's own view: the app and
+    //! the UI keep theirs (wma::ResizeWatch), so taking a resize here hides it from neither.
     [[nodiscard]] bool consumeResize() noexcept;
 
     //! A GPU backend's recording state: no frame, a frame, or a render pass inside it.
-    enum class FrameState : u8
+    enum class RecordState : u8
     {
         Idle,
         Recording,
         InPass,
+    };
+
+    //! What the open frame can draw into. _acquireFrame() answers with one of the first three.
+    enum class FrameReach : u8
+    {
+        None,        //!< No frame is open.
+        Offscreen,   //!< It records, but the window cannot show it (minimized, occluded, not ready).
+        WindowReady, //!< The window can show it; the window's target is acquired at its first pass.
+        Window,      //!< The window's target is acquired: frameBegun().
     };
 
     /// Clip transform the batch pipeline applies for @p space on this backend.
@@ -728,13 +727,6 @@ class IRenderer
     [[nodiscard]] std::unique_ptr<wma::IWindowManager>
     makeWindow(wma::WindowBackend backend, const wma::WindowDetails &details, wma::GraphicsAPI api);
     WindowFactory _windowFactory;
-
-    /**
-     * @brief Low-level window factory function implemented by specialized API backends.
-     * * @param[in] title Text label mapped to the active surface window frame header.
-     * @param[in] wBackend Chosen core runtime environment protocol framework.
-     */
-    virtual void createWindow(const char *title, const wma::WindowBackend &wBackend) = 0;
 
     /**
      * @struct MeshRecord
@@ -767,7 +759,6 @@ class IRenderer
     wma::WindowDetails _windowDetails; //! Copy of current platform dimension attributes
     //! Declared before anything a backend builds on it, and reset by each backend's cleanup().
     std::unique_ptr<wma::IWindowManager> _windowManagerApi;
-    bool _running = false;             //! Control status tracker managing main loop life
     //! Backends create their queries lazily, on the first frame that sees this set.
     bool _gpuTimingEnabled = false;
 
@@ -795,6 +786,68 @@ class IRenderer
     gfx::TransformUBO _currentTransform{};
 
   private:
+    /// @name The backend's half of the frame
+    /// Each backend overrides these; only IRenderer calls them, from the frame functions above.
+    /// @{
+    /**
+     * @brief Readies the backend to record a frame, without taking anything from the window.
+     *
+     * Called only while the platform lets the app render (the window has a surface). When windowShowable(), apply a
+     * pending resize (consumeResize()) and any surface change here, before anything is recorded; otherwise leave the
+     * window's state alone, as the frame records offscreen work only.
+     * @return What the frame can reach: None leaves no frame open, Offscreen records without the window (also the
+     *         answer when a window that windowShowable() allowed could not be readied), WindowReady may draw it.
+     */
+    virtual FrameReach _acquireFrame() = 0;
+
+    /**
+     * @brief Acquires the window's target (swapchain image, drawable) for the frame _acquireFrame() began.
+     *
+     * Called once, at the frame's first window pass, so a frame that never opens one takes no image it would then
+     * have to present. The default is for a backend whose window needs nothing acquired.
+     * @return Whether the window can be drawn this frame; false leaves frameBegun() false.
+     */
+    virtual bool _acquireWindowTarget();
+
+    /**
+     * @brief Submits the frame _acquireFrame() began.
+     *
+     * Presents only when the window's target was acquired (frameBegun() is still true during the call); otherwise
+     * submits the recorded work and leaves the window as it is.
+     * @return Whether a presented frame reached the screen; false keeps needsFrame() true. Ignored for a frame that
+     *         presented nothing.
+     */
+    virtual bool _presentFrame() = 0;
+
+    //! Opens the window's pass, only in a frame that began.
+    virtual void _openRenderPass() = 0;
+    //! The same into a valid @p target, from createRenderTarget(); the base has none. Whether the pass opened.
+    virtual bool _openRenderPass(RenderTargetHandle target);
+
+    //! Overwrites @p handle's vertices from the start; updateMesh() has checked the count fits.
+    virtual bool _updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices);
+    /// @}
+
+    //! A resize consumeResize() has yet to take.
+    [[nodiscard]] bool _resizePending() const noexcept;
+
+    wma::ResizeWatch _resizeWatch;
+    wma::ExposeWatch _exposeWatch;
+    //! Starts a frame: _acquireFrame(), only while the platform lets the app render.
+    void _startFrame();
+    //! Acquires the open frame's window target, once per frame; frameBegun() is the result.
+    bool _acquireWindow();
+    //! Inside run(): begins the frame for the window's pass and acquires its target, once per iteration.
+    void _ensureWindowFrame();
+
+    //! The window shows the last frame presented: false until the first present, after a resize or anything else that
+    //! drops what it shows, and after a present that failed. needsFrame() holds until a frame reaches the screen.
+    bool _targetValid = false;
+    FrameReach _reach = FrameReach::None;
+    //! Inside run(): the frame begins at the first call that records instead of before the callback, and _tried
+    //! records what has been attempted this iteration, whether or not it worked.
+    bool _lazyFrames = false;
+    FrameTried _tried = FrameTried::None;
     //! Sizes of the coverage textures the base class emulates as RGBA, for backends with no native ones.
     std::unordered_map<TextureHandle, glm::uvec2> _coverageFallbacks;
 };

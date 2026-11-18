@@ -134,32 +134,125 @@ make stale handles safe after a renderer switch.
 
 ```cpp
 r->run([&]() {
-    // Update application state here, including frames without a render target.
-    if (!r->frameBegun())
+    // Update application state here, every iteration.
+    if (!r->beginRenderPass())   // false: nothing to draw into (minimized, occluded, no surface)
         return;
-    r->beginRenderPass();
     // ...
     r->endRenderPass();
 });
 ```
 
-`IRenderer::run()`:
-- hands your callback to `wma::IWindowManager::process()`, which wraps it as
-  `beginFrame(); yourCallback(); endFrame();` every frame;
-- on desktop this blocks until the window closes; on WASM it registers the
-  browser's `requestAnimationFrame` loop and returns immediately (your
-  callback and everything it captures by reference must stay alive after
-  `run()` returns, on that platform).
+`IRenderer::run()` polls window events and calls your callback once per
+iteration. On desktop it blocks until the window closes. On WASM it registers
+the browser's `requestAnimationFrame` loop and returns immediately, so the
+callback and everything it captures by reference must stay alive after
+`run()` returns on that platform.
+
+**The window's pass is what presents.** The frame begins at the first call that
+records (a render pass, `updateMesh()`, `updateBuffer()`,
+`dispatch()`), the window's target is acquired at the window's
+`beginRenderPass()`, and `run()` submits the frame after the callback returns.
+You do not call `beginFrame()`/`endFrame()`.
+
+| Iteration | Result |
+|---|---|
+| opens the window's pass | presented |
+| only offscreen passes, uploads, compute | submitted, not presented: the window keeps its picture |
+| records nothing | nothing; the loop sleeps |
+
+`beginRenderPass()` returns whether there is a frame to draw into: false for a
+minimized or occluded window, or one with no surface (an Android or iOS app in the
+background). `beginRenderPass(target)` returns whether the offscreen pass
+opened; it needs no window, so it works while minimized, but not without a
+surface.
+
+So drawing is your callback's choice:
+
+- A game that animates opens a pass every iteration.
+- A tool, editor or UI shell opens one only when something changed. An
+  iteration that opens none presents nothing: the window keeps its last frame
+  on every backend, and the loop sleeps in `waitEvents()` until an event
+  arrives (at most 100 ms), so an idle window costs under 0.1% CPU. That
+  sleep applies to offscreen-only iterations too.
+
+```cpp
+r->run([&]() {
+    ui.update(deltaSeconds);                          // every iteration
+    if (!ui.needsDraw() || !r->beginRenderPass())     // changed, or the renderer needs a frame
+        return;
+    ui.draw();
+    r->endRenderPass();
+});
+```
+
+On a GPU backend a frame starts cleared, so a callback that begins a frame
+must draw all of it. Draw when `needsFrame()` holds as well as when your own
+state changed, or a window that was resized or exposed keeps a stale picture.
+
+### Frame state
+
+- `frameBegun()` is true from the `beginFrame()` that acquired the window's
+  target (inside `run()`, the window's `beginRenderPass()`) until the
+  `endFrame()` that presents it. It is false outside a frame, and for a frame that could not
+  begin: the window is minimized or occluded, it has no surface, or the backend could not
+  acquire a target.
+- `needsFrame()` is true while the window does not show the last frame
+  presented: before the first present, after a resize until a frame at the
+  new size presents, after an expose (restored from minimized, or uncovered
+  without a compositor), and after a rebuilt swapchain, a lost surface or a
+  failed present. Anything that draws only on change must draw while it
+  holds.
+
+Both mean the same on every backend.
+
+### Resizes
+
+The renderer applies a window resize when the frame begins.
+To react to one yourself (a relayout, a new projection), keep a
+`wma::ResizeWatch`: it reports each resize once, whoever else has seen it.
+
+```cpp
+wma::ResizeWatch resizes;
+r->run([&]() {
+    if (!r->beginRenderPass())
+        return;
+    // After beginRenderPass(): renderTargetSize() is the new size only once the frame has begun.
+    if (resizes.consume(*r->getWindowManager()->getWindowFlags()))
+    {
+        const glm::vec2 size{r->renderTargetSize()};
+        camera.setPerspective({.fovDeg = 60.0f, .aspect = size.x / size.y, .nearZ = 0.1f, .farZ = 100.0f});
+    }
+    r->setTransform(camera.buildUBO());
+    // ...
+    r->endRenderPass();
+});
+```
 
 Install input actions, including any Escape shortcut, through the window
-manager. `run()` does not install a quit key. Its callback is invoked even
-when a frame could not be acquired, so retain pending redraw work until
-`frameBegun()` is true.
+manager. `run()` does not install a quit key.
 
-You call `beginFrame()`/`endFrame()` yourself only in a custom window loop.
-`beginRenderPass()`/`endRenderPass()` remain application calls around the
-frame's drawing. A loop that draws only on change must also draw while
-`needsFrame()` is true, for resize and presentation recovery.
+### A loop of your own
+
+Call `beginFrame()`/`endFrame()` yourself only when you drive the window
+instead of `run()`. `beginRenderPass()`/`endRenderPass()` are always yours.
+`endFrame()` presents, so you never call `swapBuffers()`. An idle-aware loop
+does what `run()` does:
+
+```cpp
+wma::IWindowManager &window = *r->getWindowManager();
+window.process([&] {
+    const bool changed = updateScene();
+    if (!(changed || r->needsFrame()) || !r->beginFrame())
+    {
+        window.waitEvents(100); // nothing to draw, or nothing to draw into: the window keeps its last frame
+        return;
+    }
+    r->beginRenderPass();
+    drawScene();
+    r->endRenderPass();
+    r->endFrame();              // presents
+});
+```
 
 ## Backend resolution & fallback
 

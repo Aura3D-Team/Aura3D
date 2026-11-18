@@ -97,16 +97,16 @@ void CPURenderer::initialize(aura3d::AuraSettings *settings, const JobSystem *jo
     _indexBufferPool.reserve(256);
     _texturePool.reserve(64);
 
-    //! Stored before createWindow(): it builds _frameBufferManager, which
+    //! Stored before _createWindow(): it builds _frameBufferManager, which
     //! dispatches both rasterisation and presentation through this pool
     //! instead of owning one of its own (see CpuFrameBufferManager's
     //! constructor comment).
     _jobs = jobs;
 
-    createWindow(settings->windowTitle().c_str(), settings->windowBackend());
+    _createWindow(settings->windowTitle().c_str(), settings->windowBackend());
 }
 
-void CPURenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)
+void CPURenderer::_createWindow(const char *title, const wma::WindowBackend &wBackend)
 {
     _windowManagerApi = makeWindow(wBackend, _windowDetails, wma::GraphicsAPI::CPU);
     _windowManagerApi->createWindow(title);
@@ -154,7 +154,7 @@ VertexBufferHandle CPURenderer::createVertexBuffer(std::vector<gfx::Vertex3D> &&
     return static_cast<VertexBufferHandle>(_vertexBufferPool3d.size());
 }
 
-bool CPURenderer::updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
+bool CPURenderer::_updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
 {
     if (!isValidHandle(handle) || handle.value() > _vertexBufferPool3d.size())
         return false;
@@ -359,20 +359,17 @@ void CPURenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 wi
     }
 }
 
-void CPURenderer::beginFrame()
+IRenderer::FrameReach CPURenderer::_acquireFrame()
 {
     //! Every window backend reallocates its surface on resize; the planes follow here, before the frame records.
-    if (consumeResize())
+    if (windowShowable() && consumeResize())
         handleWindowChanges();
+    if (!_frameBufferManager)
+        return FrameReach::None;
+    return windowShowable() ? FrameReach::WindowReady : FrameReach::Offscreen;
 }
 
-bool CPURenderer::needsFrame() const noexcept
-{
-    const wma::WindowFlags *flags = _windowManagerApi ? _windowManagerApi->getWindowFlags() : nullptr;
-    return _presentDropped || (flags && flags->resized);
-}
-
-void CPURenderer::beginRenderPass()
+void CPURenderer::_openRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
@@ -382,16 +379,15 @@ void CPURenderer::beginRenderPass()
         _activeFrame->clear(_clearColorU32);
 }
 
-void CPURenderer::beginRenderPass(RenderTargetHandle target)
+bool CPURenderer::_openRenderPass(RenderTargetHandle target)
 {
-    if (!isValidHandle(target))
-        return beginRenderPass();
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
-    if (target.value() > _renderTargets.size())
-        return;
+    if (!isValidHandle(target) || target.value() > _renderTargets.size())
+        return false;
     _activeFrame = _renderTargets[target.value() - 1].frame.get();
     _passTarget = target.value();
     _activeFrame->clear(_clearColorU32);
+    return true;
 }
 
 RendererCaps CPURenderer::caps() const noexcept
@@ -399,7 +395,12 @@ RendererCaps CPURenderer::caps() const noexcept
     return RendererCaps::RenderTargets | RendererCaps::Compute;
 }
 
-std::vector<std::byte> *CPURenderer::bufferOf(BufferHandle handle) noexcept
+CpuFrameBufferManager *CPURenderer::getFrameBufferManager() noexcept
+{
+    return _frameBufferManager.get();
+}
+
+std::vector<std::byte> *CPURenderer::_bufferOf(BufferHandle handle) noexcept
 {
     return isValidHandle(handle) && handle.value() <= _buffers.size() ? &_buffers[handle.value() - 1] : nullptr;
 }
@@ -415,7 +416,7 @@ BufferHandle CPURenderer::createBuffer(usize bytes, std::span<const std::byte> i
 
 bool CPURenderer::updateBuffer(BufferHandle handle, usize offset, std::span<const std::byte> bytes)
 {
-    std::vector<std::byte> *buffer = bufferOf(handle);
+    std::vector<std::byte> *buffer = _bufferOf(handle);
     if (!buffer || offset > buffer->size() || bytes.size() > buffer->size() - offset)
         return false;
     std::ranges::copy(bytes, buffer->begin() + static_cast<std::ptrdiff_t>(offset));
@@ -424,7 +425,7 @@ bool CPURenderer::updateBuffer(BufferHandle handle, usize offset, std::span<cons
 
 bool CPURenderer::readBuffer(BufferHandle handle, usize offset, std::span<std::byte> out)
 {
-    std::vector<std::byte> *buffer = bufferOf(handle);
+    std::vector<std::byte> *buffer = _bufferOf(handle);
     if (!buffer || offset > buffer->size() || out.size() > buffer->size() - offset)
         return false;
     std::copy_n(buffer->begin() + static_cast<std::ptrdiff_t>(offset), out.size(), out.begin());
@@ -451,7 +452,7 @@ void CPURenderer::dispatch(ComputeHandle kernel, std::span<const BufferHandle> b
     std::vector<std::span<std::byte>> bound;
     for (const BufferHandle handle : buffers)
     {
-        std::vector<std::byte> *buffer = bufferOf(handle);
+        std::vector<std::byte> *buffer = _bufferOf(handle);
         if (!buffer)
             return;
         bound.emplace_back(*buffer);
@@ -476,7 +477,7 @@ void CPURenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle mate
     DrawIndexedIndirect draw;
     if (!readBuffer(arguments, argumentOffset, std::as_writable_bytes(std::span(&draw, 1))) || draw.indexCount == 0)
         return;
-    const std::vector<std::byte> *source = bufferOf(instances);
+    const std::vector<std::byte> *source = _bufferOf(instances);
     const usize available = source ? source->size() / sizeof(InstanceTransform) : 0;
     if (draw.firstInstance >= available)
         return;
@@ -607,17 +608,22 @@ void CPURenderer::endRenderPass()
     _passTarget = 0;
 }
 
-void CPURenderer::endFrame()
+bool CPURenderer::_presentFrame()
 {
+    bool presented = false;
     {
         AURA_FRAME_SCOPE(FramePhase::Present);
-
-        if (_frameBufferManager)
-            _presentDropped = !_frameBufferManager->renderFramebuffer();
+        //! A frame whose window pass never opened has nothing for the window: the planes still hold the last one.
+        if (frameBegun())
+        {
+            //! False when there was no surface to copy into: that frame never reached the screen
+            presented = _frameBufferManager && _frameBufferManager->renderFramebuffer();
+        }
     }
 
     //! Braced above so the present scope has closed before the frame does.
     AURA_FRAME_END();
+    return presented;
 }
 
 void CPURenderer::setClearColor(f32 r, f32 g, f32 b, f32 a)

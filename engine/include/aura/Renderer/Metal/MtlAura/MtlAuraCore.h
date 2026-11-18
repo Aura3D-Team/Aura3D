@@ -104,7 +104,7 @@ inline constexpr MTL::PixelFormat kTextureFormat = MTL::PixelFormatRGBA8Unorm;
  *
  * Delivered with setVertexBytes() rather than out of a buffer: Metal copies the
  * bytes into the command buffer itself, which is exactly the role Vulkan push
- * constants play in VulkanRenderer::bindDrawState() -- and, unlike Vulkan's
+ * constants play in VulkanRenderer::_bindDrawState() -- and, unlike Vulkan's
  * guaranteed 128-byte budget, Metal's 4 KB limit is roomy enough to carry the
  * whole view/projection pair alongside the model matrix. That is why there is
  * no per-frame uniform buffer here at all.

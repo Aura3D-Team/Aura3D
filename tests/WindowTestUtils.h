@@ -1,8 +1,10 @@
 #ifndef AURA_WINDOW_TEST_UTILS_H
 #define AURA_WINDOW_TEST_UTILS_H
 
+#include <functional>
 #include <string>
 #include <utility>
+#include <vector>
 #include <wma/wma.hpp>
 
 namespace aura3d::test
@@ -74,6 +76,42 @@ class FakeWindow final : public wma::IWindowManager
     f32 contentScale = 1.0f;
 
     wma::HitTest hitTest;
+
+    //! Runs on every pollEvents(): the events a scripted loop test feeds the window.
+    std::function<void(FakeWindow &)> onPoll;
+
+    //! Off, lockFramebuffer() has nothing to give, as a surface that is not ready. On, it hands out a surface
+    //! of the framebuffer's size, and each presentFramebuffer() is counted.
+    bool presentable = false;
+    int presents = 0;
+    std::vector<u32> surface;
+    //! Off: the platform has taken the surface away (an Android app in the background).
+    bool surfaceAvailable = true;
+    //! The loop's idle sleeps and its buffer swaps. A wait returns at once and delivers nothing: the next
+    //! pollEvents() is where a script's events arrive.
+    int waits = 0;
+    int swaps = 0;
+    //! Off: the platform has not yet shown the last presented frame, as a vsynced Wayland window between two frames.
+    bool ready = true;
+    //! lockFramebuffer() calls: what a renderer asks of a window that is not ready.
+    int locks = 0;
+
+    //! What a backend does when the platform resizes the window.
+    void resize(i32 width, i32 height)
+    {
+        details.width = width;
+        details.height = height;
+        flags.markResized();
+    }
+
+    //! What the platform reports of the window's visibility; it stays focused. Set whole, as a backend's event
+    //! thread would, rather than bit by bit.
+    void setVisibility(bool minimized, bool occluded = false)
+    {
+        flags.state = wma::WindowState::Focused |
+                      (minimized ? wma::WindowState::Minimized : wma::WindowState::Nothing) |
+                      (occluded ? wma::WindowState::Occluded : wma::WindowState::Nothing);
+    }
 
     //! The clipboard this window offers. Off, it is a backend that has none.
     bool clipboardSupported = true;
@@ -152,6 +190,37 @@ class FakeWindow final : public wma::IWindowManager
     }
     void pollEvents() override
     {
+        if (onPoll)
+            onPoll(*this);
+    }
+    void waitEvents(int) override
+    {
+        ++waits;
+    }
+    void swapBuffers() override
+    {
+        ++swaps;
+    }
+    bool isSurfaceAvailable() const override
+    {
+        return surfaceAvailable;
+    }
+    bool readyToPresent() const noexcept override
+    {
+        return ready;
+    }
+    wma::SoftwareFramebuffer lockFramebuffer() override
+    {
+        ++locks;
+        if (!presentable)
+            return {};
+        const wma::FramebufferSize size = getFramebufferSize();
+        surface.resize(static_cast<usize>(size.width) * static_cast<usize>(size.height));
+        return {surface.data(), size.width, size.height, size.width * static_cast<i32>(sizeof(u32))};
+    }
+    void presentFramebuffer() override
+    {
+        ++presents;
     }
     void *getWindowInstance() override
     {

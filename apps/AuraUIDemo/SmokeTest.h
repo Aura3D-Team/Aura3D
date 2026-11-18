@@ -42,7 +42,6 @@ inline int smokeTest(UIView &ui, IRenderer &renderer, TabView &tabs)
         ui.render(0.2f);
         renderer.endRenderPass();
         renderer.endFrame();
-        window.swapBuffers();
     };
     const auto click = [&](Widget &widget)
     {

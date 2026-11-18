@@ -53,8 +53,10 @@ class RecordingRenderer final : public IRenderer
         TextureHandle texture;
     };
 
+    //! The renderer's own window, for the frame path only: getWindowManager() stays null unless a test sets `window`.
     RecordingRenderer() : IRenderer(wma::WindowDetails{})
     {
+        _windowManagerApi = std::make_unique<test::FakeWindow>();
     }
 
     using IRenderer::drawBatch;
@@ -186,24 +188,21 @@ class RecordingRenderer final : public IRenderer
     bool indicesInRange = true;
     bool failTextures = false;
 
-    /// Set to act as a backend whose swapchain was rebuilt under a clean tree.
-    bool frameLost = false;
-    [[nodiscard]] bool needsFrame() const noexcept override
+    /// A frame that began but did not reach the screen: a backend whose present failed or whose swapchain was rebuilt.
+    void loseFrame()
     {
-        return frameLost;
+        _presents = false;
+        runFrame();
+        _presents = true;
+    }
+    /// A frame that reached the screen, through the real beginFrame()/endFrame() path.
+    void showFrame()
+    {
+        runFrame();
     }
 
     // Everything below is inert: the UI never calls it.
-    void beginFrame() override
-    {
-    }
-    void beginRenderPass() override
-    {
-    }
     void endRenderPass() override
-    {
-    }
-    void endFrame() override
     {
     }
     void setTransform(const gfx::TransformUBO &ubo) override
@@ -270,13 +269,29 @@ class RecordingRenderer final : public IRenderer
     {
         return backend;
     }
-    void createWindow(const char *, const wma::WindowBackend &) override
-    {
-    }
 
     RendererChoice backend = RendererChoice::SOFTWARE;
 
   private:
+    void runFrame()
+    {
+        AURA_CHECK(beginFrame(), "the fake window can show a frame");
+        endFrame();
+    }
+
+    FrameReach _acquireFrame() override
+    {
+        return FrameReach::WindowReady;
+    }
+    bool _presentFrame() override
+    {
+        return _presents;
+    }
+    void _openRenderPass() override
+    {
+    }
+
+    bool _presents = true;
     TextureHandle _next{0};
 };
 
@@ -773,14 +788,17 @@ void testLostFrameIsRedrawnWhileIdle()
     AURA_CHECK(view.needsDraw(), "a view draws its first frame");
     view.draw();
     view.update(0.0f);
+    AURA_CHECK(view.needsDraw(), "and draws again until a frame reaches the screen");
+    renderer.showFrame();
+    view.update(0.0f);
     AURA_CHECK(!view.needsDraw(), "an idle view skips its frame");
 
-    renderer.frameLost = true;
+    renderer.loseFrame();
     view.update(0.0f);
     AURA_CHECK(view.needsDraw(), "a frame the renderer lost is drawn again under a clean tree");
     view.draw();
 
-    renderer.frameLost = false;
+    renderer.showFrame();
     view.update(0.0f);
     AURA_CHECK(!view.needsDraw(), "and the view idles once the frame reaches the screen");
 }
@@ -917,6 +935,26 @@ void testContentScaleMultipliesTheBackingRatio()
     window.touch.down(1, 120.0, 60.0);
     window.touch.up(1, 120.0, 60.0);
     AURA_CHECK(ui.clicks == 1, "and input follows it");
+}
+
+void testMinimizeDropsAStaleHover()
+{
+    aura3d::test::FakeWindow window;
+    ScaledView ui(window);
+    window.mouse.move(50.0, 25.0);
+    ui.view->update(0.0f);
+    AURA_CHECK(ui.button->isHovered(), "minimize: the button under the pointer is hovered");
+
+    //! The platform may never say the pointer left: the window just went away under it.
+    window.setVisibility(true);
+    ui.view->update(0.0f);
+    AURA_CHECK(!ui.button->isHovered() && ui.view->needsDraw(),
+               "minimize: a minimized window drops the hover, and the change is drawn");
+
+    window.setVisibility(false);
+    window.mouse.move(150.0, 25.0);
+    ui.view->update(0.0f);
+    AURA_CHECK(!ui.button->isHovered(), "minimize: restored, hover follows the pointer again");
 }
 
 void testContentScaleIsClamped()
@@ -1321,6 +1359,7 @@ int main()
     testBottomInsetLeavesTheConfiguredShare();
     testContentScaleSizesTheTreeAndMapsInput();
     testContentScaleMultipliesTheBackingRatio();
+    testMinimizeDropsAStaleHover();
     testContentScaleIsClamped();
     testInvalidationTriggersRepaint();
     testScrolledContentIsClipped();

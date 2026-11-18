@@ -25,7 +25,6 @@ class CPURenderer : public IRenderer
     void cleanup() override;
 
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices) override;
-    bool updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u16> &&indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32> &&indices) override;
     TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
@@ -36,17 +35,12 @@ class CPURenderer : public IRenderer
     void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                      const u8 *coverage) override;
 
-    void beginFrame() override;
-    [[nodiscard]] bool needsFrame() const noexcept override;
-    void beginRenderPass() override;
-    void beginRenderPass(RenderTargetHandle target) override;
     void endRenderPass() override;
     RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc) override;
     bool resizeRenderTarget(RenderTargetHandle target, u32 width, u32 height) override;
     [[nodiscard]] glm::uvec2 targetSize(RenderTargetHandle target) const override;
     [[nodiscard]] TextureHandle renderTargetTexture(RenderTargetHandle target) const override;
     bool readPixels(RenderTargetHandle target, std::span<u8> rgba) override;
-    void endFrame() override;
 
     void drawIndexed(u32 indexCount, u32 instanceCount = 1) override;
     void draw(u32 vertexCount, u32 instanceCount = 1) override;
@@ -71,19 +65,19 @@ class CPURenderer : public IRenderer
     {
         return RendererChoice::SOFTWARE;
     }
-    CpuFrameBufferManager *getFrameBufferManager()
-    {
-        return _frameBufferManager.get();
-    }
-
-  protected:
-    void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
+    CpuFrameBufferManager *getFrameBufferManager() noexcept;
 
   private:
+    FrameReach _acquireFrame() override;
+    bool _presentFrame() override;
+    void _openRenderPass() override;
+    bool _openRenderPass(RenderTargetHandle target) override;
+    bool _updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices) override;
+
+    void _createWindow(const char *title, const wma::WindowBackend &wBackend);
     //! Resolves a 1-based texture handle to its base mip, or nullptr.
     const Texture *_resolveTexture(TextureHandle handle) const;
 
-  private:
     std::unique_ptr<CpuFrameBufferManager> _frameBufferManager;
 
     struct RenderTarget
@@ -98,7 +92,7 @@ class CPURenderer : public IRenderer
     CpuFrameBufferManager *_activeFrame = nullptr;
     u32 _passTarget = 0;
 
-    //! Set once, in initialize(), before createWindow() builds
+    //! Set once, in initialize(), before _createWindow() builds
     //! _frameBufferManager from it. Non-owning: Engine's JobSystem outlives
     //! every renderer, including this one across a backend switch.
     const JobSystem *_jobs = nullptr;
@@ -106,7 +100,7 @@ class CPURenderer : public IRenderer
     u32 _clearColorU32 = 0;
     std::vector<std::vector<std::byte>> _buffers; //! handle - 1 == index
     //! @p handle's bytes, or nullptr.
-    [[nodiscard]] std::vector<std::byte> *bufferOf(BufferHandle handle) noexcept;
+    [[nodiscard]] std::vector<std::byte> *_bufferOf(BufferHandle handle) noexcept;
     std::vector<ComputeDesc> _kernels; //! handle - 1 == index; only buffers and cpu are used
     std::vector<std::vector<gfx::Vertex3D>> _vertexBufferPool3d;
     std::vector<std::vector<u32>> _indexBufferPool;
@@ -126,8 +120,6 @@ class CPURenderer : public IRenderer
     std::vector<CachedVertex> _transformed;
     /// Incremented per drawIndexed(); a wrap resets every stamp first.
     u64 _drawStamp = 0;
-    /// The last endFrame() found no framebuffer to present into.
-    bool _presentDropped = false;
 };
 
 } // namespace cpu

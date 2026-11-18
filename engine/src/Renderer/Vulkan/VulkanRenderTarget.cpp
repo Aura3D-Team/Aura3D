@@ -12,13 +12,13 @@ namespace aura3d
 namespace vk
 {
 
-VkRenderPass VulkanRenderer::targetRenderPass(VkFormat colour, bool depth)
+VkRenderPass VulkanRenderer::_targetRenderPass(VkFormat colour, bool depth)
 {
     for (const TargetPass &cached : _targetPasses)
         if (cached.colour == colour && cached.depth == depth)
             return cached.pass;
 
-    const VkRenderPass pass = colour == VK_FORMAT_UNDEFINED ? buildDepthOnlyPass() : buildColourPass(colour, depth);
+    const VkRenderPass pass = colour == VK_FORMAT_UNDEFINED ? _buildDepthOnlyPass() : _buildColourPass(colour, depth);
     const u32 colourCount = colour == VK_FORMAT_UNDEFINED ? 0u : 1u;
     _targetPasses.push_back({colour, depth, pass});
 
@@ -30,7 +30,7 @@ VkRenderPass VulkanRenderer::targetRenderPass(VkFormat colour, bool depth)
     return pass;
 }
 
-VkRenderPass VulkanRenderer::buildColourPass(VkFormat colour, bool depth)
+VkRenderPass VulkanRenderer::_buildColourPass(VkFormat colour, bool depth)
 {
     //! The colour image lives in SHADER_READ_ONLY_OPTIMAL between passes, so it can be sampled any time.
     const std::array<VkAttachmentDescription, 2> attachments{
@@ -102,7 +102,7 @@ VkRenderPass VulkanRenderer::buildColourPass(VkFormat colour, bool depth)
     return pass;
 }
 
-VkRenderPass VulkanRenderer::buildDepthOnlyPass()
+VkRenderPass VulkanRenderer::_buildDepthOnlyPass()
 {
     //! Cleared at the start, then left for any later pass to sample.
     const VkAttachmentDescription attachment{
@@ -164,7 +164,7 @@ RenderTargetHandle VulkanRenderer::createRenderTarget(const RenderTargetDesc &de
     }
     RenderTarget target;
     target.desc = desc;
-    if (!buildRenderTarget(target))
+    if (!_buildRenderTarget(target))
         return {};
     _renderTargets.push_back(target);
     return RenderTargetHandle{static_cast<u32>(_renderTargets.size())};
@@ -173,7 +173,7 @@ RenderTargetHandle VulkanRenderer::createRenderTarget(const RenderTargetDesc &de
 bool VulkanRenderer::resizeRenderTarget(RenderTargetHandle handle, u32 width, u32 height)
 {
     if (!isValidHandle(handle) || handle.value() > _renderTargets.size() || width == 0 || height == 0 ||
-        _frameState == FrameState::InPass)
+        _recordState == RecordState::InPass)
         return false;
     RenderTarget &target = _renderTargets[handle.value() - 1];
     if (target.desc.width == width && target.desc.height == height)
@@ -182,13 +182,13 @@ bool VulkanRenderer::resizeRenderTarget(RenderTargetHandle handle, u32 width, u3
     vkDeviceWaitIdle(*_vkDeviceManager->getDevice());
     _vkTextureManager->flushUploads();
     _lastCustomSet = {};
-    destroyTargetAttachments(target);
+    _destroyTargetAttachments(target);
     target.desc.width = width;
     target.desc.height = height;
-    return buildRenderTarget(target);
+    return _buildRenderTarget(target);
 }
 
-bool VulkanRenderer::buildDepthTarget(RenderTarget &target)
+bool VulkanRenderer::_buildDepthTarget(RenderTarget &target)
 {
     const RenderTargetDesc &desc = target.desc;
     //! A resize rebuilds the image in its old slot, so the handle and its bindless index stay.
@@ -196,10 +196,10 @@ bool VulkanRenderer::buildDepthTarget(RenderTarget &target)
         desc.width, desc.height, _depth.format, isValidHandle(target.colour) ? target.colour.value() : 0)};
     if (depth.value() == VkTextureManager::kInvalidTextureId)
         return false;
-    publishTexture(depth);
+    _publishTexture(depth);
     target.extent = {desc.width, desc.height};
     target.colour = depth;
-    target.pass = targetRenderPass(VK_FORMAT_UNDEFINED, true);
+    target.pass = _targetRenderPass(VK_FORMAT_UNDEFINED, true);
     VkImageView view = _vkTextureManager->getTexture(depth.value())->view;
     const VkFramebufferCreateInfo framebufferInfo{
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -215,11 +215,11 @@ bool VulkanRenderer::buildDepthTarget(RenderTarget &target)
     return true;
 }
 
-bool VulkanRenderer::buildRenderTarget(RenderTarget &target)
+bool VulkanRenderer::_buildRenderTarget(RenderTarget &target)
 {
     const RenderTargetDesc &desc = target.desc;
     if (desc.format == TextureFormat::Depth)
-        return buildDepthTarget(target);
+        return _buildDepthTarget(target);
     //! A resize rebuilds the colour image in its old slot, so the handle and its bindless index stay.
     const TextureHandle colour{_vkTextureManager->createAttachment(
         desc.width, desc.height, desc.format, isValidHandle(target.colour) ? target.colour.value() : 0)};
@@ -227,12 +227,12 @@ bool VulkanRenderer::buildRenderTarget(RenderTarget &target)
         return false;
     //! Before the pass is begun, so the transition to SHADER_READ_ONLY is submitted ahead of it.
     _vkTextureManager->flushUploads();
-    publishTexture(colour);
+    _publishTexture(colour);
 
     VkDevice device = *_vkDeviceManager->getDevice();
     target.extent = {desc.width, desc.height};
     target.colour = colour;
-    target.pass = targetRenderPass(_vkTextureManager->getTexture(colour.value())->format, desc.depth);
+    target.pass = _targetRenderPass(_vkTextureManager->getTexture(colour.value())->format, desc.depth);
     std::array<VkImageView, 2> views{_vkTextureManager->getTexture(colour.value())->view, VK_NULL_HANDLE};
     if (desc.depth)
     {
@@ -261,7 +261,7 @@ bool VulkanRenderer::buildRenderTarget(RenderTarget &target)
     return true;
 }
 
-void VulkanRenderer::destroyTargetAttachments(RenderTarget &target) noexcept
+void VulkanRenderer::_destroyTargetAttachments(RenderTarget &target) noexcept
 {
     VkDevice device = *_vkDeviceManager->getDevice();
     if (target.framebuffer != VK_NULL_HANDLE)
@@ -289,20 +289,19 @@ TextureHandle VulkanRenderer::renderTargetTexture(RenderTargetHandle target) con
                                                                             : TextureHandle{};
 }
 
-void VulkanRenderer::beginRenderPass(RenderTargetHandle target)
+bool VulkanRenderer::_openRenderPass(RenderTargetHandle target)
 {
-    if (!isValidHandle(target))
-        return beginRenderPass();
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
-    if (_frameState == FrameState::Idle || target.value() > _renderTargets.size())
-        return;
-    _frameState = FrameState::Recording;
+    if (_recordState == RecordState::Idle || !isValidHandle(target) || target.value() > _renderTargets.size())
+        return false;
+    _recordState = RecordState::Recording;
     if (!_pipelineReady)
-        return;
+        return false;
     const RenderTarget &chosen = _renderTargets[target.value() - 1];
-    beginPass(chosen.pass, chosen.framebuffer, chosen.extent, chosen.depthView != VK_NULL_HANDLE,
-              chosen.desc.format == TextureFormat::Depth);
+    _beginPass(chosen.pass, chosen.framebuffer, chosen.extent, chosen.depthView != VK_NULL_HANDLE,
+               chosen.desc.format == TextureFormat::Depth);
+    return true;
 }
 
 bool VulkanRenderer::readPixels(RenderTargetHandle target, std::span<u8> rgba)
@@ -315,13 +314,13 @@ bool VulkanRenderer::readPixels(RenderTargetHandle target, std::span<u8> rgba)
     return _vkTextureManager->readPixels(_renderTargets[target.value() - 1].colour.value(), rgba);
 }
 
-void VulkanRenderer::destroyRenderTargets() noexcept
+void VulkanRenderer::_destroyRenderTargets() noexcept
 {
     if (!_vkDeviceManager || !_vkDeviceManager->getDevice())
         return;
     VkDevice device = *_vkDeviceManager->getDevice();
     for (RenderTarget &target : _renderTargets)
-        destroyTargetAttachments(target);
+        _destroyTargetAttachments(target);
     _renderTargets.clear();
     for (const TargetPass &cached : _targetPasses)
         vkDestroyRenderPass(device, cached.pass, nullptr);

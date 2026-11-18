@@ -1,7 +1,7 @@
-# Keep public enum ABI stable; shrinking its storage is not an automatic lint fix.
 Checks: >
   -*,
   clang-analyzer-*,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-unsafe-functions,

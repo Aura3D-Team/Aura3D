@@ -62,7 +62,6 @@ class VulkanRenderer : public IRenderer
     void cleanup() override;
 
     VertexBufferHandle createVertexBuffer(std::vector<gfx::Vertex3D> &&vertices) override;
-    bool updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u16> &&indices) override;
     IndexBufferHandle createIndexBuffer(std::vector<u32> &&indices) override;
     TextureHandle createTextureFromPixels(const u8 *rgbaPixels, u32 width, u32 height) override;
@@ -73,21 +72,12 @@ class VulkanRenderer : public IRenderer
     void updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                      const u8 *coverage) override;
 
-    void beginFrame() override;
-    [[nodiscard]] bool frameBegun() const noexcept override
-    {
-        return _frameState != FrameState::Idle;
-    }
-    [[nodiscard]] bool needsFrame() const noexcept override;
-    void beginRenderPass() override;
-    void beginRenderPass(RenderTargetHandle target) override;
     void endRenderPass() override;
     RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc) override;
     bool resizeRenderTarget(RenderTargetHandle target, u32 width, u32 height) override;
     [[nodiscard]] glm::uvec2 targetSize(RenderTargetHandle target) const override;
     [[nodiscard]] TextureHandle renderTargetTexture(RenderTargetHandle target) const override;
     bool readPixels(RenderTargetHandle target, std::span<u8> rgba) override;
-    void endFrame() override;
 
     void setTransform(const gfx::TransformUBO &ubo) override;
     void setLights(std::span<const gfx::Light> lights) override;
@@ -127,8 +117,6 @@ class VulkanRenderer : public IRenderer
     RendererChoice getBackendType() const override;
 
     void setupPipeline(const std::string &vertShaderPath, const std::string &fragShaderPath);
-    u32 getCurrentFrame() const;
-    void advanceFrame();
 
 #ifdef AURA_PROFILE_FRAME
     [[nodiscard]] GpuTimingStats gpuTiming() const noexcept override;
@@ -147,26 +135,35 @@ class VulkanRenderer : public IRenderer
     }
 #endif
 
-  protected:
-    void createWindow(const char *title, const wma::WindowBackend &wBackend) override;
-
   private:
-    void createCoreObjects(bool enableValidation);
-    void recreateSurfaceAndSwapchain();
-    void createResourceManagers();
-    void buildSwapchainResources();
+    FrameReach _acquireFrame() override;
+    bool _acquireWindowTarget() override;
+    bool _presentFrame() override;
+    void _openRenderPass() override;
+    bool _openRenderPass(RenderTargetHandle target) override;
+    bool _updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices) override;
+
+    void _createWindow(const char *title, const wma::WindowBackend &wBackend);
+    void _createCoreObjects(bool enableValidation);
+    void _recreateSurfaceAndSwapchain();
+    void _createResourceManagers();
+    void _buildSwapchainResources();
     //! The window's details with the size swapped for the framebuffer's: what the swapchain is sized from.
-    [[nodiscard]] wma::WindowDetails drawableDetails() const;
-    [[nodiscard]] bool swapchainMatchesSurface();
-    void destroySwapchainResources();
-    void createDepthResources();
-    void destroyDepthResources();
+    [[nodiscard]] wma::WindowDetails _drawableDetails() const;
+    [[nodiscard]] bool _swapchainMatchesSurface();
+    //! Rebuilds a lost surface or a stale swapchain; false when the window cannot be drawn this frame.
+    [[nodiscard]] bool _prepareWindow();
+    //! Moves on to the next frame slot once a frame is submitted.
+    void _advanceFrame();
+    void _destroySwapchainResources();
+    void _createDepthResources();
+    void _destroyDepthResources();
     //! No-op when _msaaSamples == VK_SAMPLE_COUNT_1_BIT (MSAA disabled).
-    void createMsaaColorResources();
-    void destroyMsaaColorResources();
-    void setupCommandBuffers();
-    void createUniformBuffers();
-    void createDescriptorSets();
+    void _createMsaaColorResources();
+    void _destroyMsaaColorResources();
+    void _setupCommandBuffers();
+    void _createUniformBuffers();
+    void _createDescriptorSets();
 
     /**
      * @brief Makes a newly created texture samplable by both pipelines.
@@ -175,15 +172,15 @@ class VulkanRenderer : public IRenderer
      * texture into the bindless table, or warns once and leaves it on the
      * fallback slot if the table is full.
      */
-    void publishTexture(TextureHandle textureHandle);
+    void _publishTexture(TextureHandle textureHandle);
 
     //! Writes @p textureHandle's view/sampler into _bindlessTextureSet at
-    //! textureArrayIndexOf(textureHandle).
-    void updateTextureDescriptorSets(TextureHandle textureHandle);
-    void updateLightUniformBuffers();
+    //! _textureArrayIndexOf(textureHandle).
+    void _updateTextureDescriptorSets(TextureHandle textureHandle);
+    void _updateLightUniformBuffers();
     //! Records the per-draw state (transform push constants, UBO/light/texture
     //! descriptor sets) shared by drawIndexed() and draw().
-    void bindDrawState(VkCommandBuffer cmd);
+    void _bindDrawState(VkCommandBuffer cmd);
 
     /**
      * @brief Snapshots the descriptor sets, pipeline and extent every draw in
@@ -193,29 +190,29 @@ class VulkanRenderer : public IRenderer
      * whole set is fixed for the frame, so nothing here can change under a
      * thread that is mid-recording.
      */
-    [[nodiscard]] SceneBindings sceneBindings() const;
+    [[nodiscard]] SceneBindings _sceneBindings() const;
 
-    void createBatchPipeline();
+    void _createBatchPipeline();
 
     //! Appends a batch to this frame's mapped buffers; returns its first vertex and index, or nullopt.
-    [[nodiscard]] std::optional<std::pair<u32, u32>> uploadBatch(std::span<const gfx::BatchVertex> vertices,
-                                                                 std::span<const u32> indices);
+    [[nodiscard]] std::optional<std::pair<u32, u32>> _uploadBatch(std::span<const gfx::BatchVertex> vertices,
+                                                                  std::span<const u32> indices);
 
     //! Writes the camera to the next slot of this frame's transform ring.
-    void publishTransform();
+    void _publishTransform();
 
-    void destroyBatchBuffers();
+    void _destroyBatchBuffers();
     //! Grows one of this frame's batch ring buffers to @p needed; draws already recorded keep the old one.
-    void growBatchBuffer(AllocatedBuffer &buffer, VkDeviceSize &capacity, VkDeviceSize needed, VkDeviceSize minimum,
-                         VkBufferUsageFlags usage);
-    //! Writes @p instances (instance data, or vertices for updateVertexBuffer() to copy) into this frame's batch
+    void _growBatchBuffer(AllocatedBuffer &buffer, VkDeviceSize &capacity, VkDeviceSize needed, VkDeviceSize minimum,
+                          VkBufferUsageFlags usage);
+    //! Writes @p instances (instance data, or vertices for _updateVertexBuffer() to copy) into this frame's batch
     //! vertex ring; returns their offset, or nullopt.
-    [[nodiscard]] std::optional<VkDeviceSize> uploadTransient(std::span<const std::byte> instances);
-    //! The batch vertex ring is drawn from and, for updateVertexBuffer(), copied from.
+    [[nodiscard]] std::optional<VkDeviceSize> _uploadTransient(std::span<const std::byte> instances);
+    //! The batch vertex ring is drawn from and, for _updateVertexBuffer(), copied from.
     static constexpr VkBufferUsageFlags kVertexRingUsage =
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
-    template <typename IndexT> IndexBufferHandle createIndexBufferOf(std::vector<IndexT> &&indices);
+    template <typename IndexT> IndexBufferHandle _createIndexBufferOf(std::vector<IndexT> &&indices);
 
     std::unique_ptr<VulkanMemoryManager> _memoryManager;
     std::unique_ptr<aura3d::vk::VkInstanceManager> _vkInstance;
@@ -242,8 +239,8 @@ class VulkanRenderer : public IRenderer
     //! Every material's MaterialUniforms, read by the fragment shader at the push-constant index.
     static constexpr u32 kMaterialCapacity = 4096;
     AllocatedBuffer _materialTable{};
-    void writeMaterial(u32 index, const Material &material);
-    [[nodiscard]] u32 materialIndexOf(MaterialHandle handle) const noexcept;
+    void _writeMaterial(u32 index, const Material &material);
+    [[nodiscard]] u32 _materialIndexOf(MaterialHandle handle) const noexcept;
     std::unique_ptr<aura3d::vk::VkPipelineCacheFile> _pipelineCache;
     VkFixedArray<AllocatedBuffer> _batchVertexBuffers;
     VkFixedArray<AllocatedBuffer> _batchIndexBuffers;
@@ -286,10 +283,7 @@ class VulkanRenderer : public IRenderer
     u32 _currentImageIndex = 0;
     u32 _imagesCount = 0;
     bool _isInitialized = false;
-    FrameState _frameState = FrameState::Idle;
-    //! The swapchain holds no presented frame: nothing yet, or it was rebuilt
-    //! since. Cleared by the next present.
-    bool _targetStale = true;
+    RecordState _recordState = RecordState::Idle;
     bool _pipelineReady = false;
 
     VulkanMemoryManager::Config _vmaConfig{};
@@ -318,13 +312,13 @@ class VulkanRenderer : public IRenderer
 
     //! Opens @p pass on @p framebuffer and the scene's secondary buffer for it; the pipelines follow. @p depthOnly:
     //! the pass has a depth attachment and nothing else.
-    void beginPass(VkRenderPass pass, VkFramebuffer framebuffer, VkExtent2D extent, bool clearDepth,
-                   bool depthOnly = false);
+    void _beginPass(VkRenderPass pass, VkFramebuffer framebuffer, VkExtent2D extent, bool clearDepth,
+                    bool depthOnly = false);
     //! VK_FORMAT_UNDEFINED as @p colour is the depth-only pass of a TextureFormat::Depth target.
-    [[nodiscard]] VkRenderPass targetRenderPass(VkFormat colour, bool depth);
-    [[nodiscard]] VkRenderPass buildColourPass(VkFormat colour, bool depth);
-    [[nodiscard]] VkRenderPass buildDepthOnlyPass();
-    void destroyRenderTargets() noexcept;
+    [[nodiscard]] VkRenderPass _targetRenderPass(VkFormat colour, bool depth);
+    [[nodiscard]] VkRenderPass _buildColourPass(VkFormat colour, bool depth);
+    [[nodiscard]] VkRenderPass _buildDepthOnlyPass();
+    void _destroyRenderTargets() noexcept;
 
     struct RenderTarget
     {
@@ -345,7 +339,7 @@ class VulkanRenderer : public IRenderer
         VkDeviceSize size = 0;
     };
     std::vector<ComputeBuffer> _computeBuffers; //! handle - 1 == index
-    [[nodiscard]] const ComputeBuffer *computeBufferOf(BufferHandle handle) const noexcept;
+    [[nodiscard]] const ComputeBuffer *_computeBufferOf(BufferHandle handle) const noexcept;
     struct ComputeKernel
     {
         VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
@@ -356,9 +350,9 @@ class VulkanRenderer : public IRenderer
     std::vector<ComputeKernel> _computeKernels; //! handle - 1 == index
     //! The dispatches' descriptor sets, a pool per frame in flight, reset when its slot comes round again.
     std::vector<VkDescriptorPool> _computePools;
-    void resetComputePool();
-    void destroyKernel(ComputeKernel &kernel) noexcept;
-    void destroyCompute() noexcept;
+    void _resetComputePool();
+    void _destroyKernel(ComputeKernel &kernel) noexcept;
+    void _destroyCompute() noexcept;
 
     //! createPipeline()'s pipelines: a manager each, with a variant per render pass.
     struct CustomPipeline
@@ -386,17 +380,17 @@ class VulkanRenderer : public IRenderer
     } _lastCustomSet;
     std::vector<std::byte> _customConstants; //! drawPipeline()'s constants, padded to the pipeline's size.
     //! (Re)creates @p pipeline for the window's pass, and its variants for every target's.
-    void buildCustomPipeline(CustomPipeline &pipeline);
+    void _buildCustomPipeline(CustomPipeline &pipeline);
     //! False when a set could not be allocated.
-    [[nodiscard]] bool customSetsFor(const CustomPipeline &pipeline, u32 index, const PipelineDraw &draw);
-    [[nodiscard]] VkDescriptorSet allocateCustomSet(VkDescriptorSetLayout layout, u32 descriptors);
-    void resetCustomPool();
-    void destroyCustomPipelines() noexcept;
+    [[nodiscard]] bool _customSetsFor(const CustomPipeline &pipeline, u32 index, const PipelineDraw &draw);
+    [[nodiscard]] VkDescriptorSet _allocateCustomSet(VkDescriptorSetLayout layout, u32 descriptors);
+    void _resetCustomPool();
+    void _destroyCustomPipelines() noexcept;
     //! @p target's colour (in its old slot, if it has one), depth and framebuffer for its desc.
-    bool buildRenderTarget(RenderTarget &target);
+    bool _buildRenderTarget(RenderTarget &target);
     //! A TextureFormat::Depth target: its depth image is RenderTarget::colour, and the pass has nothing else.
-    bool buildDepthTarget(RenderTarget &target);
-    void destroyTargetAttachments(RenderTarget &target) noexcept;
+    bool _buildDepthTarget(RenderTarget &target);
+    void _destroyTargetAttachments(RenderTarget &target) noexcept;
     //! One render pass per colour format and depth choice, shared by every target that has them.
     struct TargetPass
     {
@@ -429,14 +423,14 @@ class VulkanRenderer : public IRenderer
      * Every texture in one bindless combined-image-sampler array, shared by the
      * scene (set 1) and batch (set 0) pipelines and never rebuilt per texture
      * or per resize. A draw selects its texture by a push-constant index (see
-     * textureArrayIndexOf()) rather than by binding another set.
+     * _textureArrayIndexOf()) rather than by binding another set.
      */
     VkDescriptorSet _bindlessTextureSet = VK_NULL_HANDLE;
 
     //! Slots in the bindless table, resolved from the device's
-    //! update-after-bind limits at createResourceManagers() time
+    //! update-after-bind limits at _createResourceManagers() time
     //! (VkDeviceManager::maxBindlessTextures()). Both pipeline layouts, the
-    //! descriptor pool and textureArrayIndexOf()'s bounds check all read this
+    //! descriptor pool and _textureArrayIndexOf()'s bounds check all read this
     //! one value, so they cannot drift apart.
     u32 _bindlessTextureCapacity = 0;
 
@@ -451,13 +445,13 @@ class VulkanRenderer : public IRenderer
      * nullptr for a handle that was never created (or was created and failed),
      * which is exactly the "skip this bind" case the draw path already had.
      */
-    [[nodiscard]] const VertexBufferInfo *vertexBufferOf(VertexBufferHandle handle) const noexcept
+    [[nodiscard]] const VertexBufferInfo *_vertexBufferOf(VertexBufferHandle handle) const noexcept
     {
         const size_t index = static_cast<size_t>(handle.value()) - 1;
         return (isValidHandle(handle) && index < _vbByHandle.size()) ? &_vbByHandle[index] : nullptr;
     }
 
-    [[nodiscard]] const IndexBufferInfo *indexBufferOf(IndexBufferHandle handle) const noexcept
+    [[nodiscard]] const IndexBufferInfo *_indexBufferOf(IndexBufferHandle handle) const noexcept
     {
         const size_t index = static_cast<size_t>(handle.value()) - 1;
         return (isValidHandle(handle) && index < _ibByHandle.size()) ? &_ibByHandle[index] : nullptr;
@@ -477,7 +471,7 @@ class VulkanRenderer : public IRenderer
      *    the fallback texture instead. createTextureFromPixels() already logs
      *    the overflow once at creation time, which is where it is actionable.
      */
-    [[nodiscard]] u32 textureArrayIndexOf(TextureHandle handle) const noexcept
+    [[nodiscard]] u32 _textureArrayIndexOf(TextureHandle handle) const noexcept
     {
         if (!isValidHandle(handle))
             return 0u;

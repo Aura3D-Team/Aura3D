@@ -435,6 +435,83 @@ void replacementAndFocus()
                "disabling the decoration restores the full content area");
 }
 
+/// Every decoration state change an idle loop must draw: each leaves the tree needing paint.
+void repaintsOnEveryStateChange()
+{
+    Harness h;
+    auto &bar = *h.decoration;
+    const glm::vec2 close = bar.closeButton().bounds().center();
+    const glm::vec2 content{240, 140};
+    const auto settled = [&h]
+    {
+        h.frame();
+        h.paint();
+        h.frame();
+        return !h.root.needsPaint();
+    };
+    const auto repaints = [&](const char *change, auto &&apply)
+    {
+        AURA_CHECK(settled(), std::string("repaint: idle before ") + change);
+        apply();
+        h.frame();
+        AURA_CHECK(h.root.needsPaint(), std::string("repaint: ") + change + " needs paint");
+    };
+
+    repaints("hovering a caption button",
+             [&]
+             {
+                 h.root.pointerMoved(close);
+             });
+    repaints("leaving it",
+             [&]
+             {
+                 h.root.pointerMoved(content);
+             });
+    repaints("pressing it",
+             [&]
+             {
+                 h.root.pointerMoved(close);
+                 h.frame();
+                 h.paint();
+                 h.root.pointerDown(close);
+             });
+    repaints("releasing it",
+             [&]
+             {
+                 h.root.pointerUp(close);
+             });
+    repaints("the window losing focus under a hovered button",
+             [&]
+             {
+                 h.root.cancelInput();
+             });
+    repaints("a confirmed maximize",
+             [&]
+             {
+                 h.window.maximized = true;
+             });
+    repaints("a confirmed restore",
+             [&]
+             {
+                 h.window.maximized = false;
+             });
+    repaints("a resize",
+             [&]
+             {
+                 h.root.resize({400, 200});
+             });
+    repaints("a new title",
+             [&]
+             {
+                 h.title = "Renamed";
+             });
+    repaints("the window becoming non-resizable",
+             [&]
+             {
+                 h.window.details.resizable = false;
+             });
+}
+
 } // namespace
 
 int main()
@@ -451,5 +528,6 @@ int main()
     chromeIsParameters();
     captionButtonsKeepTheArrow();
     replacementAndFocus();
+    repaintsOnEveryStateChange();
     AURA_TEST_MAIN_RETURN();
 }

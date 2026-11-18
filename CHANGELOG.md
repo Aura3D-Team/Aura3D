@@ -2,6 +2,34 @@
 
 All notable changes to Aura3D are documented in this file.
 
+## [Unreleased]
+
+Needs libwma 0.11.0.
+
+### Added
+
+- `run()` skips idle frames: a frame begins at the first call that records and is presented only if the window's pass was opened. Otherwise the window keeps its last frame and the loop sleeps in `waitEvents()` (#42).
+- `beginRenderPass()` returns whether there is a frame to draw into. `beginRenderPass(target)` returns whether the offscreen pass opened, even while minimized.
+- `test_frame_conformance` replays one window scenario (first frame, idle, expose, resize, minimize, move) on every backend and compares the window's pixels. It needs Xvfb through `AURA_TEST_DISPLAY` (#46).
+
+### Changed
+
+- `needsFrame()` and `frameBegun()` are the same on every backend (#43, #44).
+- `beginFrame()`, `endFrame()` and `beginRenderPass()` are no longer virtual. Backends override the private `_acquireFrame()`, `_acquireWindowTarget()`, `_presentFrame()` and `_openRenderPass()`. `createWindow()` left `IRenderer`, and private members start with `_`.
+- Inside `run()` the frame, and a pending resize, begins at the first `beginRenderPass()`.
+- `endFrame()` presents on every backend, so a loop of your own must not call `swapBuffers()` as well.
+- Vulkan: a Mailbox swapchain has two more images (7.6% more frames on an RTX 4060).
+- docs/03 and docs/14 describe the new loop (#47).
+
+### Fixed
+
+- A hidden window no longer freezes or stalls an app whose present waits for the display. No frame starts while libwma reports the window `occluded` or not `readyToPresent()`, and Vulkan reports the mode its swapchain really has, so `immediate` falling back to Fifo is paced too.
+- `present.mode: immediate` falls back to Mailbox before Fifo.
+- `renderer.vulkan.gpu` works again, and a CPU rasteriser no longer outranks a real GPU. The chosen GPU is logged.
+- Vulkan: `surfaceLost` stays set until the surface is rebuilt.
+- An idle window no longer goes blank after an expose, and a minimized window drops UI hover and press (#45).
+- An app can see a window resize: each reader keeps its own `wma::ResizeWatch` (#41).
+
 ## [0.10.0]
 
 ### Added

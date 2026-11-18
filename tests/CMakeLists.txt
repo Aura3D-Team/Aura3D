@@ -24,6 +24,7 @@ set(AURA_TEST_SUITES
     test_culling
     test_debug_mode_report
     test_font_atlas
+    test_frame_contract
     test_golden
     test_gltf
     test_image_loader
@@ -64,6 +65,16 @@ foreach(_aura_test_name IN LISTS AURA_TEST_SUITES)
 
     add_test(NAME ${_aura_test_name} COMMAND ${_aura_test_name})
 endforeach()
+
+# Reads the window's own pixels back through Xlib, so only where X11 is there to link. It opens windows, so it only
+# runs against a disposable X server named by AURA_TEST_DISPLAY (Xvfb) and reports skipped without one.
+find_package(X11 QUIET)
+if(AURA_ENABLE_UI AND X11_FOUND AND NOT CMAKE_CROSSCOMPILING AND NOT APPLE)
+    add_executable(test_frame_conformance test_frame_conformance.cpp XlibWindow.cpp)
+    target_link_libraries(test_frame_conformance PRIVATE Aura3D::Aura3D X11::X11)
+    add_test(NAME test_frame_conformance COMMAND test_frame_conformance)
+    set_tests_properties(test_frame_conformance PROPERTIES TIMEOUT 120 SKIP_RETURN_CODE 77)
+endif()
 
 # test_settings compares the committed schema and reference with what the engine generates.
 target_compile_definitions(test_settings PRIVATE AURA_DOCS_DIR="${PROJECT_SOURCE_DIR}/docs")

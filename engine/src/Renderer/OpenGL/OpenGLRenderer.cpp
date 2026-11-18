@@ -48,8 +48,8 @@ void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     //! Unused: this backend has no CPU-side worker pool of its own to share.
     (void)jobs;
 
-    createWindow(settings->windowTitle().c_str(), settings->windowBackend());
-    loadOpenGLEntryPoints();
+    _createWindow(settings->windowTitle().c_str(), settings->windowBackend());
+    _loadOpenGLEntryPoints();
 
     _vertexMgr = std::make_unique<GlVertexBufferManager>();
     _indexMgr = std::make_unique<GlIndexBufferManager>();
@@ -58,7 +58,7 @@ void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     _targetMgr = std::make_unique<GlTargetManager>();
     _batchMgr = std::make_unique<GlBatchManager>();
 
-    createSceneProgram();
+    _createSceneProgram();
     _uniformMgr->create(_sceneProgram);
     //! Sampled by untextured batches and invalid scene bindings, as on the other backends.
     _whiteTexture = _textureMgr->createSolidColorTexture(255, 255, 255, 255);
@@ -72,7 +72,7 @@ void OpenGLRenderer::initialize(AuraSettings *settings, const JobSystem *jobs)
     _isInitialized = true;
 }
 
-void OpenGLRenderer::loadOpenGLEntryPoints()
+void OpenGLRenderer::_loadOpenGLEntryPoints()
 {
     //! Every wma backend creates the context with the window and leaves it current.
     if (!_windowManagerApi || !_windowManagerApi->getWindowInstance())
@@ -88,7 +88,7 @@ void OpenGLRenderer::loadOpenGLEntryPoints()
              << reinterpret_cast<const char *>(glGetString(GL_RENDERER));
 }
 
-void OpenGLRenderer::setSamplerUnits(GLuint program)
+void OpenGLRenderer::_setSamplerUnits(GLuint program)
 {
     //! Sampler uniforms are program state, so the units are set once: albedo 0, then the material's maps.
     glUseProgram(program);
@@ -98,7 +98,7 @@ void OpenGLRenderer::setSamplerUnits(GLuint program)
     glUniform1i(glGetUniformLocation(program, "emissiveSampler"), 3);
 }
 
-void OpenGLRenderer::uploadMaterial()
+void OpenGLRenderer::_uploadMaterial()
 {
     //! Compared as handles plus a flag: an invalid handle's value is the largest u32, so no value is free
     //! to mean "nothing uploaded".
@@ -127,7 +127,7 @@ void OpenGLRenderer::setLights(std::span<const gfx::Light> lights)
 RendererCaps OpenGLRenderer::caps() const noexcept
 {
 #ifndef AURA_GLES
-    const bool compute = hasCompute();
+    const bool compute = _hasCompute();
 #else
     const bool compute = false;
 #endif
@@ -136,13 +136,13 @@ RendererCaps OpenGLRenderer::caps() const noexcept
     return compute ? caps | RendererCaps::Compute : caps;
 }
 
-void OpenGLRenderer::createSceneProgram()
+void OpenGLRenderer::_createSceneProgram()
 {
-    buildScenePrograms(gl_shader3d_vert, gl_shader3d_instanced_vert, gl_shader3d_frag);
+    _buildScenePrograms(gl_shader3d_vert, gl_shader3d_instanced_vert, gl_shader3d_frag);
     glGenBuffers(1, &_instanceVbo);
 }
 
-void OpenGLRenderer::buildScenePrograms(const char *vert, const char *instancedVert, const char *frag)
+void OpenGLRenderer::_buildScenePrograms(const char *vert, const char *instancedVert, const char *frag)
 {
     //! Both link before either replaces a running one, so a broken shader changes nothing.
     const GLuint scene = GlShaderManager::createProgram(vert, frag);
@@ -169,7 +169,7 @@ void OpenGLRenderer::buildScenePrograms(const char *vert, const char *instancedV
     //! Sampler units and block bindings are program state, so they are set once per program.
     for (const GLuint program : {_sceneProgram, _instancedProgram})
     {
-        setSamplerUnits(program);
+        _setSamplerUnits(program);
         GlUniformBufferManager::bindBlocks(program);
     }
     //! Uniform values died with the old programs.
@@ -218,7 +218,7 @@ bool OpenGLRenderer::reloadShaders(const std::filesystem::path &directory)
     {
         const std::string vert = source("gl_shader3d.vert"), instancedVert = source("gl_shader3d_instanced.vert"),
                           frag = source("gl_shader3d.frag");
-        buildScenePrograms(vert.c_str(), instancedVert.c_str(), frag.c_str());
+        _buildScenePrograms(vert.c_str(), instancedVert.c_str(), frag.c_str());
         return true;
     }
     catch (const std::exception &error)
@@ -228,7 +228,7 @@ bool OpenGLRenderer::reloadShaders(const std::filesystem::path &directory)
     }
 }
 
-void OpenGLRenderer::createWindow(const char *title, const wma::WindowBackend &wBackend)
+void OpenGLRenderer::_createWindow(const char *title, const wma::WindowBackend &wBackend)
 {
     _windowManagerApi = makeWindow(wBackend, _windowDetails, wma::GraphicsAPI::OpenGL);
     _windowManagerApi->createWindow(title);
@@ -254,9 +254,9 @@ void OpenGLRenderer::cleanup()
     _gpuTimer.reset();
     _gpuTimerUnsupported = false;
 #endif
-    destroyCustomPipelines();
+    _destroyCustomPipelines();
     if (_textureMgr)
-        destroyRenderTargets();
+        _destroyRenderTargets();
     _batchMgr.reset();
     _targetMgr.reset();
     _vertexMgr.reset();
@@ -296,7 +296,7 @@ VertexBufferHandle OpenGLRenderer::createVertexBuffer(std::vector<gfx::Vertex3D>
     return _vertexMgr->createVertexBuffer(std::move(vertices));
 }
 
-bool OpenGLRenderer::updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
+bool OpenGLRenderer::_updateVertexBuffer(VertexBufferHandle handle, std::span<const gfx::Vertex3D> vertices)
 {
     const GlVertexBufferData *data = _vertexMgr ? _vertexMgr->get(handle) : nullptr;
     if (!data || vertices.size() > data->vertexCount)
@@ -352,7 +352,7 @@ TextureHandle OpenGLRenderer::createCoverageTexture(u32 width, u32 height)
 void OpenGLRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                                  const u8 *coverage)
 {
-    flushBatches();
+    _flushBatches();
     if (_textureMgr)
         _textureMgr->updateCoverageRegion(handle, x, y, width, height, coverage);
 }
@@ -360,19 +360,23 @@ void OpenGLRenderer::updateCoverageTextureRegion(TextureHandle handle, u32 x, u3
 void OpenGLRenderer::updateTextureRegion(TextureHandle handle, u32 x, u32 y, u32 width, u32 height,
                                          const u8 *rgbaPixels)
 {
-    flushBatches();
+    _flushBatches();
     if (!_textureMgr)
         return;
     _textureMgr->updateRegion(handle, x, y, width, height, rgbaPixels);
 }
 
-void OpenGLRenderer::beginFrame()
+IRenderer::FrameReach OpenGLRenderer::_acquireFrame()
 {
-    if (consumeResize())
+    if (windowShowable() && consumeResize())
         handleWindowChanges();
+    //! cleanup() drops the managers while the window can outlive them.
+    if (!_uniformMgr)
+        return FrameReach::None;
+    return windowShowable() ? FrameReach::WindowReady : FrameReach::Offscreen;
 }
 
-void OpenGLRenderer::beginRenderPass()
+void OpenGLRenderer::_openRenderPass()
 {
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
 
@@ -396,26 +400,24 @@ void OpenGLRenderer::beginRenderPass()
 
     _targetMgr->bind();
     _passTarget = 0;
-    openPass();
+    _openPass();
 }
 
-void OpenGLRenderer::openPass()
+void OpenGLRenderer::_openPass()
 {
     //! Depth writes must be on for the clear to reach the depth buffer.
-    useSceneState();
+    _useSceneState();
     glClearColor(_clearR, _clearG, _clearB, _clearA);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    _uniformMgr->updateCamera(passTransform());
+    _uniformMgr->updateCamera(_passTransform());
     _uniformMgr->updateLight(lighting());
 }
 
-void OpenGLRenderer::beginRenderPass(RenderTargetHandle target)
+bool OpenGLRenderer::_openRenderPass(RenderTargetHandle target)
 {
-    if (!isValidHandle(target))
-        return beginRenderPass();
     AURA_FRAME_SCOPE(FramePhase::BeginPass);
-    if (!_uniformMgr || target.value() > _renderTargets.size())
-        return;
+    if (!_uniformMgr || !isValidHandle(target) || target.value() > _renderTargets.size())
+        return false;
     const RenderTarget &chosen = _renderTargets[target.value() - 1];
     glBindFramebuffer(GL_FRAMEBUFFER, chosen.fbo);
     glViewport(0, 0, static_cast<GLsizei>(chosen.size.x), static_cast<GLsizei>(chosen.size.y));
@@ -427,7 +429,8 @@ void OpenGLRenderer::beginRenderPass(RenderTargetHandle target)
         glDisable(GL_FRAMEBUFFER_SRGB);
 #endif
     _passTarget = target.value();
-    openPass();
+    _openPass();
+    return true;
 }
 
 glm::uvec2 OpenGLRenderer::targetSize(RenderTargetHandle target) const
@@ -460,7 +463,7 @@ bool OpenGLRenderer::resizeRenderTarget(RenderTargetHandle handle, u32 width, u3
     return true;
 }
 
-RenderTargetHandle OpenGLRenderer::createDepthTarget(const RenderTargetDesc &desc)
+RenderTargetHandle OpenGLRenderer::_createDepthTarget(const RenderTargetDesc &desc)
 {
     RenderTarget target;
     target.colour = _textureMgr->createDepthAttachment(desc.width, desc.height);
@@ -494,7 +497,7 @@ RenderTargetHandle OpenGLRenderer::createRenderTarget(const RenderTargetDesc &de
     if (!_textureMgr)
         return {};
     if (desc.format == TextureFormat::Depth)
-        return createDepthTarget(desc);
+        return _createDepthTarget(desc);
     RenderTarget target;
     target.colour = _textureMgr->createAttachment(desc.width, desc.height, desc.format);
     if (!isValidHandle(target.colour))
@@ -546,14 +549,14 @@ bool OpenGLRenderer::readPixels(RenderTargetHandle target, std::span<u8> rgba)
         return false;
     glBindFramebuffer(GL_READ_FRAMEBUFFER, chosen.fbo);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    //! Target passes draw flipped (see passFlip()), so GL's first row is already the image's top.
+    //! Target passes draw flipped (see _passFlip()), so GL's first row is already the image's top.
     glReadPixels(0, 0, static_cast<GLsizei>(chosen.size.x), static_cast<GLsizei>(chosen.size.y), GL_RGBA,
                  GL_UNSIGNED_BYTE, rgba.data());
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     return true;
 }
 
-glm::mat4 OpenGLRenderer::passFlip() const noexcept
+glm::mat4 OpenGLRenderer::_passFlip() const noexcept
 {
     return _passTarget != 0 ? glm::scale(glm::mat4{1.0f}, glm::vec3{1.0f, -1.0f, 1.0f}) : glm::mat4{1.0f};
 }
@@ -563,14 +566,14 @@ glm::mat4 OpenGLRenderer::clipCorrection(RenderTargetHandle target) const noexce
     return isValidHandle(target) ? glm::scale(glm::mat4{1.0f}, glm::vec3{1.0f, -1.0f, 1.0f}) : glm::mat4{1.0f};
 }
 
-gfx::TransformUBO OpenGLRenderer::passTransform() const noexcept
+gfx::TransformUBO OpenGLRenderer::_passTransform() const noexcept
 {
     gfx::TransformUBO transform = _currentTransform;
-    transform.proj = passFlip() * transform.proj;
+    transform.proj = _passFlip() * transform.proj;
     return transform;
 }
 
-void OpenGLRenderer::destroyRenderTargets() noexcept
+void OpenGLRenderer::_destroyRenderTargets() noexcept
 {
     for (const RenderTarget &target : _renderTargets)
     {
@@ -589,12 +592,12 @@ void OpenGLRenderer::endRenderPass()
     if (!_vertexMgr)
         return;
 
-    flushBatches();
+    _flushBatches();
     //! A target pass ends in its own texture; only the window's is resolved to the screen.
     if (_passTarget == 0)
         _targetMgr->resolve();
     _passTarget = 0;
-    leaveSceneState();
+    _leaveSceneState();
     _textureMgr->invalidateBindings();
     _materialUploaded = false;
 #ifdef AURA_PROFILE_FRAME
@@ -603,16 +606,19 @@ void OpenGLRenderer::endRenderPass()
 #endif
 }
 
-void OpenGLRenderer::endFrame()
+bool OpenGLRenderer::_presentFrame()
 {
     /*
      * Present is where a vsynced GL frame spends its wall time, so the pipeline's
      * backpressure lands on this one scope. WaitFence/Acquire/Submit stay at zero:
-     * GL has no counterpart to any of them. Inside run() the window manager's loop
-     * swaps right after this returns; a second swap here would show each frame
-     * twice and halve a vsynced rate.
+     * GL has no counterpart to any of them. This is the only swap: the window
+     * manager's loop does not present, so run() and a loop of your own present alike.
+     * A frame whose window pass never opened swaps nothing: the back buffer was not
+     * drawn. Its offscreen work is flushed instead, as the other backends submit theirs.
      */
-    if (_windowManagerApi && !_running)
+    if (!frameBegun())
+        glFlush();
+    else if (_windowManagerApi)
     {
         AURA_FRAME_SCOPE(FramePhase::Present);
         _windowManagerApi->swapBuffers();
@@ -623,6 +629,8 @@ void OpenGLRenderer::endFrame()
     //! manager has already gone (a cleanup() mid-loop) rather than stalling the
     //! sample stream on a backend that is shutting down.
     AURA_FRAME_END();
+    //! A swap reports no failure, so the frame counts as shown.
+    return true;
 }
 
 #ifdef AURA_PROFILE_FRAME
@@ -637,7 +645,7 @@ void OpenGLRenderer::setTransform(const gfx::TransformUBO &ubo)
     _currentTransform = ubo;
     //! The model reaches the program at draw time; the camera upload skips an unchanged one.
     if (_uniformMgr)
-        _uniformMgr->updateCamera(passTransform());
+        _uniformMgr->updateCamera(_passTransform());
 }
 
 void OpenGLRenderer::bindVertexBuffer(VertexBufferHandle handle)
@@ -661,10 +669,10 @@ void OpenGLRenderer::bindTexture(TextureHandle handle)
     _currentTexture = handle;
     //! Otherwise the switch back to scene state binds it.
     if (_sceneState)
-        bindSceneTexture();
+        _bindSceneTexture();
 }
 
-void OpenGLRenderer::bindSceneTexture()
+void OpenGLRenderer::_bindSceneTexture()
 {
     const GlTextureData *data = _textureMgr->bind(_currentTexture, 0);
     if (!data)
@@ -677,9 +685,9 @@ void OpenGLRenderer::bindSceneTexture()
     }
 }
 
-void OpenGLRenderer::useSceneState()
+void OpenGLRenderer::_useSceneState()
 {
-    flushBatches();
+    _flushBatches();
     if (_sceneState)
         return;
 
@@ -695,23 +703,23 @@ void OpenGLRenderer::useSceneState()
         _vertexMgr->unbind();
     _indexMgr->invalidateBinding();
     _indexMgr->bind(_currentIndexBuffer);
-    bindSceneTexture();
+    _bindSceneTexture();
 }
 
-void OpenGLRenderer::leaveSceneState()
+void OpenGLRenderer::_leaveSceneState()
 {
     _sceneState = false;
     _vertexMgr->invalidateBinding();
     _indexMgr->invalidateBinding();
 }
 
-void OpenGLRenderer::flushBatches()
+void OpenGLRenderer::_flushBatches()
 {
     if (_batchMgr && _batchMgr->flush())
-        leaveSceneState();
+        _leaveSceneState();
 }
 
-void OpenGLRenderer::uploadModel()
+void OpenGLRenderer::_uploadModel()
 {
     const glm::mat4 &model = _currentTransform.model;
     if (_modelUploaded && model == _uploadedModel)
@@ -746,8 +754,8 @@ void OpenGLRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material,
     const auto *indices = _indexMgr->get(record->indexBuffer);
     if (!indices)
         return;
-    useSceneState();
-    uploadMaterial();
+    _useSceneState();
+    _uploadMaterial();
     glUseProgram(_instancedProgram);
     glUniform1i(_instancedCoverageLoc, _coverage);
 
@@ -755,13 +763,13 @@ void OpenGLRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material,
     glBindBuffer(GL_ARRAY_BUFFER, _instanceVbo);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(_instanceScratch.size() * sizeof(Instance)),
                  _instanceScratch.data(), GL_STREAM_DRAW);
-    attachInstances(_instanceVbo);
+    _attachInstances(_instanceVbo);
     glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(record->indexCount), indices->type, nullptr,
                             static_cast<GLsizei>(_instanceScratch.size()));
-    detachInstances();
+    _detachInstances();
 }
 
-void OpenGLRenderer::attachInstances(GLuint buffer)
+void OpenGLRenderer::_attachInstances(GLuint buffer)
 {
     //! Attached to the mesh's VAO for this draw only, and detached after.
     glBindBuffer(GL_ARRAY_BUFFER, buffer);
@@ -778,7 +786,7 @@ void OpenGLRenderer::attachInstances(GLuint buffer)
     }
 }
 
-void OpenGLRenderer::detachInstances()
+void OpenGLRenderer::_detachInstances()
 {
     for (GLuint column = 0; column < kInstanceColumns; ++column)
         glDisableVertexAttribArray(kFirstInstanceAttribute + column);
@@ -791,9 +799,9 @@ void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
     if (!idxData)
         return;
 
-    useSceneState();
-    uploadModel();
-    uploadMaterial();
+    _useSceneState();
+    _uploadModel();
+    _uploadMaterial();
     const auto count = static_cast<GLsizei>(indexCount);
     if (instanceCount > 1)
         glDrawElementsInstanced(GL_TRIANGLES, count, idxData->type, nullptr, static_cast<GLsizei>(instanceCount));
@@ -803,9 +811,9 @@ void OpenGLRenderer::drawIndexed(u32 indexCount, u32 instanceCount)
 
 void OpenGLRenderer::draw(u32 vertexCount, u32 instanceCount)
 {
-    useSceneState();
-    uploadModel();
-    uploadMaterial();
+    _useSceneState();
+    _uploadModel();
+    _uploadMaterial();
     const auto count = static_cast<GLsizei>(vertexCount);
     if (instanceCount > 1)
         glDrawArraysInstanced(GL_TRIANGLES, 0, count, static_cast<GLsizei>(instanceCount));
@@ -826,8 +834,8 @@ void OpenGLRenderer::drawBatch(std::span<const gfx::BatchVertex> vertices, std::
     AURA_FRAME_SCOPE(space == gfx::BatchSpace::Screen ? FramePhase::RecordOverlay : FramePhase::RecordScene);
 
     if (_batchMgr && !vertices.empty() && !indices.empty() &&
-        _batchMgr->draw(vertices, indices, texture, passFlip() * batchTransform(space)))
-        leaveSceneState();
+        _batchMgr->draw(vertices, indices, texture, _passFlip() * batchTransform(space)))
+        _leaveSceneState();
 }
 
 } // namespace gl

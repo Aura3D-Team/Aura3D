@@ -187,14 +187,15 @@ void VkQueueManager::submitCmdIntoQueue(VkQueue queue, VkCommandBuffer *commandB
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    submitInfo.waitSemaphoreCount = 1;
+    //! Either semaphore may be null: a frame that acquired no swapchain image waits for none and presents nothing.
+    submitInfo.waitSemaphoreCount = imageAvailableSemaphore ? 1u : 0u;
     submitInfo.pWaitSemaphores = imageAvailableSemaphore;
     submitInfo.pWaitDstStageMask = waitStages;
 
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = commandBuffer;
 
-    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.signalSemaphoreCount = renderFinishedSemaphore ? 1u : 0u;
     submitInfo.pSignalSemaphores = renderFinishedSemaphore;
 
     /*

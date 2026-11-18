@@ -41,7 +41,7 @@ class VkDescriptorManager
      *        to reserve exactly what the descriptor set layouts declare.
      * @param pool_size Uniform-buffer descriptors to reserve (the transform
      *        and light UBO sets, one pair per swapchain image, freed and
-     *        reallocated on every resize -- see VulkanRenderer::destroySwapchainResources).
+     *        reallocated on every resize -- see VulkanRenderer::_destroySwapchainResources).
      *        Texture count does not scale this pool at all anymore.
      */
     VkDescriptorManager(VkDevice *vkDevice, u32 bindlessTextureCapacity, i32 pool_size = 256);
