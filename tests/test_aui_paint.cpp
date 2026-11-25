@@ -59,7 +59,6 @@ class RecordingRenderer final : public IRenderer
         _windowManagerApi = std::make_unique<test::FakeWindow>();
     }
 
-    using IRenderer::drawBatch;
     void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
                    gfx::BatchSpace space = gfx::BatchSpace::Screen) override
     {
@@ -533,126 +532,20 @@ void testRendererPrimitives()
 {
     RecordingRenderer renderer;
     const glm::vec4 tint{.2f, .4f, .8f, .5f};
-    gfx::Canvas shapes;
-    //! Draws what was added since the last call as one batch.
-    const auto submit = [&](gfx::BatchSpace space = gfx::BatchSpace::Screen)
-    {
-        renderer.drawBatch(shapes, {}, space);
-        shapes.clear();
-    };
-
-    const std::array<std::array<glm::vec2, 2>, 3> segments{
-        {{{{10, 10}, {30, 10}}}, {{{40, 10}, {40, 30}}}, {{{30, 40}, {10, 20}}}}};
-    for (const auto &[from, to] : segments)
-        shapes.line(from, to, tint, 4);
-    submit();
-    AURA_CHECK(renderer.batches.size() == 1 && renderer.vertexTotal == 12 && renderer.indicesInRange,
-               "horizontal, vertical and reversed diagonal lines in one batch are one draw of a quad each");
-    bool geometry = renderer.quads.size() == 12;
-    for (usize i = 0; geometry && i < segments.size(); ++i)
-    {
-        const auto &a = renderer.quads[i * 4];
-        const auto &b = renderer.quads[i * 4 + 1];
-        const auto &c = renderer.quads[i * 4 + 2];
-        const auto &d = renderer.quads[i * 4 + 3];
-        geometry &= glm::length(glm::vec2(a.pos + d.pos) * .5f - segments[i][0]) < .001f &&
-                    glm::length(glm::vec2(b.pos + c.pos) * .5f - segments[i][1]) < .001f &&
-                    std::fabs(glm::length(d.pos - a.pos) - 4.0f) < .001f && a.color == tint;
-    }
-    AURA_CHECK(geometry && !isValidHandle(renderer.batches.front().texture),
-               "line quads preserve endpoints, width and straight-alpha tint without allocating textures");
-
-    renderer.clear();
-    shapes.line(glm::vec2{5, 6}, glm::vec2{15, 6}, tint);
-    submit();
-    AURA_CHECK(renderer.vertexTotal == 4 && renderer.batches.front().indexCount == 6,
-               "single lines use the portable triangle path at the default one-pixel width");
-
-    const f32 aspect = static_cast<f32>(renderer.target.x) / static_cast<f32>(renderer.target.y);
-    renderer.setTransform(
-        {glm::mat4{1.0f}, glm::mat4{1.0f}, glm::perspectiveRH_NO(glm::radians(90.0f), aspect, 0.1f, 100.0f)});
-    renderer.clear();
-
-    shapes.rect({10, 20}, {30, 40}, tint);
-    shapes.triangle(glm::vec2{0, 0}, glm::vec2{10, 0}, glm::vec2{0, 10}, tint);
-    shapes.triangle(glm::vec2{0, 10}, glm::vec2{10, 0}, glm::vec2{0, 0}, tint);
-    submit();
-    AURA_CHECK(renderer.batches.size() == 1 && renderer.vertexTotal == 10 && renderer.indicesInRange &&
-                   renderer.quads[0].pos == glm::vec3(10, 20, 0) && renderer.quads[2].pos == glm::vec3(40, 60, 0),
-               "rectangles and either triangle winding submit valid untextured geometry");
-
-    //! A segment receding from the camera stays four pixels wide at both ends, at its own depth.
-    renderer.clear();
-    shapes.line(renderer.canvasView(), glm::vec3{-1, -1, -2}, glm::vec3{1, -1, -30}, tint, 4);
-    submit();
-    bool constantWidth = renderer.batches.size() == 1 && renderer.quads.size() == 4 &&
-                         renderer.batches.front().indexCount == 6 && renderer.indicesInRange;
-    if (constantWidth)
-    {
-        const auto at = [&](usize i)
-        {
-            return renderer.quads[i].pos;
-        };
-        const glm::vec3 nearEnd = renderer.toScreen({-1, -1, -2});
-        const glm::vec3 farEnd = renderer.toScreen({1, -1, -30});
-        constantWidth = std::fabs(glm::length(glm::vec2(at(3) - at(0))) - 4.0f) < .01f &&
-                        std::fabs(glm::length(glm::vec2(at(2) - at(1))) - 4.0f) < .01f &&
-                        glm::length((at(0) + at(3)) * .5f - nearEnd) < .01f &&
-                        glm::length((at(1) + at(2)) * .5f - farEnd) < .01f && nearEnd.z > 0.0f &&
-                        nearEnd.z < farEnd.z && farEnd.z < 1.0f && renderer.quads[0].color == tint &&
-                        !isValidHandle(renderer.batches.front().texture);
-    }
-    AURA_CHECK(constantWidth, "a 3D line is one screen quad at its depth, as wide in pixels near as far");
-
-    renderer.clear();
-    gfx::TransformUBO singular{glm::mat4{1}, glm::mat4{1}, glm::mat4{1}};
-    singular.model[2][2] = 0;
-    renderer.setTransform(singular);
-    shapes.line(renderer.canvasView(), glm::vec3{-.5f, 0, 0}, glm::vec3{.5f, 0, 0}, tint, 4);
-    submit();
-    AURA_CHECK(renderer.quads.size() == 4 &&
-                   std::fabs(glm::length(glm::vec2(renderer.quads[3].pos - renderer.quads[0].pos)) - 4) < .01f,
-               "a line under a singular model transform keeps its pixel width, needing no inverse");
-    renderer.setTransform({glm::mat4{1}, glm::mat4{1}, glm::perspectiveRH_NO(glm::radians(90.0f), aspect, .1f, 100.f)});
-
-    //! Crossing the camera plane beside the eye: only the part in front survives, as a valid quad.
-    renderer.clear();
-    shapes.line(renderer.canvasView(), glm::vec3{-1, 0, -5}, glm::vec3{3, 0, 5}, tint, 2);
-    submit();
-    bool clipped = renderer.batches.size() == 1 && renderer.quads.size() == 4;
-    for (usize i = 0; clipped && i < renderer.quads.size(); ++i)
-        clipped &= std::isfinite(renderer.quads[i].pos.x) && renderer.quads[i].pos.z > -1e-4f;
-    AURA_CHECK(clipped, "a 3D line through the camera is clipped to the part in front of it");
-
-    //! Under a window-pixel orthographic transform both overloads draw the same quad.
-    const auto [width, height] = std::array{static_cast<f32>(renderer.target.x), static_cast<f32>(renderer.target.y)};
-    renderer.setTransform({glm::mat4{1.0f}, glm::mat4{1.0f}, glm::orthoRH_NO(0.0f, width, height, 0.0f, -1.0f, 1.0f)});
-    renderer.clear();
-    shapes.line(glm::vec2{30, 40}, glm::vec2{10, 20}, tint, 3);
-    shapes.line(renderer.canvasView(), glm::vec3{30, 40, 0}, glm::vec3{10, 20, 0}, tint, 3);
-    submit();
-    bool matching = renderer.quads.size() == 8;
-    for (usize i = 0; matching && i < 4; ++i)
-        matching = glm::length(glm::vec2(renderer.quads[i].pos - renderer.quads[i + 4].pos)) < .01f;
-    AURA_CHECK(matching, "the 3D overload reduces to the 2D one under a pixel-space transform");
+    const std::array<gfx::BatchVertex, 3> triangle{
+        {{{0, 0, 0}, {}, tint}, {{10, 0, 0}, {}, tint}, {{0, 10, 0}, {}, tint}}};
+    constexpr std::array<u32, 3> indices{0, 1, 2};
 
     //! drawMeshes() hands the caller's model back, so World geometry after it is not moved by the last item.
     const glm::mat4 world = renderer.batchTransform(gfx::BatchSpace::World);
     IRenderer::DrawItem moved{};
     moved.model[3] = glm::vec4{100.0f, 0.0f, 0.0f, 1.0f};
     renderer.drawMeshes(std::span{&moved, 1});
-    renderer.clear();
-    shapes.line(glm::vec2{30, 40}, glm::vec2{10, 20}, tint, 3);
-    shapes.line(renderer.canvasView(), glm::vec3{30, 40, 0}, glm::vec3{10, 20, 0}, tint, 3);
-    submit();
-    bool unmoved = renderer.batchTransform(gfx::BatchSpace::World) == world && renderer.quads.size() == 8;
-    for (usize i = 0; unmoved && i < 4; ++i)
-        unmoved = glm::length(glm::vec2(renderer.quads[i].pos - renderer.quads[i + 4].pos)) < .01f;
-    AURA_CHECK(unmoved, "World lines after drawMeshes() use the caller's model, not the last mesh's");
+    AURA_CHECK(renderer.batchTransform(gfx::BatchSpace::World) == world,
+               "World batches after drawMeshes() use the caller's model, not the last mesh's");
 
     renderer.clear();
-    shapes.triangle(glm::vec3{0, 0, 0}, glm::vec3{10, 0, 0}, glm::vec3{0, 10, 0}, tint);
-    submit(gfx::BatchSpace::World);
+    renderer.drawBatch(triangle, indices, {}, gfx::BatchSpace::World);
     AURA_CHECK(renderer.sceneBatches.size() == 1 && renderer.scene.size() == 3 && renderer.batches.empty() &&
                    renderer.scene[1].pos == glm::vec3(10, 0, 0),
                "a World batch goes through the scene path, not the screen one");

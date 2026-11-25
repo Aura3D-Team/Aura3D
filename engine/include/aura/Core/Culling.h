@@ -42,7 +42,7 @@ struct Frustum
 {
     std::array<Plane, 6> planes{};
 
-    /// From world-to-clip @p clip (projection * view); @p depthZeroToOne as in gfx::CanvasView.
+    /// From world-to-clip @p clip (projection * view); @p depthZeroToOne: clip depth is [0, 1] (Vulkan, Metal) rather than [-1, 1].
     [[nodiscard]] static Frustum fromMatrix(const glm::mat4 &clip, bool depthZeroToOne) noexcept;
 };
 

@@ -2,7 +2,17 @@
 
 All notable changes to Aura3D are documented in this file.
 
-## [Unreleased]
+## [0.12.0]
+
+### Removed
+
+- `gfx::Canvas`, `IRenderer::drawBatch(const Canvas &)` and `IRenderer::canvasView()`. Build `BatchVertex` and index arrays and pass them to `drawBatch()`.
+
+### Fixed
+
+- Vulkan: `present.mode: immediate` gets Immediate where the surface supports it; it took Mailbox whenever Mailbox was also there, and warned that Immediate was unsupported.
+
+## [0.11.0]
 
 Needs libwma 0.11.0.
 

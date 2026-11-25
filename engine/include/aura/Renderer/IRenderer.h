@@ -20,7 +20,6 @@
 #include "aura/Core/AuraSettings/AuraSettings.h"
 #include "aura/Core/Culling.h"
 #include "aura/Core/Profiling/GpuTiming.h"
-#include "aura/Renderer/Canvas.h"
 #include "aura/Renderer/Compute.h"
 #include "aura/Renderer/Material.h"
 #include "aura/Renderer/Pipeline.h"
@@ -223,7 +222,7 @@ class IRenderer
      *        and renderTargetTexture() samples the result in any later pass.
      *
      * Single-sampled whatever the window's MSAA, cleared to the clear colour at the start of every pass.
-     * Screen batches and canvasView() use the target's size while it is bound.
+     * Screen batches use the target's size while it is bound.
      *
      * @code
      * const RenderTargetHandle mirror = renderer.createRenderTarget({.width = 512, .height = 512});
@@ -555,12 +554,6 @@ class IRenderer
     /// An invalid texture samples white; both arrays may be reused on return.
     virtual void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices,
                            TextureHandle texture, gfx::BatchSpace space = gfx::BatchSpace::Screen) = 0;
-
-    void drawBatch(const gfx::Canvas &canvas, TextureHandle texture = {},
-                   gfx::BatchSpace space = gfx::BatchSpace::Screen);
-
-    /// The current camera and render target, for gfx::Canvas::line() in world space.
-    [[nodiscard]] gfx::CanvasView canvasView() const;
 
     /// Size of the render target in the pixels screen-space batches and line widths use.
     /// Backends report their live target; the base returns the window size it was built with.

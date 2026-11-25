@@ -109,7 +109,6 @@ class VulkanRenderer : public IRenderer
      */
     void drawMeshes(std::span<const DrawItem> items) override;
     void drawMeshInstanced(MeshHandle mesh, MaterialHandle material, std::span<const glm::mat4> models) override;
-    using IRenderer::drawBatch;
     void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
                    gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
     [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;

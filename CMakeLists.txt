@@ -417,6 +417,7 @@ add_custom_target(aura3d_docs SOURCES ${AURA3D_DOC_FILES} README.md CHANGELOG.md
 
 if(AURA_BUILD_SANDBOX)
     add_subdirectory(apps/Sandbox)
+    add_subdirectory(apps/Bench)
 endif()
 
 if(AURA_BUILD_ORGLOGO)

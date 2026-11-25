@@ -171,11 +171,11 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
 
     VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, nullptr, &_swapChain));
 
-    INK_TRACE << "SwapChain successfuly created!";
-    INK_TRACE << "ImageCount: " << imageCount;
-    INK_TRACE << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
-
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, nullptr);
+    INK_INFO << "Swapchain " << _choosedExtent.width << "x" << _choosedExtent.height << ", " << imageCount
+             << " images, present mode " << static_cast<i32>(_choosedPresentMode) << ", format "
+             << static_cast<i32>(_choosedSurfaceFormat.format) << ", sharing "
+             << static_cast<i32>(_swapChainCreateInfo.imageSharingMode);
     _swapChainImages.resize(imageCount);
 
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
@@ -458,12 +458,12 @@ VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<Vk
 
     case VSyncMode::Immediate:
         if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
-
-            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
-            {
-                INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_MAILBOX_KHR";
-                return VK_PRESENT_MODE_MAILBOX_KHR;
-            }
+            return VK_PRESENT_MODE_IMMEDIATE_KHR;
+        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+        {
+            INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_MAILBOX_KHR";
+            return VK_PRESENT_MODE_MAILBOX_KHR;
+        }
 
         INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
         return VK_PRESENT_MODE_FIFO_KHR;

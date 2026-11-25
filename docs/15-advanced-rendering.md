@@ -45,13 +45,7 @@ survivors in one instanced draw. `meshBounds(mesh)` gives a mesh's box.
 ## Bounds
 
 `meshBounds(mesh)` is a mesh's box in its own space; `transformed(box, model)` (`aura/Core/Culling.h`) places it in
-the world.
-
-```cpp
-gfx::Canvas debug;
-debug.line(r->canvasView(), a, b, {1, 1, 0, 1});   // any shape: lines, triangles or append()
-r->drawBatch(debug);
-```
+the world. To see a box, draw its triangles with `drawBatch(..., gfx::BatchSpace::World)` (doc 7).
 
 ## glTF models and skinned animation
 

@@ -17,11 +17,11 @@
 #include <vector>
 
 #include "aura/Core/Engine.h"
-#include "aura/Renderer/Canvas.h"
 #include "aura/Renderer/IRenderer.h"
 #include "aura/Renderer/RendererFactory.h"
 #include "aura/UI/UI.hpp"
 
+#include "BatchShapes.h"
 #include "TestUtils.h"
 #include "XlibWindow.h"
 
@@ -152,7 +152,7 @@ std::vector<Checkpoint> runScenario(RendererChoice backend)
     ui::UIView view(renderer);
     view.attachInput(window);
     view.root().setContent<ui::Widget>();
-    gfx::Canvas canvas;
+    test::BatchShapes canvas;
 
     std::vector<Checkpoint> checkpoints;
     usize step = 0;
@@ -184,7 +184,7 @@ std::vector<Checkpoint> runScenario(RendererChoice backend)
             const glm::vec2 centre = glm::floor(content.center());
             canvas.clear();
             canvas.rect(centre - glm::vec2{40.0f, 30.0f}, {80.0f, 60.0f}, {1.0f, 0.0f, 0.0f, 1.0f});
-            renderer.drawBatch(canvas);
+            canvas.draw(renderer);
             view.draw();
             renderer.endRenderPass();
         });

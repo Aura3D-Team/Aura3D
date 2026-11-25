@@ -55,12 +55,13 @@ void TextOverlay::addText(std::string_view text, float x, float y, const glm::ve
 
 void TextOverlay::draw()
 {
-    if (!_batch.empty())
+    if (!_indices.empty())
     {
         uploadAtlasChanges();
-        _renderer->drawBatch(_batch, _atlasTexture);
+        _renderer->drawBatch(_vertices, _indices, _atlasTexture);
     }
-    _batch.clear();
+    _vertices.clear();
+    _indices.clear();
 }
 
 void TextOverlay::appendText(std::string_view text, float x, float y, const glm::vec4 &color, float scale)
@@ -104,7 +105,10 @@ void TextOverlay::appendText(std::string_view text, float x, float y, const glm:
                                                         {{right, top, 0}, {glyph->uvMax.x, glyph->uvMin.y}, color},
                                                         {{right, bottom, 0}, {glyph->uvMax.x, glyph->uvMax.y}, color},
                                                         {{left, bottom, 0}, {glyph->uvMin.x, glyph->uvMax.y}, color}}};
-            _batch.append(quad, kGlyphIndices);
+            const auto base = static_cast<u32>(_vertices.size());
+            _vertices.insert(_vertices.end(), quad.begin(), quad.end());
+            for (const u32 index : kGlyphIndices)
+                _indices.push_back(base + index);
         }
 
         penX += glyph->advance * scale;

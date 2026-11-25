@@ -19,7 +19,6 @@ set(AURA_TEST_SUITES
     test_audio_engine
     test_audio_realtime
     test_benchmark_stats
-    test_canvas
     test_cpu_raster
     test_culling
     test_debug_mode_report

@@ -1,6 +1,6 @@
 # 7. 2D Rendering & Text
 
-## Batches, lines and shapes
+## Batches
 
 ```cpp
 const std::array<gfx::BatchVertex, 4> vertices{{
@@ -12,22 +12,6 @@ const std::array<gfx::BatchVertex, 4> vertices{{
 constexpr std::array<u32, 6> indices{0, 1, 2, 2, 3, 0};
 r->drawBatch(vertices, indices, panelTexture);                        // screen pixels
 r->drawBatch(vertices, indices, panelTexture, gfx::BatchSpace::World); // through the transform
-
-gfx::Canvas canvas;                                                    // keeps capacity across frames
-canvas.line({16, 24}, {96, 24}, {1, 0, 0, 1}, 2);                      // 2 px on screen
-canvas.line(r->canvasView(), {0, 0, 0}, {0, 2, 0}, {0, 1, 0, 1}, 2);   // world, 2 px at any depth
-canvas.rect({16, 144}, {80, 48}, {1, 1, 0, 1});
-canvas.triangle(glm::vec2{128, 144}, {176, 144}, {128, 192}, {1, 0, 1, 1});
-r->drawBatch(canvas);                                                  // one draw call
-canvas.clear();
-
-// Any other shape: triangles through append(); indices count from the first vertex passed.
-const std::array<gfx::BatchVertex, 4> corners{{{{200, 20, 0}, {}, {1, 0, 0, 1}},
-                                               {{300, 20, 0}, {}, {0, 1, 0, 1}},
-                                               {{300, 80, 0}, {}, {0, 0, 1, 1}},
-                                               {{200, 80, 0}, {}, {1, 1, 0, 1}}}};
-constexpr std::array<u32, 6> quad{0, 1, 2, 2, 3, 0};
-canvas.append(corners, quad);                                          // a gradient rectangle
 ```
 
 One pipeline draws every batch, in submission order with meshes: unlit
@@ -44,9 +28,8 @@ value is sRGB; convert it to linear before passing it.
 | `World` | Through the current model, view and projection. `drawMeshes()` leaves the model it was given. |
 
 - `{}` as the texture samples white, so the vertex colour alone shows. The arrays may be reused on return.
-- Every `drawBatch` is one draw call. Put what shares a texture and space in one `gfx::Canvas`.
-- `line(r->canvasView(), ...)` projects with the camera current at that call; draw its batch in `Screen` space.
-- To move shapes, either rebuild the canvas each frame (`clear()` keeps its memory), or keep it and draw it in `World` space under a transform: `setTransform({model, view, projection})`.
+- Every `drawBatch` is one draw call: put what shares a texture and space in one pair of arrays.
+- Rebuild the arrays each frame into vectors that keep their capacity, or keep them and draw them in `World` space under a transform: `setTransform({model, view, projection})`.
 
 ## `TextOverlay`: text on top of `drawBatch`
 

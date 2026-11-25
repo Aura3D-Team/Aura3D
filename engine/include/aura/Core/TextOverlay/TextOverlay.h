@@ -158,7 +158,8 @@ class TextOverlay
     char _cachedFpsString[48] = "FPS: 0  (0.00 ms)";
 
     //! Queued text; keeps its capacity, so a steady frame does not allocate.
-    gfx::Canvas _batch;
+    std::vector<gfx::BatchVertex> _vertices;
+    std::vector<u32> _indices;
 };
 
 } // namespace aura3d

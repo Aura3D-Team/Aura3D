@@ -16,8 +16,10 @@
 
 #include "aura/Core/Camera/Camera.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
-#include "aura/Renderer/Canvas.h"
 #include "aura/Renderer/IRenderer.h"
+#include "aura/Renderer/RendererFactory.h"
+
+#include "BatchShapes.h"
 
 // The scene the golden-image checks render on every backend: lit, textured instanced cubes, world-space
 // debug lines, and a second render target sampled onto a quad. Deterministic: nothing depends on time.
@@ -90,15 +92,16 @@ inline void drawGoldenScene(IRenderer &renderer, const GoldenScene &scene, bool 
 {
     renderer.setClearColor(0.1f, 0.2f, 0.6f, 1);
     renderer.beginRenderPass(scene.inset);
-    gfx::Canvas inset;
+    test::BatchShapes inset;
     inset.triangle(glm::vec2{4, 28}, glm::vec2{28, 28}, glm::vec2{16, 4}, {1, 0.3f, 0.1f, 1});
-    renderer.drawBatch(inset);
+    inset.draw(renderer);
     renderer.endRenderPass();
 
     Camera camera = Camera::perspective({.fovDeg = 50.0f, .aspect = 1.0f, .nearZ = 0.1f, .farZ = 50.0f});
     camera.setPosition({4.0f, 3.5f, 5.0f});
     camera.lookAt({0.0f, 0.0f, 0.0f});
-    renderer.setTransform(camera.buildUBO());
+    const gfx::TransformUBO cameraUbo = camera.buildUBO();
+    renderer.setTransform(cameraUbo);
     //! Directional first and ambient last: the order the shaders sum them in is part of the reference image.
     const std::array<gfx::Light, 4> lights{
         gfx::Light{.direction = glm::normalize(glm::vec3{-1, -2, -1.5f}), .intensity = 0.8f},
@@ -146,8 +149,10 @@ inline void drawGoldenScene(IRenderer &renderer, const GoldenScene &scene, bool 
         renderer.drawMeshes(items);
     }
 
-    gfx::Canvas lines;
-    const gfx::CanvasView view = renderer.canvasView();
+    test::BatchShapes lines;
+    const glm::mat4 clip = cameraUbo.proj * cameraUbo.view * cameraUbo.model;
+    const glm::vec2 target{renderer.renderTargetSize()};
+    const bool zeroToOne = RendererFactory::clipSpaceFor(renderer.getBackendType()) == Camera::ClipSpace::Vulkan;
     //! A box's twelve edges join corners one bit apart (bit k set: max on axis k), then the X, Y and Z axes.
     const glm::vec3 boxMin{-2.4f, -0.4f, -2.4f};
     const glm::vec3 boxMax{2.4f, 0.4f, 2.4f};
@@ -159,15 +164,15 @@ inline void drawGoldenScene(IRenderer &renderer, const GoldenScene &scene, bool 
     for (u32 i = 0; i < 8; ++i)
         for (u32 bit = 1; bit < 8; bit <<= 1u)
             if ((i & bit) == 0)
-                lines.line(view, corner(i), corner(i | bit), {1, 1, 0, 1});
+                lines.line(clip, target, zeroToOne, corner(i), corner(i | bit), {1, 1, 0, 1});
     const glm::vec3 origin{0, 0.6f, 0};
     for (u32 axis = 0; axis < 3; ++axis)
     {
         glm::vec4 color{0, 0, 0, 1};
         color[static_cast<i32>(axis)] = 1;
-        lines.line(view, origin, origin + glm::vec3(color), color, 2.0f);
+        lines.line(clip, target, zeroToOne, origin, origin + glm::vec3(color), color, 2.0f);
     }
-    renderer.drawBatch(lines);
+    lines.draw(renderer);
 
     const std::array<gfx::BatchVertex, 4> corners{{{{4, 4, 0}, {0, 0}, {1, 1, 1, 1}},
                                                    {{28, 4, 0}, {1, 0}, {1, 1, 1, 1}},

@@ -1,0 +1,24 @@
+{
+    "$schema": "../../docs/aura.schema.json",
+    "schema_version": 1,
+    "window": {
+        "backend": "wayland",
+        "width": 1920,
+        "height": 1080,
+        "title": "Aura Engine"
+    },
+    "present": {
+        "mode": "immediate"
+    },
+    "renderer": {
+        "api": "vulkan",
+        "msaa": 0,
+        "frames_in_flight": 3,
+        "vulkan": {
+            "validation": false
+        }
+    },
+    "logging": {
+        "level": "info"
+    }
+}

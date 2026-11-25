@@ -203,20 +203,9 @@ bool IRenderer::needsFrame() const noexcept
     return !_targetValid || _resizePending() || (flags && (_exposeWatch.pending(*flags) || flags->surfaceLost));
 }
 
-void IRenderer::drawBatch(const gfx::Canvas &canvas, TextureHandle texture, gfx::BatchSpace space)
-{
-    if (!canvas.empty())
-        drawBatch(canvas.vertices(), canvas.indices(), texture, space);
-}
-
 glm::uvec2 IRenderer::renderTargetSize() const noexcept
 {
     return {static_cast<u32>(std::max(_windowDetails.width, 0)), static_cast<u32>(std::max(_windowDetails.height, 0))};
-}
-
-gfx::CanvasView IRenderer::canvasView() const
-{
-    return {batchTransform(gfx::BatchSpace::World), glm::vec2{renderTargetSize()}, depthZeroToOne(getBackendType())};
 }
 
 glm::mat4 IRenderer::batchTransform(gfx::BatchSpace space) const
