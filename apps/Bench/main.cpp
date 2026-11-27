@@ -113,7 +113,7 @@ constexpr double kWarmupS = 0.5;
 constexpr int kWarmupFrames = 30;
 constexpr double kMeasureS = 2.0;
 constexpr int kRounds = 3;
-constexpr std::size_t kSampleCapacity = 1u << 17;
+constexpr std::size_t kSampleCapacity = std::size_t{1} << 17U;
 
 struct Tier
 {
@@ -169,9 +169,10 @@ int main(int argc, char **argv)
     const std::string outPath = argc > 1 ? argv[1] : "benchmark_result.json";
     std::vector<std::size_t> schedule;
     const char *only = std::getenv("FPS_BENCH_QUADS");
+    const long onlyQuads = only ? std::strtol(only, nullptr, 10) : 0;
     for (int r = 0; r < kRounds; ++r)
         for (std::size_t t = 0; t < kTiers.size(); ++t)
-            if (!only || kTiers[t].quads == std::atoi(only))
+            if (!only || kTiers[t].quads == onlyQuads)
                 schedule.push_back(t);
 
     AuraConfig config;
@@ -195,7 +196,7 @@ int main(int argc, char **argv)
     std::vector<std::vector<Sample>> collected(kTiers.size());
     std::vector<double> samples;
     samples.reserve(kSampleCapacity);
-    constexpr int kMaxQuads = 8000;
+    constexpr std::size_t kMaxQuads = 8000;
     std::vector<gfx::BatchVertex> vertices(kMaxQuads * 4);
     std::vector<u32> indices(kMaxQuads * 6);
     std::size_t step = 0;
@@ -256,7 +257,9 @@ int main(int argc, char **argv)
             constexpr glm::vec4 kColor{0.9f, 0.4f, 0.2f, 1.0f};
             for (int i = 0; i < quads; ++i)
             {
-                const glm::vec2 o{static_cast<float>(i % kCols) * kCell, static_cast<float>(i / kCols) * kCell};
+                const int col = i % kCols;
+                const int row = i / kCols;
+                const glm::vec2 o{static_cast<float>(col) * kCell, static_cast<float>(row) * kCell};
                 const glm::vec2 e = o + glm::vec2{kCell - 2.0f};
                 gfx::BatchVertex *v = &vertices[static_cast<std::size_t>(i) * 4];
                 v[0] = {{o, 0.0f}, {}, kColor};
