@@ -431,7 +431,7 @@ void testPackerRejectsOversizedAndExhaustedAtlases()
 void testTrueTypeLoadFailureIsReported()
 {
     // Loading must fail with a message rather than throwing or half-succeeding;
-    // TextOverlay relies on that to fall back to the embedded bitmap font.
+    // the UI text engine relies on that to fall back to the embedded bitmap font.
     auto missing = FontAtlas::fromFile("this/path/does/not/exist.ttf", smallAtlas());
     AURA_CHECK(!missing.has_value(), "a missing font file fails");
     if (!missing)

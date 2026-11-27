@@ -7,6 +7,9 @@ All notable changes to Aura3D are documented in this file.
 ### Removed
 
 - `gfx::Canvas`, `IRenderer::drawBatch(const Canvas &)` and `IRenderer::canvasView()`. Build `BatchVertex` and index arrays and pass them to `drawBatch()`.
+- `ColorsDefinitions.h` and its `colors::` constants: engine colours are `glm::vec4`.
+- `IRenderer::getCurrentMaterial()`.
+- `TextOverlay` and `TextOverlayDesc`. Draw text with AuraUI: a `ui::Label` in a `ui::UIView`, or `ui::DrawList::drawText()`.
 
 ### Fixed
 

@@ -54,8 +54,7 @@ This is [04-camera.md](04-camera.md)'s free-look example plus
 #include "aura/Renderer/IRenderer.h"
 #include "aura/Core/Camera/Camera.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
-#include "aura/Core/TextOverlay/TextOverlay.h"
-#include "aura/Utils/ColorsDefinitions.h"
+#include "aura/UI/UI.hpp"
 #include <chrono>
 #include <vector>
 
@@ -125,8 +124,7 @@ needed, one directional light and an ambient one for the whole scene:
         {{ 4.0f, 1.0f,  4.0f}, {1.0f, 2.0f, 1.0f}},
     };
 
-    const colors::RGBf clear = colors::MIDNIGHT_BLUE_F;
-    r->setClearColor(clear.r, clear.g, clear.b, 1.0f);
+    r->setClearColor(0.098, 0.098, 0.44, 1.0f);
 ```
 
 ## 3. Collectibles and score
@@ -148,13 +146,19 @@ ordinary game-logic pattern; nothing here is Aura3D-specific:
 
 ## 4. Score and instructions on screen
 
-From [07-2d-rendering-and-text.md](07-2d-rendering-and-text.md) — built
-once, drawn every frame, no font file required:
+From [07-2d-rendering-and-text.md](07-2d-rendering-and-text.md): labels
+built once and updated every frame, no font file required:
 
 ```cpp
-    TextOverlayDesc overlayDesc;
-    overlayDesc.pixelHeight = 20.0f;
-    TextOverlay overlay(r, overlayDesc);
+    ui::UIView ui(*r);
+    auto &hud = ui.root().setContent<ui::Column>();
+    hud.layout().padding = ui::Thickness::all(10.0f);
+    auto &scoreLabel = hud.add<ui::Label>();
+    hud.add<ui::Label>("WASD to move, mouse to look, Esc to quit");
+    auto &winLabel = hud.add<ui::Label>("You win!");
+    winLabel.setFontSize(30.0f);
+    winLabel.setVisibility(ui::Visibility::Collapsed);
+    auto &fpsLabel = hud.add<ui::Label>();
 ```
 
 ## 5. The loop
@@ -220,12 +224,11 @@ pickups, draw the arena and any remaining orbs, draw the UI text.
         }
 
         // --- UI ---
-        overlay.addText("Orbs: " + std::to_string(score) + " / " + std::to_string(totalOrbs), 10.0f, 10.0f);
-        overlay.addText("WASD to move, mouse to look, Esc to quit", 10.0f, 34.0f, glm::vec4(0.8f, 0.8f, 0.8f, 1));
+        scoreLabel.text = "Orbs: " + std::to_string(score) + " / " + std::to_string(totalOrbs);
         if (score == totalOrbs)
-            overlay.addText("You win!", 10.0f, 58.0f, glm::vec4(0.4f, 1.0f, 0.4f, 1), 1.5f);
-        overlay.addFPS(10.0f, static_cast<float>(wd->height) - 24.0f);
-        overlay.draw();
+            winLabel.setVisibility(ui::Visibility::Visible);
+        fpsLabel.text = "FPS: " + std::to_string(static_cast<int>(windowManager->getWindowFlags()->fps));
+        ui.render(dt);
 
         r->endRenderPass();
     });

@@ -19,8 +19,8 @@ straight to whatever you need — each chapter links to the ones it builds on.
    handles.
 6. **[Lighting](06-lighting.md)** — PBR from one list of directional, point, spot and ambient lights,
    the ambient/intensity knobs.
-7. **[2D Rendering & Text](07-2d-rendering-and-text.md)** — batches, lines
-   and shapes, `TextOverlay`, how the glyph atlas stays cheap.
+7. **[2D Rendering & Text](07-2d-rendering-and-text.md)** — batches, text
+   through AuraUI, how the glyph atlas stays cheap.
 8. **[Input](08-input.md)** — keyboard/mouse contexts, held-key patterns,
    per-frame timing.
 9. **[Building a Game](09-building-a-game.md)** — capstone: a small

@@ -14,10 +14,8 @@
 #include "aura/Core/DebugMode/DebugMode.h"
 #include "aura/Core/Engine.h"
 #include "aura/Core/MeshLoader/MeshLoader.h"
-#include "aura/Core/TextOverlay/TextOverlay.h"
 #include "aura/Renderer/IRenderer.h"
 #include "aura/Renderer/Material.h"
-#include "aura/Utils/ColorsDefinitions.h"
 
 #ifdef AURA_HAS_UI
 #include "aura/UI/UI.hpp"
@@ -646,23 +644,14 @@ int main()
     //! which is what lets the Vulkan backend record it across worker threads.
     std::vector<IRenderer::DrawItem> drawItems(scene.size());
 
-    const colors::RGBf clear = colors::MIDNIGHT_BLUE_F;
-    r->setClearColor(clear.r, clear.g, clear.b, 1.0f);
-
-    // Built once: allocates the glyph atlas texture. Characters are rasterized
-    // into it the first time they are drawn, and each string then costs a
-    // single batched draw call on the renderer's unlit batch pipeline.
-    TextOverlayDesc overlayDesc;
-    overlayDesc.pixelHeight = 18.0f;
-    TextOverlay overlay(r, overlayDesc);
+    r->setClearColor(25 / 255.0f, 25 / 255.0f, 112 / 255.0f, 1.0f);
 
 #ifdef AURA_HAS_UI
     /*
-     * AuraUI's retained widget toolkit. It draws through the same
-     * backend-agnostic DrawList -> IRenderer::drawBatch() pipeline the text
-     * overlay uses, so this same tree runs unchanged on Vulkan, OpenGL, Metal
-     * and the software rasterizer, and the whole sidebar costs a single draw
-     * call. See docs/16-auraui-toolkit.md.
+     * AuraUI's retained widget toolkit. It draws through the backend-agnostic
+     * DrawList -> IRenderer::drawBatch() pipeline, so this same tree runs
+     * unchanged on Vulkan, OpenGL, Metal and the software rasterizer, and the
+     * whole sidebar costs a single draw call. See docs/14-auraui-toolkit.md.
      */
     constexpr float kSidebarWidth = 300.0f;
 
@@ -684,6 +673,18 @@ int main()
     sidebar.layout().width = ui::Length::px(kSidebarWidth);
     sidebar.setVisibility(ui::Visibility::Collapsed);
 
+    //! Frame rate over the scene, beside the sidebar while it is open; click-through like the desktop.
+    auto &hud = desktop.add<ui::Column>();
+    hud.setHitTestVisible(false);
+    hud.layout().padding = ui::Thickness::all(10.0f);
+    auto &hudFps = hud.add<ui::Label>("FPS: 0");
+    auto &hudHint = hud.add<ui::Label>("F1: tool sidebar");
+    for (ui::Label *label : {&hudFps, &hudHint})
+    {
+        label->setHitTestVisible(false);
+        label->setFontSize(18.0f);
+    }
+
     auto &sidebarColumn = sidebar.setContent<ui::Column>();
     sidebarColumn.layout().padding = ui::Thickness::all(16.0f);
     sidebarColumn.setSpacing(14.0f);
@@ -701,6 +702,7 @@ int main()
         sidebarOpen = open;
         mouse.setCursorEnabled(open); // ignored on Android; harmless there
         sidebar.setVisibility(open ? ui::Visibility::Visible : ui::Visibility::Collapsed);
+        hudHint.setVisibility(open ? ui::Visibility::Collapsed : ui::Visibility::Visible);
 
         if (!open)
             moveForward = moveBack = moveLeft = moveRight = moveUp = moveDown = false;
@@ -1257,24 +1259,12 @@ int main()
             }
 #endif
 
-            // Screen-space batches supply their own projection, so the
-            // overlay needs nothing from the scene camera and leaves the scene's
-            // transform untouched.
-            glm::vec2 corner{10.0f};
 #ifdef AURA_HAS_UI
-            //! Below the title bar a client-side decoration draws over the surface. The
-            //! root's content bounds already ignore a hidden (server-side) decoration.
-            corner += ui.root().contentBounds().min * ui.root().scale();
-#endif
-            overlay.addFPS(corner.x, corner.y);
-
-#ifdef AURA_HAS_UI
-            //! overlay.fps() rather than a second average of our own: addFPS()
-            //! above already smoothed it this frame, and reading it back is what
-            //! keeps the corner and the card agreeing.
+            //! wma's smoothed rate, so the corner and the card agree.
             char fps[32];
-            std::snprintf(fps, sizeof(fps), "%.0f FPS", static_cast<double>(overlay.fps()));
+            std::snprintf(fps, sizeof(fps), "%.0f FPS", windowManager->getWindowFlags()->fps);
             fpsLabel.text = fps;
+            hudFps.text = fps;
 
             if (const GpuTimingStats gpu = r->gpuTiming(); gpu.available)
             {
@@ -1294,15 +1284,6 @@ int main()
                 gpuSamples = 0;
                 gpuLabelAge = 0.0f;
             }
-
-            //! Drawn only while the sidebar is down, so it stops being clutter the
-            //! moment it has done its job.
-            if (!sidebarOpen)
-                overlay.addText("F1: tool sidebar", corner.x, corner.y + overlay.lineHeight());
-#endif
-            //! Both lines of text as one batch, under the sprite and the sidebar.
-            overlay.draw();
-#ifdef AURA_HAS_UI
 
             // -- 2D: the animated sprite, drawn independently of the UI ---------
             //! Regenerated above the render pass, not here; only the quad is

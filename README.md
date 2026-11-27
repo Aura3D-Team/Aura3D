@@ -8,7 +8,7 @@ never changes.
 Aura3D builds as a static library you link into your own executable. It owns
 windowing, input, the render loop, and GPU resource management; you write
 game logic on top of `aura3d::IRenderer` and the small set of helpers layered
-over it (`Camera`, `Material`, `TextOverlay`, ...).
+over it (`Camera`, `Material`, `aura3d::ui`, ...).
 
 ---
 
@@ -79,7 +79,7 @@ game:
 | 4 | [Camera](docs/04-camera.md) | Perspective/ortho projections, target vs. free-look |
 | 5 | [Meshes, Materials & Textures](docs/05-meshes-materials-textures.md) | Loading OBJ/images, `Material` |
 | 6 | [Lighting](docs/06-lighting.md) | The directional light model |
-| 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch`, lines and shapes, `TextOverlay` |
+| 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch` and text |
 | 8 | [Input](docs/08-input.md) | Keyboard/mouse contexts and bindings |
 | 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
 | 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Windows, Android, WebAssembly |
@@ -197,7 +197,7 @@ Aura3D/
   `AURA_ENABLE_*` options above — an app can link Aura3D built with only the
   backends it actually needs. `AURA_HAS_UI` gates the UI module the same way.
 - **Backend-agnostic subsystems**: anything built on the public `IRenderer`
-  API alone — `TextOverlay`, `aura3d::ui` — lives outside the backend trees
+  API alone, such as `aura3d::ui`, lives outside the backend trees
   and works on every backend without a line of per-backend code.
 
 ---

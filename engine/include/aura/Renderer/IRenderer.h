@@ -410,14 +410,6 @@ class IRenderer
     [[nodiscard]] std::span<const gfx::Light> lights() const noexcept;
 
     /**
-     * @brief Returns the material bound by the most recent bindMaterial() call.
-     */
-    const Material &getCurrentMaterial() const
-    {
-        return _currentMaterial;
-    }
-
-    /**
      * @brief Acquires the frame's render target (swapchain image / drawable)
      *        and readies the backend for a new frame.
      *

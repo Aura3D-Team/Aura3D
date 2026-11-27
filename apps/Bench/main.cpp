@@ -1,10 +1,10 @@
 // Port of Redixel's tools/fps-bench to Aura3D: same scene, tiers, schedule, timing windows and statistics,
 // and the same JSON report, so the two engines are measured against one standard.
+#include "aura/Core/DebugMode/AllocationTracker.h"
 #include "aura/Core/Engine.h"
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -15,39 +15,97 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <malloc.h>
+#endif
+
 using namespace aura3d;
 using Clock = std::chrono::steady_clock;
 
-// Counts every operator new in the process (engine included); the bench reports the per-frame delta.
-std::atomic<unsigned long long> g_allocCount{0}, g_allocBytes{0};
+#ifndef AURA_ENABLE_DEBUG_MODE
+// Debug-mode builds count through the engine's own hooks; otherwise these feed the same tracker.
+namespace
+{
+void *allocate(std::size_t n)
+{
+    AllocationTracker::get().recordAllocation(n);
+    return std::malloc(n ? n : 1);
+}
+
+void *allocateAligned(std::size_t n, std::align_val_t a)
+{
+    AllocationTracker::get().recordAllocation(n);
+    const auto al = static_cast<std::size_t>(a);
+#ifdef _WIN32
+    return _aligned_malloc(n ? n : 1, al);
+#else
+    return std::aligned_alloc(al, (n + al - 1) / al * al);
+#endif
+}
+
+void freeAligned(void *p)
+{
+#ifdef _WIN32
+    _aligned_free(p);
+#else
+    std::free(p);
+#endif
+}
+} // namespace
 
 void *operator new(std::size_t n)
 {
-    g_allocCount.fetch_add(1, std::memory_order_relaxed);
-    g_allocBytes.fetch_add(n, std::memory_order_relaxed);
-    if (void *p = std::malloc(n ? n : 1))
+    if (void *p = allocate(n))
         return p;
     throw std::bad_alloc();
 }
-void *operator new[](std::size_t n) { return operator new(n); }
+void *operator new[](std::size_t n)
+{
+    return operator new(n);
+}
 void *operator new(std::size_t n, std::align_val_t a)
 {
-    g_allocCount.fetch_add(1, std::memory_order_relaxed);
-    g_allocBytes.fetch_add(n, std::memory_order_relaxed);
-    const auto al = static_cast<std::size_t>(a);
-    if (void *p = std::aligned_alloc(al, (n + al - 1) / al * al))
+    if (void *p = allocateAligned(n, a))
         return p;
     throw std::bad_alloc();
 }
-void *operator new[](std::size_t n, std::align_val_t a) { return operator new(n, a); }
-void operator delete(void *p) noexcept { std::free(p); }
-void operator delete[](void *p) noexcept { std::free(p); }
-void operator delete(void *p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void *p, std::size_t) noexcept { std::free(p); }
-void operator delete(void *p, std::align_val_t) noexcept { std::free(p); }
-void operator delete[](void *p, std::align_val_t) noexcept { std::free(p); }
-void operator delete(void *p, std::size_t, std::align_val_t) noexcept { std::free(p); }
-void operator delete[](void *p, std::size_t, std::align_val_t) noexcept { std::free(p); }
+void *operator new[](std::size_t n, std::align_val_t a)
+{
+    return operator new(n, a);
+}
+void operator delete(void *p) noexcept
+{
+    std::free(p);
+}
+void operator delete[](void *p) noexcept
+{
+    std::free(p);
+}
+void operator delete(void *p, std::size_t) noexcept
+{
+    std::free(p);
+}
+void operator delete[](void *p, std::size_t) noexcept
+{
+    std::free(p);
+}
+void operator delete(void *p, std::align_val_t) noexcept
+{
+    freeAligned(p);
+}
+void operator delete[](void *p, std::align_val_t) noexcept
+{
+    freeAligned(p);
+}
+void operator delete(void *p, std::size_t, std::align_val_t) noexcept
+{
+    freeAligned(p);
+}
+void operator delete[](void *p, std::size_t, std::align_val_t) noexcept
+{
+    freeAligned(p);
+}
+#endif
 
 namespace
 {
@@ -62,19 +120,22 @@ struct Tier
     int quads;
     const char *scene;
 };
-constexpr std::array<Tier, 5> kTiers{{{100, "100 quads"},
-                                       {500, "500 quads"},
-                                       {2000, "2000 quads"},
-                                       {5000, "5000 quads"},
-                                       {8000, "8000 quads"}}};
+constexpr std::array<Tier, 5> kTiers{
+    {{100, "100 quads"}, {500, "500 quads"}, {2000, "2000 quads"}, {5000, "5000 quads"}, {8000, "8000 quads"}}};
 
 struct Sample
 {
     double avgFps, avgFrameMs, p95Ms, p99Ms, low1Fps, frames, allocsPerFrame, bytesPerFrame;
 };
 
-double round2(double v) { return std::round(v * 100.0) / 100.0; }
-double round3(double v) { return std::round(v * 1000.0) / 1000.0; }
+double round2(double v)
+{
+    return std::round(v * 100.0) / 100.0;
+}
+double round3(double v)
+{
+    return std::round(v * 1000.0) / 1000.0;
+}
 
 double low1pctFps(const std::vector<double> &samples)
 {
@@ -142,7 +203,7 @@ int main(int argc, char **argv)
     Clock::time_point stepStart{}, last = Clock::now();
     int warmupFrames = 0;
     double measured = 0.0;
-    unsigned long long allocStartCount = 0, allocStartBytes = 0;
+    AllocationStats allocStart{};
 
     renderer->run(
         [&]
@@ -163,20 +224,19 @@ int main(int argc, char **argv)
                 else
                 {
                     if (samples.empty())
-                    {
-                        allocStartCount = g_allocCount.load();
-                        allocStartBytes = g_allocBytes.load();
-                    }
+                        allocStart = AllocationTracker::get().snapshot();
                     samples.push_back(delta);
                     measured += delta;
                     if (measured >= kMeasureS)
                     {
                         const double frames = static_cast<double>(samples.size());
+                        const AllocationStats allocs = AllocationTracker::get().snapshot();
                         collected[schedule[step]].push_back(
                             {frames / measured, measured / frames * 1000.0, percentileMs(samples, 0.95),
                              percentileMs(samples, 0.99), low1pctFps(samples), frames,
-                             static_cast<double>(g_allocCount.load() - allocStartCount) / frames,
-                             static_cast<double>(g_allocBytes.load() - allocStartBytes) / frames});
+                             static_cast<double>(allocs.allocationCount - allocStart.allocationCount) / frames,
+                             static_cast<double>(allocs.totalAllocatedBytes - allocStart.totalAllocatedBytes) /
+                                 frames});
                         samples.clear();
                         measured = 0.0;
                         stepStarted = false;
@@ -217,8 +277,10 @@ int main(int argc, char **argv)
     std::FILE *f = std::fopen(outPath.c_str(), "w");
     if (!f)
         return 1;
-    std::fprintf(f, "{\n  \"rounds\": %d,\n  \"warmup_ms\": 500,\n  \"warmup_frames\": %d,\n  \"measure_ms\": 2000,\n"
-                    "  \"tiers\": [\n", kRounds, kWarmupFrames);
+    std::fprintf(f,
+                 "{\n  \"rounds\": %d,\n  \"warmup_ms\": 500,\n  \"warmup_frames\": %d,\n  \"measure_ms\": 2000,\n"
+                 "  \"tiers\": [\n",
+                 kRounds, kWarmupFrames);
     bool first = true;
     for (std::size_t t = 0; t < kTiers.size(); ++t)
     {
@@ -236,15 +298,16 @@ int main(int argc, char **argv)
         for (const Sample &x : s)
             lo = std::min(lo, x.avgFps), hi = std::max(hi, x.avgFps);
         const double med = field(&Sample::avgFps);
-        std::fprintf(f,
-                     "%s    {\"scene\": \"%s\", \"rounds\": %zu, \"median_fps\": \"%.2f\", \"fps_min\": \"%.2f\", "
-                     "\"fps_max\": \"%.2f\", \"spread_pct\": \"%.1f\", \"median_low_1pct_fps\": \"%.2f\", "
-                     "\"median_frame_ms\": \"%.3f\", \"median_p95_frame_ms\": \"%.3f\", \"median_p99_frame_ms\": "
-                     "\"%.3f\", \"median_frames\": %.1f, \"allocs_per_frame\": \"%.2f\", \"bytes_per_frame\": \"%.2f\"}",
-                     first ? "" : ",\n", kTiers[t].scene, s.size(), round2(med), round2(lo), round2(hi),
-                     (hi - lo) / med * 100.0, round2(field(&Sample::low1Fps)), round3(field(&Sample::avgFrameMs)),
-                     round3(field(&Sample::p95Ms)), round3(field(&Sample::p99Ms)), field(&Sample::frames),
-                     round2(field(&Sample::allocsPerFrame)), round2(field(&Sample::bytesPerFrame)));
+        std::fprintf(
+            f,
+            "%s    {\"scene\": \"%s\", \"rounds\": %zu, \"median_fps\": \"%.2f\", \"fps_min\": \"%.2f\", "
+            "\"fps_max\": \"%.2f\", \"spread_pct\": \"%.1f\", \"median_low_1pct_fps\": \"%.2f\", "
+            "\"median_frame_ms\": \"%.3f\", \"median_p95_frame_ms\": \"%.3f\", \"median_p99_frame_ms\": "
+            "\"%.3f\", \"median_frames\": %.1f, \"allocs_per_frame\": \"%.2f\", \"bytes_per_frame\": \"%.2f\"}",
+            first ? "" : ",\n", kTiers[t].scene, s.size(), round2(med), round2(lo), round2(hi), (hi - lo) / med * 100.0,
+            round2(field(&Sample::low1Fps)), round3(field(&Sample::avgFrameMs)), round3(field(&Sample::p95Ms)),
+            round3(field(&Sample::p99Ms)), field(&Sample::frames), round2(field(&Sample::allocsPerFrame)),
+            round2(field(&Sample::bytesPerFrame)));
         first = false;
         std::printf("%s: %.2f fps median (range %.2f-%.2f, 1%% low %.2f)\n", kTiers[t].scene, med, lo, hi,
                     field(&Sample::low1Fps));
