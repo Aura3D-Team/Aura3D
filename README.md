@@ -8,7 +8,7 @@ never changes.
 Aura3D builds as a static library you link into your own executable. It owns
 windowing, input, the render loop, and GPU resource management; you write
 game logic on top of `aura3d::IRenderer` and the small set of helpers layered
-over it (`Camera`, `Material`, `TextOverlay`, ...).
+over it (`Camera`, `Material`, `aura3d::ui`, ...).
 
 ---
 
@@ -31,31 +31,30 @@ overlay, text) on whichever backend `settings.json` selects.
 ## Quick start
 
 ```cpp
-#include "aura/Core/Engine.h"
-#include "aura/Renderer/IRenderer.h"
-#include "aura/Core/MeshLoader/MeshLoader.h"
-#include "aura/Renderer/Material.h"
+#include "aura/Aura3D.h"
 
 using namespace aura3d;
 
 int main()
 {
     Engine engine("settings.json");
-    IRenderer* r = engine.getRenderer();
+    IRenderer &r = engine.renderer();
 
-    const MeshHandle cube = r->createMesh(MeshLoader::createCube());
-    Material mat;
-    mat.albedo = r->createCheckerboardTexture();
-    const MaterialHandle matH = r->createMaterial(mat);
+    const MeshHandle cube = r.createMesh(MeshLoader::createCube());
+    const MaterialHandle orange = r.createMaterial({.tint = {1.0f, 0.5f, 0.1f, 1.0f}});
 
-    r->setClearColor(0.05f, 0.05f, 0.08f, 1.0f);
-    r->setTransform({}); // model/view/proj — see docs/04-camera.md
+    Camera camera = Camera::perspective({.fovDeg = 60.0f});
+    camera.setPosition({2.0f, 2.0f, 3.0f});
+    camera.lookAt({0.0f, 0.0f, 0.0f});
 
-    r->run([&]() {
-        r->beginRenderPass();
-        r->bindMaterial(matH);
-        r->drawMesh(cube);
-        r->endRenderPass();
+    r.run([&](const Frame &frame) {
+        if (frame.resized)
+            camera.setAspect(frame.aspect());
+        if (!r.beginRenderPass())
+            return;
+        r.setCamera(camera);
+        r.drawMesh(cube, orange, glm::rotate(glm::mat4{1.0f}, static_cast<float>(frame.time), {0.0f, 1.0f, 0.0f}));
+        r.endRenderPass();
     });
 }
 ```
@@ -79,7 +78,7 @@ game:
 | 4 | [Camera](docs/04-camera.md) | Perspective/ortho projections, target vs. free-look |
 | 5 | [Meshes, Materials & Textures](docs/05-meshes-materials-textures.md) | Loading OBJ/images, `Material` |
 | 6 | [Lighting](docs/06-lighting.md) | The directional light model |
-| 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch`, lines and shapes, `TextOverlay` |
+| 7 | [2D Rendering & Text](docs/07-2d-rendering-and-text.md) | `drawBatch` and text |
 | 8 | [Input](docs/08-input.md) | Keyboard/mouse contexts and bindings |
 | 9 | [Building a Game](docs/09-building-a-game.md) | Capstone: a small playable scene from scratch |
 | 10 | [Platform Builds](docs/10-platform-builds.md) | Linux, Windows, Android, WebAssembly |
@@ -197,7 +196,7 @@ Aura3D/
   `AURA_ENABLE_*` options above — an app can link Aura3D built with only the
   backends it actually needs. `AURA_HAS_UI` gates the UI module the same way.
 - **Backend-agnostic subsystems**: anything built on the public `IRenderer`
-  API alone — `TextOverlay`, `aura3d::ui` — lives outside the backend trees
+  API alone, such as `aura3d::ui`, lives outside the backend trees
   and works on every backend without a line of per-backend code.
 
 ---

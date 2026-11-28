@@ -67,14 +67,14 @@ Every key, its type, range and default: **[settings-reference.md](settings-refer
 ## Reading
 
 ```cpp
-const aura3d::AuraSettings *settings = engine.getSettings();
+const aura3d::AuraSettings &settings = engine.settings();
 
-settings->get(aura3d::setting::windowWidth);   // int
-settings->get(aura3d::setting::audioVolume);   // double
-settings->get(aura3d::setting::pathTextures);  // std::string
-settings->windowBackend();                     // wma::WindowBackend
-settings->presentMode();                       // aura3d::VSyncMode
-settings->audioBackend();                      // `auto` resolved
+settings.get(aura3d::setting::windowWidth);   // int
+settings.get(aura3d::setting::audioVolume);   // double
+settings.get(aura3d::setting::pathTextures);  // std::string
+settings.windowBackend();                     // wma::WindowBackend
+settings.presentMode();                       // aura3d::VSyncMode
+settings.audioBackend();                      // `auto` resolved
 ```
 
 `get()` takes a typed `Key<T>`, so the wrong type is a compile error and a renamed

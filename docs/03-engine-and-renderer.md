@@ -3,9 +3,9 @@
 ## `Engine`: the entry point
 
 ```cpp
-#include "aura/Core/Engine.h"
+#include "aura/Aura3D.h" // the engine, renderer, camera, materials, meshes and glTF models
 
-Engine engine("settings.json");
+aura3d::Engine engine("settings.json");
 ```
 
 The constructor, in order:
@@ -19,10 +19,10 @@ The constructor, in order:
 After construction you have a live window and a ready-to-draw renderer:
 
 ```cpp
-IRenderer* r = engine.getRenderer();
-AudioEngine* audio = engine.audio();
-const AuraSettings* settings = engine.getSettings();
-aura3d::RendererChoice backend = engine.getBackend();
+IRenderer &r = engine.renderer();
+AudioEngine &audio = engine.audio();
+const AuraSettings &settings = engine.settings();
+aura3d::RendererChoice backend = engine.backend();
 ```
 
 `Engine` owns the renderer and the audio engine for its whole lifetime —
@@ -35,7 +35,7 @@ aura3d::AuraConfig config;
 config.set(aura3d::setting::windowDecorations, wma::DecorationMode::ClientSide); // or "decorations": "client"
 Engine engine(config, "settings.json");
 
-aura3d::ui::UIView ui(*engine.getRenderer()); // owns a DefaultWindowDecoration
+aura3d::ui::UIView ui(engine.renderer()); // owns a DefaultWindowDecoration
 ui.setWindowTitle("My application");
 ```
 
@@ -81,39 +81,39 @@ The methods you'll use directly, grouped by purpose:
 
 **Per-frame draw cycle**
 ```cpp
-r->beginRenderPass();   // clears the framebuffer, starts recording
-// ... setTransform / bindMaterial / drawMesh / drawBatch calls ...
-r->endRenderPass();     // ends recording; endFrame() presents (handled by run())
+r.beginRenderPass();   // clears the framebuffer, starts recording
+// ... setCamera / drawMesh / drawBatch calls ...
+r.endRenderPass();     // ends recording; endFrame() presents (handled by run())
 ```
 
 **Resources** (see [05-meshes-materials-textures.md](05-meshes-materials-textures.md) for the full picture)
 ```cpp
-r->createMesh(mesh);                          // -> MeshHandle
-r->createMaterial(material);                  // -> MaterialHandle
-r->createTextureFromFile(path);               // -> TextureHandle
-r->createTextureFromPixels(rgba, w, h);        // -> TextureHandle
-r->createCheckerboardTexture();                // -> TextureHandle (missing-asset fallback pattern)
-r->createSolidColorTexture(r, g, b, a);        // -> TextureHandle
+r.createMesh(mesh);                          // -> MeshHandle
+r.createMaterial(material);                  // -> MaterialHandle
+r.createTextureFromFile(path);               // -> TextureHandle
+r.createTextureFromPixels(rgba, w, h);        // -> TextureHandle
+r.createCheckerboardTexture();                // -> TextureHandle (missing-asset fallback pattern)
+r.createSolidColorTexture(r, g, b, a);        // -> TextureHandle
 ```
 
 **Drawing**
 ```cpp
-r->setTransform(camera.buildUBO(modelMatrix)); // upload model/view/proj for the next draw
-r->bindMaterial(materialHandle);
-r->drawMesh(meshHandle);                       // the primary 3D draw path
-r->drawBatch(canvas, texture);               // a gfx::Canvas, one draw call — see doc 7
+r.setCamera(camera);                          // view and projection for the draws that follow
+r.drawMesh(meshHandle, materialHandle, model); // the primary 3D draw path, culled
+r.drawMeshes(items);                          // many {mesh, material, model} at once (threaded on Vulkan)
+r.drawBatch(vertices, indices, texture);      // unlit triangles, one draw call — see doc 7
 ```
 
 **State**
 ```cpp
-r->setClearColor(r, g, b, a);                  // linear, like every colour (doc 7)
-r->setLights(lights);                          // see doc 6
+r.setClearColor(r, g, b, a);                  // linear, like every colour (doc 7)
+r.setLights(lights);                          // see doc 6
 ```
 
 **GPU time**
 ```cpp
-r->setGpuTimingEnabled(true);                  // profile builds; or "renderer": { "gpu_timing": true }
-if (const GpuTimingStats gpu = r->gpuTiming(); gpu.available)
+r.setGpuTimingEnabled(true);                  // profile builds; or "renderer": { "gpu_timing": true }
+if (const GpuTimingStats gpu = r.gpuTiming(); gpu.available)
     INK_INFO << "GPU " << gpu.frameMillis << " ms";
 ```
 The last frame the GPU finished, a few frames behind the CPU: Vulkan, OpenGL
@@ -126,24 +126,37 @@ type-safe wrappers around a `u32` (`aura3d::Handle<Tag>`, one instantiation per
 resource kind, so a `TextureHandle` cannot be passed where a `MeshHandle` is
 expected — the compiler rejects it). A default-constructed handle (`{}`) is
 the sentinel for "nothing" / "failed to create"; `isValidHandle(handle)` tests
-for it. A default texture in `drawMesh()` preserves the current binding;
-`drawBatch(..., {})` draws with vertex color alone. Those defaults do not
+for it. A default material draws with `Material{}`, a material without an
+albedo samples white, and `drawBatch(..., {})` draws with vertex color alone. Those defaults do not
 make stale handles safe after a renderer switch.
 
 ## The run loop
 
 ```cpp
-r->run([&]() {
+r.run([&](const Frame &frame) {
     // Update application state here, every iteration.
-    if (!r->beginRenderPass())   // false: nothing to draw into (minimized, occluded, no surface)
+    if (frame.resized)
+        camera.setAspect(frame.aspect());
+    player.update(frame.dt);
+    if (!r.beginRenderPass())   // false: nothing to draw into (minimized, occluded, no surface)
         return;
     // ...
-    r->endRenderPass();
+    r.endRenderPass();
 });
 ```
 
 `IRenderer::run()` polls window events and calls your callback once per
-iteration. On desktop it blocks until the window closes. On WASM it registers
+iteration with a `Frame` (`wma::Frame`, from libwma's `process()`):
+
+| `Frame` | |
+|---|---|
+| `dt` | Seconds since the previous iteration; 0 on the first. |
+| `time` | Seconds since `run()` started. |
+| `index` | Iterations since `run()` started, from 0. |
+| `size`, `aspect()` | The window's framebuffer in pixels (`size.width`, `size.height`), and its width / height. |
+| `resized` | A resize since the previous iteration; true on the first, so setup can live there too. |
+
+A callback that needs none of it can take no argument: `r.run([&] { ... })`. On desktop it blocks until the window closes. On WASM it registers
 the browser's `requestAnimationFrame` loop and returns immediately, so the
 callback and everything it captures by reference must stay alive after
 `run()` returns on that platform.
@@ -176,12 +189,12 @@ So drawing is your callback's choice:
   sleep applies to offscreen-only iterations too.
 
 ```cpp
-r->run([&]() {
-    ui.update(deltaSeconds);                          // every iteration
-    if (!ui.needsDraw() || !r->beginRenderPass())     // changed, or the renderer needs a frame
+r.run([&](const Frame &frame) {
+    ui.update(frame.dt);                              // every iteration
+    if (!ui.needsDraw() || !r.beginRenderPass())     // changed, or the renderer needs a frame
         return;
     ui.draw();
-    r->endRenderPass();
+    r.endRenderPass();
 });
 ```
 
@@ -207,24 +220,15 @@ Both mean the same on every backend.
 
 ### Resizes
 
-The renderer applies a window resize when the frame begins.
-To react to one yourself (a relayout, a new projection), keep a
-`wma::ResizeWatch`: it reports each resize once, whoever else has seen it.
+The renderer applies a window resize when the frame begins, and the callback
+sees it as `Frame::resized`, with the new `Frame::size`. A perspective camera
+keeps its field of view and depth range through `Camera::setAspect()`:
 
 ```cpp
-wma::ResizeWatch resizes;
-r->run([&]() {
-    if (!r->beginRenderPass())
-        return;
-    // After beginRenderPass(): renderTargetSize() is the new size only once the frame has begun.
-    if (resizes.consume(*r->getWindowManager()->getWindowFlags()))
-    {
-        const glm::vec2 size{r->renderTargetSize()};
-        camera.setPerspective({.fovDeg = 60.0f, .aspect = size.x / size.y, .nearZ = 0.1f, .farZ = 100.0f});
-    }
-    r->setTransform(camera.buildUBO());
+r.run([&](const Frame &frame) {
+    if (frame.resized)
+        camera.setAspect(frame.aspect());
     // ...
-    r->endRenderPass();
 });
 ```
 
@@ -239,18 +243,18 @@ instead of `run()`. `beginRenderPass()`/`endRenderPass()` are always yours.
 does what `run()` does:
 
 ```cpp
-wma::IWindowManager &window = *r->getWindowManager();
+wma::IWindowManager &window = *r.getWindowManager();
 window.process([&] {
     const bool changed = updateScene();
-    if (!(changed || r->needsFrame()) || !r->beginFrame())
+    if (!(changed || r.needsFrame()) || !r.beginFrame())
     {
         window.waitEvents(100); // nothing to draw, or nothing to draw into: the window keeps its last frame
         return;
     }
-    r->beginRenderPass();
+    r.beginRenderPass();
     drawScene();
-    r->endRenderPass();
-    r->endFrame();              // presents
+    r.endRenderPass();
+    r.endFrame();              // presents
 });
 ```
 
@@ -278,7 +282,7 @@ support, not successful device initialization. Platform defaults are:
 | Android | Vulkan |
 | Other desktop platforms | Vulkan → OpenGL → Software |
 
-`Engine::getBackend()` always reflects what's *actually* running, which may
+`Engine::backend()` always reflects what's *actually* running, which may
 differ from what `settings.json` asked for — check it rather than assuming
 the requested string won.
 
@@ -322,8 +326,8 @@ itself; do not clean up the active renderer before calling it.
 
 ```cpp
 engine.switchBackend(aura3d::RendererChoice::OPENGL);
-IRenderer* r = engine.getRenderer();               // re-fetch: it's a new object
-const TextureHandle tex = r->createTextureFromFile("crate.png");  // reload
+IRenderer &r = engine.renderer();                  // re-fetch: it's a new object
+const TextureHandle tex = r.createTextureFromFile("crate.png");  // reload
 ```
 
 ## Software (CPU) backend notes

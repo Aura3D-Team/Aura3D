@@ -3,7 +3,7 @@
 On Vulkan, OpenGL and Metal, scenes are lit with metallic-roughness PBR, the
 glTF model: GGX highlights, height-correlated Smith visibility and Schlick
 Fresnel. The software rasterizer lights albedo with its directional and
-ambient lights only, Gouraud-style; `INK_FLAG_CHECK(r->caps(), RendererCaps::Pbr)`
+ambient lights only, Gouraud-style; `INK_FLAG_CHECK(r.caps(), RendererCaps::Pbr)`
 says which you have. These lights belong to the built-in shaders: a pipeline of
 your own ([chapter 16](16-custom-pipelines.md)) lights however it likes.
 
@@ -36,7 +36,7 @@ const std::array lights{
                .color = {0.3f, 0.6f, 1.0f}, .intensity = 6.0f, .range = 8.0f,
                .innerAngle = 0.25f, .outerAngle = 0.45f},
     gfx::Light{.type = gfx::LightType::Ambient, .color = kWarmWhite, .intensity = 0.18f}};
-r->setLights(lights);
+r.setLights(lights);
 ```
 
 | Note | |
@@ -48,7 +48,7 @@ r->setLights(lights);
 | point and spot falloff | inverse square, windowed to zero at `range`; a spot eases from `innerAngle` to `outerAngle` |
 | directional intensity 1 | lights a rough, non-metallic surface facing it to its albedo, as the old Lambert shader did |
 
-`r->lights()` returns the list in effect. Every draw in a frame sees the same lights.
+`r.lights()` returns the list in effect. Every draw in a frame sees the same lights.
 
 ## Materials
 
@@ -63,7 +63,7 @@ An ambient light alone, at intensity 1, shows every albedo as authored.
 `apps/OrgLogo` displays its baked texture this way:
 
 ```cpp
-r->setLights(std::array{gfx::Light{.type = gfx::LightType::Ambient}});
+r.setLights(std::array{gfx::Light{.type = gfx::LightType::Ambient}});
 ```
 
 ## Tuning ambient vs. direct light

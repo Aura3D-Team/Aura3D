@@ -269,7 +269,7 @@ needs no `#ifdef`:
 ```cpp
 #include "aura/Core/DebugMode/DebugMode.h"
 
-r->run([&]() {
+r.run([&]() {
     const float dt = ...;
 
     if (aura3d::DebugMode* debug = engine.debugMode())

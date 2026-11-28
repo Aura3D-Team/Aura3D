@@ -2,7 +2,39 @@
 
 All notable changes to Aura3D are documented in this file.
 
-## [Unreleased]
+## [0.12.0]
+
+Needs libwma 0.12.0.
+
+### Added
+
+- `run()` passes its callback a `Frame`, libwma's `wma::Frame`: `dt` and `time` in seconds, the iteration `index`, the framebuffer `size` with `aspect()`, and `resized`, true on the first iteration and after each resize. A callback without the argument still works.
+- `Camera::setAspect()` rebuilds a perspective projection for a new width / height, keeping its field of view and depth range.
+- `IRenderer::setCamera(camera)` and `drawMesh(mesh, material, model)`: one call per object instead of `setTransform(camera.buildUBO(model))`, `bindMaterial()` and `drawMesh()`.
+- `aura/Aura3D.h` includes the engine, renderer, camera, materials, meshes and glTF models.
+- `apps/Bench`: the Redixel fps-bench scene, tiers and JSON report on Aura3D (Vulkan, desktop).
+
+### Changed
+
+- **Breaking:** `Engine` is `aura3d::Engine`. `getRenderer()`, `getSettings()` and `getBackend()` became `renderer()` and `settings()`, which return references, and `backend()`; `audio()` returns a reference.
+- **Breaking:** a material without an `albedo` samples white, and an invalid `MaterialHandle` (in `bindMaterial()`, `DrawItem` or the instanced and indirect draws) draws with `Material{}`. Both used to keep whatever an earlier draw bound.
+- docs/08 and docs/09 poll held keys with `keyboard.isKeyDown()`.
+- Vulkan: the first swapchain is logged at INFO with its present mode by name; rebuilds log at DEBUG.
+- Sandbox built without AuraUI shows no FPS readout; with it, the readout is a UI label.
+
+### Removed
+
+- `gfx::Canvas`, `IRenderer::drawBatch(const Canvas &)` and `IRenderer::canvasView()`. Build `BatchVertex` and index arrays and pass them to `drawBatch()`.
+- `ColorsDefinitions.h` and its `colors::` constants: engine colours are `glm::vec4`.
+- `IRenderer::getCurrentMaterial()`.
+- `TextOverlay` and `TextOverlayDesc`. Draw text with AuraUI: a `ui::Label` in a `ui::UIView`, or `ui::DrawList::drawText()`.
+
+### Fixed
+
+- docs/09's game kept its startup aspect ratio and stretched after a resize.
+- Vulkan: `present.mode: immediate` gets Immediate where the surface supports it; it took Mailbox whenever Mailbox was also there, and warned that Immediate was unsupported.
+
+## [0.11.0]
 
 Needs libwma 0.11.0.
 

@@ -12,8 +12,8 @@ from scratch every frame.
 ## The shortest program
 
 ```cpp
-UIView ui(*renderer);
-ui.attachInput(*renderer->getWindowManager());
+UIView ui(renderer);
+ui.attachInput(*renderer.getWindowManager());
 
 auto& page = ui.root().setContent<Column>();
 page.layout().padding = Thickness::all(24.0f);
@@ -22,10 +22,10 @@ page.setSpacing(12.0f);
 page.add<Label>("AuraShell").setFontSize(32.0f);
 page.add<Button>("Launch").clicked.connect([] { launchApplication(); });
 
-renderer->run([&] {
-    renderer->beginRenderPass();
+renderer.run([&] {
+    renderer.beginRenderPass();
     ui.render(deltaSeconds);
-    renderer->endRenderPass();
+    renderer.endRenderPass();
 });
 ```
 
@@ -37,12 +37,12 @@ begins a frame only when the callback opens a render pass, so split the frame
 the same way `render()` does:
 
 ```cpp
-renderer->run([&] {
+renderer.run([&] {
     ui.update(deltaSeconds);                  // input, focus, animation -- every iteration
-    if (!ui.needsDraw() || !renderer->beginRenderPass())
+    if (!ui.needsDraw() || !renderer.beginRenderPass())
         return;                               // nothing new, or nothing to draw into
     ui.draw();
-    renderer->endRenderPass();
+    renderer.endRenderPass();
 });
 ```
 

@@ -6,18 +6,18 @@ them. The engine decides nothing about the look: lighting, shadows and effects a
 ```cpp
 struct Constants { glm::mat4 viewProj; glm::vec4 tint; };                 // vec4 and mat4 members only
 
-const PipelineHandle lit = r->createPipeline({
+const PipelineHandle lit = r.createPipeline({
     .vertexSpirv = vertSpirv, .fragmentSpirv = fragSpirv,                 // Vulkan: glslc output
     .vertexGlsl = vertGlsl,   .fragmentGlsl = fragGlsl,                   // OpenGL: "#version 330 core"
     .textures = 1, .buffers = 1, .constantBytes = sizeof(Constants)});
 
 // per frame
 const Constants constants{camera.projectionMatrix() * camera.viewMatrix(), {1, 1, 1, 1}};
-r->beginRenderPass();
-r->drawPipeline({.pipeline = lit, .mesh = rock,
+r.beginRenderPass();
+r.drawPipeline({.pipeline = lit, .mesh = rock,
                  .constants = std::as_bytes(std::span(&constants, 1)),
-                 .textures = std::array{albedo}, .buffers = std::array{lights}});   // lights: r->createBuffer(...)
-r->endRenderPass();
+                 .textures = std::array{albedo}, .buffers = std::array{lights}});   // lights: r.createBuffer(...)
+r.endRenderPass();
 ```
 
 ## What a shader reads
@@ -31,7 +31,7 @@ r->endRenderPass();
 | vertex input, `VertexInput::None` | `gl_VertexIndex` | `gl_VertexID` | `[[vertex_id]]` |
 
 Constants and buffer blocks use only `vec4` and `mat4` members, so both layouts agree. Declare as many textures and
-buffers as the shader reads: the only ceiling is the device's, which `r->pipelineLimits()` reports and `createPipeline()`
+buffers as the shader reads: the only ceiling is the device's, which `r.pipelineLimits()` reports and `createPipeline()`
 enforces (a `Constants` block of at most `constantBytes`, past which the data belongs in a buffer; a buffer shows its
 first `bufferBytes`). An unset texture slot samples white.
 
@@ -71,15 +71,15 @@ glslc lit.frag -o lit.frag.spv        # glslangValidator -V lit.frag -o lit.frag
 `createRenderTarget()` with `TextureFormat::Depth` makes a depth map with no colour; `renderTargetTexture()` is that
 depth, ready to sample. Clip space is y-up everywhere and a target's texture holds its top row first, so look a clip
 position up at `vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5)`. OpenGL stores a target upside down, so multiply the
-projection of any pass into a target by `r->clipCorrection(target)`; the window needs none.
+projection of any pass into a target by `r.clipCorrection(target)`; the window needs none.
 
 ```cpp
-const RenderTargetHandle map = r->createRenderTarget({.width = 2048, .height = 2048, .format = TextureFormat::Depth});
-const glm::mat4 lightClip = r->clipCorrection(map) * lightProj * lightView;
-r->beginRenderPass(map);                  // draw depth with a pipeline of your own
+const RenderTargetHandle map = r.createRenderTarget({.width = 2048, .height = 2048, .format = TextureFormat::Depth});
+const glm::mat4 lightClip = r.clipCorrection(map) * lightProj * lightView;
+r.beginRenderPass(map);                  // draw depth with a pipeline of your own
 // ...
-r->endRenderPass();
-// later: .textures = {r->renderTargetTexture(map)}, sampled by a pipeline in any pass
+r.endRenderPass();
+// later: .textures = {r.renderTargetTexture(map)}, sampled by a pipeline in any pass
 ```
 
 Draw a target before you sample it. A pipeline made for the window works in every target; the built-in shaders draw

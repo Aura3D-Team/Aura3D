@@ -72,25 +72,19 @@ This is `apps/OrgLogo/main.cpp` reduced to its essentials — no camera
 movement, one quad, one texture:
 
 ```cpp
-#include "aura/Core/Engine.h"
-#include "aura/Renderer/IRenderer.h"
-#include "aura/Core/Camera/Camera.h"
-#include "aura/Renderer/Material.h"
+#include "aura/Aura3D.h"
 
 using namespace aura3d;
 
 int main()
 {
     Engine engine("settings.json");
-    IRenderer* r = engine.getRenderer();
+    IRenderer &r = engine.renderer();
 
     // Ambient light alone shows colors as-is.
-    r->setLights(std::array{gfx::Light{.type = gfx::LightType::Ambient}});
+    r.setLights(std::array{gfx::Light{.type = gfx::LightType::Ambient}});
 
-    const TextureHandle tex = r->createCheckerboardTexture(256);
-    Material mat;
-    mat.albedo = tex;
-    const MaterialHandle matH = r->createMaterial(mat);
+    const MaterialHandle checker = r.createMaterial({.albedo = r.createCheckerboardTexture(256)});
 
     // A unit quad, doubled to fill the [-1,1] orthographic view box.
     gfx::Mesh3D quad;
@@ -101,25 +95,27 @@ int main()
         {{-0.5f,  0.5f, 0.0f}, {0.0f, 1.0f}, glm::vec4(1.0f), {0.0f, 0.0f, 1.0f}},
     };
     quad.indices = {0, 1, 2, 2, 3, 0};
-    const MeshHandle quadMesh = r->createMesh(quad);
+    const MeshHandle quadMesh = r.createMesh(quad);
 
     Camera cam = Camera::ortho({.left = -1, .right = 1, .bottom = -1, .top = 1});
     cam.setPosition({0.0f, 0.0f, 2.0f});
     cam.lookAt({0.0f, 0.0f, 0.0f});
     const glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f, 2.0f, 1.0f));
 
-    r->setClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    r.setClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
-    r->run([&]() {
-        r->beginRenderPass();
-        r->setTransform(cam.buildUBO(model));
-        r->bindMaterial(matH);
-        r->drawMesh(quadMesh);
-        r->endRenderPass();
+    r.run([&](const Frame &) {
+        if (!r.beginRenderPass())
+            return;
+        r.setCamera(cam);
+        r.drawMesh(quadMesh, checker, model);
+        r.endRenderPass();
     });
 }
 ```
 
-Every concept here — `Engine`, `IRenderer`, `Camera`, `Material`,
-`gfx::Mesh3D`, the render-pass/draw/present cycle — gets its own chapter next.
+`aura/Aura3D.h` brings in the engine, renderer, camera, materials, meshes and
+glTF models; AuraUI is `aura/UI/UI.hpp`. Every concept here — `Engine`,
+`IRenderer`, `Camera`, `Material`, `gfx::Mesh3D`, `Frame`, the
+render-pass/draw/present cycle — gets its own chapter next.
 Continue to **[02-project-configuration.md](02-project-configuration.md)**.

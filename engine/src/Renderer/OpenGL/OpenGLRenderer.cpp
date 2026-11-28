@@ -736,8 +736,7 @@ void OpenGLRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material,
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
     if (!_vertexMgr)
         return;
-    if (isValidHandle(material))
-        bindMaterial(material);
+    bindMaterial(material);
     const MeshRecord *record = getMesh(mesh);
     if (!record)
         return;

@@ -31,12 +31,12 @@ alongside an ALSA device is a perfectly normal configuration, and
 
 ```cpp
 Engine engine("settings.json");
-AudioEngine* audio = engine.audio();
+AudioEngine &audio = engine.audio();
 
-const AudioClipHandle blip = audio->loadClip("./resources/audio/blip.wav");
+const AudioClipHandle blip = audio.loadClip("./resources/audio/blip.wav");
 
 // One-shot at 80% volume.
-(void)audio->play(blip, 0.8f);
+(void)audio.play(blip, 0.8f);
 ```
 
 `play()` returns an `AudioSourceHandle` — one *voice*, i.e. one playing
@@ -46,9 +46,8 @@ clips and voices are separate handles.
 Call `update()` once per frame:
 
 ```cpp
-r->run([&]() {
-    const float dt = windowManager->getWindowFlags()->deltaTime / 1000.0f;
-    audio->update(dt);
+r.run([&](const Frame &frame) {
+    audio.update(frame.dt);
     // ... render
 });
 ```
@@ -72,7 +71,7 @@ AudioSourceDesc desc;
 desc.clip = music;
 desc.loop = true;
 desc.gain = 0.35f;
-const AudioSourceHandle musicVoice = audio->play(desc);
+const AudioSourceHandle musicVoice = audio.play(desc);
 ```
 
 `AudioClipMode::Streaming` marks a clip as long-form. **It currently still
@@ -93,15 +92,15 @@ desc.spatial     = true;
 desc.position    = orbPosition;
 desc.minDistance = 1.5f;   // full volume inside this radius
 desc.maxDistance = 14.0f;  // silent past it
-const AudioSourceHandle voice = audio->play(desc);
+const AudioSourceHandle voice = audio.play(desc);
 
 // every frame, after the camera moves:
-audio->setListener({.position = camera.position(),
+audio.setListener({.position = camera.position(),
                     .forward  = camera.forward(),
                     .up       = glm::vec3(0.0f, 1.0f, 0.0f)});
 
 // and whenever the source moves:
-audio->setSourcePosition(voice, object.position);
+audio.setSourcePosition(voice, object.position);
 ```
 
 Two things happen to a spatial voice:
@@ -122,16 +121,16 @@ panning. `scripts/gen_sandbox_audio.py` writes mono for this reason.
 ## Controlling voices
 
 ```cpp
-audio->pause(voice);                    // keeps its slot, stops contributing
-audio->resume(voice);
-audio->stop(voice);                     // frees the slot; handle dies
-audio->setSourceGain(voice, 0.5f);
-audio->setSourceLooping(voice, false);  // let a looping voice end naturally
+audio.pause(voice);                    // keeps its slot, stops contributing
+audio.resume(voice);
+audio.stop(voice);                     // frees the slot; handle dies
+audio.setSourceGain(voice, 0.5f);
+audio.setSourceLooping(voice, false);  // let a looping voice end naturally
 
-audio->setMasterVolume(0.5f);           // clamped to [0, 1], applied last
-audio->stopAll();
+audio.setMasterVolume(0.5f);           // clamped to [0, 1], applied last
+audio.stopAll();
 
-if (audio->isPlaying(voice)) { /* ... */ }
+if (audio.isPlaying(voice)) { /* ... */ }
 ```
 
 Voice handles are **recycled**. When a sound finishes, its slot is reused by
@@ -178,7 +177,7 @@ placeholder audio before real assets exist:
 
 ```cpp
 const AudioClipData tone = AudioClipLoader::makeSineTone(440.0f, 1.0f, 0.25f);
-const AudioClipHandle handle = audio->createClip(tone);
+const AudioClipHandle handle = audio.createClip(tone);
 ```
 
 `makeSilence()` is the fallback used for missing files, and is also useful as
@@ -210,14 +209,14 @@ The `audio` section of `settings.json` (see
 | `max_voices` | `32` | Simultaneous sounds before `play()` starts dropping. |
 
 Plus `paths.audio` (default `./resources/audio/`), read via
-`settings->get(aura3d::setting::pathAudio)`.
+`engine.settings().get(aura3d::setting::pathAudio)`.
 
 The device may not grant exactly what you ask for. Read back what it actually
 did:
 
 ```cpp
-INK_INFO << audio->sampleRate() << " Hz, " << audio->channelCount() << " ch, "
-         << wma::audioBackendName(audio->backend());
+INK_INFO << audio.sampleRate() << " Hz, " << audio.channelCount() << " ch, "
+         << wma::audioBackendName(audio.backend());
 ```
 
 ## Backends per platform
@@ -243,7 +242,7 @@ from an input handler:
 
 ```cpp
 keyboard.addKeyAction(wma::KEY_SPACE, wma::KeyAction{
-    [&]() { audio->resumeDevice(); },
+    [&]() { audio.resumeDevice(); },
     []() {}
 });
 ```

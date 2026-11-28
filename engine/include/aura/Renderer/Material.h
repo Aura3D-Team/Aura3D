@@ -20,7 +20,7 @@ namespace aura3d
  */
 struct Material
 {
-    /// Albedo texture. An invalid handle leaves whatever texture is already bound.
+    /// Albedo texture. Without one the surface samples white, so @c tint alone colours it.
     TextureHandle albedo;                      //! The base color image/texture.
     glm::vec4 tint = {1.0f, 1.0f, 1.0f, 1.0f}; //! Color multiplier applied over the texture.
     float roughness = 1.0f;                    //! How shiny it is (0.0 = mirror, 1.0 = matte).

@@ -130,7 +130,7 @@ int main(int argc, char **argv)
             config.set(setting::windowBackend, backend);
         }
         Engine engine(config);
-        auto &renderer = *engine.getRenderer();
+        auto &renderer = engine.renderer();
         if (argc > 2 && std::string_view(argv[2]) == "primitives")
         {
             struct Probe
@@ -194,10 +194,10 @@ int main(int argc, char **argv)
                                                             {{0, 8, 0}, {.5f, .5f}, {1, 0, 1, 1}}}};
             constexpr std::array<u32, 3> texturedIndices{0, 1, 2};
             //! Built once and drawn every frame; each is one draw call.
-            gfx::Canvas behind;
+            test::BatchShapes behind;
             behind.triangle(glm::vec3{150, 200, -0.5f}, glm::vec3{230, 200, -0.5f}, glm::vec3{150, 236, -0.5f},
                             {1, 0, 0, 1});
-            gfx::Canvas shapes;
+            test::BatchShapes shapes;
             shapes.line({16, 24}, {96, 24}, {1, 0, 0, 1}, 8);
             for (const Segment &segment : segments)
                 shapes.line(segment.from, segment.to, segment.color, 8);
@@ -206,7 +206,7 @@ int main(int argc, char **argv)
             shapes.triangle(glm::vec2{240, 192}, glm::vec2{288, 144}, glm::vec2{240, 144}, {0, 1, 1, 1});
             shapes.rect({256, 24}, {48, 48}, {1, 0, 0, 1});
             shapes.line({280, 16}, {280, 80}, {0, 0, 1, .5f}, 16);
-            gfx::Canvas inFront;
+            test::BatchShapes inFront;
             renderer.setClearColor(0, 0, 0, 1);
             u32 rendered = 0;
             u32 checkedPixels = 0;
@@ -218,15 +218,15 @@ int main(int argc, char **argv)
                 renderer.beginRenderPass();
                 renderer.setTransform({glm::mat4{1.0f}, glm::mat4{1.0f}, pixels});
                 renderer.drawMesh(occluderMesh, white);
-                renderer.drawBatch(behind, {}, gfx::BatchSpace::World);
+                behind.draw(renderer, {}, gfx::BatchSpace::World);
                 //! Projected with this frame's camera, so rebuilt each frame.
                 inFront.clear();
-                inFront.line(renderer.canvasView(), glm::vec3{172, 222, 0.9f}, glm::vec3{198, 222, 0.9f}, {0, 0, 1, 1},
-                             2);
-                renderer.drawBatch(inFront);
+                inFront.line(pixels, glm::vec2{renderer.renderTargetSize()}, depthZeroToOne, glm::vec3{172, 222, 0.9f},
+                             glm::vec3{198, 222, 0.9f}, {0, 0, 1, 1}, 2);
+                inFront.draw(renderer);
                 // Primitives must select the white fallback after a coverage draw.
                 renderer.drawBatch(textured, texturedIndices, emptyCoverage);
-                renderer.drawBatch(shapes);
+                shapes.draw(renderer);
                 glm::mat4 shifted{1.0f};
                 shifted[3].x = 100.0f;
                 renderer.setTransform({glm::mat4{1.0f}, shifted, pixels});
@@ -1081,77 +1081,6 @@ kernel void grid(device Instance *instances [[buffer(0)]], device DrawArgs &args
             std::printf("TEXTURES backend=%s rendered_frames=%u checked_pixels=%u\n",
                         RendererChoiceToString(renderer.getBackendType()), rendered, checked);
             return rendered == 6 ? 0 : 1;
-        }
-        if (argc > 2 && std::string_view(argv[2]) == "canvas")
-        {
-            //! A particle field moved and rebuilt every frame: the Canvas path end to end.
-            constexpr u32 kRects = 20000;
-            constexpr u32 kLines = 5000;
-            constexpr glm::vec2 kArea{318.0f, 238.0f};
-            struct Particle
-            {
-                glm::vec2 position;
-                glm::vec2 velocity;
-                glm::vec4 color;
-            };
-            std::vector<Particle> particles(kRects + kLines);
-            for (u32 i = 0; i < particles.size(); ++i)
-            {
-                const auto n = static_cast<f32>(i);
-                particles[i] = {{std::fmod(n * 7.3f, kArea.x), std::fmod(n * 3.1f, kArea.y)},
-                                {20.0f + static_cast<f32>(i % 50), 13.0f - static_cast<f32>(i % 37)},
-                                {static_cast<f32>(i % 255) / 255.0f, .5f, 1.0f, i < kRects ? 1.0f : .6f}};
-            }
-            const auto update = [&]
-            {
-                for (Particle &particle : particles)
-                {
-                    particle.position += particle.velocity * (1.0f / 60.0f);
-                    for (int axis = 0; axis < 2; ++axis)
-                    {
-                        if (particle.position[axis] < 0.0f)
-                            particle.position[axis] += kArea[axis];
-                        else if (particle.position[axis] >= kArea[axis])
-                            particle.position[axis] -= kArea[axis];
-                    }
-                }
-            };
-            gfx::Canvas canvas;
-            const auto build = [&]
-            {
-                update();
-                canvas.clear();
-                for (u32 i = 0; i < kRects; ++i)
-                    canvas.rect(particles[i].position, {2, 2}, particles[i].color);
-                for (u32 i = kRects; i < particles.size(); ++i)
-                    canvas.line(particles[i].position, particles[i].position + particles[i].velocity * 0.25f,
-                                particles[i].color, 1.5f);
-            };
-            measure("canvas_update", 120, update);
-            measure("canvas_build", 120, build);
-            const auto frame = [&](bool draw)
-            {
-                renderer.beginFrame();
-                renderer.beginRenderPass();
-                if (draw)
-                {
-                    build();
-                    renderer.drawBatch(canvas);
-                }
-                renderer.endRenderPass();
-                renderer.endFrame();
-            };
-            measure("canvas_empty_frame", 120,
-                    [&]
-                    {
-                        frame(false);
-                    });
-            measure("canvas_frame", 120,
-                    [&]
-                    {
-                        frame(true);
-                    });
-            return 0;
         }
         if (argc > 2 && std::string_view(argv[2]) == "lighting")
         {

@@ -634,14 +634,14 @@ try
     config.set(setting::windowDecorations, wma::DecorationMode::ClientSide);
     Engine engine(config, "settings.json");
 
-    IRenderer *renderer = engine.getRenderer();
-    wma::IWindowManager *window = renderer->getWindowManager();
+    IRenderer &renderer = engine.renderer();
+    wma::IWindowManager *window = renderer.getWindowManager();
 
     // Empty uses the embedded bitmap face; set a font path to override it.
     UIViewDesc desc{};
     desc.fontPath = "";
 
-    UIView ui(*renderer, desc);
+    UIView ui(renderer, desc);
     ui.attachInput(*window);
     installOverlayMotion(ui.root());
 
@@ -688,19 +688,19 @@ try
                           });
 
     const glm::vec4 background = theme.palette().window * 0.35f;
-    renderer->setClearColor(background.r, background.g, background.b, 1.0f);
+    renderer.setClearColor(background.r, background.g, background.b, 1.0f);
 
     if (argc > 1 && std::string_view(argv[1]) == "--smoke-test")
-        return smokeTest(ui, *renderer, tabs);
+        return smokeTest(ui, renderer, tabs);
 
-    renderer->run(
-        [renderer, window, &ui]
+    renderer.run(
+        [&renderer, window, &ui]
         {
             ui.update(static_cast<f32>(window->getWindowFlags()->deltaTime) / 1000.0f);
-            if (!ui.needsDraw() || !renderer->beginRenderPass())
+            if (!ui.needsDraw() || !renderer.beginRenderPass())
                 return;
             ui.draw();
-            renderer->endRenderPass();
+            renderer.endRenderPass();
         });
 
     return 0;

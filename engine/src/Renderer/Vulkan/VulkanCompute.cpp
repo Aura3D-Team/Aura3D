@@ -252,8 +252,7 @@ void VulkanRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle m
     if (!instanceBuffer || !argumentBuffer || !vb || !ib || argumentOffset % 4 != 0 ||
         argumentOffset + sizeof(DrawIndexedIndirect) > argumentBuffer->size)
         return;
-    if (isValidHandle(material))
-        bindMaterial(material);
+    bindMaterial(material);
 
     ResolvedDraw draw;
     draw.vertexBuffer = vb->buffer;

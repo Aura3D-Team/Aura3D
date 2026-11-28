@@ -46,17 +46,12 @@ add_custom_command(TARGET MyGame POST_BUILD
 
 ## 1. Boot the engine and a moving camera
 
-This is [04-camera.md](04-camera.md)'s free-look example plus
-[08-input.md](08-input.md)'s WASD helper, unchanged:
+This is [04-camera.md](04-camera.md)'s free-look example; the WASD keys are
+polled in the loop, as in [08-input.md](08-input.md):
 
 ```cpp
-#include "aura/Core/Engine.h"
-#include "aura/Renderer/IRenderer.h"
-#include "aura/Core/Camera/Camera.h"
-#include "aura/Core/MeshLoader/MeshLoader.h"
-#include "aura/Core/TextOverlay/TextOverlay.h"
-#include "aura/Utils/ColorsDefinitions.h"
-#include <chrono>
+#include "aura/Aura3D.h"
+#include "aura/UI/UI.hpp"
 #include <vector>
 
 using namespace aura3d;
@@ -64,35 +59,24 @@ using namespace aura3d;
 int main()
 {
     Engine engine("settings.json");
-    IRenderer* r = engine.getRenderer();
+    IRenderer &r = engine.renderer();
 
-    auto* windowManager = r->getWindowManager();
-    wma::KeyboardListener& keyboard = windowManager->getKeyboardListener();
-    wma::MouseListener& mouse = windowManager->getMouseListener();
+    wma::IWindowManager &window = *r.getWindowManager();
+    wma::KeyboardListener &keyboard = window.getKeyboardListener();
+    wma::MouseListener &mouse = window.getMouseListener();
 
-    const wma::WindowDetails* wd = windowManager->getWindowDetails();
-    const float aspect = static_cast<float>(wd->width) / static_cast<float>(wd->height);
-
-    Camera camera = Camera::perspective({.fovDeg = 70.0f, .aspect = aspect, .nearZ = 0.1f, .farZ = 100.0f});
+    //! The aspect ratio follows the window from the first frame on.
+    Camera camera = Camera::perspective({.fovDeg = 70.0f, .nearZ = 0.1f, .farZ = 100.0f});
     camera.setPosition({0.0f, 1.0f, 6.0f});
     float camYaw = -90.0f, camPitch = 0.0f;
     camera.setRotation(camYaw, camPitch);
 
     mouse.setCursorEnabled(false);
-    mouse.setMoveAction(wma::MouseAction{[&](const wma::WMAMousePosition& pos) {
+    mouse.setMoveAction(wma::MouseAction{[&](const wma::WMAMousePosition &pos) {
         camYaw   += static_cast<float>(pos.deltaX) * 0.1f;
         camPitch -= static_cast<float>(pos.deltaY) * 0.1f;
         camera.setRotation(camYaw, camPitch);
     }});
-
-    bool moveForward = false, moveBack = false, moveLeft = false, moveRight = false;
-    auto bindHeld = [&keyboard](wma::Key key, bool& flag) {
-        keyboard.addKeyAction(key, wma::KeyAction{[&flag]() { flag = true; }, [&flag]() { flag = false; }});
-    };
-    bindHeld(wma::KEY_W, moveForward);
-    bindHeld(wma::KEY_S, moveBack);
-    bindHeld(wma::KEY_A, moveLeft);
-    bindHeld(wma::KEY_D, moveRight);
 ```
 
 ## 2. The arena: floor + pillars, lit
@@ -102,20 +86,17 @@ From [05-meshes-materials-textures.md](05-meshes-materials-textures.md) and
 needed, one directional light and an ambient one for the whole scene:
 
 ```cpp
-    r->setLights(std::array{gfx::Light{.direction = {-0.4f, -1.0f, -0.3f}},
+    r.setLights(std::array{gfx::Light{.direction = {-0.4f, -1.0f, -0.3f}},
                             gfx::Light{.type = gfx::LightType::Ambient, .intensity = 0.25f}});
 
-    const MeshHandle planeMesh = r->createMesh(MeshLoader::createPlane());
-    const MeshHandle cubeMesh  = r->createMesh(MeshLoader::createCube());
-    const MeshHandle orbMesh   = r->createMesh(MeshLoader::createSphere(2));
+    const MeshHandle planeMesh = r.createMesh(MeshLoader::createPlane());
+    const MeshHandle cubeMesh  = r.createMesh(MeshLoader::createCube());
+    const MeshHandle orbMesh   = r.createMesh(MeshLoader::createSphere(2));
 
-    Material floorMat; floorMat.albedo = r->createSolidColorTexture(90, 90, 100);
-    Material pillarMat; pillarMat.albedo = r->createCheckerboardTexture(32);
-    Material orbMat; orbMat.albedo = r->createSolidColorTexture(255, 210, 60);
-
-    const MaterialHandle floorMatH   = r->createMaterial(floorMat);
-    const MaterialHandle pillarMatH  = r->createMaterial(pillarMat);
-    const MaterialHandle orbMatH     = r->createMaterial(orbMat);
+    // A flat colour is a tint alone; colours are linear (see 07-2d-rendering-and-text.md).
+    const MaterialHandle floorMat  = r.createMaterial({.tint = {0.1f, 0.1f, 0.13f, 1.0f}});
+    const MaterialHandle pillarMat = r.createMaterial({.albedo = r.createCheckerboardTexture(32)});
+    const MaterialHandle orbMat    = r.createMaterial({.tint = {1.0f, 0.64f, 0.05f, 1.0f}});
 
     struct Pillar { glm::vec3 position; glm::vec3 scale; };
     const std::vector<Pillar> pillars = {
@@ -125,8 +106,7 @@ needed, one directional light and an ambient one for the whole scene:
         {{ 4.0f, 1.0f,  4.0f}, {1.0f, 2.0f, 1.0f}},
     };
 
-    const colors::RGBf clear = colors::MIDNIGHT_BLUE_F;
-    r->setClearColor(clear.r, clear.g, clear.b, 1.0f);
+    r.setClearColor(0.01f, 0.01f, 0.16f, 1.0f);
 ```
 
 ## 3. Collectibles and score
@@ -148,13 +128,19 @@ ordinary game-logic pattern; nothing here is Aura3D-specific:
 
 ## 4. Score and instructions on screen
 
-From [07-2d-rendering-and-text.md](07-2d-rendering-and-text.md) — built
-once, drawn every frame, no font file required:
+From [07-2d-rendering-and-text.md](07-2d-rendering-and-text.md): labels
+built once and updated every frame, no font file required:
 
 ```cpp
-    TextOverlayDesc overlayDesc;
-    overlayDesc.pixelHeight = 20.0f;
-    TextOverlay overlay(r, overlayDesc);
+    ui::UIView ui(r);
+    auto &hud = ui.root().setContent<ui::Column>();
+    hud.layout().padding = ui::Thickness::all(10.0f);
+    auto &scoreLabel = hud.add<ui::Label>();
+    hud.add<ui::Label>("WASD to move, mouse to look, Esc to quit");
+    auto &winLabel = hud.add<ui::Label>("You win!");
+    winLabel.setFontSize(30.0f);
+    winLabel.setVisibility(ui::Visibility::Collapsed);
+    auto &fpsLabel = hud.add<ui::Label>();
 ```
 
 ## 5. The loop
@@ -163,29 +149,26 @@ Ties every earlier step together: move the camera from input, check orb
 pickups, draw the arena and any remaining orbs, draw the UI text.
 
 ```cpp
-    r->setTransform(camera.buildUBO());
-    const auto startTime = std::chrono::steady_clock::now();
     constexpr float kMoveSpeed = 4.0f;
 
-    r->run([&]() {
-        const float dt = static_cast<float>(windowManager->getWindowFlags()->deltaTime) / 1000.0f;
-        const float elapsed = std::chrono::duration<float>(
-            std::chrono::steady_clock::now() - startTime).count();
+    r.run([&](const Frame &frame) {
+        if (frame.resized)
+            camera.setAspect(frame.aspect());
 
         // --- movement ---
         const glm::vec3 forward = camera.forward();
         const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
         glm::vec3 moveDir{0.0f};
-        if (moveForward) moveDir += forward;
-        if (moveBack)    moveDir -= forward;
-        if (moveRight)   moveDir += right;
-        if (moveLeft)    moveDir -= right;
+        if (keyboard.isKeyDown(wma::KEY_W)) moveDir += forward;
+        if (keyboard.isKeyDown(wma::KEY_S)) moveDir -= forward;
+        if (keyboard.isKeyDown(wma::KEY_D)) moveDir += right;
+        if (keyboard.isKeyDown(wma::KEY_A)) moveDir -= right;
         moveDir.y = 0.0f; // stay on the ground plane
         if (glm::length(moveDir) > 0.0f)
-            camera.setPosition(camera.position() + glm::normalize(moveDir) * kMoveSpeed * dt);
+            camera.setPosition(camera.position() + glm::normalize(moveDir) * kMoveSpeed * frame.dt);
 
         // --- pickups ---
-        for (Orb& orb : orbs) {
+        for (Orb &orb : orbs) {
             if (orb.collected) continue;
             if (glm::distance(camera.position(), orb.position) < kCollectRadius) {
                 orb.collected = true;
@@ -193,41 +176,32 @@ pickups, draw the arena and any remaining orbs, draw the UI text.
             }
         }
 
+        // --- UI state ---
+        scoreLabel.text = "Orbs: " + std::to_string(score) + " / " + std::to_string(totalOrbs);
+        if (score == totalOrbs)
+            winLabel.setVisibility(ui::Visibility::Visible);
+        fpsLabel.text = "FPS: " + std::to_string(static_cast<int>(window.getWindowFlags()->fps));
+
         // --- draw ---
-        r->beginRenderPass();
+        if (!r.beginRenderPass())
+            return;
+        r.setCamera(camera);
 
-        glm::mat4 floorModel = glm::scale(glm::mat4(1.0f), {10.0f, 1.0f, 10.0f});
-        r->setTransform(camera.buildUBO(floorModel));
-        r->bindMaterial(floorMatH);
-        r->drawMesh(planeMesh);
+        r.drawMesh(planeMesh, floorMat, glm::scale(glm::mat4(1.0f), {10.0f, 1.0f, 10.0f}));
 
-        for (const Pillar& p : pillars) {
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), p.position);
-            model = glm::scale(model, p.scale);
-            r->setTransform(camera.buildUBO(model));
-            r->bindMaterial(pillarMatH);
-            r->drawMesh(cubeMesh);
-        }
+        for (const Pillar &p : pillars)
+            r.drawMesh(cubeMesh, pillarMat, glm::scale(glm::translate(glm::mat4(1.0f), p.position), p.scale));
 
-        for (const Orb& orb : orbs) {
+        for (const Orb &orb : orbs) {
             if (orb.collected) continue;
             glm::mat4 model = glm::translate(glm::mat4(1.0f), orb.position);
-            model = glm::rotate(model, elapsed * 2.0f, glm::vec3(0, 1, 0)); // slow spin
+            model = glm::rotate(model, static_cast<float>(frame.time) * 2.0f, glm::vec3(0, 1, 0)); // slow spin
             model = glm::scale(model, glm::vec3(0.35f));
-            r->setTransform(camera.buildUBO(model));
-            r->bindMaterial(orbMatH);
-            r->drawMesh(orbMesh);
+            r.drawMesh(orbMesh, orbMat, model);
         }
 
-        // --- UI ---
-        overlay.addText("Orbs: " + std::to_string(score) + " / " + std::to_string(totalOrbs), 10.0f, 10.0f);
-        overlay.addText("WASD to move, mouse to look, Esc to quit", 10.0f, 34.0f, glm::vec4(0.8f, 0.8f, 0.8f, 1));
-        if (score == totalOrbs)
-            overlay.addText("You win!", 10.0f, 58.0f, glm::vec4(0.4f, 1.0f, 0.4f, 1), 1.5f);
-        overlay.addFPS(10.0f, static_cast<float>(wd->height) - 24.0f);
-        overlay.draw();
-
-        r->endRenderPass();
+        ui.render(frame.dt);
+        r.endRenderPass();
     });
 
     return 0;
@@ -240,7 +214,7 @@ Everything past this point is regular game-engine-agnostic C++ layered on
 the same handful of calls above:
 
 - **More object variety**: `MeshLoader::loadOBJ()` instead of the built-in
-  primitives, textures via `r->createTextureFromFile(...)` instead of
+  primitives, textures via `r.createTextureFromFile(...)` instead of
   solid colors — see [05-meshes-materials-textures.md](05-meshes-materials-textures.md).
 - **Menus / pause screen**: a second keyboard context
   (`keyboard.createContext()`) plus a `drawBatch` panel — see

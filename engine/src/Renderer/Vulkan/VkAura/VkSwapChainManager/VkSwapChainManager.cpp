@@ -3,12 +3,33 @@
 #include "aura/Core/AuraException/AuraException.h"
 
 #include <algorithm>
+#include <format>
+#include <string>
 #include <utility>
 
 namespace aura3d
 {
 namespace vk
 {
+namespace
+{
+const char *presentModeName(VkPresentModeKHR mode) noexcept
+{
+    switch (mode)
+    {
+    case VK_PRESENT_MODE_IMMEDIATE_KHR:
+        return "immediate";
+    case VK_PRESENT_MODE_MAILBOX_KHR:
+        return "mailbox";
+    case VK_PRESENT_MODE_FIFO_KHR:
+        return "fifo";
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+        return "fifo-relaxed";
+    default:
+        return "other";
+    }
+}
+} // namespace
 
 VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice *device, VkSurfaceKHR vkSurface)
     : _swapChainSupportDetails({}), _swapChainCreateInfo({}), _swapChain(VK_NULL_HANDLE), _device(device),
@@ -171,11 +192,15 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
 
     VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, nullptr, &_swapChain));
 
-    INK_TRACE << "SwapChain successfuly created!";
-    INK_TRACE << "ImageCount: " << imageCount;
-    INK_TRACE << "ImageArrayLayers: " << _swapChainCreateInfo.imageArrayLayers;
-
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, nullptr);
+    const std::string summary = std::format(
+        "Swapchain {}x{}, {} images, present mode {}, VkFormat {}{}", _choosedExtent.width, _choosedExtent.height,
+        imageCount, presentModeName(_choosedPresentMode), static_cast<i32>(_choosedSurfaceFormat.format),
+        _swapChainCreateInfo.imageSharingMode == VK_SHARING_MODE_CONCURRENT ? ", concurrent" : "");
+    if (std::exchange(_reported, true))
+        INK_DEBUG << summary;
+    else
+        INK_INFO << summary;
     _swapChainImages.resize(imageCount);
 
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());
@@ -458,12 +483,12 @@ VkPresentModeKHR VkSwapChainManager::_chooseSwapPresentMode(const std::vector<Vk
 
     case VSyncMode::Immediate:
         if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_IMMEDIATE_KHR))
-
-            if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
-            {
-                INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_MAILBOX_KHR";
-                return VK_PRESENT_MODE_MAILBOX_KHR;
-            }
+            return VK_PRESENT_MODE_IMMEDIATE_KHR;
+        if (std::ranges::contains(availablePresentModes, VK_PRESENT_MODE_MAILBOX_KHR))
+        {
+            INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_MAILBOX_KHR";
+            return VK_PRESENT_MODE_MAILBOX_KHR;
+        }
 
         INK_WARN << "VK_PRESENT_MODE_IMMEDIATE_KHR unsupported; falling back to VK_PRESENT_MODE_FIFO_KHR";
         return VK_PRESENT_MODE_FIFO_KHR;

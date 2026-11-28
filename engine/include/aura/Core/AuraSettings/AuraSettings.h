@@ -231,9 +231,9 @@ class AuraConfig
  * | runtime | set() |
  *
  * @code
- * const auto *settings = engine.getSettings();
- * settings->get(aura3d::setting::windowWidth); // int
- * settings->windowBackend();                   // wma::WindowBackend
+ * const auto &settings = engine.settings();
+ * settings.get(aura3d::setting::windowWidth); // int
+ * settings.windowBackend();                    // wma::WindowBackend
  * @endcode
  */
 class AuraSettings final : public SettingsStore

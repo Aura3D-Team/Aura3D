@@ -81,15 +81,25 @@ glm::vec3 fwd = camera.forward();   // unit vector, works in either mode
 ## Feeding the renderer
 
 ```cpp
-r->setTransform(camera.buildUBO(modelMatrix));
+r.setCamera(camera);                      // once per frame, after beginRenderPass()
+r.drawMesh(mesh, material, modelMatrix);  // per object
 ```
 
-`buildUBO` packages `model` (defaults to identity), the camera's `view`
-matrix (lazily rebuilt only when the camera actually moved), and its fixed
-`projection` matrix into a `gfx::TransformUBO` — exactly what
-`IRenderer::setTransform` expects. Call it once per object per frame with
-that object's own model matrix; see `apps/Sandbox/main.cpp` for the pattern
-of one `setTransform` + `drawMesh` pair per scene object.
+`setCamera` hands the renderer the camera's `view` matrix (rebuilt only when
+the camera moved) and its `projection`; each `drawMesh` adds its own model
+matrix. `camera.buildUBO(model)` packs all three into the `gfx::TransformUBO`
+that `setTransform()` takes, for code that drives the lower-level calls itself.
+
+The projection keeps the aspect ratio it was built with. Follow the window
+with `setAspect()`, which keeps the field of view and depth range:
+
+```cpp
+r.run([&](const Frame &frame) {
+    if (frame.resized)
+        camera.setAspect(frame.aspect());
+    // ...
+});
+```
 
 ## A moving camera (from `apps/Sandbox`)
 
@@ -101,15 +111,15 @@ mouse.setMoveAction(wma::MouseAction{[&](const wma::WMAMousePosition& pos) {
     camera.setRotation(camYaw, camPitch);
 }});
 
-// in the per-frame callback:
+// in the per-frame callback, r.run([&](const Frame &frame) { ... }):
 const glm::vec3 forward = camera.forward();
 const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
 glm::vec3 moveDir{0.0f};
-if (moveForward) moveDir += forward;
-if (moveRight)   moveDir += right;
+if (keyboard.isKeyDown(wma::KEY_W)) moveDir += forward;
+if (keyboard.isKeyDown(wma::KEY_D)) moveDir += right;
 // ...
 if (glm::length(moveDir) > 0.0f)
-    camera.setPosition(camera.position() + glm::normalize(moveDir) * kMoveSpeed * dt);
+    camera.setPosition(camera.position() + glm::normalize(moveDir) * kMoveSpeed * frame.dt);
 ```
 
 See [08-input.md](08-input.md) for the keyboard/mouse binding API this

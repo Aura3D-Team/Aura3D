@@ -4,7 +4,7 @@ Input isn't part of `IRenderer` — it belongs to the window, which comes from
 `wma` (the windowing library Aura3D is built on):
 
 ```cpp
-auto* windowManager = r->getWindowManager();
+auto *windowManager = r.getWindowManager();
 wma::KeyboardListener& keyboard = windowManager->getKeyboardListener();
 wma::MouseListener& mouse = windowManager->getMouseListener();
 ```
@@ -15,38 +15,28 @@ callbacks per key or button.
 
 ## Keyboard
 
-```cpp
-wma::InputContextId gameplay = keyboard.createContext();
-keyboard.setActiveContext(gameplay);
+For continuous movement, ask whether a key is held, once a frame:
 
-bool moveForward = false;
-keyboard.addKeyAction(wma::KEY_W, wma::KeyAction{
-    [&moveForward]() { moveForward = true; },   // on press
-    [&moveForward]() { moveForward = false; },  // on release
+```cpp
+r.run([&](const Frame &frame) {
+    glm::vec3 move{0.0f};
+    if (keyboard.isKeyDown(wma::KEY_W)) move += camera.forward();
+    if (keyboard.isKeyDown(wma::KEY_S)) move -= camera.forward();
+    if (glm::length(move) > 0.0f)
+        camera.setPosition(camera.position() + glm::normalize(move) * speed * frame.dt);
+    // ...
 });
 ```
 
-The "held key drives a bool, movement code reads the bool every frame"
-pattern above (from `apps/Sandbox/main.cpp`) is the standard way to handle
-continuous movement — a helper makes it terser for several keys at once:
+`isKeyDown()` follows the press and release events on every backend, needs no
+binding, and forgets held keys when the window loses focus.
+
+For an action that happens once per press (jump, fire, pause), bind it:
 
 ```cpp
-auto bindHeld = [&keyboard](wma::Key key, bool& flag) {
-    keyboard.addKeyAction(key, wma::KeyAction{
-        [&flag]() { flag = true; },
-        [&flag]() { flag = false; }
-    });
-};
-bindHeld(wma::KEY_W, moveForward);
-bindHeld(wma::KEY_S, moveBack);
-bindHeld(wma::KEY_A, moveLeft);
-bindHeld(wma::KEY_D, moveRight);
-bindHeld(wma::KEY_SPACE, moveUp);
-bindHeld(wma::KEY_LEFT_SHIFT, moveDown);
+keyboard.addKeyAction(wma::KEY_SPACE, wma::KeyAction{[&] { player.jump(); }});
+// A release callback too: wma::KeyAction{onPress, onRelease}
 ```
-
-For a one-shot action (jump, fire, pause), just don't bind a release
-callback — `KeyAction{ onPress }` alone is enough.
 
 `removeKeyAction(key)` / `hasKeyAction(key)` manage bindings later;
 `clearKeyActions()` drops everything in a context.
@@ -111,13 +101,15 @@ outside a callback, if you need a poll-style check instead of an event.
 
 ## Per-frame timing
 
-Not input, but almost always read alongside it — `windowManager->getWindowFlags()`
-exposes `deltaTime` (milliseconds) and `fps`, both live-updated once per
-frame:
+Not input, but almost always read alongside it: `run()` hands its callback a
+`Frame` with `dt` (seconds since the previous iteration) and `time` (seconds
+since the loop started). `windowManager->getWindowFlags()->fps` is the frame
+rate, averaged over half a second.
 
 ```cpp
-const float dt = static_cast<float>(windowManager->getWindowFlags()->deltaTime) / 1000.0f;
-camera.setPosition(camera.position() + velocity * dt);
+r.run([&](const Frame &frame) {
+    camera.setPosition(camera.position() + velocity * frame.dt);
+});
 ```
 
 Next: **[09-building-a-game.md](09-building-a-game.md)** — putting all eight

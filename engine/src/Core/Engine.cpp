@@ -10,6 +10,9 @@
 #include <emscripten/html5.h>
 #endif
 
+namespace aura3d
+{
+
 Engine::Engine(const std::string &configPath) : Engine(aura3d::AuraConfig{}, configPath)
 {
 }
@@ -57,9 +60,9 @@ Engine::~Engine()
     _audio.reset();
 }
 
-const aura3d::AuraSettings *Engine::getSettings() const
+const AuraSettings &Engine::settings() const noexcept
 {
-    return aura3d::AuraSettings::get();
+    return *AuraSettings::get();
 }
 
 void Engine::_configureWindow()
@@ -201,3 +204,5 @@ void Engine::switchBackend(aura3d::RendererChoice choice)
 
     _adoptRenderer(resolved);
 }
+
+} // namespace aura3d

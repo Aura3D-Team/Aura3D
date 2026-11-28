@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include <glm/ext/matrix_clip_space.hpp>
 
@@ -122,14 +123,7 @@ class Camera
     static Camera perspective(const PerspectiveDesc &desc)
     {
         Camera camera;
-
-        if (_clipSpace == ClipSpace::Vulkan)
-            //! Vulkan: [0,1] depth
-            camera._projection = glm::perspectiveRH_ZO(glm::radians(desc.fovDeg), desc.aspect, desc.nearZ, desc.farZ);
-        else
-            //! OpenGL: [-1,1] depth, Y up.
-            camera._projection = glm::perspectiveRH_NO(glm::radians(desc.fovDeg), desc.aspect, desc.nearZ, desc.farZ);
-
+        camera.setPerspective(desc);
         return camera;
     }
 
@@ -145,10 +139,24 @@ class Camera
      */
     void setPerspective(const PerspectiveDesc &desc) noexcept
     {
+        _perspective = desc;
+        //! Vulkan: [0,1] depth; OpenGL: [-1,1].
         if (_clipSpace == ClipSpace::Vulkan)
             _projection = glm::perspectiveRH_ZO(glm::radians(desc.fovDeg), desc.aspect, desc.nearZ, desc.farZ);
         else
             _projection = glm::perspectiveRH_NO(glm::radians(desc.fovDeg), desc.aspect, desc.nearZ, desc.farZ);
+    }
+
+    /// A new width / height for a perspective camera, keeping its field of view and depth range, e.g. on
+    /// Frame::resized. An orthographic camera keeps its box.
+    void setAspect(float aspect) noexcept
+    {
+        if (_perspective)
+        {
+            PerspectiveDesc desc = *_perspective;
+            desc.aspect = aspect;
+            setPerspective(desc);
+        }
     }
 
     /**
@@ -445,7 +453,8 @@ class Camera
   private:
     Camera() = default;
 
-    glm::mat4 _projection{1.0f};    //! Matrix converting 3D view space to 2D screen space.
+    glm::mat4 _projection{1.0f};                   //! Matrix converting 3D view space to 2D screen space.
+    std::optional<PerspectiveDesc> _perspective{}; //! What setAspect() rebuilds from; empty for ortho.
     mutable glm::mat4 _view{1.0f};  //! Matrix orienting world relative to camera location.
     mutable bool _viewDirty = true; //! True if camera moved/rotated and view matrix needs rebuilding.
 

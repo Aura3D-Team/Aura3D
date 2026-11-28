@@ -855,8 +855,7 @@ void MetalRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material, 
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
     if (_recordState != RecordState::InPass || !_activeInstanced)
         return;
-    if (isValidHandle(material))
-        bindMaterial(material);
+    bindMaterial(material);
     const MeshRecord *record = getMesh(mesh);
     const IndexBufferRecord *indices = record ? _indexManager->resolve(record->indexBuffer) : nullptr;
     MTL::Buffer *vertices = record ? _vertexManager->resolve(record->vertexBuffer) : nullptr;
@@ -1027,8 +1026,7 @@ void MetalRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle ma
     if (_recordState != RecordState::InPass || !_activeInstanced || !instanceBuffer || !argumentBuffer || !record ||
         argumentOffset % 4 != 0 || argumentOffset + sizeof(DrawIndexedIndirect) > argumentBuffer->length())
         return;
-    if (isValidHandle(material))
-        bindMaterial(material);
+    bindMaterial(material);
     MTL::Buffer *vertices = _vertexManager->resolve(record->vertexBuffer);
     const IndexBufferRecord *indices = _indexManager->resolve(record->indexBuffer);
     if (!vertices || !indices || !indices->buffer)

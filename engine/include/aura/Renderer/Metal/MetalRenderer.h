@@ -126,7 +126,6 @@ class MetalRenderer : public IRenderer
     [[nodiscard]] PipelineLimits pipelineLimits() const noexcept override;
     void drawPipeline(const PipelineDraw &draw) override;
     bool reloadShaders(const std::filesystem::path &directory) override;
-    using IRenderer::drawBatch;
     void drawBatch(std::span<const gfx::BatchVertex> vertices, std::span<const u32> indices, TextureHandle texture,
                    gfx::BatchSpace space = gfx::BatchSpace::Screen) override;
     [[nodiscard]] glm::uvec2 renderTargetSize() const noexcept override;
