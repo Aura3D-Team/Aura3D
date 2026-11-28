@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "aura/Core/AuraSettings/AuraSettings.h"
+#include "aura/Core/Camera/Camera.h"
 #include "aura/Core/Files.h"
 #include "aura/Core/ImageLoader/ImageLoader.h"
 #include "aura/Core/Profiling/FrameProfiler.h"
@@ -227,6 +228,15 @@ glm::mat4 IRenderer::batchTransform(gfx::BatchSpace space) const
 
 void IRenderer::run(move_only_function<void()> onFrame)
 {
+    run(
+        [onFrame = std::move(onFrame)](const Frame &) mutable
+        {
+            onFrame();
+        });
+}
+
+void IRenderer::run(move_only_function<void(const Frame &)> onFrame)
+{
     wma::IWindowManager *windowMgr = getWindowManager();
     if (!windowMgr)
         return;
@@ -238,7 +248,8 @@ void IRenderer::run(move_only_function<void()> onFrame)
     auto watcher = settings->get(setting::rendererShaderHotReload) ? std::make_shared<FileWatcher>(shaders) : nullptr;
     //! Shared because the window's loop may copy its callable.
     windowMgr->process(
-        [this, windowMgr, watcher, shaders, onFrame = std::make_shared<move_only_function<void()>>(std::move(onFrame))]
+        [this, windowMgr, watcher, shaders,
+         onFrame = std::make_shared<move_only_function<void(const Frame &)>>(std::move(onFrame))](const Frame &frame)
         {
             if (watcher && watcher->changed())
             {
@@ -249,7 +260,7 @@ void IRenderer::run(move_only_function<void()> onFrame)
             }
 
             _tried = FrameTried::None;
-            (*onFrame)();
+            (*onFrame)(frame);
             //! endFrame() submits what this iteration recorded and presents it if the window's pass was opened.
             //! Without a present the window keeps what it has and nothing paces the loop, so sleep until an event
             //! rather than spin.
@@ -546,9 +557,7 @@ void IRenderer::drawMeshes(std::span<const DrawItem> items)
 
     for (const DrawItem &item : items)
     {
-        //! Bound even for a culled item: later items without a material draw with it.
-        if (isValidHandle(item.material))
-            bindMaterial(item.material);
+        bindMaterial(item.material);
         const MeshRecord *mesh = getMesh(item.mesh);
         if (!mesh || culled(*mesh, item.model, frustum))
             continue;
@@ -563,12 +572,22 @@ void IRenderer::drawMeshes(std::span<const DrawItem> items)
         setTransform(caller);
 }
 
+void IRenderer::setCamera(const Camera &camera)
+{
+    setTransform(camera.buildUBO());
+}
+
+void IRenderer::drawMesh(MeshHandle mesh, MaterialHandle material, const glm::mat4 &model)
+{
+    const DrawItem item{mesh, material, model};
+    drawMeshes(std::span{&item, 1});
+}
+
 void IRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material, std::span<const glm::mat4> models)
 {
     _instanceItems.clear();
     for (const glm::mat4 &model : models)
-        //! The material on the first item only: later items keep it.
-        _instanceItems.push_back({mesh, _instanceItems.empty() ? material : MaterialHandle{}, model});
+        _instanceItems.push_back({mesh, material, model});
     drawMeshes(_instanceItems);
 }
 
@@ -597,14 +616,9 @@ MaterialHandle IRenderer::createMaterial(const Material &material)
 void IRenderer::bindMaterial(MaterialHandle handle)
 {
     const Material *material = getMaterial(handle);
-    if (!material)
-        return;
-
-    _currentMaterial = *material;
-    _currentMaterialHandle = handle;
-
-    if (isValidHandle(material->albedo))
-        bindTexture(material->albedo);
+    _currentMaterial = material ? *material : Material{};
+    _currentMaterialHandle = material ? handle : MaterialHandle{};
+    bindTexture(_currentMaterial.albedo);
 }
 
 GpuTimingStats IRenderer::gpuTiming() const noexcept

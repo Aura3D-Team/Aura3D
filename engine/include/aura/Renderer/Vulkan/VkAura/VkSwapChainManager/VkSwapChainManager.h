@@ -195,6 +195,7 @@ class VkSwapChainManager
 
     bool _outOfDate = false;
     bool _unverified = false;
+    bool _reported = false; //! The first swapchain is logged at INFO, rebuilds at DEBUG.
 
     /**
      * @brief Chooses a surface format for the swap chain.

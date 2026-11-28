@@ -10,6 +10,9 @@
 #include "aura/Core/JobSystem/JobSystem.h"
 #include "aura/Renderer/IRenderer.h"
 
+namespace aura3d
+{
+
 /**
  * @class Engine
  * @brief Owns the configuration, the renderer, the audio engine and the asset cache.
@@ -42,29 +45,29 @@ class Engine
 
     ~Engine();
 
-    aura3d::IRenderer *getRenderer() const
+    //! The active renderer. A new object after switchBackend(), so fetch it again then.
+    [[nodiscard]] IRenderer &renderer() const noexcept
     {
-        return _renderer.get();
+        return *_renderer;
     }
-    aura3d::RendererChoice getBackend() const
+    [[nodiscard]] RendererChoice backend() const noexcept
     {
         return _rendererChoice;
     }
 
     //! Engine-wide configuration. Use the typed accessors rather than reaching
     //! for the raw JSON.
-    const aura3d::AuraSettings *getSettings() const;
+    [[nodiscard]] const AuraSettings &settings() const noexcept;
 
     /**
      * @brief Clip playback, mixing and 3D positional audio.
      *
-     * Always non-null: a machine with no sound hardware gets a silent device
-     * rather than nothing at all, so callers never need to null-check this.
+     * A machine with no sound hardware gets a silent device rather than nothing.
      * Call AudioEngine::update() once per frame.
      */
-    aura3d::AudioEngine *audio() const
+    [[nodiscard]] AudioEngine &audio() const noexcept
     {
-        return _audio.get();
+        return *_audio;
     }
 
     /**
@@ -139,5 +142,7 @@ class Engine
     wma::WindowDetails _windowDetails;
     aura3d::RendererChoice _rendererChoice = aura3d::RendererChoice::SOFTWARE;
 };
+
+} // namespace aura3d
 
 #endif // ENGINE_H

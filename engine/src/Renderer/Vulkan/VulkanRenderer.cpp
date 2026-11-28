@@ -1228,8 +1228,7 @@ void VulkanRenderer::drawMeshes(std::span<const DrawItem> items)
     const Frustum frustum = viewFrustum();
     for (const DrawItem &item : items)
     {
-        if (isValidHandle(item.material))
-            bindMaterial(item.material);
+        bindMaterial(item.material);
 
         const MeshRecord *mesh = getMesh(item.mesh);
         if (!mesh || culled(*mesh, item.model, frustum))
@@ -1348,8 +1347,7 @@ void VulkanRenderer::drawMeshInstanced(MeshHandle mesh, MaterialHandle material,
     AURA_FRAME_SCOPE(FramePhase::RecordScene);
     if (_recordState != RecordState::InPass || !_pipelineReady || _sceneCmd == VK_NULL_HANDLE)
         return;
-    if (isValidHandle(material))
-        bindMaterial(material);
+    bindMaterial(material);
     const MeshRecord *record = getMesh(mesh);
     const VertexBufferInfo *vb = record ? _vertexBufferOf(record->vertexBuffer) : nullptr;
     const IndexBufferInfo *ib = record ? _indexBufferOf(record->indexBuffer) : nullptr;

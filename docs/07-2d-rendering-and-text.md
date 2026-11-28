@@ -10,8 +10,8 @@ const std::array<gfx::BatchVertex, 4> vertices{{
     {{10, 60, 0}, {0, 1}, {1, 1, 1, 1}},
 }};
 constexpr std::array<u32, 6> indices{0, 1, 2, 2, 3, 0};
-r->drawBatch(vertices, indices, panelTexture);                        // screen pixels
-r->drawBatch(vertices, indices, panelTexture, gfx::BatchSpace::World); // through the transform
+r.drawBatch(vertices, indices, panelTexture);                        // screen pixels
+r.drawBatch(vertices, indices, panelTexture, gfx::BatchSpace::World); // through the transform
 ```
 
 One pipeline draws every batch, in submission order with meshes: unlit
@@ -39,7 +39,7 @@ the text engine and draws through `drawBatch`, so a HUD is a few labels:
 ```cpp
 #include "aura/UI/UI.hpp"
 
-ui::UIView ui(*r, {.fontPath = "resources/fonts/Inter.ttf"}); // optional font
+ui::UIView ui(r, {.fontPath = "resources/fonts/Inter.ttf"}); // optional font
 auto &hud = ui.root().setContent<ui::Column>();
 hud.layout().padding = ui::Thickness::all(10.0f);
 auto &score = hud.add<ui::Label>("Score: 0");

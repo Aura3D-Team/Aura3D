@@ -31,31 +31,30 @@ overlay, text) on whichever backend `settings.json` selects.
 ## Quick start
 
 ```cpp
-#include "aura/Core/Engine.h"
-#include "aura/Renderer/IRenderer.h"
-#include "aura/Core/MeshLoader/MeshLoader.h"
-#include "aura/Renderer/Material.h"
+#include "aura/Aura3D.h"
 
 using namespace aura3d;
 
 int main()
 {
     Engine engine("settings.json");
-    IRenderer* r = engine.getRenderer();
+    IRenderer &r = engine.renderer();
 
-    const MeshHandle cube = r->createMesh(MeshLoader::createCube());
-    Material mat;
-    mat.albedo = r->createCheckerboardTexture();
-    const MaterialHandle matH = r->createMaterial(mat);
+    const MeshHandle cube = r.createMesh(MeshLoader::createCube());
+    const MaterialHandle orange = r.createMaterial({.tint = {1.0f, 0.5f, 0.1f, 1.0f}});
 
-    r->setClearColor(0.05f, 0.05f, 0.08f, 1.0f);
-    r->setTransform({}); // model/view/proj — see docs/04-camera.md
+    Camera camera = Camera::perspective({.fovDeg = 60.0f});
+    camera.setPosition({2.0f, 2.0f, 3.0f});
+    camera.lookAt({0.0f, 0.0f, 0.0f});
 
-    r->run([&]() {
-        r->beginRenderPass();
-        r->bindMaterial(matH);
-        r->drawMesh(cube);
-        r->endRenderPass();
+    r.run([&](const Frame &frame) {
+        if (frame.resized)
+            camera.setAspect(frame.aspect());
+        if (!r.beginRenderPass())
+            return;
+        r.setCamera(camera);
+        r.drawMesh(cube, orange, glm::rotate(glm::mat4{1.0f}, static_cast<float>(frame.time), {0.0f, 1.0f, 0.0f}));
+        r.endRenderPass();
     });
 }
 ```

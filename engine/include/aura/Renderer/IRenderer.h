@@ -40,6 +40,7 @@ class JobSystem;
 namespace aura3d
 {
 class IGpuDebugSource;
+class Camera;
 }
 
 namespace aura3d
@@ -53,6 +54,9 @@ enum class FrameTried : u8
     Window = 1u << 1u, //!< The window's target was asked for (or the window was found unable to show it).
 };
 INK_ENUM_FLAGS(FrameTried) // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+
+/// What run() hands its callback each iteration: dt, time, index, the framebuffer size and whether it was resized.
+using Frame = wma::Frame;
 
 /**
  * @class IRenderer
@@ -307,6 +311,13 @@ class IRenderer
      */
     virtual void drawMesh(MeshHandle mesh, TextureHandle texture = {});
 
+    /// @p mesh with @p material at @p model, seen by the camera of setCamera(); culled like drawMeshes(). An
+    /// invalid @p material draws with the default Material.
+    void drawMesh(MeshHandle mesh, MaterialHandle material, const glm::mat4 &model);
+
+    /// The view and projection every later scene draw uses, until the next setCamera() or setTransform().
+    void setCamera(const Camera &camera);
+
     /**
      * @struct DrawItem
      * @brief One drawable submitted through drawMeshes(): what to draw, with
@@ -315,7 +326,7 @@ class IRenderer
     struct DrawItem
     {
         MeshHandle mesh;
-        //! An invalid handle leaves whatever bindMaterial()/bindTexture() last selected.
+        //! An invalid handle draws with the default Material.
         MaterialHandle material;
         glm::mat4 model{1.0f};
     };
@@ -356,6 +367,9 @@ class IRenderer
 
     /**
      * @brief Makes @p handle the active material, binding its albedo texture.
+     *
+     * An invalid handle selects the default Material, and a material without an albedo samples white,
+     * so what was bound before never shows through.
      */
     virtual void bindMaterial(MaterialHandle handle);
 
@@ -580,13 +594,13 @@ class IRenderer
      * keeps a stale picture. Drawing is the callback's choice, not run()'s: an
      * app that animates simply opens a pass every time.
      *
-     * The renderer applies a resize when the frame begins; to react to one
-     * yourself, keep a wma::ResizeWatch and consume()
-     * getWindowManager()->getWindowFlags() in @p onFrame.
+     * The renderer applies a resize when the frame begins; @p onFrame sees it as Frame::resized.
      *
      * @code
-     * renderer.run([&] {
-     *     ui.update(deltaSeconds);
+     * renderer.run([&](const Frame &frame) {
+     *     if (frame.resized)
+     *         camera.setAspect(frame.aspect());
+     *     ui.update(frame.dt);
      *     if (!ui.needsDraw() || !renderer.beginRenderPass())
      *         return;
      *     ui.draw();
@@ -595,6 +609,9 @@ class IRenderer
      * @endcode
      * @param[in] onFrame Called once per iteration.
      */
+    void run(move_only_function<void(const Frame &)> onFrame);
+
+    /// run() for a callback that needs no Frame.
     void run(move_only_function<void()> onFrame);
 
     /**

@@ -174,6 +174,11 @@ int main(int argc, char **argv)
         for (std::size_t t = 0; t < kTiers.size(); ++t)
             if (!only || kTiers[t].quads == onlyQuads)
                 schedule.push_back(t);
+    if (schedule.empty())
+    {
+        std::fprintf(stderr, "FPS_BENCH_QUADS=%s is not a tier (100, 500, 2000, 5000, 8000)\n", only);
+        return 1;
+    }
 
     AuraConfig config;
     config.set(setting::rendererApi, std::string{"vulkan"})
@@ -185,13 +190,12 @@ int main(int argc, char **argv)
         .set(setting::audioBackend, wma::AudioBackend::Null)
         .set(setting::loggingLevel, ink::LogLevel::INFO);
     wma::WindowBackend backend{};
-    const char *window = std::getenv("AURA_BENCH_WINDOW");
-    if (WindowBackendFromString(window ? window : "wayland", backend))
+    if (const char *window = std::getenv("AURA_BENCH_WINDOW"); window && WindowBackendFromString(window, backend))
         config.set(setting::windowBackend, backend);
 
     Engine engine(config);
-    IRenderer *renderer = engine.getRenderer();
-    renderer->setClearColor(0.05f, 0.05f, 0.08f);
+    IRenderer &renderer = engine.renderer();
+    renderer.setClearColor(0.05f, 0.05f, 0.08f);
 
     std::vector<std::vector<Sample>> collected(kTiers.size());
     std::vector<double> samples;
@@ -206,52 +210,12 @@ int main(int argc, char **argv)
     double measured = 0.0;
     AllocationStats allocStart{};
 
-    renderer->run(
+    renderer.run(
         [&]
         {
-            const Clock::time_point now = Clock::now();
-            const double delta = std::chrono::duration<double>(now - last).count();
-            last = now;
-
-            if (step < schedule.size())
-            {
-                if (!stepStarted)
-                {
-                    stepStart = now;
-                    stepStarted = true;
-                }
-                if (std::chrono::duration<double>(now - stepStart).count() < kWarmupS || warmupFrames < kWarmupFrames)
-                    ++warmupFrames;
-                else
-                {
-                    if (samples.empty())
-                        allocStart = AllocationTracker::get().snapshot();
-                    samples.push_back(delta);
-                    measured += delta;
-                    if (measured >= kMeasureS)
-                    {
-                        const double frames = static_cast<double>(samples.size());
-                        const AllocationStats allocs = AllocationTracker::get().snapshot();
-                        collected[schedule[step]].push_back(
-                            {frames / measured, measured / frames * 1000.0, percentileMs(samples, 0.95),
-                             percentileMs(samples, 0.99), low1pctFps(samples), frames,
-                             static_cast<double>(allocs.allocationCount - allocStart.allocationCount) / frames,
-                             static_cast<double>(allocs.totalAllocatedBytes - allocStart.totalAllocatedBytes) /
-                                 frames});
-                        samples.clear();
-                        measured = 0.0;
-                        stepStarted = false;
-                        warmupFrames = 0;
-                        if (++step >= schedule.size())
-                        {
-                            renderer->getWindowManager()->close();
-                            return;
-                        }
-                    }
-                }
-            }
-
-            const int quads = kTiers[schedule[std::min(step, schedule.size() - 1)]].quads;
+            if (step >= schedule.size())
+                return;
+            const int quads = kTiers[schedule[step]].quads;
             constexpr int kCols = 80;
             constexpr float kCell = 16.0f;
             constexpr glm::vec4 kColor{0.9f, 0.4f, 0.2f, 1.0f};
@@ -270,11 +234,57 @@ int main(int argc, char **argv)
                 u32 *q = &indices[static_cast<std::size_t>(i) * 6];
                 q[0] = b, q[1] = b + 1, q[2] = b + 2, q[3] = b + 2, q[4] = b + 3, q[5] = b;
             }
-            if (!renderer->beginRenderPass())
+            if (!renderer.beginRenderPass())
+            {
+                //! Nothing was drawn (hidden window, swapchain rebuild): the round starts over.
+                samples.clear();
+                measured = 0.0;
+                stepStarted = false;
+                warmupFrames = 0;
+                last = Clock::now();
                 return;
-            renderer->drawBatch(std::span{vertices}.first(static_cast<std::size_t>(quads) * 4),
-                                std::span{indices}.first(static_cast<std::size_t>(quads) * 6), {});
-            renderer->endRenderPass();
+            }
+            renderer.drawBatch(std::span{vertices}.first(static_cast<std::size_t>(quads) * 4),
+                               std::span{indices}.first(static_cast<std::size_t>(quads) * 6), {});
+            renderer.endRenderPass();
+
+            const Clock::time_point now = Clock::now();
+            const double delta = std::chrono::duration<double>(now - last).count();
+            last = now;
+
+            if (!stepStarted)
+            {
+                stepStart = now;
+                stepStarted = true;
+            }
+            if (std::chrono::duration<double>(now - stepStart).count() < kWarmupS || warmupFrames < kWarmupFrames)
+                ++warmupFrames;
+            else
+            {
+                if (samples.empty())
+                    allocStart = AllocationTracker::get().snapshot();
+                samples.push_back(delta);
+                measured += delta;
+                if (measured >= kMeasureS)
+                {
+                    const double frames = static_cast<double>(samples.size());
+                    const AllocationStats allocs = AllocationTracker::get().snapshot();
+                    collected[schedule[step]].push_back(
+                        {frames / measured, measured / frames * 1000.0, percentileMs(samples, 0.95),
+                         percentileMs(samples, 0.99), low1pctFps(samples), frames,
+                         static_cast<double>(allocs.allocationCount - allocStart.allocationCount) / frames,
+                         static_cast<double>(allocs.totalAllocatedBytes - allocStart.totalAllocatedBytes) / frames});
+                    samples.clear();
+                    measured = 0.0;
+                    stepStarted = false;
+                    warmupFrames = 0;
+                    if (++step >= schedule.size())
+                    {
+                        renderer.getWindowManager()->close();
+                        return;
+                    }
+                }
+            }
         });
 
     std::FILE *f = std::fopen(outPath.c_str(), "w");

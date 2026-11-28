@@ -3,12 +3,33 @@
 #include "aura/Core/AuraException/AuraException.h"
 
 #include <algorithm>
+#include <format>
+#include <string>
 #include <utility>
 
 namespace aura3d
 {
 namespace vk
 {
+namespace
+{
+const char *presentModeName(VkPresentModeKHR mode) noexcept
+{
+    switch (mode)
+    {
+    case VK_PRESENT_MODE_IMMEDIATE_KHR:
+        return "immediate";
+    case VK_PRESENT_MODE_MAILBOX_KHR:
+        return "mailbox";
+    case VK_PRESENT_MODE_FIFO_KHR:
+        return "fifo";
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+        return "fifo-relaxed";
+    default:
+        return "other";
+    }
+}
+} // namespace
 
 VkSwapChainManager::VkSwapChainManager(VkPhysicalDevice physicalDevice, VkDevice *device, VkSurfaceKHR vkSurface)
     : _swapChainSupportDetails({}), _swapChainCreateInfo({}), _swapChain(VK_NULL_HANDLE), _device(device),
@@ -172,10 +193,14 @@ void VkSwapChainManager::createSwapChain(wma::WindowDetails *windowDetails, VkSu
     VK_RESULT_CHECK(vkCreateSwapchainKHR(*vkDeviceManager->getDevice(), &_swapChainCreateInfo, nullptr, &_swapChain));
 
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, nullptr);
-    INK_INFO << "Swapchain " << _choosedExtent.width << "x" << _choosedExtent.height << ", " << imageCount
-             << " images, present mode " << static_cast<i32>(_choosedPresentMode) << ", format "
-             << static_cast<i32>(_choosedSurfaceFormat.format) << ", sharing "
-             << static_cast<i32>(_swapChainCreateInfo.imageSharingMode);
+    const std::string summary = std::format(
+        "Swapchain {}x{}, {} images, present mode {}, VkFormat {}{}", _choosedExtent.width, _choosedExtent.height,
+        imageCount, presentModeName(_choosedPresentMode), static_cast<i32>(_choosedSurfaceFormat.format),
+        _swapChainCreateInfo.imageSharingMode == VK_SHARING_MODE_CONCURRENT ? ", concurrent" : "");
+    if (std::exchange(_reported, true))
+        INK_DEBUG << summary;
+    else
+        INK_INFO << summary;
     _swapChainImages.resize(imageCount);
 
     vkGetSwapchainImagesKHR(*_device, _swapChain, &imageCount, _swapChainImages.data());

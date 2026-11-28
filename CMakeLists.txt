@@ -417,7 +417,10 @@ add_custom_target(aura3d_docs SOURCES ${AURA3D_DOC_FILES} README.md CHANGELOG.md
 
 if(AURA_BUILD_SANDBOX)
     add_subdirectory(apps/Sandbox)
-    add_subdirectory(apps/Bench)
+    # A desktop Vulkan benchmark: run() must return to write its report.
+    if(AURA_ENABLE_VULKAN AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        add_subdirectory(apps/Bench)
+    endif()
 endif()
 
 if(AURA_BUILD_ORGLOGO)

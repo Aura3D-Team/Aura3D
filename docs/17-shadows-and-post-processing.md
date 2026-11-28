@@ -15,11 +15,11 @@ Those pages write GLSL for OpenGL; port the lookups to the conventions of chapte
 
 ```cpp
 // a full-screen pass: no mesh, a pipeline with VertexInput::None, a target as its texture
-r->beginRenderPass();                                       // the window
-r->drawPipeline({.pipeline = tonemap, .vertexCount = 3,
+r.beginRenderPass();                                       // the window
+r.drawPipeline({.pipeline = tonemap, .vertexCount = 3,
                  .constants = std::as_bytes(std::span(&params, 1)),
-                 .textures = std::array{r->renderTargetTexture(hdr)}});
-r->endRenderPass();
+                 .textures = std::array{r.renderTargetTexture(hdr)}});
+r.endRenderPass();
 ```
 
 `benchmark_runtime <backend> pipeline` renders a depth target and samples it, and runs a vertex-less pass over a

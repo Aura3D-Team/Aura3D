@@ -144,8 +144,7 @@ void OpenGLRenderer::drawMeshInstancedIndirect(MeshHandle mesh, MaterialHandle m
     if (!_vertexMgr || !instanceBuffer || !argumentBuffer || !record ||
         argumentOffset + sizeof(DrawIndexedIndirect) > argumentBuffer->size || argumentOffset % 4 != 0)
         return;
-    if (isValidHandle(material))
-        bindMaterial(material);
+    bindMaterial(material);
     bindVertexBuffer(record->vertexBuffer);
     bindIndexBuffer(record->indexBuffer);
     const auto *indices = _indexMgr->get(record->indexBuffer);

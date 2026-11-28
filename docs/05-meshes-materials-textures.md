@@ -48,11 +48,9 @@ instead of crashing when an asset path is wrong.
 ## Uploading geometry: `createMesh` / `drawMesh`
 
 ```cpp
-const MeshHandle handle = r->createMesh(MeshLoader::createCube());
-// ... later, once per frame per object:
-r->setTransform(camera.buildUBO(modelMatrix));
-r->bindMaterial(materialHandle);
-r->drawMesh(handle);
+const MeshHandle handle = r.createMesh(MeshLoader::createCube());
+// ... later, once per frame per object, after r.setCamera(camera):
+r.drawMesh(handle, materialHandle, modelMatrix);
 ```
 
 `createMesh` uploads a CPU mesh to a GPU-resident vertex+index buffer pair
@@ -72,11 +70,11 @@ virtual TextureHandle createTextureFromPixels(const u8* rgbaPixels, u32 width, u
 Built on top of it:
 
 ```cpp
-r->createTextureFromFile(path);          // decode PNG/JPEG/TGA/BMP/PSD/GIF via stb_image
-r->createCheckerboardTexture(64);        // magenta/black "missing texture" pattern, no file needed
-r->createSolidColorTexture(r, g, b, a);  // 1x1 flat color
-r->createDynamicTexture(w, h);           // empty, writable — see below
-r->updateTextureRegion(handle, x, y, w, h, rgbaPixels); // patch a sub-rectangle in place
+r.createTextureFromFile(path);          // decode PNG/JPEG/TGA/BMP/PSD/GIF via stb_image
+r.createCheckerboardTexture(64);        // magenta/black "missing texture" pattern, no file needed
+r.createSolidColorTexture(r, g, b, a);  // 1x1 flat color
+r.createDynamicTexture(w, h);           // empty, writable — see below
+r.updateTextureRegion(handle, x, y, w, h, rgbaPixels); // patch a sub-rectangle in place
 ```
 
 `createTextureFromFile`, like `loadOBJ`, never fails visibly: a missing or
@@ -107,7 +105,7 @@ ImageData fallback = ImageLoader::makeCheckerboard(64, 8); // size, cells-per-ed
 
 ```cpp
 struct Material {
-    TextureHandle albedo;            // default-constructed: invalid, see below
+    TextureHandle albedo;            // none: samples white, so tint alone colours it
     glm::vec4 tint = {1, 1, 1, 1};
     float roughness = 1.0f;          // 0 a mirror, 1 matte
     float metallic = 0.0f;
@@ -122,10 +120,11 @@ struct Material {
 Material mat;
 mat.albedo = crateTexture;
 mat.roughness = 0.8f;
-const MaterialHandle handle = r->createMaterial(mat);
+const MaterialHandle handle = r.createMaterial(mat);
 // ...
-r->bindMaterial(handle);
-r->drawMesh(mesh);
+r.drawMesh(mesh, handle, model);
+
+const MaterialHandle red = r.createMaterial({.tint = {1, 0, 0, 1}}); // a flat colour needs no texture
 ```
 
 This is glTF's metallic-roughness model, and the GPU backends shade with all
@@ -135,9 +134,8 @@ as `TextureFormat::Rgba8Srgb` and data (normal, metallic-roughness) as
 `Rgba8Unorm`. The software backend uses `albedo` and `tint` alone. glTF files
 fill all of this in for you; see chapter 15.
 
-An invalid (default-constructed) `albedo` means "leave whatever texture is
-already bound" rather than "no texture" — bind a real texture (even the
-checkerboard) before the first draw that uses a material.
+A material without an `albedo` samples white, and an invalid `MaterialHandle`
+draws with `Material{}`, so nothing bound by an earlier draw shows through.
 
 ## Handles
 

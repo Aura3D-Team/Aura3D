@@ -130,7 +130,7 @@ int main(int argc, char **argv)
             config.set(setting::windowBackend, backend);
         }
         Engine engine(config);
-        auto &renderer = *engine.getRenderer();
+        auto &renderer = engine.renderer();
         if (argc > 2 && std::string_view(argv[2]) == "primitives")
         {
             struct Probe

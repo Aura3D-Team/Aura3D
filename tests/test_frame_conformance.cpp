@@ -142,7 +142,7 @@ std::vector<Checkpoint> runScenario(RendererChoice backend)
         .set(setting::audioBackend, wma::AudioBackend::Null)
         .set(setting::loggingLevel, ink::LogLevel::ERROR);
     Engine engine(config);
-    IRenderer &renderer = *engine.getRenderer();
+    IRenderer &renderer = engine.renderer();
     if (renderer.getBackendType() != backend)
         return {};
     wma::IWindowManager &window = *renderer.getWindowManager();

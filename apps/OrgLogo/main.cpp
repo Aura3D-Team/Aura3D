@@ -21,16 +21,12 @@
 // Nothing here reaches inside the engine: the logo is built entirely on the
 // public IRenderer surface.
 
+#include <algorithm>
 #include <array>
-#include <chrono>
 #include <cstdlib>
 #include <vector>
 
-#include "aura/Core/AuraCore.h"
-#include "aura/Core/Camera/Camera.h"
-#include "aura/Core/Engine.h"
-#include "aura/Renderer/IRenderer.h"
-#include "aura/Renderer/Material.h"
+#include "aura/Aura3D.h"
 
 #include "LogoAssets.h"
 #include "Overlay.h"
@@ -49,33 +45,8 @@ constexpr std::uint32_t kSeed = 1337u;
 //! the single knob trading the orb's crispness against CPU time.
 constexpr int kFlameResolution = 512;
 
-/**
- * @class FrameClock
- * @brief Wall-clock delta between frames.
- *
- * The engine's run() loop hands the callback no timing of its own, and the
- * animation must not be tied to the frame rate: at 30 fps the flame has to
- * climb the same distance per second it does at 60.
- */
-class FrameClock
-{
-  public:
-    [[nodiscard]] float tick() noexcept
-    {
-        const auto now = std::chrono::steady_clock::now();
-        const float delta = std::chrono::duration<float>(now - _last).count();
-        _last = now;
-
-        //! A hitch -- a dragged window, the first frame after the startup bake
-        //! -- must not teleport the animation forward.
-        return delta < kMaxDelta ? delta : kMaxDelta;
-    }
-
-  private:
-    static constexpr float kMaxDelta = 1.0f / 15.0f;
-
-    std::chrono::steady_clock::time_point _last = std::chrono::steady_clock::now();
-};
+//! A hitch (a dragged window, the first frame after the startup bake) must not teleport the animation forward.
+constexpr float kMaxDelta = 1.0f / 15.0f;
 
 /**
  * @brief Unit quad in the XY plane facing +Z, toward the camera.
@@ -121,14 +92,9 @@ int main()
 {
     Engine engine("settings.json");
 
-    IRenderer *renderer = engine.getRenderer();
-    if (!renderer)
-    {
-        INK_ERROR << "OrgLogo: the engine came up without a renderer";
-        return EXIT_FAILURE;
-    }
+    IRenderer &renderer = engine.renderer();
 
-    const wma::WindowDetails &window = renderer->getWindowDetails();
+    const wma::WindowDetails &window = renderer.getWindowDetails();
     const SceneLayout layout = makeLayout(window.width, window.height);
 
     /*
@@ -137,7 +103,7 @@ int main()
      * the colours it was baked with. The overlay path is unlit by definition,
      * so this only concerns the backdrop.
      */
-    renderer->setLights(std::array{gfx::Light{.type = gfx::LightType::Ambient}});
+    renderer.setLights(std::array{gfx::Light{.type = gfx::LightType::Ambient}});
 
     /*
      * The sky is baked at the framebuffer's own resolution rather than at some
@@ -153,15 +119,15 @@ int main()
     backdropDesc.seed = kSeed;
 
     const Image backdrop = bakeBackdrop(backdropDesc, engine.jobs());
-    const TextureHandle backdropTexture = renderer->createTextureFromPixels(
+    const TextureHandle backdropTexture = renderer.createTextureFromPixels(
         backdrop.pixels.data(), static_cast<u32>(backdrop.width), static_cast<u32>(backdrop.height));
 
     Material backdropMaterial;
     backdropMaterial.albedo = backdropTexture;
-    const MaterialHandle backdropMaterialHandle = renderer->createMaterial(backdropMaterial);
-    const MeshHandle backdropMesh = renderer->createMesh(makeScreenQuad());
+    const MaterialHandle backdropMaterialHandle = renderer.createMaterial(backdropMaterial);
+    const MeshHandle backdropMesh = renderer.createMesh(makeScreenQuad());
 
-    StarField stars(*renderer, kSeed);
+    StarField stars(renderer, kSeed);
 
     /*
      * The flame's texture is allocated once and rewritten in place. Creating a
@@ -171,7 +137,7 @@ int main()
      */
     FlameField flame(kFlameResolution, engine.jobs());
     const auto flameResolution = static_cast<u32>(flame.resolution());
-    const TextureHandle flameTexture = renderer->createDynamicTexture(flameResolution, flameResolution);
+    const TextureHandle flameTexture = renderer.createDynamicTexture(flameResolution, flameResolution);
 
     //! Orthographic camera for the backdrop; Camera::ortho handles the
     //! per-backend Y flip and depth convention.
@@ -183,9 +149,8 @@ int main()
     //! Fill the [-1,1] view box: the unit quad scaled by 2.
     const glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f, 2.0f, 1.0f));
 
-    renderer->setClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    renderer.setClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
-    FrameClock clock;
     float elapsed = 0.0f;
 
     std::vector<gfx::BatchVertex> orbVertices;
@@ -193,25 +158,24 @@ int main()
     orbVertices.reserve(4);
     orbIndices.reserve(6);
 
-    renderer->run(
-        [&]()
+    renderer.run(
+        [&](const Frame &frame)
         {
-            const float deltaTime = clock.tick();
+            const float deltaTime = std::min(frame.dt, kMaxDelta);
             elapsed += deltaTime;
 
             //! Simulation first, outside the render pass: the flame bake is the
             //! frame's heaviest CPU work and has nothing to do with the pass.
             flame.bake(elapsed);
-            renderer->updateTextureRegion(flameTexture, 0, 0, flameResolution, flameResolution, flame.pixels().data());
+            renderer.updateTextureRegion(flameTexture, 0, 0, flameResolution, flameResolution, flame.pixels().data());
             stars.update(elapsed, deltaTime, flame.pulse());
 
-            renderer->beginRenderPass();
+            renderer.beginRenderPass();
 
-            renderer->setTransform(camera.buildUBO(model));
-            renderer->bindMaterial(backdropMaterialHandle);
-            renderer->drawMesh(backdropMesh);
+            renderer.setCamera(camera);
+            renderer.drawMesh(backdropMesh, backdropMaterialHandle, model);
 
-            stars.submit(*renderer, layout);
+            stars.submit(renderer, layout);
 
             //! The orb goes last, so its glow washes over the stars behind it and
             //! any meteor passes below rather than across it.
@@ -219,9 +183,9 @@ int main()
             orbIndices.clear();
             appendQuad(orbVertices, orbIndices, layout.center, {layout.orbHalfExtent, layout.orbHalfExtent}, 0.0f,
                        UvRect{}, glm::vec4(1.0f));
-            renderer->drawBatch(orbVertices, orbIndices, flameTexture);
+            renderer.drawBatch(orbVertices, orbIndices, flameTexture);
 
-            renderer->endRenderPass();
+            renderer.endRenderPass();
         });
 
     return EXIT_SUCCESS;
